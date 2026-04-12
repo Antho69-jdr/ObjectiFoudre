@@ -34,7 +34,7 @@
       --rail-btn-size: 46px;
       --right-rail-width: 46px;
       --right-rail-gap: 10px;
-      --timeline-height: 116px;
+      --timeline-height: 88px;
       --rail-focus-count: 4;
       --rail-top-layer: var(--rail-top-focus);
       --rail-top-fab: calc(var(--rail-top-layer) + (var(--rail-btn-size) * var(--rail-focus-count)) + (var(--right-rail-gap) * (var(--rail-focus-count) - 1)) + 18px);
@@ -170,13 +170,14 @@
       position: fixed;
       z-index: 18;
       left: 50%;
-      bottom: max(14px, env(safe-area-inset-bottom));
+      bottom: max(12px, env(safe-area-inset-bottom));
       transform: translateX(-50%);
       display: grid;
-      gap: 10px;
-      width: min(940px, calc(100vw - 160px));
-      padding: 12px 14px;
-      border-radius: 20px;
+      gap: 8px;
+      width: min(1180px, calc(100vw - 136px));
+      max-width: calc(100vw - 136px);
+      padding: 8px 12px;
+      border-radius: 18px;
       background: rgba(8, 17, 30, 0.72);
       border: 1px solid var(--border);
       box-shadow: var(--shadow);
@@ -187,26 +188,41 @@
     .timeline-dock .button-row[hidden] { display: none !important; }
     .timeline-bar {
       display: grid;
-      grid-template-columns: auto auto minmax(170px, 220px) auto auto;
+      grid-template-columns: auto auto minmax(160px, 220px) auto auto;
       gap: 8px;
       align-items: center;
     }
     .timeline-nav-btn {
-      min-width: 44px;
-      width: 44px;
-      height: 44px;
-      min-height: 44px;
+      min-width: 40px;
+      width: 40px;
+      height: 40px;
+      min-height: 40px;
       border-radius: 12px;
       padding: 0;
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 800;
     }
     .timeline-today-btn {
-      min-height: 44px;
+      min-height: 40px;
       border-radius: 12px;
-      padding: 0 14px;
+      padding: 0 12px;
       white-space: nowrap;
       font-weight: 800;
+      font-size: 13px;
+    }
+
+    .timeline-date-input {
+      min-height: 40px;
+      padding: 0 12px;
+      font-size: 13px;
+    }
+    @media (min-width: 901px) {
+      .timeline-slot-strip {
+        overflow-x: hidden;
+      }
+      .timeline-slot-strip .slot-pill {
+        min-width: 0;
+      }
     }
     .timeline-slot-strip {
       position: relative;
@@ -214,25 +230,27 @@
       overflow-y: hidden;
       display: flex;
       flex-wrap: nowrap;
-      gap: 8px;
-      padding: 2px 2px 6px;
+      gap: 6px;
+      padding: 2px 2px 4px;
       scrollbar-width: thin;
       cursor: grab;
       user-select: none;
       -webkit-overflow-scrolling: touch;
+      scroll-snap-type: x proximity;
     }
     .timeline-slot-strip.dragging { cursor: grabbing; }
     .timeline-slot-strip::-webkit-scrollbar { height: 8px; }
     .timeline-slot-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 999px; }
     .timeline-slot-strip .slot-pill {
-      flex: 0 0 auto;
-      min-width: 86px;
-      min-height: 40px;
-      border-radius: 12px;
-      padding: 8px 12px;
-      font-size: 12px;
+      flex: 1 1 0;
+      min-width: 78px;
+      min-height: 34px;
+      border-radius: 11px;
+      padding: 6px 10px;
+      font-size: 11px;
       font-weight: 700;
       white-space: nowrap;
+      scroll-snap-align: center;
     }
     .timeline-slot-strip .slot-pill.is-disabled {
       opacity: 0.45;
@@ -1026,12 +1044,13 @@
 
     @media (max-width: 900px) {
       .timeline-dock {
-        width: min(calc(100vw - 20px), 720px);
+        width: min(calc(100vw - 20px), 840px);
+        max-width: calc(100vw - 20px);
         gap: 8px;
-        padding: 10px;
+        padding: 9px 10px;
       }
       .timeline-bar {
-        grid-template-columns: 44px 1fr 44px;
+        grid-template-columns: 40px 1fr 40px;
       }
       .timeline-bar .timeline-date-input {
         min-width: 0;
@@ -1039,12 +1058,18 @@
       .timeline-bar .timeline-today-btn {
         grid-column: 1 / -1;
       }
+      .timeline-slot-strip .slot-pill {
+        flex: 0 0 auto;
+        min-width: 78px;
+      }
     }
     @media (max-width: 640px) {
       .timeline-dock {
         width: calc(100vw - 12px);
+        max-width: calc(100vw - 12px);
         bottom: max(8px, env(safe-area-inset-bottom));
-        border-radius: 18px;
+        border-radius: 16px;
+        padding: 8px 8px 9px;
       }
       .timeline-bar {
         grid-template-columns: 40px minmax(0, 1fr) 40px;
@@ -1056,9 +1081,14 @@
         height: 40px;
         min-height: 40px;
       }
+      .timeline-slot-strip {
+        gap: 6px;
+        padding-bottom: 2px;
+      }
       .timeline-slot-strip .slot-pill {
-        min-width: 80px;
-        min-height: 38px;
+        flex: 0 0 auto;
+        min-width: 76px;
+        min-height: 34px;
       }
       .cell-scale-chip {
         right: 8px;
