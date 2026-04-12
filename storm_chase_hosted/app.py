@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import math
 import time
-from datetime import date as Date
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +18,7 @@ STATIC_DIR = BASE_DIR / "static"
 CACHE_TTL_SECONDS = 15 * 60
 STALE_TTL_SECONDS = 2 * 60 * 60
 
-app = FastAPI(title="Storm Chase", version="1.4.0")
+app = FastAPI(title="Storm Chase", version="1.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,9 +33,8 @@ _inflight: dict[str, asyncio.Task] = {}
 _lock = asyncio.Lock()
 
 
-def _cache_key(lat: float, lon: float, target_date: Date | None) -> str:
-    date_key = target_date.isoformat() if target_date is not None else "auto"
-    return f"{lat:.2f}:{lon:.2f}:{date_key}"
+def _cache_key(lat: float, lon: float) -> str:
+    return f"{lat:.2f}:{lon:.2f}"
 
 
 def _cache_fresh(entry: dict[str, Any] | None, ttl: int = CACHE_TTL_SECONDS) -> bool:
@@ -71,21 +69,18 @@ def _distance_km(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> floa
     return math.hypot(dx, dy)
 
 
-def _nearest_recent_cache(lat: float, lon: float, target_date: Date | None, ttl: int = STALE_TTL_SECONDS, max_distance_km: float = 80.0):
+def _nearest_recent_cache(lat: float, lon: float, ttl: int = STALE_TTL_SECONDS, max_distance_km: float = 80.0):
     now = time.time()
     best = None
     best_dist = None
-    target_date_key = target_date.isoformat() if target_date is not None else "auto"
     for key, entry in _cache.items():
         if (now - float(entry["ts"])) >= ttl:
             continue
         try:
-            e_lat_s, e_lon_s, e_date_key = key.split(":")
+            e_lat_s, e_lon_s = key.split(":")
             e_lat = float(e_lat_s)
             e_lon = float(e_lon_s)
         except Exception:
-            continue
-        if e_date_key != target_date_key:
             continue
         dist = _distance_km(lat, lon, e_lat, e_lon)
         if dist > max_distance_km:
@@ -96,8 +91,8 @@ def _nearest_recent_cache(lat: float, lon: float, target_date: Date | None, ttl:
     return best, best_dist
 
 
-async def _build_payload(lat: float, lon: float, label: str, target_date: Date | None) -> dict[str, Any]:
-    payload = await asyncio.to_thread(build_latest_payload, lat, lon, label, target_date)
+async def _build_payload(lat: float, lon: float, label: str) -> dict[str, Any]:
+    payload = await asyncio.to_thread(build_latest_payload, lat, lon, label)
     return _merge_label(payload, label)
 
 
@@ -122,10 +117,9 @@ async def latest(
     lat: float = Query(45.7640, ge=-90, le=90),
     lon: float = Query(4.8357, ge=-180, le=180),
     label: str = Query(DEFAULT_CENTER_LABEL, min_length=1, max_length=120),
-    date: Date | None = Query(None),
     force: bool = False,
 ) -> dict:
-    key = _cache_key(lat, lon, date)
+    key = _cache_key(lat, lon)
     cached = _cache.get(key)
     if not force and _cache_fresh(cached):
         return _merge_label(cached["payload"], label)
@@ -137,7 +131,7 @@ async def latest(
 
         task = _inflight.get(key)
         if task is None or task.done():
-            task = asyncio.create_task(_build_payload(lat, lon, label, date))
+            task = asyncio.create_task(_build_payload(lat, lon, label))
             _inflight[key] = task
 
     try:
@@ -155,7 +149,7 @@ async def latest(
                 warning=f"Données mises en cache utilisées après erreur de rafraîchissement: {exc}",
             )
 
-        nearby, dist = _nearest_recent_cache(lat, lon, date)
+        nearby, dist = _nearest_recent_cache(lat, lon)
         if nearby is not None:
             return _stale_payload(
                 nearby,

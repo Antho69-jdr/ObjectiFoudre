@@ -78,28 +78,6 @@
       align-items: center;
     }
 
-    .date-bar {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-
-    .date-input {
-      width: 100%;
-      min-height: 44px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: rgba(255,255,255,0.04);
-      color: var(--text);
-      padding: 0 14px;
-      font-size: 14px;
-      outline: none;
-    }
-
-    .date-input:focus { border-color: rgba(59,130,246,0.6); box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
-
     .location-input {
       width: 100%;
       min-height: 44px;
@@ -973,10 +951,6 @@
       </div>
 
       <div class="panel-card calendar-panel">
-        <div class="date-bar">
-          <input id="dateInput" class="date-input" type="date" min="2022-01-01" />
-          <button id="todayBtn" type="button">Aujourd’hui</button>
-        </div>
         <div id="dayButtons" class="button-row"></div>
         <div id="slotButtons" class="button-row"></div>
       </div>
@@ -1003,7 +977,7 @@
       
     </div>
 
-    <div class="cell-scale-chip" id="cellScaleChip">1 cellule ≈ 5 km</div>
+    <div class="cell-scale-chip" id="cellScaleChip">1 cellule ≈ 7,5 km</div>
 
     <div class="selection-card" id="selectionCard" aria-live="polite">
       <div class="drag-handle" aria-hidden="true"></div>
@@ -1090,7 +1064,7 @@
       </div>
       <div class="drawer-section">
         <div class="small" style="font-weight:800; color:var(--text);">Algorithme</div>
-        <p>Le score global combine quatre blocs : déclenchement, organisation, lisibilité terrain et stabilité horaire. Le déclenchement s'appuie surtout sur la CAPE, le point de rosée, l'humidité et le VPD. L'organisation repose principalement sur le cisaillement et les rafales. La lisibilité pénalise surtout la nébulosité basse et moyenne. La stabilité mesure la tenue du signal autour du créneau retenu.</p>
+        <p>Le score global combine trois blocs : déclenchement, organisation et qualité de chasse. Le déclenchement s'appuie surtout sur la CAPE, le point de rosée, l'humidité et le VPD. L'organisation repose principalement sur le cisaillement et les rafales. La qualité de chasse pénalise surtout la nébulosité basse et moyenne.</p>
         <p>Le mode « meilleures cellules » accentue les cellules les plus prometteuses et atténue les autres pour faciliter la lecture rapide.</p>
       </div>
     </aside>
@@ -1117,8 +1091,6 @@
     const metaRun = document.getElementById('metaRun');
     const dayButtons = document.getElementById('dayButtons');
     const slotButtons = document.getElementById('slotButtons');
-    const dateInput = document.getElementById('dateInput');
-    const todayBtn = document.getElementById('todayBtn');
     const topbar = document.getElementById('topbar');
     const toggleCalendarBtn = document.getElementById('toggleCalendarBtn');
     const toggleSearchBtn = document.getElementById('toggleSearchBtn');
@@ -1181,7 +1153,7 @@
     let geocodeController = null;
     let activeFetchToken = 0;
     const LOADER_GRID_SIZE = 9;
-    const LOADER_CELL_SIZE_KM = 5.0;
+    const LOADER_CELL_SIZE_KM = 6.5;
     const GRID_ANIMATION_TOTAL_MS = 520;
     const GRID_ANIMATION_CELL_MS = 340;
     const GRID_ANIMATION_STAGGER_SPAN_MS = 170;
@@ -1198,9 +1170,6 @@
     let selectedDayKey = null;
     let selectedSlotKey = null;
     let selectedFeature = null;
-    let selectedBaseDate = getTodayIsoDate();
-
-    syncDateControls();
 
     const map = new maplibregl.Map({
       container: 'map',
@@ -1213,37 +1182,6 @@
     applyResponsiveMode();
     window.addEventListener('resize', applyResponsiveMode);
     window.addEventListener('orientationchange', applyResponsiveMode);
-
-    function getTodayIsoDate() {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    }
-
-    function normalizeDateIso(value) {
-      if (typeof value !== 'string') return getTodayIsoDate();
-      return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : getTodayIsoDate();
-    }
-
-    function syncDateControls() {
-      const nextDate = normalizeDateIso(selectedBaseDate);
-      selectedBaseDate = nextDate;
-      if (dateInput) dateInput.value = nextDate;
-    }
-
-    function applySelectedDate(nextDate, { force = true, loadingMessage = 'Chargement de la date…' } = {}) {
-      const normalized = normalizeDateIso(nextDate);
-      if (normalized === selectedBaseDate && !force) return;
-      selectedBaseDate = normalized;
-      syncDateControls();
-      selectedDayKey = null;
-      selectedSlotKey = null;
-      closeSelection();
-      closeDetails();
-      refreshCurrentData(force, loadingMessage);
-    }
 
     function colorFromScore(score) {
       const s = Math.max(0, Math.min(100, Number(score) || 0));
@@ -2608,7 +2546,7 @@
     }
 
     async function loadData(force = false, centerToken = centerChangeToken) {
-      const signature = `${currentCenter.lat}|${currentCenter.lon}|${currentCenter.label}|${selectedBaseDate}`;
+      const signature = `${currentCenter.lat}|${currentCenter.lon}|${currentCenter.label}`;
       if (!force && payload && signature === lastFetchSignature) {
         shouldAnimateNextGrid = false;
         updateMetaLine();
@@ -2623,7 +2561,7 @@
       dataFetchController = controller;
       const fetchToken = ++activeFetchToken;
       isFetchingData = true;
-      const params = new URLSearchParams({ lat: String(currentCenter.lat), lon: String(currentCenter.lon), label: currentCenter.label, date: selectedBaseDate });
+      const params = new URLSearchParams({ lat: String(currentCenter.lat), lon: String(currentCenter.lon), label: currentCenter.label });
       if (force) params.set('force', 'true');
       try {
         const response = await fetch(`/api/latest?${params.toString()}`, { cache: 'no-store', signal: controller.signal });
@@ -2635,8 +2573,7 @@
         shouldAnimateNextGrid = true;
         lastFetchAt = Date.now();
         const days = getDays();
-        const requestedDayKey = normalizeDateIso(selectedBaseDate);
-        selectedDayKey = days.find(d => d.day_key === requestedDayKey)?.day_key || days.find(d => d.day_key === selectedDayKey)?.day_key || days[0]?.day_key || null;
+        selectedDayKey = days.find(d => d.day_key === selectedDayKey)?.day_key || days[0]?.day_key || null;
         const currentDay = getCurrentDay();
         selectedSlotKey = currentDay?.slots?.find(s => s.slot_key === selectedSlotKey)?.slot_key || currentDay?.slots?.[0]?.slot_key || null;
         cityInput.value = payload?.meta?.center?.label || currentCenter.label;

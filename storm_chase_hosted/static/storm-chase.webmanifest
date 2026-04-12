@@ -1,0 +1,15 @@
+{
+  "name": "Storm Chase",
+  "short_name": "Storm Chase",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#07111f",
+  "theme_color": "#07111f",
+  "lang": "fr",
+  "description": "Carte tactile de potentiel orageux pour téléphone et tablette.",
+  "icons": [
+    {"src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png"}
+  ]
+}

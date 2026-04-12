@@ -9,28 +9,24 @@ import time
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
-from datetime import date as Date
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Iterable
 
-FORECAST_API_BASE = "https://api.open-meteo.com/v1/meteofrance"
-HISTORICAL_API_BASE = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+API_BASE = "https://api.open-meteo.com/v1/meteofrance"
 OUTPUT_JSON = Path("orages_output_horizons.json")
 TIMEZONE = "auto"
 
 DEFAULT_CENTER_LAT = 45.7640
 DEFAULT_CENTER_LON = 4.8357
 DEFAULT_CENTER_LABEL = "Lyon"
-GRID_SIDE_KM = 65.0
-HALF_BOX_KM_LAT = GRID_SIDE_KM / 2
-HALF_BOX_KM_LON = GRID_SIDE_KM / 2
-CELL_SIZE_KM = 5.0
-TARGET_BATCHES = 5
+HALF_BOX_KM_LAT = 24.0
+HALF_BOX_KM_LON = 24.0
+CELL_SIZE_KM = 7.5
+BATCH_SIZE = 20
 MODEL = "arome_france"
 FORECAST_HOURS = 96
-HISTORICAL_MIN_DATE = Date(2022, 1, 1)
 
 HOURLY_VARS = [
     "cape",
@@ -50,16 +46,11 @@ HOURLY_VARS = [
 ]
 
 WEEKDAYS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
-SLOT_HOURS = 2
-TIME_SLOTS = [
-    (
-        f"h{start_hour:02d}",
-        start_hour,
-        min(23, start_hour + SLOT_HOURS - 1),
-        f"{start_hour:02d}h–{min(23, start_hour + SLOT_HOURS - 1):02d}h",
-    )
-    for start_hour in range(0, 24, SLOT_HOURS)
-]
+TIME_SLOTS = {
+    "midday": (11, 14, "11h–14h"),
+    "afternoon": (15, 18, "15h–18h"),
+    "evening": (19, 21, "19h–21h"),
+}
 
 
 def clamp(value: float, low: float = 0, high: float = 100) -> int:
@@ -72,38 +63,6 @@ def km_to_deg_lat(km: float) -> float:
 
 def km_to_deg_lon(km: float, lat: float) -> float:
     return km / (111.0 * math.cos(math.radians(lat)))
-
-
-def local_today() -> Date:
-    return datetime.now(ZoneInfo("Europe/Paris")).date()
-
-
-def batch_size_for_points(points: list[Point]) -> int:
-    return max(1, math.ceil(len(points) / TARGET_BATCHES))
-
-
-def api_context(target_date: Date | None) -> tuple[str, dict[str, str]]:
-    today = local_today()
-    if target_date is not None and target_date < HISTORICAL_MIN_DATE:
-        raise ValueError(f"Date trop ancienne pour l'archive de prévisions Open-Meteo : {target_date.isoformat()} < {HISTORICAL_MIN_DATE.isoformat()}")
-
-    if target_date is not None and target_date < today:
-        return HISTORICAL_API_BASE, {
-            "start_date": target_date.isoformat(),
-            "end_date": target_date.isoformat(),
-        }
-
-    if target_date is not None and target_date >= today:
-        forecast_days = max(1, (target_date - today).days + 1)
-        return FORECAST_API_BASE, {
-            "forecast_days": str(forecast_days),
-            "past_days": "0",
-        }
-
-    return FORECAST_API_BASE, {
-        "forecast_days": str(max(4, math.ceil(FORECAST_HOURS / 24))),
-        "past_days": "0",
-    }
 
 
 @dataclass
@@ -162,8 +121,8 @@ def build_grid(center_lat: float = DEFAULT_CENTER_LAT, center_lon: float = DEFAU
     step_lat = km_to_deg_lat(CELL_SIZE_KM)
     safe_prefix = "".join(ch for ch in zone_prefix if ch.isalnum())[:14] or "Zone"
 
-    row_count = max(3, int(round((HALF_BOX_KM_LAT * 2) / CELL_SIZE_KM)))
-    col_count = max(3, int(round((HALF_BOX_KM_LON * 2) / CELL_SIZE_KM)))
+    row_count = math.ceil((HALF_BOX_KM_LAT * 2) / CELL_SIZE_KM) + 1
+    col_count = math.ceil((HALF_BOX_KM_LON * 2) / CELL_SIZE_KM) + 1
     if row_count % 2 == 0:
         row_count += 1
     if col_count % 2 == 0:
@@ -629,7 +588,7 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
         weekday = WEEKDAYS_FR[items[0][1].weekday()]
         day_label = f"{weekday} {items[0][1].day:02d}"
 
-        for slot_key, start_hour, end_hour, slot_label in TIME_SLOTS:
+        for slot_key, (start_hour, end_hour, slot_label) in TIME_SLOTS.items():
             candidate_indices = [i for i, dt in items if start_hour <= dt.hour <= end_hour]
             if not candidate_indices:
                 continue
@@ -707,24 +666,22 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
     return rows
 
 
-def fetch_model(points: list[Point], target_date: Date | None = None) -> list[OutputRow]:
-    batch_size = batch_size_for_points(points)
-    batches = list(chunks(points, batch_size))
+def fetch_model(points: list[Point]) -> list[OutputRow]:
+    batches = list(chunks(points, BATCH_SIZE))
     total_batches = len(batches)
     rows: list[OutputRow] = []
-    day_mode = target_date.isoformat() if target_date is not None else "jours glissants"
     for batch_index, batch in enumerate(batches, start=1):
-        print(f"{MODEL} | lot {batch_index}/{total_batches} | {len(batch)} points | {day_mode}")
-        url = build_api_url(batch, target_date=target_date)
+        print(f"{MODEL} | lot {batch_index}/{total_batches} | {len(batch)} points | jours glissants (V19 allégée)")
+        url = build_api_url(batch)
         payload = get_json(url)
         structures = location_structures(payload)
         for point, loc in zip(batch, structures):
             rows.extend(rows_for_location(point, loc))
-        time.sleep(0.35)
+        time.sleep(0.4)
     return rows
 
 
-def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float, center_label: str, target_date: Date | None = None) -> dict:
+def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float, center_label: str) -> dict:
     days_map: dict[str, dict] = {}
     for row in rows:
         day = days_map.setdefault(
@@ -749,7 +706,7 @@ def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float
     days = []
     for _, day in sorted(days_map.items(), key=lambda kv: kv[1]["day_index"]):
         slots = []
-        for slot_key, _, _, _ in TIME_SLOTS:
+        for slot_key in TIME_SLOTS:
             if slot_key in day["slots"]:
                 slot = day["slots"][slot_key]
                 cells = slot["cells"]
@@ -779,11 +736,8 @@ def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float
             "grid": {
                 "half_box_km_lat": HALF_BOX_KM_LAT,
                 "half_box_km_lon": HALF_BOX_KM_LON,
-                "grid_side_km": GRID_SIDE_KM,
                 "cell_size_km": CELL_SIZE_KM,
-                "target_batches": TARGET_BATCHES,
             },
-            "requested_date": target_date.isoformat() if target_date is not None else None,
             "legend": {
                 "global_score": "0-100, combine déclenchement 40%, organisation 28%, qualité terrain 14%, stabilité 18%",
                 "trigger": "Instabilité utilisable + humidité basse couche (CAPE, Td, VPD, RH, Tw)",
@@ -836,12 +790,7 @@ if __name__ == "__main__":
 
 
 
-def build_latest_payload(
-    center_lat: float = DEFAULT_CENTER_LAT,
-    center_lon: float = DEFAULT_CENTER_LON,
-    center_label: str = DEFAULT_CENTER_LABEL,
-    target_date: Date | None = None,
-) -> dict:
+def build_latest_payload(center_lat: float = DEFAULT_CENTER_LAT, center_lon: float = DEFAULT_CENTER_LON, center_label: str = DEFAULT_CENTER_LABEL) -> dict:
     points = build_grid(center_lat=center_lat, center_lon=center_lon, zone_prefix=center_label)
-    rows = fetch_model(points, target_date=target_date)
-    return group_for_output(rows, center_lat, center_lon, center_label, target_date=target_date)
+    rows = fetch_model(points)
+    return group_for_output(rows, center_lat, center_lon, center_label)
