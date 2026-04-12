@@ -997,7 +997,8 @@
       <div class="quick-grid">
         <button class="metric-btn" data-metric="trigger_score"><span class="label">Déclenchement</span><span class="value" id="selectionTrigger">-</span></button>
         <button class="metric-btn" data-metric="structure_score"><span class="label">Organisation</span><span class="value" id="selectionStructure">-</span></button>
-        <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Qualité chasse</span><span class="value" id="selectionQuality">-</span></button>
+        <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Lisibilité</span><span class="value" id="selectionQuality">-</span></button>
+        <button class="metric-btn" data-metric="stability_score"><span class="label">Stabilité</span><span class="value" id="selectionStability">-</span><span class="hint" id="selectionStabilityLabel">-</span></button>
       </div>
 
       <div class="summary-box" id="selectionSummary">Touchez une cellule pour voir son résumé.</div>
@@ -1107,6 +1108,8 @@
     const selectionTrigger = document.getElementById('selectionTrigger');
     const selectionStructure = document.getElementById('selectionStructure');
     const selectionQuality = document.getElementById('selectionQuality');
+    const selectionStability = document.getElementById('selectionStability');
+    const selectionStabilityLabel = document.getElementById('selectionStabilityLabel');
     const selectionSummary = document.getElementById('selectionSummary');
     const closeSelectionBtn = document.getElementById('closeSelectionBtn');
     const openDetailsBtn = document.getElementById('openDetailsBtn');
@@ -2026,8 +2029,12 @@
         explain: 'Mesure le potentiel d’organisation des cellules. Il repose principalement sur le cisaillement vertical approximé et la dynamique de surface via les rafales.'
       },
       chase_quality_score: {
-        label: 'Qualité chasse',
+        label: 'Lisibilité',
         explain: 'Cherche à dire si la zone est exploitable sur le terrain. Il prend en compte surtout la nébulosité et l’environnement visuel, pour éviter les secteurs prometteurs mais peu lisibles.'
+      },
+      stability_score: {
+        label: 'Stabilité',
+        explain: 'Mesure la tenue horaire du signal autour du créneau retenu. Une bonne stabilité signifie que le potentiel ne repose pas sur une seule heure isolée et fragile.'
       },
       mucape: {
         label: 'CAPE',
@@ -2108,7 +2115,8 @@
         case 'score_global':
         case 'trigger_score':
         case 'structure_score':
-        case 'chase_quality_score': {
+        case 'chase_quality_score':
+        case 'stability_score': {
           const state = value < 35 ? 'Faible' : value < 65 ? 'Modéré' : value < 85 ? 'Élevé' : 'Très élevé';
           return {
             state,
@@ -2280,6 +2288,7 @@
         case 'trigger_score':
         case 'structure_score':
         case 'chase_quality_score':
+        case 'stability_score':
           return value >= 60 ? 'positive' : value <= 35 ? 'negative' : 'neutral';
         case 'mucape':
           return value >= 800 ? 'positive' : value < 300 ? 'negative' : 'neutral';
@@ -2324,11 +2333,15 @@
       selectionTrigger.textContent = safe(p.trigger_score);
       selectionStructure.textContent = safe(p.structure_score);
       selectionQuality.textContent = safe(p.chase_quality_score);
+      selectionStability.textContent = safe(p.stability_score);
+      const stabilityValue = Number(p.stability_score);
+      selectionStabilityLabel.textContent = Number.isFinite(stabilityValue) ? (stabilityValue < 35 ? 'Fenêtre fragile' : stabilityValue < 65 ? 'Stabilité correcte' : stabilityValue < 85 ? 'Bonne stabilité horaire' : 'Très bonne tenue') : '—';
       applyMetricTone(selectionScore, 'score_global', p.score_global);
       applyMetricTone(selectionConfidence, 'confidence_score', p.confidence_score);
       applyMetricTone(selectionTrigger, 'trigger_score', p.trigger_score);
       applyMetricTone(selectionStructure, 'structure_score', p.structure_score);
       applyMetricTone(selectionQuality, 'chase_quality_score', p.chase_quality_score);
+      applyMetricTone(selectionStability, 'stability_score', p.stability_score);
       selectionSummary.textContent = p.summary || 'Aucun résumé disponible.';
       selectionCard.classList.add('visible');
       requestAnimationFrame(positionSelectionCard);
