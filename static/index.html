@@ -149,6 +149,20 @@
       color: #d3def3;
       background: rgba(255,255,255,0.035);
     }
+    .slot-select {
+      width: 100%;
+      min-height: 42px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      padding: 0 14px;
+      font-size: 14px;
+      font-weight: 700;
+      outline: none;
+      margin-bottom: 8px;
+    }
+    .slot-select:focus { border-color: rgba(59,130,246,0.6); box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
 
     .mobile-toggle-bar {
       display: grid;
@@ -978,6 +992,7 @@
           <button id="todayBtn" type="button">Aujourd’hui</button>
         </div>
         <div id="dayButtons" class="button-row"></div>
+        <select id="slotSelect" class="slot-select" aria-label="Choisir un créneau horaire"></select>
         <div id="slotButtons" class="button-row"></div>
       </div>
     </div>
@@ -1117,6 +1132,7 @@
     const metaRun = document.getElementById('metaRun');
     const dayButtons = document.getElementById('dayButtons');
     const slotButtons = document.getElementById('slotButtons');
+    const slotSelect = document.getElementById('slotSelect');
     const dateInput = document.getElementById('dateInput');
     const todayBtn = document.getElementById('todayBtn');
     const topbar = document.getElementById('topbar');
@@ -1641,8 +1657,29 @@
       const day = getCurrentDay();
       slotButtons.innerHTML = '';
       const slots = day?.slots || [];
-      if (!slots.length) return;
+      if (slotSelect) slotSelect.innerHTML = '';
+      if (!slots.length) {
+        if (slotSelect) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'Aucun créneau disponible';
+          slotSelect.appendChild(opt);
+          slotSelect.disabled = true;
+        }
+        return;
+      }
       if (!selectedSlotKey || !slots.some(s => s.slot_key === selectedSlotKey)) selectedSlotKey = slots[0].slot_key;
+      if (slotSelect) {
+        slotSelect.disabled = false;
+        for (const slot of slots) {
+          const opt = document.createElement('option');
+          opt.value = slot.slot_key;
+          opt.textContent = slot.slot_label;
+          opt.selected = slot.slot_key === selectedSlotKey;
+          slotSelect.appendChild(opt);
+        }
+        slotSelect.value = selectedSlotKey;
+      }
       for (const slot of slots) {
         const btn = document.createElement('button');
         btn.textContent = slot.slot_label;
