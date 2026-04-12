@@ -164,6 +164,163 @@
     }
     .slot-select:focus { border-color: rgba(59,130,246,0.6); box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
 
+    .timeline-bar {
+      position: absolute;
+      z-index: 18;
+      left: 50%;
+      bottom: max(16px, env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      width: min(980px, calc(100vw - 180px));
+      padding: 12px;
+      border-radius: 22px;
+      background: rgba(7, 15, 28, 0.76);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      display: grid;
+      gap: 10px;
+    }
+    .timeline-top {
+      display: grid;
+      grid-template-columns: auto auto minmax(150px, 190px) auto 1fr;
+      gap: 8px;
+      align-items: center;
+    }
+    .timeline-btn,
+    .timeline-pill {
+      min-height: 40px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 0 12px;
+    }
+    .timeline-date-input {
+      width: 100%;
+      min-height: 40px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      padding: 0 12px;
+      font-size: 13px;
+      font-weight: 700;
+      outline: none;
+    }
+    .timeline-summary {
+      min-height: 40px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0 12px;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .timeline-days {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding-bottom: 2px;
+    }
+    .timeline-days::-webkit-scrollbar,
+    .timeline-slots::-webkit-scrollbar { display: none; }
+    .timeline-days button {
+      min-width: 88px;
+      min-height: 38px;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .timeline-slots {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding-bottom: 2px;
+    }
+    .timeline-slots button {
+      min-width: 84px;
+      min-height: 42px;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+      background: rgba(255,255,255,0.035);
+      color: #d3def3;
+    }
+    .timeline-slots button.is-unavailable {
+      opacity: 0.45;
+      border-style: dashed;
+      background: rgba(255,255,255,0.02);
+      color: #8293b3;
+    }
+    .timeline-slots button.active { background: rgba(59,130,246,0.95); color: white; }
+    .timeline-hidden-select { display: none; }
+    .layer-panel {
+      position: absolute;
+      z-index: 18;
+      right: calc(var(--rail-right) + var(--rail-btn-size) + 14px);
+      top: calc(var(--rail-top-focus) + (var(--rail-btn-size) * 3) + (var(--right-rail-gap) * 3));
+      width: min(280px, calc(100vw - 116px));
+      padding: 12px;
+      border-radius: 18px;
+      background: rgba(8, 17, 30, 0.82);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      display: none;
+      gap: 8px;
+    }
+    .layer-panel.visible { display: grid; }
+    .layer-panel-title { font-size: 13px; font-weight: 800; color: var(--text); }
+    .layer-panel-subtitle { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .layer-options { display: grid; gap: 6px; }
+    .layer-option {
+      width: 100%;
+      min-height: 40px;
+      justify-content: space-between;
+      padding: 0 12px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      background: rgba(255,255,255,0.035);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .layer-option.active {
+      background: rgba(37, 99, 235, 0.24);
+      border-color: rgba(96, 165, 250, 0.52);
+      color: #dbeafe;
+    }
+    .layer-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: currentColor;
+      opacity: 0.9;
+      flex: 0 0 auto;
+    }
+
     .mobile-toggle-bar {
       display: grid;
       gap: var(--right-rail-gap);
@@ -908,6 +1065,31 @@
       top: calc(var(--rail-top-focus) + env(safe-area-inset-top));
       right: var(--rail-right);
     }
+
+    #toggleCalendarBtn { display: none !important; }
+    .calendar-panel { display: none !important; }
+    @media (max-width: 900px) {
+      .timeline-bar {
+        width: min(700px, calc(100vw - 24px));
+        bottom: calc(10px + env(safe-area-inset-bottom));
+        padding: 10px;
+        border-radius: 18px;
+      }
+      .timeline-top {
+        grid-template-columns: auto minmax(120px, 1fr) auto auto;
+      }
+      .timeline-summary { display: none; }
+      .timeline-days button { min-width: 78px; }
+      .timeline-slots button { min-width: 76px; min-height: 40px; }
+      body.mobile-ui .selection-card { bottom: calc(160px + env(safe-area-inset-bottom)); }
+      .layer-panel {
+        top: auto;
+        bottom: calc(154px + env(safe-area-inset-bottom));
+        right: calc(var(--rail-right) + var(--rail-btn-size) + 10px);
+        width: min(250px, calc(100vw - 92px));
+      }
+    }
+
   </style>
 </head>
 <body>
@@ -940,6 +1122,13 @@
           <path d="M4 16h16"></path>
           <path d="M8 4v16"></path>
           <path d="M16 4v16"></path>
+        </svg>
+      </button>
+      <button id="layerModeBtn" class="grid-focus-btn" type="button" aria-label="Choisir la couche de couleur" title="Couche de couleur">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3 3.5 7.5 12 12l8.5-4.5L12 3Z"></path>
+          <path d="M3.5 12.5 12 17l8.5-4.5"></path>
+          <path d="M3.5 17.5 12 22l8.5-4.5"></path>
         </svg>
       </button>
     </div>
@@ -986,15 +1175,7 @@
         </div>
       </div>
 
-      <div class="panel-card calendar-panel">
-        <div class="date-bar">
-          <input id="dateInput" class="date-input" type="date" min="2022-01-01" />
-          <button id="todayBtn" type="button">Aujourd’hui</button>
-        </div>
-        <div id="dayButtons" class="button-row"></div>
-        <select id="slotSelect" class="slot-select" aria-label="Choisir un créneau horaire"></select>
-        <div id="slotButtons" class="button-row"></div>
-      </div>
+      <div class="panel-card calendar-panel"><div class="touch-note">La gestion du temps est déplacée dans la frise basse.</div></div>
     </div>
 
     <div class="floating-chip" id="installChip">App installable</div>
@@ -1019,6 +1200,24 @@
     </div>
 
     <div class="cell-scale-chip" id="cellScaleChip">1 cellule ≈ 5 km</div>
+    <div class="overlay timeline-bar" id="timelineBar">
+      <div class="timeline-top">
+        <button id="prevDayBtn" class="timeline-btn" type="button" aria-label="Jour précédent">◀</button>
+        <input id="dateInput" class="timeline-date-input" type="date" min="2022-01-01" />
+        <button id="todayBtn" class="timeline-pill" type="button">Aujourd’hui</button>
+        <button id="nextDayBtn" class="timeline-btn" type="button" aria-label="Jour suivant">▶</button>
+        <div class="timeline-summary" id="timelineSummary">Frise horaire sur 24 h</div>
+      </div>
+      <div id="dayButtons" class="timeline-days" aria-label="Jours disponibles"></div>
+      <select id="slotSelect" class="slot-select timeline-hidden-select" aria-label="Choisir un créneau horaire"></select>
+      <div id="slotButtons" class="timeline-slots" aria-label="Créneaux horaires"></div>
+    </div>
+
+    <div class="layer-panel" id="layerPanel" aria-live="polite">
+      <div class="layer-panel-title">Couleur de la grille</div>
+      <div class="layer-panel-subtitle">Choisis la métrique utilisée pour la teinte des cellules.</div>
+      <div class="layer-options" id="layerOptions"></div>
+    </div>
 
     <div class="selection-card" id="selectionCard" aria-live="polite">
       <div class="drag-handle" aria-hidden="true"></div>
@@ -1159,6 +1358,12 @@
     const openDetailsBtn = document.getElementById('openDetailsBtn');
     const recenterBtn = document.getElementById('recenterBtn');
     const bestCellsBtn = document.getElementById('bestCellsBtn');
+    const prevDayBtn = document.getElementById('prevDayBtn');
+    const nextDayBtn = document.getElementById('nextDayBtn');
+    const timelineSummary = document.getElementById('timelineSummary');
+    const layerModeBtn = document.getElementById('layerModeBtn');
+    const layerPanel = document.getElementById('layerPanel');
+    const layerOptions = document.getElementById('layerOptions');
 
     const modalBackdrop = document.getElementById('modalBackdrop');
     const detailsModal = document.getElementById('detailsModal');
@@ -1215,6 +1420,9 @@
     let selectedSlotKey = null;
     let selectedFeature = null;
     let selectedBaseDate = getTodayIsoDate();
+    let activeGridMetric = 'score_global';
+    const SLOT_LAYOUT = [['h00','00h–01h'],['h02','02h–03h'],['h04','04h–05h'],['h06','06h–07h'],['h08','08h–09h'],['h10','10h–11h'],['h12','12h–13h'],['h14','14h–15h'],['h16','16h–17h'],['h18','18h–19h'],['h20','20h–21h'],['h22','22h–23h']];
+    const GRID_METRIC_OPTIONS = [['score_global','Global'],['trigger_score','Déclenchement'],['structure_score','Organisation'],['chase_quality_score','Lisibilité'],['stability_score','Stabilité'],['confidence_score','Confiance']];
 
     syncDateControls();
 
@@ -1277,6 +1485,67 @@
       const g = Math.round(a.c[1] + (b.c[1] - a.c[1]) * t);
       const b2 = Math.round(a.c[2] + (b.c[2] - a.c[2]) * t);
       return `rgb(${r}, ${g}, ${b2})`;
+    }
+
+
+    function metricLabel(metricKey) {
+      return Object.fromEntries(GRID_METRIC_OPTIONS)[metricKey] || 'Global';
+    }
+
+    function getGridMetricValue(cell, metricKey = activeGridMetric) {
+      const value = Number(cell?.[metricKey]);
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    function syncTimelineSummary() {
+      if (!timelineSummary) return;
+      const currentDay = getCurrentDay();
+      const dateText = currentDay?.day_label || normalizeDateIso(selectedBaseDate).split('-').reverse().join('/');
+      timelineSummary.textContent = `${dateText} · Couche : ${metricLabel(activeGridMetric)}`;
+    }
+
+    function shiftIsoDate(isoDate, deltaDays) {
+      const [y, m, d] = normalizeDateIso(isoDate).split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      dt.setDate(dt.getDate() + deltaDays);
+      const yy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      return `${yy}-${mm}-${dd}`;
+    }
+
+    function canonicalSlotsForDay(day) {
+      const slotMap = new Map((day?.slots || []).map(slot => [slot.slot_key, slot]));
+      return SLOT_LAYOUT.map(([slot_key, slot_label]) => ({
+        slot_key,
+        slot_label,
+        slot: slotMap.get(slot_key) || null,
+        available: slotMap.has(slot_key),
+      }));
+    }
+
+    function closeLayerPanel() {
+      if (!layerPanel || !layerModeBtn) return;
+      layerPanel.classList.remove('visible');
+      layerModeBtn.classList.remove('active');
+    }
+
+    function renderLayerOptions() {
+      if (!layerOptions) return;
+      layerOptions.innerHTML = '';
+      for (const [metricKey, label] of GRID_METRIC_OPTIONS) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `layer-option${metricKey === activeGridMetric ? ' active' : ''}`;
+        btn.innerHTML = `<span>${label}</span><span class="layer-dot"></span>`;
+        btn.addEventListener('click', () => {
+          activeGridMetric = metricKey;
+          renderLayerOptions();
+          syncTimelineSummary();
+          if (payload) refreshMap();
+        });
+        layerOptions.appendChild(btn);
+      }
     }
 
     function opacityFromConfidence(confidence) {
@@ -1632,33 +1901,41 @@
     function renderDayButtons() {
       const days = getDays();
       dayButtons.innerHTML = '';
-      if (!days.length) return;
+      if (!days.length) {
+        syncTimelineSummary();
+        return;
+      }
       if (!selectedDayKey || !days.some(d => d.day_key === selectedDayKey)) selectedDayKey = days[0].day_key;
+      const currentIndex = Math.max(0, days.findIndex(d => d.day_key === selectedDayKey));
+      if (prevDayBtn) prevDayBtn.disabled = currentIndex <= 0;
+      if (nextDayBtn) nextDayBtn.disabled = currentIndex >= days.length - 1;
       for (const day of days) {
         const btn = document.createElement('button');
         btn.textContent = day.day_label;
         btn.className = day.day_key === selectedDayKey ? 'active' : '';
         btn.onclick = () => {
           selectedDayKey = day.day_key;
-          const firstSlot = getCurrentDay()?.slots?.[0];
+          const firstSlot = canonicalSlotsForDay(getCurrentDay()).find(s => s.available);
           if (firstSlot) selectedSlotKey = firstSlot.slot_key;
           closeSelection();
           closeDetails();
           renderDayButtons();
           renderSlotButtons();
-          requestAnimationFrame(alignTopPanels);
+          syncTimelineSummary();
           refreshMap();
         };
         dayButtons.appendChild(btn);
       }
+      syncTimelineSummary();
     }
 
     function renderSlotButtons() {
       const day = getCurrentDay();
       slotButtons.innerHTML = '';
-      const slots = day?.slots || [];
+      const slots = canonicalSlotsForDay(day);
       if (slotSelect) slotSelect.innerHTML = '';
-      if (!slots.length) {
+      const firstAvailable = slots.find(s => s.available) || null;
+      if (!firstAvailable) {
         if (slotSelect) {
           const opt = document.createElement('option');
           opt.value = '';
@@ -1666,34 +1943,39 @@
           slotSelect.appendChild(opt);
           slotSelect.disabled = true;
         }
+        syncTimelineSummary();
         return;
       }
-      if (!selectedSlotKey || !slots.some(s => s.slot_key === selectedSlotKey)) selectedSlotKey = slots[0].slot_key;
+      if (!selectedSlotKey || !slots.some(s => s.available && s.slot_key === selectedSlotKey)) selectedSlotKey = firstAvailable.slot_key;
       if (slotSelect) {
         slotSelect.disabled = false;
-        for (const slot of slots) {
+        for (const entry of slots) {
           const opt = document.createElement('option');
-          opt.value = slot.slot_key;
-          opt.textContent = slot.slot_label;
-          opt.selected = slot.slot_key === selectedSlotKey;
+          opt.value = entry.slot_key;
+          opt.textContent = entry.available ? entry.slot_label : `${entry.slot_label} · indisponible`;
+          opt.disabled = !entry.available;
+          opt.selected = entry.slot_key === selectedSlotKey;
           slotSelect.appendChild(opt);
         }
         slotSelect.value = selectedSlotKey;
       }
-      for (const slot of slots) {
+      for (const entry of slots) {
         const btn = document.createElement('button');
-        btn.textContent = slot.slot_label;
-        btn.className = slot.slot_key === selectedSlotKey ? 'active' : '';
+        btn.textContent = entry.slot_label;
+        btn.className = `${entry.slot_key === selectedSlotKey ? 'active ' : ''}${entry.available ? '' : 'is-unavailable'}`.trim();
+        btn.disabled = !entry.available;
         btn.onclick = () => {
-          selectedSlotKey = slot.slot_key;
+          if (!entry.available) return;
+          selectedSlotKey = entry.slot_key;
           closeSelection();
           closeDetails();
           renderSlotButtons();
-          requestAnimationFrame(alignTopPanels);
+          syncTimelineSummary();
           refreshMap();
         };
         slotButtons.appendChild(btn);
       }
+      syncTimelineSummary();
     }
 
     function kmToDegLat(km) {
@@ -1842,7 +2124,7 @@
       return {
         type: 'Feature',
         geometry: { type: 'Polygon', coordinates: [[[lon - w, lat - h],[lon + w, lat - h],[lon + w, lat + h],[lon - w, lat + h],[lon - w, lat - h]]] },
-        properties: { ...cell, is_best: isBest ? 1 : 0, fill_color: colorFromScore(cell.score_global), fill_opacity: fillOpacity },
+        properties: { ...cell, is_best: isBest ? 1 : 0, fill_color: colorFromScore(getGridMetricValue(cell)), fill_opacity: fillOpacity },
       };
     }
 
@@ -2050,6 +2332,8 @@
       const cells = slot?.cells || [];
       if (!map.isStyleLoaded() || !map.getSource('grid') || !cells.length) {
         updateBestCellsButton();
+    renderLayerOptions();
+    syncTimelineSummary();
     updateGridLinesButton();
         return;
       }
@@ -2057,6 +2341,8 @@
       applyGridLinesVisibility();
       updateHighlight();
       updateBestCellsButton();
+    renderLayerOptions();
+    syncTimelineSummary();
     }
 
     function toggleBestCellsMode() {
@@ -2078,6 +2364,7 @@
       const cells = slot?.cells || [];
       lastGridTemplate = deriveGridTemplate(cells) || lastGridTemplate;
       refreshStats(cells, slot);
+      syncTimelineSummary();
       if (!map.isStyleLoaded()) return;
       clearGridRevealFailsafe();
       removeLayers(true);
@@ -2771,6 +3058,16 @@
     drawerBackdrop.addEventListener('click', closeInfoDrawer);
     locateBtn.addEventListener('click', locateUser);
     refreshBtn.addEventListener('click', () => refreshCurrentData(true));
+    if (prevDayBtn) prevDayBtn.addEventListener('click', () => applySelectedDate(shiftIsoDate(selectedBaseDate, -1), { force: true, loadingMessage: 'Chargement du jour précédent…' }));
+    if (nextDayBtn) nextDayBtn.addEventListener('click', () => applySelectedDate(shiftIsoDate(selectedBaseDate, 1), { force: true, loadingMessage: 'Chargement du jour suivant…' }));
+    if (layerModeBtn) layerModeBtn.addEventListener('click', () => {
+      const visible = layerPanel?.classList.contains('visible');
+      if (visible) closeLayerPanel();
+      else {
+        layerPanel?.classList.add('visible');
+        layerModeBtn.classList.add('active');
+      }
+    });
     bestCellsBtn.addEventListener('click', toggleBestCellsMode);
     gridLinesBtn.addEventListener('click', toggleGridLines);
     aroundMeBtn.addEventListener('click', locateUser);
@@ -2789,7 +3086,7 @@
       slotSelect.addEventListener('change', (event) => {
         const nextSlotKey = String(event.target?.value || '');
         const currentDay = getCurrentDay();
-        const nextSlot = currentDay?.slots?.find(s => s.slot_key === nextSlotKey);
+        const nextSlot = canonicalSlotsForDay(currentDay).find(s => s.slot_key === nextSlotKey && s.available);
         if (!nextSlot) return;
         selectedSlotKey = nextSlot.slot_key;
         closeSelection();
@@ -2808,7 +3105,14 @@
       });
     });
     document.addEventListener('visibilitychange', maybeRefreshOnReturn);
+    document.addEventListener('click', (event) => {
+      if (!layerPanel || !layerModeBtn) return;
+      if (layerPanel.contains(event.target) || layerModeBtn.contains(event.target)) return;
+      closeLayerPanel();
+    });
     updateBestCellsButton();
+    renderLayerOptions();
+    syncTimelineSummary();
 
     document.querySelectorAll('[data-metric]').forEach(btn => {
       btn.addEventListener('click', () => {
