@@ -226,24 +226,20 @@ def get_json(url: str, retries: int = 4, timeout: int = 60) -> dict:
     raise RuntimeError(f"Échec après {retries} tentatives: {last_error}")
 
 
-def build_api_url(points: list[Point], target_date: Date | None = None) -> str:
-    api_base, date_params = api_context(target_date)
+def build_api_url(points: list[Point]) -> str:
     latitudes = ",".join(str(p.lat) for p in points)
     longitudes = ",".join(str(p.lon) for p in points)
     params = {
         "latitude": latitudes,
         "longitude": longitudes,
         "hourly": ",".join(HOURLY_VARS),
+        "models": MODEL,
+        "forecast_hours": str(FORECAST_HOURS),
         "timezone": TIMEZONE,
         "wind_speed_unit": "ms",
         "format": "json",
-        **date_params,
     }
-    # Le paramètre models n'est disponible que sur l'API de prévision temps réel.
-    if api_base == FORECAST_API_BASE:
-        params["models"] = MODEL
-        params["forecast_hours"] = str(FORECAST_HOURS)
-    return api_base + "?" + urllib.parse.urlencode(params)
+    return API_BASE + "?" + urllib.parse.urlencode(params)
 
 
 def location_structures(payload: dict) -> list[dict]:

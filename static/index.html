@@ -2776,6 +2776,29 @@
     aroundMeBtn.addEventListener('click', locateUser);
     searchCityBtn.addEventListener('click', handleCitySearch);
     cityInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') handleCitySearch(); });
+    if (todayBtn) {
+      todayBtn.addEventListener('click', () => applySelectedDate(getTodayIsoDate(), { force: true, loadingMessage: 'Chargement de la date du jour…' }));
+    }
+    if (dateInput) {
+      dateInput.addEventListener('change', (event) => {
+        const nextDate = normalizeDateIso(event.target?.value);
+        applySelectedDate(nextDate, { force: true, loadingMessage: 'Chargement de la date…' });
+      });
+    }
+    if (slotSelect) {
+      slotSelect.addEventListener('change', (event) => {
+        const nextSlotKey = String(event.target?.value || '');
+        const currentDay = getCurrentDay();
+        const nextSlot = currentDay?.slots?.find(s => s.slot_key === nextSlotKey);
+        if (!nextSlot) return;
+        selectedSlotKey = nextSlot.slot_key;
+        closeSelection();
+        closeDetails();
+        renderSlotButtons();
+        requestAnimationFrame(alignTopPanels);
+        refreshMap();
+      });
+    }
     installChip.addEventListener('click', installApp);
     window.addEventListener('resize', () => {
       if (!isMobileLayout()) closeTopPanels();
