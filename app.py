@@ -19,7 +19,7 @@ STATIC_DIR = BASE_DIR / "static"
 CACHE_TTL_SECONDS = 15 * 60
 STALE_TTL_SECONDS = 2 * 60 * 60
 
-app = FastAPI(title="Storm Chase", version="1.4.3")
+app = FastAPI(title="Storm Chase", version="1.4.65")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

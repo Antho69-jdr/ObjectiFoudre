@@ -28,7 +28,9 @@ HALF_BOX_KM_LAT = GRID_SIDE_KM / 2
 HALF_BOX_KM_LON = GRID_SIDE_KM / 2
 CELL_SIZE_KM = 5.0
 TARGET_BATCHES = 5
-MODEL = "arome_france"
+FORECAST_MODEL_LABEL = "meteofrance_best_match"
+HISTORICAL_MODEL = "arome_france"
+FORECAST_MAX_DAYS = 4
 FORECAST_HOURS = 96
 HISTORICAL_MIN_DATE = Date(2022, 1, 1)
 
@@ -82,7 +84,7 @@ def batch_size_for_points(points: list[Point]) -> int:
     return max(1, math.ceil(len(points) / TARGET_BATCHES))
 
 
-def api_context(target_date: Date | None) -> tuple[str, dict[str, str]]:
+def api_context(target_date: Date | None) -> tuple[str, dict[str, str], str]:
     today = local_today()
     if target_date is not None and target_date < HISTORICAL_MIN_DATE:
         raise ValueError(f"Date trop ancienne pour l'archive de prévisions Open-Meteo : {target_date.isoformat()} < {HISTORICAL_MIN_DATE.isoformat()}")
@@ -91,19 +93,19 @@ def api_context(target_date: Date | None) -> tuple[str, dict[str, str]]:
         return HISTORICAL_API_BASE, {
             "start_date": target_date.isoformat(),
             "end_date": target_date.isoformat(),
-        }
+        }, "historical"
 
     if target_date is not None and target_date >= today:
-        forecast_days = max(1, (target_date - today).days + 1)
+        forecast_days = max(1, min(FORECAST_MAX_DAYS, (target_date - today).days + 1))
         return FORECAST_API_BASE, {
             "forecast_days": str(forecast_days),
             "past_days": "0",
-        }
+        }, "forecast"
 
     return FORECAST_API_BASE, {
-        "forecast_days": str(max(4, math.ceil(FORECAST_HOURS / 24))),
+        "forecast_days": str(FORECAST_MAX_DAYS),
         "past_days": "0",
-    }
+    }, "forecast"
 
 
 @dataclass
@@ -229,7 +231,7 @@ def get_json(url: str, retries: int = 4, timeout: int = 60) -> dict:
 def build_api_url(points: list[Point], target_date: Date | None = None) -> str:
     latitudes = ",".join(str(p.lat) for p in points)
     longitudes = ",".join(str(p.lon) for p in points)
-    api_base, date_params = api_context(target_date)
+    api_base, date_params, api_mode = api_context(target_date)
     params = {
         "latitude": latitudes,
         "longitude": longitudes,
@@ -239,8 +241,12 @@ def build_api_url(points: list[Point], target_date: Date | None = None) -> str:
         "format": "json",
         **date_params,
     }
-    if api_base == FORECAST_API_BASE:
-        params["models"] = MODEL
+    if api_mode == "historical":
+        params["models"] = HISTORICAL_MODEL
+    elif api_mode == "forecast":
+        # Forecast was intermittently failing with the hard-pinned AROME model.
+        # Let Open-Meteo use its default Météo-France best match, which seamlessly
+        # combines AROME and ARPEGE and supports the full 4-day forecast window.
         params["forecast_hours"] = str(FORECAST_HOURS)
     return api_base + "?" + urllib.parse.urlencode(params)
 
@@ -717,7 +723,7 @@ def fetch_model(points: list[Point], target_date: Date | None = None) -> list[Ou
     rows: list[OutputRow] = []
     day_mode = target_date.isoformat() if target_date is not None else "jours glissants"
     for batch_index, batch in enumerate(batches, start=1):
-        print(f"{MODEL} | lot {batch_index}/{total_batches} | {len(batch)} points | {day_mode}")
+        print(f"{FORECAST_MODEL_LABEL if (target_date is None or target_date >= local_today()) else HISTORICAL_MODEL} | lot {batch_index}/{total_batches} | {len(batch)} points | {day_mode}")
         url = build_api_url(batch, target_date=target_date)
         payload = get_json(url)
         structures = location_structures(payload)
@@ -777,7 +783,7 @@ def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float
     return {
         "meta": {
             "generated_at": generated_at,
-            "model": MODEL,
+            "model": FORECAST_MODEL_LABEL if (target_date is None or target_date >= local_today()) else HISTORICAL_MODEL,
             "center": {"lat": center_lat, "lon": center_lon, "label": center_label},
             "grid": {
                 "half_box_km_lat": HALF_BOX_KM_LAT,
@@ -821,7 +827,7 @@ def main() -> None:
     points = build_grid()
     print(f"Grille construite autour de {DEFAULT_CENTER_LABEL} : {len(points)} points")
     rows = fetch_model(points)
-    print(f"{MODEL} : {len(rows)} lignes générées")
+    print(f"{FORECAST_MODEL_LABEL} : {len(rows)} lignes générées")
     payload = group_for_output(rows, DEFAULT_CENTER_LAT, DEFAULT_CENTER_LON, DEFAULT_CENTER_LABEL)
     write_json_payload(payload, OUTPUT_JSON)
     print_summary(rows)
