@@ -880,12 +880,13 @@
 }
 
 
-/* v0.4.52 full-width strips with protected right rail */
+
+
+/* v0.4.54 bottom strips and right rail */
 :root {
   --meta-strip-h: 34px;
   --timeline-strip-bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom));
-  --timeline-rail-reserve: calc(var(--right-rail-width) + 26px);
-  --timeline-strip-h: 102px;
+  --timeline-strip-h: 104px;
 }
 
 .meta-stack {
@@ -895,13 +896,13 @@
   bottom: 0 !important;
   z-index: 40 !important;
   display: grid !important;
-  grid-template-columns: auto minmax(0,1.4fr) minmax(0,1.5fr) auto !important;
+  grid-template-columns: auto minmax(0,1.4fr) minmax(0,1.6fr) auto !important;
   gap: 0 !important;
   align-items: center !important;
   width: 100vw !important;
   max-width: none !important;
   padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) !important;
-  background: rgba(7,17,31,0.92) !important;
+  background: rgba(7,17,31,0.94) !important;
   border: 0 !important;
   border-top: 1px solid rgba(255,255,255,0.08) !important;
   border-radius: 0 !important;
@@ -918,32 +919,30 @@
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
-  outline: 0 !important;
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   width: 100% !important;
 }
 .meta-stack .meta-corner:last-child { border-right: 0 !important; text-align: right !important; }
-.meta-stack .meta-version { width: auto !important; }
 
 .timeline-dock {
   position: fixed !important;
   left: 0 !important;
   right: 0 !important;
-  bottom: var(--timeline-strip-bottom) !important;
+  bottom: calc(var(--timeline-strip-bottom) - 1px) !important;
   transform: none !important;
   width: 100vw !important;
   max-width: none !important;
   margin: 0 !important;
-  padding: 10px calc(max(12px, env(safe-area-inset-right)) + var(--timeline-rail-reserve)) 10px max(12px, env(safe-area-inset-left)) !important;
+  padding: 10px max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left)) !important;
   border-left: 0 !important;
   border-right: 0 !important;
   border-bottom: 0 !important;
   border-top: 1px solid rgba(255,255,255,0.08) !important;
   border-radius: 0 !important;
-  background: rgba(8,17,30,0.86) !important;
-  box-shadow: 0 -16px 36px rgba(0,0,0,0.18) !important;
+  background: rgba(8,17,30,0.88) !important;
+  box-shadow: 0 -12px 28px rgba(0,0,0,0.16) !important;
   z-index: 18 !important;
 }
 .timeline-dock .timeline-content,
@@ -952,7 +951,10 @@
   max-width: 100% !important;
 }
 .timeline-dock .timeline-content {
-  padding-right: 0 !important;
+  justify-items: center !important;
+}
+.timeline-dock .timeline-bar {
+  margin: 0 auto !important;
 }
 
 .right-rail-scroll {
@@ -968,7 +970,7 @@
   width: var(--right-rail-width) !important;
   pointer-events: none !important;
   overflow-y: auto !important;
-  overflow-x: hidden !important;
+  overflow-x: visible !important;
   scrollbar-width: none !important;
 }
 .right-rail-scroll::-webkit-scrollbar { display: none !important; }
@@ -999,26 +1001,21 @@
   :root {
     --meta-strip-h: 32px;
     --timeline-strip-bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom));
-    --timeline-rail-reserve: calc(var(--right-rail-width) + 18px);
-    --timeline-strip-h: 116px;
+    --timeline-strip-h: 118px;
   }
   .meta-stack {
-    grid-template-columns: auto minmax(0,1fr) minmax(0,1.2fr) auto !important;
+    grid-template-columns: auto minmax(0,1fr) minmax(0,1.1fr) auto !important;
   }
   .meta-stack .meta-corner { padding: 6px 8px !important; font-size: 10px !important; }
-  .timeline-dock {
-    padding-top: 12px !important;
-    padding-right: calc(8px + var(--timeline-rail-reserve)) !important;
-    padding-left: 8px !important;
-  }
+  .timeline-dock { padding-left: 8px !important; padding-right: 8px !important; }
 }
 
 @media (max-width: 900px) and (orientation: landscape) {
-  :root { --timeline-strip-h: 92px; }
+  :root { --timeline-strip-h: 94px; }
 }
 
 @media (max-width: 640px) {
   .meta-stack {
-    grid-template-columns: auto minmax(0,1fr) minmax(0,1.2fr) auto !important;
+    grid-template-columns: auto minmax(0,1fr) minmax(0,1.05fr) auto !important;
   }
 }

@@ -55,6 +55,8 @@
       display: grid;
       gap: 10px;
       min-width: 0;
+      justify-items: center;
+      align-items: center;
     }
     .timeline-toggle-btn {
       display: none;
@@ -86,9 +88,13 @@
     .timeline-dock .button-row[hidden] { display: none !important; }
     .timeline-bar {
       display: grid;
-      grid-template-columns: auto auto minmax(160px, 220px) auto auto;
+      grid-template-columns: auto auto minmax(180px, 220px) auto auto;
       gap: 8px;
       align-items: center;
+      justify-content: center;
+      margin: 0 auto;
+      width: max-content;
+      max-width: 100%;
     }
     .timeline-nav-btn {
       min-width: 40px;
@@ -135,6 +141,9 @@
       user-select: none;
       -webkit-overflow-scrolling: touch;
       scroll-snap-type: x proximity;
+      justify-content: center;
+      margin: 0 auto;
+      width: min(100%, 1100px);
     }
     .timeline-slot-strip.dragging { cursor: grabbing; }
     .timeline-slot-strip::-webkit-scrollbar { height: 8px; }
@@ -157,9 +166,9 @@
     .layer-panel {
       display: none;
       gap: 8px;
-      position: absolute;
-      right: calc(100% + 14px);
-      top: 0;
+      position: fixed;
+      right: calc(var(--right-rail-width) + 22px);
+      top: 132px;
       width: 220px;
       padding: 12px;
       background: var(--panel-2);
@@ -168,6 +177,7 @@
       backdrop-filter: var(--glass-blur);
       -webkit-backdrop-filter: var(--glass-blur);
       box-shadow: var(--shadow);
+      z-index: 42;
     }
     .layer-panel.visible { display: grid; }
     .layer-option {

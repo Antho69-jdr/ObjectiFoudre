@@ -18,10 +18,25 @@
 
     function setupLayerModeControls() {
       if (!layerModeBtn || !layerPanel) return;
+      const positionLayerPanel = () => {
+        const rect = layerModeBtn.getBoundingClientRect();
+        const panelWidth = layerPanel.offsetWidth || 220;
+        const gap = 12;
+        const top = Math.max(12, Math.min(rect.top + (rect.height / 2) - ((layerPanel.offsetHeight || 260) / 2), window.innerHeight - (layerPanel.offsetHeight || 260) - 12));
+        const left = Math.max(12, rect.left - panelWidth - gap);
+        layerPanel.style.top = `${Math.round(top)}px`;
+        layerPanel.style.left = `${Math.round(left)}px`;
+        layerPanel.style.right = 'auto';
+      };
       layerModeBtn.addEventListener('click', (event) => {
         event.stopPropagation();
-        layerPanel.classList.toggle('visible');
-        layerPanel.setAttribute('aria-hidden', layerPanel.classList.contains('visible') ? 'false' : 'true');
+        const nextVisible = !layerPanel.classList.contains('visible');
+        layerPanel.classList.toggle('visible', nextVisible);
+        layerPanel.setAttribute('aria-hidden', nextVisible ? 'false' : 'true');
+        if (nextVisible) requestAnimationFrame(positionLayerPanel);
+      });
+      window.addEventListener('resize', () => {
+        if (layerPanel.classList.contains('visible')) positionLayerPanel();
       });
       layerPanel.addEventListener('click', (event) => event.stopPropagation());
       document.querySelectorAll('.layer-option').forEach((btn) => {
