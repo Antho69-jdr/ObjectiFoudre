@@ -1143,7 +1143,7 @@
 }
 
 
-/* v0.4.59 timeline compacting + floating arrow toggle */
+/* v0.4.59 timeline compacting */
 :root {
   --timeline-height-px: 92px;
 }
@@ -1198,46 +1198,6 @@
   padding: 5px 9px !important;
   font-size: 11px !important;
   border-radius: 10px !important;
-}
-
-.timeline-toggle-btn {
-  position: absolute !important;
-  top: -12px !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  width: auto !important;
-  min-width: 0 !important;
-  height: auto !important;
-  min-height: 0 !important;
-  padding: 4px 8px !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  z-index: 60 !important;
-  line-height: 1 !important;
-}
-
-.timeline-toggle-btn::before {
-  content: '';
-  position: absolute;
-  inset: -6px -10px;
-}
-
-.timeline-toggle-icon {
-  display: inline-block !important;
-  font-size: 18px !important;
-  font-weight: 900 !important;
-  line-height: 1 !important;
-  color: rgba(255,255,255,0.96) !important;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.45) !important;
-  pointer-events: none !important;
-}
-
-.timeline-dock.collapsed {
-  transform: translateY(calc(100% - 18px)) !important;
 }
 
 @media (max-width: 900px) {
@@ -1318,15 +1278,61 @@
 }
 
 
-/* v0.4.61 timeline toggle lift + cleaner collapse + stronger layer panel */
+/* v0.4.62 timeline toggle as rounded grab bar that reveals arrow on hover/collapsed */
 .timeline-toggle-btn {
-  top: -24px !important;
+  top: -26px !important;
+  width: 72px !important;
+  height: 22px !important;
+  min-width: 72px !important;
+  min-height: 22px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  z-index: 130 !important;
+  overflow: visible !important;
 }
 .timeline-toggle-btn::before {
-  inset: -10px -14px !important;
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40px;
+  height: 8px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: rgba(255,255,255,0.92);
+  box-shadow: 0 1px 10px rgba(0,0,0,0.28);
+  transition: opacity .18s ease, transform .18s ease, width .18s ease, background .18s ease;
+  pointer-events: none;
 }
 .timeline-toggle-icon {
+  display: inline-block !important;
   font-size: 21px !important;
+  line-height: 1 !important;
+  color: rgba(255,255,255,0.98) !important;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.42) !important;
+  opacity: 0 !important;
+  transform: translateY(0) scale(0.92) !important;
+  transition: opacity .18s ease, transform .18s ease !important;
+  pointer-events: none !important;
+}
+.timeline-toggle-btn:hover::before,
+.timeline-toggle-btn:focus-visible::before,
+.timeline-dock.collapsed .timeline-toggle-btn::before {
+  opacity: 0.18 !important;
+  width: 30px !important;
+}
+.timeline-toggle-btn:hover .timeline-toggle-icon,
+.timeline-toggle-btn:focus-visible .timeline-toggle-icon,
+.timeline-dock.collapsed .timeline-toggle-icon {
+  opacity: 1 !important;
+  transform: translateY(0) scale(1) !important;
+}
+.timeline-toggle-btn:focus-visible {
+  outline: none !important;
 }
 .timeline-dock.collapsed {
   transform: translateY(calc(100% + 6px)) !important;
