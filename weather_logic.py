@@ -28,10 +28,10 @@ HALF_BOX_KM_LAT = GRID_SIDE_KM / 2
 HALF_BOX_KM_LON = GRID_SIDE_KM / 2
 CELL_SIZE_KM = 5.0
 TARGET_BATCHES = 5
-FORECAST_MODEL_LABEL = "meteofrance_best_match"
+FORECAST_MODEL_LABEL = "arome_france"
 HISTORICAL_MODEL = "arome_france"
-FORECAST_MAX_DAYS = 4
-FORECAST_HOURS = 96
+FORECAST_MAX_DAYS = 2
+FORECAST_HOURS = 48
 HISTORICAL_MIN_DATE = Date(2022, 1, 1)
 
 HOURLY_VARS = [
@@ -244,9 +244,10 @@ def build_api_url(points: list[Point], target_date: Date | None = None) -> str:
     if api_mode == "historical":
         params["models"] = HISTORICAL_MODEL
     elif api_mode == "forecast":
-        # Forecast was intermittently failing with the hard-pinned AROME model.
-        # Let Open-Meteo use its default Météo-France best match, which seamlessly
-        # combines AROME and ARPEGE and supports the full 4-day forecast window.
+        # Forecast is intentionally pinned to AROME France and limited to 2 days.
+        # This keeps the model consistent with the user workflow and stays within
+        # the horizon reliably supported by this model.
+        params["models"] = FORECAST_MODEL_LABEL
         params["forecast_hours"] = str(FORECAST_HOURS)
     return api_base + "?" + urllib.parse.urlencode(params)
 
