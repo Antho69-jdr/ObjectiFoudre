@@ -661,3 +661,220 @@
     grid-template-columns: 40px minmax(148px, 220px) 40px auto !important;
   }
 }
+
+
+/* v0.4.5 decisive mobile layout overrides */
+@media (max-width: 900px) {
+  :root {
+    --mobile-meta-h: 34px;
+  }
+
+  .meta-stack {
+    position: fixed !important;
+    left: 6px !important;
+    right: 6px !important;
+    bottom: 4px !important;
+    z-index: 40 !important;
+    display: grid !important;
+    grid-template-columns: minmax(70px,auto) minmax(0,1fr) minmax(0,1.2fr) !important;
+    gap: 6px !important;
+    align-items: center !important;
+    max-width: none !important;
+    padding: 4px 6px calc(4px + env(safe-area-inset-bottom)) !important;
+    background: rgba(7, 17, 31, 0.82) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 12px !important;
+    backdrop-filter: blur(14px) saturate(1.05) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(1.05) !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+  }
+
+  .meta-corner {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+    line-height: 1.15 !important;
+    border-radius: 9px !important;
+    background: rgba(11, 20, 34, 0.78) !important;
+    white-space: nowrap !important;
+  }
+
+  .right-rail-scroll {
+    position: fixed !important;
+    top: calc(8px + env(safe-area-inset-top)) !important;
+    right: 10px !important;
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 124px) !important;
+    z-index: 36 !important;
+    width: 52px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    pointer-events: none !important;
+    scrollbar-width: none !important;
+  }
+  .right-rail-scroll::-webkit-scrollbar { display: none !important; }
+  .right-rail-scroll > * {
+    position: static !important;
+    inset: auto !important;
+    width: 46px !important;
+    margin: 0 !important;
+    flex: 0 0 auto !important;
+    pointer-events: auto !important;
+  }
+
+  .search-dock {
+    order: -3 !important;
+    position: static !important;
+    inset: auto !important;
+    width: 46px !important;
+    display: block !important;
+    pointer-events: auto !important;
+  }
+  .mobile-toggle-bar {
+    display: block !important;
+    width: 46px !important;
+    margin: 0 !important;
+  }
+  .search-dock .panel-card {
+    position: fixed !important;
+    top: calc(8px + env(safe-area-inset-top)) !important;
+    right: 64px !important;
+    width: min(320px, calc(100vw - 86px)) !important;
+    margin: 0 !important;
+  }
+
+  .grid-focus-corner {
+    order: -2 !important;
+    position: static !important;
+    inset: auto !important;
+    width: 46px !important;
+    display: grid !important;
+    gap: 8px !important;
+    justify-items: stretch !important;
+    pointer-events: auto !important;
+  }
+
+  .fab-stack {
+    order: -1 !important;
+    position: static !important;
+    inset: auto !important;
+    width: 46px !important;
+    display: grid !important;
+    gap: 8px !important;
+    justify-items: stretch !important;
+    pointer-events: auto !important;
+  }
+
+  .timeline-dock {
+    position: fixed !important;
+    left: 6px !important;
+    right: 6px !important;
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 8px) !important;
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
+    z-index: 35 !important;
+    padding: 12px 10px 10px !important;
+    border-radius: 18px !important;
+    display: grid !important;
+    gap: 8px !important;
+    transform: none !important;
+  }
+
+  .timeline-content {
+    display: grid !important;
+    gap: 8px !important;
+    margin-top: 8px !important;
+  }
+
+  .timeline-bar {
+    display: grid !important;
+    grid-template-columns: 40px minmax(0,1fr) 40px auto !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+
+  #todayBtn {
+    min-width: 90px !important;
+    min-height: 38px !important;
+    height: 38px !important;
+    padding: 0 12px !important;
+    border-radius: 12px !important;
+    font-size: 12px !important;
+  }
+
+  .timeline-slot-strip {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding: 2px 0 4px !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+
+  .timeline-slot-strip .slot-pill {
+    min-width: 82px !important;
+    min-height: 38px !important;
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+  }
+
+  .selection-card {
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 132px) !important;
+  }
+
+  .cell-scale-chip {
+    right: 8px !important;
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 132px) !important;
+    max-width: 120px !important;
+    font-size: 11px !important;
+    padding: 8px 10px !important;
+  }
+}
+
+@media (max-width: 640px) and (orientation: portrait) {
+  .right-rail-scroll {
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 136px) !important;
+  }
+
+  .timeline-bar {
+    grid-template-columns: 36px minmax(0,1fr) 36px auto !important;
+    gap: 6px !important;
+  }
+
+  .timeline-nav-btn {
+    min-width: 36px !important;
+    width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+  }
+
+  #todayBtn {
+    min-width: 82px !important;
+    padding: 0 10px !important;
+  }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .right-rail-scroll {
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 96px) !important;
+  }
+
+  .timeline-dock {
+    left: 6px !important;
+    right: 68px !important;
+  }
+
+  .timeline-bar {
+    grid-template-columns: 40px minmax(148px, 220px) 40px auto !important;
+  }
+}
