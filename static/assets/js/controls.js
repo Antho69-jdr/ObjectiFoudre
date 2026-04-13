@@ -83,6 +83,34 @@
       window.addEventListener('pointercancel', stopDrag);
     }
 
+
+    function loadTimelineCollapsedPreference() {
+      try {
+        return localStorage.getItem('storm_timeline_collapsed') === '1';
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function applyTimelineCollapsedState(collapsed) {
+      if (!timelineDock) return;
+      timelineDock.classList.toggle('collapsed', !!collapsed);
+      if (timelineToggleBtn) timelineToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      try {
+        localStorage.setItem('storm_timeline_collapsed', collapsed ? '1' : '0');
+      } catch (_) {}
+    }
+
+    function setupTimelineToggle() {
+      if (!timelineDock || !timelineToggleBtn) return;
+      applyTimelineCollapsedState(loadTimelineCollapsedPreference());
+      timelineToggleBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        applyTimelineCollapsedState(!timelineDock.classList.contains('collapsed'));
+      });
+    }
+
     function setupMetricInfoTriggers() {
       document.querySelectorAll('[data-metric]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -151,6 +179,7 @@
       setupLayerModeControls();
       setupSlotButtonsDrag();
       setupMetricInfoTriggers();
+      setupTimelineToggle();
 
       installChip.addEventListener('click', installApp);
     }

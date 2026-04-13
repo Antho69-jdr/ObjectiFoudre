@@ -27,6 +27,7 @@
     </div>
     <div id="map"></div>
 
+    <div class="right-rail-scroll" id="rightRailScroll">
     <div class="grid-focus-corner">
       <button id="bestCellsBtn" class="grid-focus-btn" type="button" aria-label="Mettre en valeur les meilleures cellules" title="Mettre en valeur les meilleures cellules">
         <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -99,14 +100,19 @@
     </div>
 
     <div class="timeline-dock" id="timelineDock">
-      <div class="timeline-bar">
-        <button id="prevDayBtn" class="timeline-nav-btn" type="button" aria-label="Jour précédent" title="Jour précédent">←</button>
-        <input id="dateInput" class="date-input timeline-date-input" type="date" min="2022-01-01" />
-        <button id="nextDayBtn" class="timeline-nav-btn" type="button" aria-label="Jour suivant" title="Jour suivant">→</button>
-        <button id="todayBtn" class="timeline-today-btn" type="button">Aujourd’hui</button>
+      <button id="timelineToggleBtn" class="timeline-toggle-btn" type="button" aria-label="Réduire ou afficher la frise" title="Afficher ou réduire la frise">
+        <span class="timeline-toggle-icon" aria-hidden="true">⌄</span>
+      </button>
+      <div class="timeline-content">
+        <div class="timeline-bar">
+          <button id="prevDayBtn" class="timeline-nav-btn" type="button" aria-label="Jour précédent" title="Jour précédent">←</button>
+          <input id="dateInput" class="date-input timeline-date-input" type="date" min="2022-01-01" />
+          <button id="nextDayBtn" class="timeline-nav-btn" type="button" aria-label="Jour suivant" title="Jour suivant">→</button>
+          <button id="todayBtn" class="timeline-today-btn" type="button">Aujourd’hui</button>
+        </div>
+        <div id="dayButtons" class="button-row" hidden></div>
+        <div id="slotButtons" class="timeline-slot-strip"></div>
       </div>
-      <div id="dayButtons" class="button-row" hidden></div>
-      <div id="slotButtons" class="timeline-slot-strip"></div>
     </div>
 
     <div class="floating-chip" id="installChip">App installable</div>
@@ -128,6 +134,7 @@
         </svg>
       </button>
       
+    </div>
     </div>
 
     <div class="cell-scale-chip" id="cellScaleChip">1 cellule ≈ 5 km</div>
@@ -191,7 +198,7 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge">Version : v0.4.1</div><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge">Version : v0.4.2</div><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">

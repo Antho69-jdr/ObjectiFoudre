@@ -278,3 +278,174 @@
         bottom: calc(150px + env(safe-area-inset-bottom));
       }
     }
+
+
+    @media (max-width: 900px) {
+      body.mobile-ui {
+        --mobile-meta-h: 28px;
+      }
+      body.mobile-ui .meta-stack {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 24;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        max-width: none;
+        padding: 4px 6px calc(4px + env(safe-area-inset-bottom));
+        background: rgba(8, 17, 30, 0.68);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      body.mobile-ui .meta-stack::-webkit-scrollbar { display: none; }
+      body.mobile-ui .meta-corner {
+        flex: 0 0 auto;
+        padding: 4px 8px;
+        font-size: 10px;
+        line-height: 1.1;
+        border-radius: 10px;
+        white-space: nowrap;
+        background: rgba(9, 18, 31, 0.52);
+      }
+      body.mobile-ui .right-rail-scroll {
+        position: fixed;
+        top: max(10px, env(safe-area-inset-top));
+        right: var(--rail-right);
+        bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 8px);
+        z-index: 22;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-items: flex-end;
+        overflow-y: auto;
+        overflow-x: visible;
+        padding-right: 0;
+        scrollbar-width: none;
+        pointer-events: none;
+      }
+      body.mobile-ui .right-rail-scroll::-webkit-scrollbar { display: none; }
+      body.mobile-ui .right-rail-scroll > * {
+        position: relative !important;
+        top: auto !important;
+        right: auto !important;
+        left: auto !important;
+        bottom: auto !important;
+        margin: 0;
+      }
+      body.mobile-ui .search-dock,
+      body.mobile-ui .grid-focus-corner,
+      body.mobile-ui .fab-stack {
+        width: var(--right-rail-width);
+      }
+      body.mobile-ui .grid-focus-corner,
+      body.mobile-ui .fab-stack,
+      body.mobile-ui .mobile-toggle-bar {
+        display: grid;
+        gap: 10px;
+      }
+      body.mobile-ui .timeline-dock {
+        left: 0;
+        right: 0;
+        width: auto;
+        max-width: none;
+        bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 8px);
+        transform: none;
+        margin: 0 8px;
+        padding: 10px 10px 8px;
+        border-radius: 18px;
+      }
+      body.mobile-ui .timeline-toggle-btn {
+        display: inline-grid;
+      }
+      body.mobile-ui .timeline-content {
+        margin-top: 16px;
+      }
+      body.mobile-ui .timeline-dock.collapsed {
+        transform: translateY(calc(100% - 24px));
+      }
+      body.mobile-ui .timeline-dock.collapsed .timeline-content {
+        opacity: 0;
+        pointer-events: none;
+      }
+      body.mobile-ui .selection-card {
+        bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 124px);
+      }
+      body.mobile-ui .cell-scale-chip {
+        bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 110px);
+      }
+    }
+
+    @media (max-width: 640px) {
+      body.mobile-ui .timeline-dock {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 82px;
+        grid-template-areas: "bar slots";
+        gap: 8px;
+        margin: 0 8px;
+      }
+      body.mobile-ui .timeline-bar {
+        grid-area: bar;
+        grid-template-columns: 40px minmax(0, 1fr) 40px;
+        grid-template-areas:
+          "prev date next"
+          "today today today";
+        gap: 6px;
+      }
+      body.mobile-ui #todayBtn {
+        grid-area: today;
+        justify-self: stretch;
+        width: 100%;
+        min-width: 0;
+        min-height: 32px;
+        height: 32px;
+        font-size: 12px;
+        padding: 0 8px;
+      }
+      body.mobile-ui .timeline-slot-strip {
+        grid-area: slots;
+        overflow-x: hidden;
+        overflow-y: auto;
+        flex-direction: column;
+        align-items: stretch;
+        max-height: 118px;
+        min-height: 118px;
+        gap: 6px;
+        padding: 0 0 2px 0;
+      }
+      body.mobile-ui .timeline-slot-strip .slot-pill {
+        width: 100%;
+        min-height: 32px;
+        font-size: 11px;
+        padding: 6px 6px;
+      }
+    }
+
+    @media (max-width: 900px) and (orientation: landscape) {
+      body.mobile-ui .timeline-dock {
+        margin-right: 8px;
+        margin-left: 8px;
+      }
+      body.mobile-ui .timeline-bar {
+        grid-template-columns: 40px minmax(150px, 220px) 40px minmax(88px, 120px);
+        align-items: center;
+      }
+      body.mobile-ui #todayBtn {
+        min-width: 96px;
+        padding: 0 10px;
+      }
+      body.mobile-ui .timeline-slot-strip {
+        overflow-x: auto;
+        overflow-y: hidden;
+        flex-direction: row;
+        max-height: none;
+        min-height: 0;
+      }
+      body.mobile-ui .timeline-slot-strip .slot-pill {
+        width: auto;
+        min-width: 92px;
+      }
+    }
