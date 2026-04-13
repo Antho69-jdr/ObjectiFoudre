@@ -1367,3 +1367,93 @@
   background: rgba(37, 99, 235, 0.22) !important;
   border-color: rgba(96, 165, 250, 0.55) !important;
 }
+
+
+/* v0.4.64 timeline toggle conflict cleanup: single final source of truth */
+.timeline-toggle-btn,
+.timeline-dock .timeline-toggle-btn,
+#timelineToggleBtn {
+  position: absolute !important;
+  left: 50% !important;
+  top: -30px !important;
+  transform: translateX(-50%) !important;
+  width: 72px !important;
+  min-width: 72px !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: block !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  overflow: visible !important;
+  z-index: 130 !important;
+}
+
+.timeline-toggle-btn::before,
+.timeline-dock .timeline-toggle-btn::before,
+#timelineToggleBtn::before {
+  content: '' !important;
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  width: 40px !important;
+  height: 8px !important;
+  margin: 0 !important;
+  border-radius: 999px !important;
+  transform: translate(-50%, -50%) !important;
+  background: rgba(255,255,255,0.92) !important;
+  box-shadow: 0 1px 10px rgba(0,0,0,0.28) !important;
+  opacity: 1 !important;
+  transition: opacity .14s ease !important;
+  pointer-events: none !important;
+}
+
+.timeline-toggle-icon,
+.timeline-dock .timeline-toggle-icon,
+#timelineToggleBtn .timeline-toggle-icon {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  width: 22px !important;
+  height: 22px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  font-size: 21px !important;
+  line-height: 1 !important;
+  color: rgba(255,255,255,0.98) !important;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.42) !important;
+  transform: translate(-50%, -50%) !important;
+  opacity: 0 !important;
+  transition: opacity .14s ease !important;
+  pointer-events: none !important;
+}
+
+.timeline-toggle-btn:hover::before,
+.timeline-toggle-btn:focus-visible::before,
+.timeline-dock.collapsed .timeline-toggle-btn::before,
+#timelineToggleBtn:hover::before,
+#timelineToggleBtn:focus-visible::before,
+.timeline-dock.collapsed #timelineToggleBtn::before {
+  opacity: 0 !important;
+}
+
+.timeline-toggle-btn:hover .timeline-toggle-icon,
+.timeline-toggle-btn:focus-visible .timeline-toggle-icon,
+.timeline-dock.collapsed .timeline-toggle-icon,
+#timelineToggleBtn:hover .timeline-toggle-icon,
+#timelineToggleBtn:focus-visible .timeline-toggle-icon,
+.timeline-dock.collapsed #timelineToggleBtn .timeline-toggle-icon {
+  opacity: 1 !important;
+}
+
+.timeline-toggle-btn:focus-visible,
+#timelineToggleBtn:focus-visible {
+  outline: none !important;
+}
