@@ -19,12 +19,14 @@
 
     function positionPanelToButton(panel, button) {
       if (!panel || !button || !topbar.classList.contains('show-search')) return;
-      panel.style.top = '0px';
-      const buttonCenter = button.offsetTop + (button.offsetHeight / 2);
+      const buttonRect = button.getBoundingClientRect();
       const panelHeight = panel.offsetHeight || 0;
-      const railHeight = topbar.offsetHeight || window.innerHeight;
-      const rawTop = buttonCenter - (panelHeight / 2);
-      const clampedTop = Math.max(0, Math.min(rawTop, Math.max(0, railHeight - panelHeight)));
+      const viewportTopPadding = 12;
+      const viewportBottomPadding = 12;
+      const viewportHeight = window.innerHeight;
+      const rawTop = buttonRect.top + (buttonRect.height / 2) - (panelHeight / 2);
+      const maxTop = Math.max(viewportTopPadding, viewportHeight - panelHeight - viewportBottomPadding);
+      const clampedTop = Math.max(viewportTopPadding, Math.min(rawTop, maxTop));
       panel.style.top = `${Math.round(clampedTop)}px`;
     }
 

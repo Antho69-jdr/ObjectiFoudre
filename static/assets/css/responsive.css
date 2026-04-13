@@ -1020,3 +1020,45 @@
     grid-template-columns: auto minmax(0,1fr) minmax(0,1.05fr) auto !important;
   }
 }
+
+/* v0.4.56 rail cleanup and search panel fix */
+.timeline-dock {
+  bottom: calc(var(--timeline-strip-bottom) - 1px) !important;
+}
+
+.right-rail-scroll {
+  bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom) + var(--timeline-strip-h) - 1px) !important;
+  gap: var(--right-rail-gap) !important;
+}
+
+.search-dock {
+  position: relative !important;
+  display: block !important;
+  width: var(--right-rail-width) !important;
+  pointer-events: auto !important;
+  isolation: isolate !important;
+}
+
+.mobile-toggle-bar {
+  display: contents !important;
+}
+
+.grid-focus-corner,
+.fab-stack {
+  display: contents !important;
+}
+
+.grid-focus-corner > *,
+.fab-stack > * {
+  margin: 0 !important;
+}
+
+.search-panel {
+  position: fixed !important;
+  right: calc(var(--rail-right) + var(--right-rail-width) + 12px) !important;
+  left: auto !important;
+}
+
+.search-dock.show-search .search-panel {
+  display: grid !important;
+}
