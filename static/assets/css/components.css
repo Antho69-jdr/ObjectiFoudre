@@ -59,7 +59,7 @@
       align-items: center;
     }
     .timeline-toggle-btn {
-      display: none;
+      display: inline-grid;
       position: absolute;
       top: 8px;
       left: 50%;
@@ -76,13 +76,13 @@
     }
     .timeline-toggle-icon {
       display: inline-block;
-      font-size: 16px;
+      font-size: 15px;
       line-height: 1;
       transform: translateY(-1px);
-      transition: transform .24s ease;
+      transition: transform .18s ease, opacity .18s ease;
     }
     .timeline-dock.collapsed .timeline-toggle-icon {
-      transform: rotate(180deg) translateY(1px);
+      transform: translateY(-1px);
     }
     .timeline-dock[hidden] { display: none !important; }
     .timeline-dock .button-row[hidden] { display: none !important; }
@@ -864,3 +864,8 @@
     .right-rail-scroll > * {
       pointer-events: auto;
     }
+
+.timeline-dock.collapsed .timeline-content {
+  opacity: 0;
+  pointer-events: none;
+}

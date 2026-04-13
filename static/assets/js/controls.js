@@ -107,10 +107,20 @@
       }
     }
 
+
+    function syncTimelineToggleVisual(collapsed) {
+      if (!timelineToggleBtn) return;
+      const icon = timelineToggleBtn.querySelector('.timeline-toggle-icon');
+      if (icon) icon.textContent = collapsed ? '↑' : '↓';
+      timelineToggleBtn.setAttribute('aria-label', collapsed ? 'Afficher la frise' : 'Masquer la frise');
+      timelineToggleBtn.setAttribute('title', collapsed ? 'Afficher la frise' : 'Masquer la frise');
+      timelineToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    }
+
     function applyTimelineCollapsedState(collapsed) {
       if (!timelineDock) return;
       timelineDock.classList.toggle('collapsed', !!collapsed);
-      if (timelineToggleBtn) timelineToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      syncTimelineToggleVisual(!!collapsed);
       try {
         localStorage.setItem('storm_timeline_collapsed', collapsed ? '1' : '0');
       } catch (_) {}

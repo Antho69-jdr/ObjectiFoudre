@@ -1064,7 +1064,7 @@
 }
 
 
-/* v0.4.57 decisive bottom stack layout */
+/* v0.4.58 decisive bottom stack layout */
 :root {
   --meta-height-px: calc(34px + env(safe-area-inset-bottom));
   --timeline-height-px: 104px;
@@ -1120,4 +1120,24 @@
   .right-rail-scroll {
     bottom: calc(var(--meta-height-px) + var(--timeline-height-px)) !important;
   }
+}
+
+
+/* v0.4.58 bottom stack seal + visible timeline toggle */
+.timeline-dock {
+  bottom: calc(var(--meta-height-px) - 1px) !important;
+}
+.right-rail-scroll {
+  bottom: calc(var(--meta-height-px) + var(--timeline-height-px) - 1px) !important;
+}
+.timeline-toggle-btn {
+  display: inline-grid !important;
+  place-items: center !important;
+}
+.timeline-dock.collapsed {
+  transform: translateY(calc(100% - 26px)) !important;
+}
+.timeline-dock.collapsed .timeline-content {
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
