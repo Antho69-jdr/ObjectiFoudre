@@ -1316,3 +1316,41 @@
 .timeline-dock.collapsed {
   transform: translateY(calc(100% - 22px)) !important;
 }
+
+
+/* v0.4.61 timeline toggle lift + cleaner collapse + stronger layer panel */
+.timeline-toggle-btn {
+  top: -24px !important;
+}
+.timeline-toggle-btn::before {
+  inset: -10px -14px !important;
+}
+.timeline-toggle-icon {
+  font-size: 21px !important;
+}
+.timeline-dock.collapsed {
+  transform: translateY(calc(100% + 6px)) !important;
+}
+.layer-panel {
+  width: 236px !important;
+  padding: 14px !important;
+  background: rgba(8, 17, 30, 0.96) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  box-shadow: 0 18px 40px rgba(0,0,0,0.36) !important;
+  z-index: 140 !important;
+}
+.layer-panel.visible {
+  display: grid !important;
+}
+.layer-option {
+  min-height: 42px !important;
+  background: rgba(255,255,255,0.03) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+}
+.layer-option:hover {
+  background: rgba(255,255,255,0.06) !important;
+}
+.layer-option.active {
+  background: rgba(37, 99, 235, 0.22) !important;
+  border-color: rgba(96, 165, 250, 0.55) !important;
+}
