@@ -205,7 +205,7 @@
 
     <div class="meta-stack"><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div></div>
 
-    <div class="modal-backdrop" id="drawerBackdrop" style="display:none !important; background: transparent !important;"></div>
+    <div class="modal-backdrop" id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
       <div class="details-header">
         <div>
@@ -219,7 +219,7 @@
         <div class="legend-scale"><span>0</span><span>35</span><span>65</span><span>85</span><span>100</span></div>
       </div>
       <div class="drawer-section">
-        <div class="small" style="font-weight:800; color:var(--text);">Lecture rapide</div>
+        <div class="small drawer-section-title">Lecture rapide</div>
         <ul>
           <li>Bleu : environnement peu favorable.</li>
           <li>Vert : potentiel faible à modéré.</li>
@@ -228,7 +228,7 @@
         </ul>
       </div>
       <div class="drawer-section">
-        <div class="small" style="font-weight:800; color:var(--text);">Algorithme</div>
+        <div class="small drawer-section-title">Algorithme</div>
         <p>Le score global combine quatre blocs : déclenchement, organisation, lisibilité terrain et stabilité horaire. Le déclenchement s'appuie surtout sur la CAPE, le point de rosée, l'humidité et le VPD. L'organisation repose principalement sur le cisaillement et les rafales. La lisibilité pénalise surtout la nébulosité basse et moyenne. La stabilité mesure la tenue du signal autour du créneau retenu.</p>
         <p>Le mode « meilleures cellules » accentue les cellules les plus prometteuses et atténue les autres pour faciliter la lecture rapide.</p>
       </div>
@@ -253,6 +253,8 @@
   <script src="/static/assets/js/panels.js"></script>
   <script src="/static/assets/js/core.js"></script>
   <script src="/static/assets/js/grid.js"></script>
+  <script src="/static/assets/js/metric-meta.js"></script>
+  <script src="/static/assets/js/selection.js"></script>
   <script src="/static/assets/js/metrics.js"></script>
   <script src="/static/assets/js/data.js"></script>
   <script src="/static/assets/js/services.js"></script>

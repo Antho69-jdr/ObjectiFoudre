@@ -760,3 +760,14 @@
       50% { opacity: 1; }
       100% { opacity: 0.52; }
     }
+
+
+.drawer-backdrop-transparent {
+  display: none !important;
+  background: transparent !important;
+}
+
+.drawer-section-title {
+  font-weight: 800;
+  color: var(--text);
+}
