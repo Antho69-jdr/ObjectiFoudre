@@ -83,7 +83,6 @@
     }
 
     function setupPrimaryControls() {
-      toggleCalendarBtn.addEventListener('click', () => toggleTopPanel('calendar'));
       toggleSearchBtn.addEventListener('click', () => toggleTopPanel('search'));
       closeSelectionBtn.addEventListener('click', closeSelection);
       openDetailsBtn.addEventListener('click', openDetails);

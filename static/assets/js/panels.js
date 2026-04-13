@@ -7,7 +7,7 @@
     }
 
     function closeTopPanels() {
-      topbar.classList.remove('show-search', 'show-calendar');
+      topbar.classList.remove('show-search');
     }
 
     function hideAppLoader(force = false) {
@@ -18,7 +18,7 @@
     }
 
     function positionPanelToButton(panel, button) {
-      if (!panel || !button || (!topbar.classList.contains('show-search') && !topbar.classList.contains('show-calendar'))) return;
+      if (!panel || !button || !topbar.classList.contains('show-search')) return;
       panel.style.top = '0px';
       const buttonCenter = button.offsetTop + (button.offsetHeight / 2);
       const panelHeight = panel.offsetHeight || 0;
@@ -30,16 +30,13 @@
 
     function alignTopPanels() {
       if (topbar.classList.contains('show-search')) positionPanelToButton(document.querySelector('.search-panel'), toggleSearchBtn);
-      if (topbar.classList.contains('show-calendar')) positionPanelToButton(document.querySelector('.calendar-panel'), toggleCalendarBtn);
     }
 
     function toggleTopPanel(panel) {
       if (!isMobileLayout()) return;
       const searchOpen = topbar.classList.contains('show-search');
-      const calendarOpen = topbar.classList.contains('show-calendar');
       closeTopPanels();
       if (panel === 'search' && !searchOpen) topbar.classList.add('show-search');
-      if (panel === 'calendar' && !calendarOpen) topbar.classList.add('show-calendar');
       requestAnimationFrame(alignTopPanels);
     }
 

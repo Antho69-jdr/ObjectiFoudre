@@ -8,7 +8,6 @@ const todayBtn = document.getElementById('todayBtn');
 const prevDayBtn = document.getElementById('prevDayBtn');
 const nextDayBtn = document.getElementById('nextDayBtn');
 const topbar = document.getElementById('topbar');
-const toggleCalendarBtn = document.getElementById('toggleCalendarBtn');
 const toggleSearchBtn = document.getElementById('toggleSearchBtn');
 const cityInput = document.getElementById('cityInput');
 const searchCityBtn = document.getElementById('searchCityBtn');

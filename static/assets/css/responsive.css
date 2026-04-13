@@ -52,12 +52,10 @@
       margin-top: 0;
       right: calc(100% + 12px);
     }
-    body.mobile-ui .topbar.show-search .search-panel,
-    body.mobile-ui .topbar.show-calendar .calendar-panel {
+    body.mobile-ui .topbar.show-search .search-panel {
       display: grid;
     }
-    body.mobile-ui .topbar.show-search #toggleSearchBtn,
-    body.mobile-ui .topbar.show-calendar #toggleCalendarBtn {
+    body.mobile-ui .topbar.show-search #toggleSearchBtn {
       background: rgba(59,130,246,0.95);
       border-color: rgba(255,255,255,0.28);
     }
