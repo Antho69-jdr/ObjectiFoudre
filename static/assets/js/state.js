@@ -45,7 +45,6 @@ const map = new maplibregl.Map({
   zoom: 9.4,
   maxZoom: 12.5,
 });
-map.addControl(new maplibregl.NavigationControl(), 'top-right');
 applyResponsiveMode();
 window.addEventListener('resize', applyResponsiveMode);
 window.addEventListener('orientationchange', applyResponsiveMode);

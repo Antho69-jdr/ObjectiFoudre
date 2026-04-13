@@ -653,6 +653,7 @@
     }
 
     .maplibregl-ctrl-top-right {
+      display: none !important;
       top: var(--rail-top-map);
       right: var(--rail-right) !important;
       display: grid;
