@@ -2,7 +2,6 @@ const metaCenter = document.getElementById('metaCenter');
 const metaRun = document.getElementById('metaRun');
 const dayButtons = document.getElementById('dayButtons');
 const slotButtons = document.getElementById('slotButtons');
-const slotSelect = document.getElementById('slotSelect');
 const dateInput = document.getElementById('dateInput');
 const todayBtn = document.getElementById('todayBtn');
 const prevDayBtn = document.getElementById('prevDayBtn');

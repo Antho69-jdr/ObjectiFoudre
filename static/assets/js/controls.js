@@ -42,9 +42,14 @@
       if (!slotButtons) return;
       let isPointerDown = false;
       let dragStartX = 0;
-      let dragStartScroll = 0;
+      let dragStartY = 0;
+      let dragStartScrollLeft = 0;
+      let dragStartScrollTop = 0;
+
+      const useVerticalTimeline = () => window.matchMedia('(max-width: 640px)').matches;
 
       slotButtons.addEventListener('wheel', (event) => {
+        if (useVerticalTimeline()) return;
         if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
           slotButtons.scrollLeft += event.deltaY;
           event.preventDefault();
@@ -54,13 +59,19 @@
       slotButtons.addEventListener('pointerdown', (event) => {
         isPointerDown = true;
         dragStartX = event.clientX;
-        dragStartScroll = slotButtons.scrollLeft;
+        dragStartY = event.clientY;
+        dragStartScrollLeft = slotButtons.scrollLeft;
+        dragStartScrollTop = slotButtons.scrollTop;
         slotButtons.classList.add('dragging');
       });
 
       window.addEventListener('pointermove', (event) => {
         if (!isPointerDown) return;
-        slotButtons.scrollLeft = dragStartScroll - (event.clientX - dragStartX);
+        if (useVerticalTimeline()) {
+          slotButtons.scrollTop = dragStartScrollTop - (event.clientY - dragStartY);
+          return;
+        }
+        slotButtons.scrollLeft = dragStartScrollLeft - (event.clientX - dragStartX);
       });
 
       const stopDrag = () => {
@@ -83,7 +94,14 @@
     }
 
     function setupPrimaryControls() {
-      toggleSearchBtn.addEventListener('click', () => toggleTopPanel('search'));
+      toggleSearchBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const shouldOpen = !topbar.classList.contains('show-search');
+        closeTopPanels();
+        if (shouldOpen) topbar.classList.add('show-search');
+        requestAnimationFrame(alignTopPanels);
+      });
       closeSelectionBtn.addEventListener('click', closeSelection);
       openDetailsBtn.addEventListener('click', openDetails);
       recenterBtn.addEventListener('click', () => {
@@ -105,6 +123,11 @@
       searchCityBtn.addEventListener('click', handleCitySearch);
       cityInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') handleCitySearch(); });
 
+      document.addEventListener('click', (event) => {
+        if (!topbar.contains(event.target)) closeTopPanels();
+      });
+
+
       if (todayBtn) {
         todayBtn.addEventListener('click', () => applySelectedDate(getTodayIsoDate(), { force: true, loadingMessage: 'Chargement de la date du jour…' }));
       }
@@ -112,11 +135,6 @@
         dateInput.addEventListener('change', (event) => {
           const nextDate = normalizeDateIso(event.target?.value);
           applySelectedDate(nextDate, { force: true, loadingMessage: 'Chargement de la date…' });
-        });
-      }
-      if (slotSelect) {
-        slotSelect.addEventListener('change', (event) => {
-          syncSlotSelection(String(event.target?.value || ''));
         });
       }
       if (prevDayBtn) {

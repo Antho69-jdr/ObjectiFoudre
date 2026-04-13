@@ -26,29 +26,8 @@
       const day = getCurrentDay();
       slotButtons.innerHTML = '';
       const slots = day?.slots || [];
-      if (slotSelect) slotSelect.innerHTML = '';
-      if (!slots.length) {
-        if (slotSelect) {
-          const opt = document.createElement('option');
-          opt.value = '';
-          opt.textContent = 'Aucun créneau disponible';
-          slotSelect.appendChild(opt);
-          slotSelect.disabled = true;
-        }
-        return;
-      }
+      if (!slots.length) return;
       if (!selectedSlotKey || !slots.some(s => s.slot_key === selectedSlotKey)) selectedSlotKey = slots[0].slot_key;
-      if (slotSelect) {
-        slotSelect.disabled = false;
-        for (const slot of slots) {
-          const opt = document.createElement('option');
-          opt.value = slot.slot_key;
-          opt.textContent = slot.slot_label;
-          opt.selected = slot.slot_key === selectedSlotKey;
-          slotSelect.appendChild(opt);
-        }
-        slotSelect.value = selectedSlotKey;
-      }
       const todayHour = new Date().getHours();
       const isToday = normalizeDateIso(selectedBaseDate) === getTodayIsoDate();
       for (const slot of slots) {

@@ -33,7 +33,6 @@
     }
 
     function toggleTopPanel(panel) {
-      if (!isMobileLayout()) return;
       const searchOpen = topbar.classList.contains('show-search');
       closeTopPanels();
       if (panel === 'search' && !searchOpen) topbar.classList.add('show-search');
