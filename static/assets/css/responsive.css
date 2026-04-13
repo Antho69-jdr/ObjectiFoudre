@@ -449,3 +449,215 @@
         min-width: 92px;
       }
     }
+
+
+/* V0.4.4 clean mobile layout overrides */
+@media (max-width: 900px) {
+  body.mobile-ui {
+    --mobile-meta-h: 34px;
+  }
+
+  body.mobile-ui .meta-stack {
+    position: fixed !important;
+    left: 6px !important;
+    right: 6px !important;
+    bottom: 4px !important;
+    z-index: 30 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    max-width: none !important;
+    padding: 4px 6px calc(4px + env(safe-area-inset-bottom)) !important;
+    background: rgba(7, 17, 31, 0.82) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 12px !important;
+    backdrop-filter: blur(14px) saturate(1.05) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(1.05) !important;
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+  }
+
+  body.mobile-ui .meta-corner {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+    line-height: 1.15 !important;
+    border-radius: 9px !important;
+    background: rgba(11, 20, 34, 0.78) !important;
+    white-space: nowrap !important;
+  }
+
+  body.mobile-ui .right-rail-scroll {
+    position: fixed !important;
+    top: calc(8px + env(safe-area-inset-top)) !important;
+    right: 10px !important;
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 112px) !important;
+    z-index: 26 !important;
+    width: 52px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-end !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
+    overflow-y: auto !important;
+    overflow-x: visible !important;
+    pointer-events: none !important;
+    scrollbar-width: none !important;
+  }
+
+  body.mobile-ui .right-rail-scroll > * {
+    position: static !important;
+    width: 46px !important;
+    margin: 0 !important;
+    flex: 0 0 auto !important;
+  }
+
+  body.mobile-ui .search-dock,
+  body.mobile-ui .grid-focus-corner,
+  body.mobile-ui .fab-stack {
+    position: static !important;
+    inset: auto !important;
+    width: 46px !important;
+    display: grid !important;
+    gap: 8px !important;
+    justify-items: stretch !important;
+    align-items: start !important;
+    pointer-events: auto !important;
+  }
+
+  body.mobile-ui .mobile-toggle-bar {
+    display: block !important;
+    width: 46px !important;
+  }
+
+  body.mobile-ui .search-dock .panel-card {
+    position: fixed !important;
+    top: calc(8px + env(safe-area-inset-top)) !important;
+    right: 64px !important;
+    margin-top: 0 !important;
+    width: min(320px, calc(100vw - 86px)) !important;
+  }
+
+  body.mobile-ui .timeline-dock {
+    left: 6px !important;
+    right: 6px !important;
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 8px) !important;
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 12px 10px 10px !important;
+    border-radius: 18px !important;
+    z-index: 25 !important;
+    transform: none !important;
+    display: grid !important;
+    gap: 8px !important;
+  }
+
+  body.mobile-ui .timeline-content {
+    margin-top: 10px !important;
+    gap: 8px !important;
+    opacity: 1;
+    transition: opacity .2s ease;
+  }
+
+  body.mobile-ui .timeline-toggle-btn {
+    display: inline-grid !important;
+    top: 6px !important;
+  }
+
+  body.mobile-ui .timeline-dock.collapsed {
+    transform: translateY(calc(100% - 30px)) !important;
+  }
+
+  body.mobile-ui .timeline-dock.collapsed .timeline-content {
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
+  body.mobile-ui .timeline-bar {
+    display: grid !important;
+    grid-template-columns: 40px minmax(0, 1fr) 40px auto !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+
+  body.mobile-ui #todayBtn {
+    min-width: 92px !important;
+    min-height: 38px !important;
+    height: 38px !important;
+    padding: 0 12px !important;
+    border-radius: 12px !important;
+    font-size: 12px !important;
+  }
+
+  body.mobile-ui .timeline-slot-strip {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: 2px 0 4px !important;
+    scroll-snap-type: x proximity !important;
+  }
+
+  body.mobile-ui .timeline-slot-strip .slot-pill {
+    width: auto !important;
+    min-width: 82px !important;
+    min-height: 38px !important;
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+  }
+
+  body.mobile-ui .selection-card {
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 132px) !important;
+  }
+
+  body.mobile-ui .cell-scale-chip {
+    right: 8px !important;
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 132px) !important;
+    max-width: 120px !important;
+    font-size: 11px !important;
+    padding: 8px 10px !important;
+  }
+}
+
+@media (max-width: 640px) and (orientation: portrait) {
+  body.mobile-ui .right-rail-scroll {
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 136px) !important;
+  }
+
+  body.mobile-ui .timeline-bar {
+    grid-template-columns: 36px minmax(0, 1fr) 36px auto !important;
+    gap: 6px !important;
+  }
+
+  body.mobile-ui .timeline-nav-btn {
+    min-width: 36px !important;
+    width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+  }
+
+  body.mobile-ui #todayBtn {
+    min-width: 82px !important;
+    padding: 0 10px !important;
+  }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  body.mobile-ui .right-rail-scroll {
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 96px) !important;
+  }
+
+  body.mobile-ui .timeline-dock {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  body.mobile-ui .timeline-bar {
+    grid-template-columns: 40px minmax(148px, 220px) 40px auto !important;
+  }
+}
