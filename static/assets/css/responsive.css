@@ -1297,3 +1297,22 @@
     padding-right: 8px !important;
   }
 }
+
+
+/* v0.4.60 timeline toggle fully above dock */
+.timeline-dock {
+  overflow: visible !important;
+}
+.timeline-toggle-btn {
+  top: -18px !important;
+  z-index: 120 !important;
+}
+.timeline-toggle-btn::before {
+  inset: -8px -12px !important;
+}
+.timeline-toggle-icon {
+  font-size: 20px !important;
+}
+.timeline-dock.collapsed {
+  transform: translateY(calc(100% - 22px)) !important;
+}
