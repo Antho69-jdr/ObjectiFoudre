@@ -128,14 +128,91 @@
 
     function setupTimelineToggle() {
       if (!timelineDock || !timelineToggleBtn) return;
+
+      const isTouchTimelineMode = () => {
+        try {
+          return window.matchMedia('(hover: none), (pointer: coarse)').matches;
+        } catch (_) {
+          return false;
+        }
+      };
+
+      const toggleTimeline = () => {
+        applyTimelineCollapsedState(!timelineDock.classList.contains('collapsed'));
+        requestAnimationFrame(syncBottomUiLayout);
+      };
+
+      let gesturePointerId = null;
+      let gestureStartY = 0;
+      let gestureDragging = false;
+      let gestureTriggered = false;
+      const gestureThreshold = 18;
+
       applyTimelineCollapsedState(loadTimelineCollapsedPreference());
       requestAnimationFrame(syncBottomUiLayout);
+
       timelineToggleBtn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        applyTimelineCollapsedState(!timelineDock.classList.contains('collapsed'));
-        requestAnimationFrame(syncBottomUiLayout);
+        if (isTouchTimelineMode()) {
+          if (!gestureDragging && !gestureTriggered) toggleTimeline();
+          gestureTriggered = false;
+          return;
+        }
+        toggleTimeline();
       });
+
+      timelineToggleBtn.addEventListener('pointerdown', (event) => {
+        if (!isTouchTimelineMode()) return;
+        if (event.pointerType === 'mouse') return;
+        gesturePointerId = event.pointerId;
+        gestureStartY = event.clientY;
+        gestureDragging = true;
+        gestureTriggered = false;
+        timelineToggleBtn.classList.add('is-dragging');
+        try { timelineToggleBtn.setPointerCapture(event.pointerId); } catch (_) {}
+        event.preventDefault();
+      }, { passive: false });
+
+      timelineToggleBtn.addEventListener('pointermove', (event) => {
+        if (!gestureDragging || event.pointerId !== gesturePointerId) return;
+        const deltaY = event.clientY - gestureStartY;
+        const isCollapsed = timelineDock.classList.contains('collapsed');
+
+        if (!isCollapsed && deltaY > gestureThreshold) {
+          applyTimelineCollapsedState(true);
+          requestAnimationFrame(syncBottomUiLayout);
+          gestureTriggered = true;
+          gestureDragging = false;
+        } else if (isCollapsed && deltaY < -gestureThreshold) {
+          applyTimelineCollapsedState(false);
+          requestAnimationFrame(syncBottomUiLayout);
+          gestureTriggered = true;
+          gestureDragging = false;
+        }
+
+        if (gestureTriggered) {
+          timelineToggleBtn.classList.remove('is-dragging');
+          try { timelineToggleBtn.releasePointerCapture(event.pointerId); } catch (_) {}
+          event.preventDefault();
+        }
+      }, { passive: false });
+
+      const endGesture = (event) => {
+        if (gesturePointerId !== null && event.pointerId !== undefined && event.pointerId !== gesturePointerId) return;
+        timelineToggleBtn.classList.remove('is-dragging');
+        if (gesturePointerId !== null) {
+          try { timelineToggleBtn.releasePointerCapture(gesturePointerId); } catch (_) {}
+        }
+        gesturePointerId = null;
+        gestureDragging = false;
+        requestAnimationFrame(() => {
+          gestureTriggered = false;
+        });
+      };
+
+      timelineToggleBtn.addEventListener('pointerup', endGesture);
+      timelineToggleBtn.addEventListener('pointercancel', endGesture);
     }
 
 

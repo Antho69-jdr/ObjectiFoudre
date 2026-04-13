@@ -1457,3 +1457,49 @@
 #timelineToggleBtn:focus-visible {
   outline: none !important;
 }
+
+
+/* v0.4.67 touch timeline grab: keep grab bar on mobile/tablet and use swipe gesture */
+@media (hover: none), (pointer: coarse) {
+  #timelineToggleBtn,
+  .timeline-toggle-btn,
+  .timeline-dock .timeline-toggle-btn {
+    touch-action: none !important;
+    cursor: ns-resize !important;
+  }
+
+  #timelineToggleBtn::before,
+  .timeline-toggle-btn::before,
+  .timeline-dock .timeline-toggle-btn::before {
+    opacity: 1 !important;
+  }
+
+  #timelineToggleBtn .timeline-toggle-icon,
+  .timeline-toggle-btn .timeline-toggle-icon,
+  .timeline-dock .timeline-toggle-icon {
+    opacity: 0 !important;
+  }
+
+  #timelineToggleBtn:hover::before,
+  #timelineToggleBtn:focus-visible::before,
+  .timeline-toggle-btn:hover::before,
+  .timeline-toggle-btn:focus-visible::before,
+  .timeline-dock.collapsed #timelineToggleBtn::before,
+  .timeline-dock.collapsed .timeline-toggle-btn::before {
+    opacity: 1 !important;
+  }
+
+  #timelineToggleBtn:hover .timeline-toggle-icon,
+  #timelineToggleBtn:focus-visible .timeline-toggle-icon,
+  .timeline-toggle-btn:hover .timeline-toggle-icon,
+  .timeline-toggle-btn:focus-visible .timeline-toggle-icon,
+  .timeline-dock.collapsed #timelineToggleBtn .timeline-toggle-icon,
+  .timeline-dock.collapsed .timeline-toggle-icon {
+    opacity: 0 !important;
+  }
+
+  #timelineToggleBtn.is-dragging::before,
+  .timeline-toggle-btn.is-dragging::before {
+    opacity: 0.72 !important;
+  }
+}
