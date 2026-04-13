@@ -880,10 +880,12 @@
 }
 
 
-/* v0.4.51 full-width strips and desktop rail cleanup */
+/* v0.4.52 full-width strips with protected right rail */
 :root {
   --meta-strip-h: 34px;
   --timeline-strip-bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom));
+  --timeline-rail-reserve: calc(var(--right-rail-width) + 26px);
+  --timeline-strip-h: 102px;
 }
 
 .meta-stack {
@@ -934,7 +936,7 @@
   width: 100vw !important;
   max-width: none !important;
   margin: 0 !important;
-  padding: 10px max(12px, env(safe-area-inset-left)) 10px max(12px, env(safe-area-inset-right)) !important;
+  padding: 10px calc(max(12px, env(safe-area-inset-right)) + var(--timeline-rail-reserve)) 10px max(12px, env(safe-area-inset-left)) !important;
   border-left: 0 !important;
   border-right: 0 !important;
   border-bottom: 0 !important;
@@ -942,31 +944,41 @@
   border-radius: 0 !important;
   background: rgba(8,17,30,0.86) !important;
   box-shadow: 0 -16px 36px rgba(0,0,0,0.18) !important;
+  z-index: 18 !important;
 }
 .timeline-dock .timeline-content,
 .timeline-dock .timeline-bar,
 .timeline-dock .timeline-slot-strip {
   max-width: 100% !important;
 }
+.timeline-dock .timeline-content {
+  padding-right: 0 !important;
+}
 
 .right-rail-scroll {
   position: fixed !important;
   top: 12px !important;
   right: var(--rail-right) !important;
+  bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom) + var(--timeline-strip-h) + 12px) !important;
   z-index: 19 !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: stretch !important;
-  gap: 10px !important;
+  gap: 8px !important;
   width: var(--right-rail-width) !important;
   pointer-events: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  scrollbar-width: none !important;
 }
+.right-rail-scroll::-webkit-scrollbar { display: none !important; }
 .right-rail-scroll > * {
   position: static !important;
   inset: auto !important;
   width: var(--right-rail-width) !important;
   margin: 0 !important;
   pointer-events: auto !important;
+  flex: 0 0 auto !important;
 }
 .search-dock, .grid-focus-corner, .fab-stack {
   position: static !important;
@@ -976,25 +988,36 @@
   left: auto !important;
   width: var(--right-rail-width) !important;
 }
-.search-dock { display: block !important; }
+.search-dock { display: block !important; order: 0 !important; }
 .mobile-toggle-bar { margin: 0 !important; }
 .grid-focus-corner, .fab-stack { display: grid !important; gap: var(--right-rail-gap) !important; }
+.grid-focus-corner { order: 1 !important; }
+.fab-stack { order: 2 !important; }
 .cell-scale-chip { display: none !important; }
 
 @media (max-width: 900px) {
-  :root { --meta-strip-h: 32px; --timeline-strip-bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom)); }
+  :root {
+    --meta-strip-h: 32px;
+    --timeline-strip-bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom));
+    --timeline-rail-reserve: calc(var(--right-rail-width) + 18px);
+    --timeline-strip-h: 116px;
+  }
   .meta-stack {
     grid-template-columns: auto minmax(0,1fr) minmax(0,1.2fr) auto !important;
   }
   .meta-stack .meta-corner { padding: 6px 8px !important; font-size: 10px !important; }
-  .timeline-dock { padding-top: 12px !important; }
+  .timeline-dock {
+    padding-top: 12px !important;
+    padding-right: calc(8px + var(--timeline-rail-reserve)) !important;
+    padding-left: 8px !important;
+  }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  :root { --timeline-strip-h: 92px; }
 }
 
 @media (max-width: 640px) {
-  .timeline-dock {
-    padding-left: 8px !important;
-    padding-right: 8px !important;
-  }
   .meta-stack {
     grid-template-columns: auto minmax(0,1fr) minmax(0,1.2fr) auto !important;
   }
