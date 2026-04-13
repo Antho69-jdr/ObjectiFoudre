@@ -29,7 +29,7 @@
     }
 
     
-    body.mobile-ui .topbar {
+    body.mobile-ui .search-dock {
       top: max(var(--rail-top-topbar), env(safe-area-inset-top));
       right: var(--rail-right);
       left: auto;
@@ -47,15 +47,15 @@
       gap: 10px;
       justify-items: end;
     }
-    body.mobile-ui .topbar .panel-card {
+    body.mobile-ui .search-dock .panel-card {
       display: none;
       margin-top: 0;
       right: calc(100% + 12px);
     }
-    body.mobile-ui .topbar.show-search .search-panel {
+    body.mobile-ui .search-dock.show-search .search-panel {
       display: grid;
     }
-    body.mobile-ui .topbar.show-search #toggleSearchBtn {
+    body.mobile-ui .search-dock.show-search #toggleSearchBtn {
       background: rgba(59,130,246,0.95);
       border-color: rgba(255,255,255,0.28);
     }

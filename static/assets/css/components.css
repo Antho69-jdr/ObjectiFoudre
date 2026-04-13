@@ -12,7 +12,11 @@
       -webkit-backdrop-filter: var(--glass-blur);
       box-shadow: var(--shadow);
     }
-    .search-panel { top: 0; }
+    .search-panel {
+      top: 0;
+      right: calc(100% + 12px);
+      z-index: 20;
+    }
     .slot-select {
       width: 100%;
       min-height: 42px;
@@ -162,7 +166,8 @@
     .mobile-toggle-bar {
       display: grid;
       gap: var(--right-rail-gap);
-      justify-items: stretch;
+      justify-items: end;
+      width: max-content;
     }
 
     .mobile-toggle-btn,
