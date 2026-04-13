@@ -771,3 +771,17 @@
   font-weight: 800;
   color: var(--text);
 }
+
+.metric-info-explain {
+  margin-top: 0;
+}
+
+.metric-info-heading {
+  margin-top: 10px;
+}
+
+.metric-info-guide {
+  margin-top: 6px;
+  display: grid;
+  gap: 6px;
+}

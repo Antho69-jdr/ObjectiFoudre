@@ -260,7 +260,11 @@
       const op = operationalGuide(metricKey, currentValue);
       infoMetricLabel.textContent = `${meta.label} · ${op.state}`;
       infoMetricValue.textContent = currentValue || '—';
-      infoExplanation.innerHTML = `<div>${meta.explain}</div><div style="margin-top:10px;"><strong>Lecture terrain</strong></div><div style="margin-top:6px; display:grid; gap:6px;">${op.guide}</div>`;
+      infoExplanation.innerHTML = `
+        <div class="metric-info-explain">${meta.explain}</div>
+        <div class="metric-info-heading"><strong>Lecture terrain</strong></div>
+        <div class="metric-info-guide">${op.guide}</div>
+      `;
       infoBackdrop.classList.add('visible');
       infoModal.classList.add('visible');
     }
