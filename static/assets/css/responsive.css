@@ -34,7 +34,7 @@
       right: var(--rail-right);
       left: auto;
       transform: none;
-      width: 56px;
+      width: var(--right-rail-width);
       padding: 0;
       background: transparent;
       border: 0;
@@ -45,12 +45,13 @@
     body.mobile-ui .mobile-toggle-bar {
       display: grid;
       gap: 10px;
-      justify-items: end;
+      justify-items: stretch;
     }
     body.mobile-ui .search-dock .panel-card {
       display: none;
       margin-top: 0;
       right: calc(100% + 12px);
+      width: min(340px, calc(100vw - 92px));
     }
     body.mobile-ui .search-dock.show-search .search-panel {
       display: grid;
@@ -164,6 +165,7 @@
         max-width: calc(100vw - 20px);
         gap: 8px;
         padding: 9px 10px;
+        border-radius: 18px;
       }
       .timeline-bar {
         grid-template-columns: 40px 1fr 40px;
@@ -184,7 +186,7 @@
         width: calc(100vw - 12px);
         max-width: calc(100vw - 12px);
         bottom: max(8px, env(safe-area-inset-bottom));
-        border-radius: 16px;
+        border-radius: 18px;
         padding: 8px 8px 9px;
       }
       .timeline-bar {

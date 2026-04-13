@@ -3,14 +3,14 @@
       gap: 10px;
       position: absolute;
       right: calc(100% + 14px);
-      width: min(368px, calc(100vw - 108px));
-      padding: 12px;
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 18px;
+      width: min(380px, calc(100vw - 108px));
+      padding: 14px;
+      background: rgba(8, 17, 30, 0.82);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: var(--shell-radius);
       backdrop-filter: var(--glass-blur);
       -webkit-backdrop-filter: var(--glass-blur);
-      box-shadow: var(--shadow);
+      box-shadow: 0 20px 44px rgba(0,0,0,0.32);
     }
     .search-panel {
       top: 0;
@@ -39,14 +39,14 @@
       bottom: max(12px, env(safe-area-inset-bottom));
       transform: translateX(-50%);
       display: grid;
-      gap: 8px;
+      gap: 10px;
       width: min(1180px, calc(100vw - 136px));
       max-width: calc(100vw - 136px);
-      padding: 8px 12px;
-      border-radius: 18px;
-      background: rgba(8, 17, 30, 0.72);
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow);
+      padding: 10px 14px;
+      border-radius: 22px;
+      background: rgba(8, 17, 30, 0.78);
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 18px 44px rgba(0,0,0,0.28);
       backdrop-filter: var(--glass-blur);
       -webkit-backdrop-filter: var(--glass-blur);
     }
@@ -166,8 +166,8 @@
     .mobile-toggle-bar {
       display: grid;
       gap: var(--right-rail-gap);
-      justify-items: end;
-      width: max-content;
+      justify-items: stretch;
+      width: var(--right-rail-width);
     }
 
     .mobile-toggle-btn,
@@ -261,6 +261,7 @@
       display: grid;
       gap: 6px;
       max-width: min(320px, calc(100vw - 24px));
+      pointer-events: none;
     }
 
     .meta-corner {
@@ -275,6 +276,13 @@
       box-shadow: var(--shadow);
       width: fit-content;
       max-width: 100%;
+      pointer-events: auto;
+    }
+
+    .meta-version {
+      color: #dbe9ff;
+      font-weight: 800;
+      letter-spacing: 0.02em;
     }
 
     .title {
@@ -341,12 +349,12 @@
       left: 50%;
       bottom: 130px;
       transform: translateX(-50%);
-      width: min(380px, calc(100vw - 44px));
-      border-radius: 20px;
+      width: min(388px, calc(100vw - 44px));
+      border-radius: 22px;
       padding: 16px;
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow);
+      background: rgba(8, 17, 30, 0.8);
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 20px 44px rgba(0,0,0,0.28);
       backdrop-filter: var(--glass-blur);
       -webkit-backdrop-filter: var(--glass-blur);
       display: none;
@@ -450,10 +458,10 @@
       width: min(430px, calc(100vw - 44px));
       max-height: min(78vh, 760px);
       overflow: auto;
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      box-shadow: var(--shadow);
+      background: rgba(8, 17, 30, 0.86);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 24px;
+      box-shadow: 0 22px 48px rgba(0,0,0,0.32);
       backdrop-filter: var(--glass-blur);
       -webkit-backdrop-filter: var(--glass-blur);
       padding: 18px;
@@ -510,10 +518,10 @@
       max-height: calc(100vh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
       overflow: auto;
       padding: 16px;
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      box-shadow: var(--shadow);
+      background: rgba(8, 17, 30, 0.86);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 22px;
+      box-shadow: 0 20px 44px rgba(0,0,0,0.3);
       display: none;
       backdrop-filter: var(--glass-blur);
       -webkit-backdrop-filter: var(--glass-blur);
@@ -534,10 +542,10 @@
       top: 50%;
       transform: translate(-50%, -50%);
       width: min(380px, calc(100vw - 44px));
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      box-shadow: var(--shadow);
+      background: rgba(8, 17, 30, 0.86);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 24px;
+      box-shadow: 0 22px 48px rgba(0,0,0,0.32);
       backdrop-filter: var(--glass-blur);
       -webkit-backdrop-filter: var(--glass-blur);
       padding: 18px;
@@ -558,6 +566,10 @@
       display: grid;
       gap: var(--right-rail-gap);
       justify-items: stretch;
+      pointer-events: none;
+    }
+    .fab-stack > * {
+      pointer-events: auto;
     }
     .fab {
       font-size: 0;
@@ -579,9 +591,9 @@
       gap: 8px;
       padding: 10px 12px;
       border-radius: 999px;
-      background: rgba(9, 18, 31, 0.56);
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow);
+      background: rgba(9, 18, 31, 0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.22);
       font-size: 12px;
       color: var(--muted);
       backdrop-filter: blur(12px);
@@ -598,9 +610,9 @@
       gap: 8px;
       padding: 10px 12px;
       border-radius: 999px;
-      background: rgba(9, 18, 31, 0.56);
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow);
+      background: rgba(9, 18, 31, 0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.22);
       font-size: 12px;
       color: var(--muted);
       backdrop-filter: var(--glass-blur);
@@ -628,6 +640,10 @@
       display: grid;
       gap: var(--right-rail-gap);
       justify-items: stretch;
+      pointer-events: none;
+    }
+    .grid-focus-corner > * {
+      pointer-events: auto;
     }
     .grid-focus-btn {
       color: #e5edf9;
@@ -770,3 +786,32 @@
   display: grid;
   gap: 6px;
 }
+
+
+    .search-dock.show-search .search-panel {
+      display: grid;
+    }
+
+    .search-dock.show-search #toggleSearchBtn,
+    .grid-focus-btn:hover,
+    .fab:hover,
+    .mobile-toggle-btn:hover {
+      background: rgba(17, 31, 54, 0.96);
+      border-color: rgba(96,165,250,0.4);
+    }
+
+    .timeline-bar > * {
+      min-width: 0;
+    }
+
+    .timeline-dock,
+    .selection-card,
+    .details-modal,
+    .info-modal,
+    .info-drawer,
+    .panel-card,
+    .meta-corner,
+    .cell-scale-chip,
+    .floating-chip {
+      outline: 1px solid rgba(255,255,255,0.02);
+    }

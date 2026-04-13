@@ -13,6 +13,7 @@
       --glass-blur: blur(16px) saturate(1.15);
       --rail-right: 12px;
       --rail-gap: 12px;
+      --shell-radius: 18px;
       --rail-btn: 46px;
       --rail-top-topbar: 12px;
       --rail-top-focus: 128px;
@@ -46,10 +47,11 @@
       z-index: 19;
       top: var(--rail-top-topbar);
       right: var(--rail-right);
-      display: inline-grid;
+      display: grid;
       gap: var(--right-rail-gap);
-      justify-items: end;
-      width: max-content;
+      justify-items: stretch;
+      align-items: start;
+      width: var(--right-rail-width);
       max-width: calc(100vw - 24px);
       padding: 0;
       background: transparent;
@@ -59,6 +61,7 @@
       -webkit-backdrop-filter: none;
       overflow: visible;
       pointer-events: none;
+      isolation: isolate;
     }
 
     .search-dock > * {
