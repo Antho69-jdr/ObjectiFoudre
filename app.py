@@ -19,7 +19,7 @@ STATIC_DIR = BASE_DIR / "static"
 CACHE_TTL_SECONDS = 15 * 60
 STALE_TTL_SECONDS = 2 * 60 * 60
 
-app = FastAPI(title="Storm Chase", version="1.4.0")
+app = FastAPI(title="Storm Chase", version="1.4.3")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -108,7 +108,7 @@ def health() -> dict[str, str]:
 
 @app.get("/sw.js")
 def service_worker() -> FileResponse:
-    return FileResponse(STATIC_DIR / "sw.js", media_type="application/javascript")
+    return FileResponse(STATIC_DIR / "sw.js", media_type="application/javascript", headers={"Cache-Control": "no-store, max-age=0"})
 
 
 @app.get("/favicon.ico")
@@ -174,4 +174,4 @@ async def latest(
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-store, max-age=0"})

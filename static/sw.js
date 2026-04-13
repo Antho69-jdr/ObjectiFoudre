@@ -1,10 +1,11 @@
-const CACHE_NAME = 'storm-chase-v2';
+const CACHE_NAME = 'storm-chase-v0.4.3';
 const ASSETS = [
   '/',
   '/static/storm-chase.webmanifest',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
-  '/static/logo-objectif-foudre.svg'
+  '/static/logo-objectif-foudre.svg',
+  '/static/storm-chase.webmanifest?v=0.4.3'
 ];
 
 self.addEventListener('install', (event) => {
@@ -21,14 +22,26 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
-  const isStaticAsset = url.origin === self.location.origin;
+  const isSameOrigin = url.origin === self.location.origin;
 
-  if (isStaticAsset) {
-    event.respondWith(
-      caches.match(event.request).then((cached) => cached || fetch(event.request).catch(() => caches.match('/')))
-    );
+  if (!isSameOrigin) {
+    event.respondWith(fetch(event.request).catch(() => caches.match('/')));
     return;
   }
 
-  event.respondWith(fetch(event.request).catch(() => caches.match('/')));
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+
+    try {
+      const response = await fetch(event.request, { cache: 'no-store' });
+      if (response && response.ok) {
+        cache.put(event.request, response.clone());
+      }
+      return response;
+    } catch (_) {
+      const cached = await cache.match(event.request, { ignoreSearch: false });
+      if (cached) return cached;
+      return caches.match('/');
+    }
+  })());
 });
