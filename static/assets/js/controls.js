@@ -119,11 +119,41 @@
     function setupTimelineToggle() {
       if (!timelineDock || !timelineToggleBtn) return;
       applyTimelineCollapsedState(loadTimelineCollapsedPreference());
+      requestAnimationFrame(syncBottomUiLayout);
       timelineToggleBtn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
         applyTimelineCollapsedState(!timelineDock.classList.contains('collapsed'));
+        requestAnimationFrame(syncBottomUiLayout);
       });
+    }
+
+
+    function syncBottomUiLayout() {
+      const root = document.documentElement;
+      const metaHeight = metaCenter?.parentElement?.offsetHeight || document.querySelector('.meta-stack')?.offsetHeight || 0;
+      const timelineHeight = timelineDock?.offsetHeight || 0;
+      root.style.setProperty('--meta-height-px', `${Math.round(metaHeight)}px`);
+      root.style.setProperty('--timeline-height-px', `${Math.round(timelineHeight)}px`);
+    }
+
+    function setupBottomUiLayoutSync() {
+      const sync = () => requestAnimationFrame(syncBottomUiLayout);
+      sync();
+      window.addEventListener('resize', sync);
+      window.addEventListener('orientationchange', sync);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', sync);
+      }
+      if (timelineDock) {
+        const observer = new ResizeObserver(sync);
+        observer.observe(timelineDock);
+      }
+      const metaStack = document.querySelector('.meta-stack');
+      if (metaStack) {
+        const observer = new ResizeObserver(sync);
+        observer.observe(metaStack);
+      }
     }
 
     function setupMetricInfoTriggers() {
@@ -195,6 +225,7 @@
       setupSlotButtonsDrag();
       setupMetricInfoTriggers();
       setupTimelineToggle();
+      setupBottomUiLayoutSync();
 
       installChip.addEventListener('click', installApp);
     }
