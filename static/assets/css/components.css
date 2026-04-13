@@ -662,14 +662,15 @@
       white-space: nowrap;
     }
 
-    .maplibregl-ctrl-top-right {
+    .maplibregl-ctrl-top-right,
+    .maplibregl-ctrl-bottom-right {
       display: none !important;
       top: var(--rail-top-map);
       right: var(--rail-right) !important;
-      display: grid;
       justify-items: stretch;
     }
-    .maplibregl-ctrl-top-right .maplibregl-ctrl {
+    .maplibregl-ctrl-top-right .maplibregl-ctrl,
+    .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
       margin: 0 !important;
       float: none !important;
       width: var(--right-rail-width);

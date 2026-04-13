@@ -882,7 +882,7 @@
 
 
 
-/* v0.4.54 bottom strips and right rail */
+/* v0.4.55 bottom strips and right rail */
 :root {
   --meta-strip-h: 34px;
   --timeline-strip-bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom));
@@ -930,7 +930,7 @@
   position: fixed !important;
   left: 0 !important;
   right: 0 !important;
-  bottom: calc(var(--timeline-strip-bottom) - 1px) !important;
+  bottom: var(--timeline-strip-bottom) !important;
   transform: none !important;
   width: 100vw !important;
   max-width: none !important;
@@ -942,7 +942,7 @@
   border-top: 1px solid rgba(255,255,255,0.08) !important;
   border-radius: 0 !important;
   background: rgba(8,17,30,0.88) !important;
-  box-shadow: 0 -12px 28px rgba(0,0,0,0.16) !important;
+  box-shadow: 0 -12px 28px rgba(0,0,0,0.12) !important;
   z-index: 18 !important;
 }
 .timeline-dock .timeline-content,
@@ -961,7 +961,7 @@
   position: fixed !important;
   top: 12px !important;
   right: var(--rail-right) !important;
-  bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom) + var(--timeline-strip-h) + 12px) !important;
+  bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom) + var(--timeline-strip-h) + 18px) !important;
   z-index: 19 !important;
   display: flex !important;
   flex-direction: column !important;
@@ -1012,6 +1012,7 @@
 
 @media (max-width: 900px) and (orientation: landscape) {
   :root { --timeline-strip-h: 94px; }
+  .right-rail-scroll { bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom) + var(--timeline-strip-h) + 24px) !important; }
 }
 
 @media (max-width: 640px) {
