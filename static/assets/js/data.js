@@ -78,7 +78,12 @@
       setLoadingState(true, `Recherche de ${query}…`);
       try {
         const target = await geocodeCity(query, geocodeController.signal);
-        await applyCenter(target, { zoom: 8.4 });
+        try {
+          await applyCenter(target, { zoom: 8.4, force: true });
+        } catch (firstLoadError) {
+          console.warn('Initial city load failed, retrying with forced refresh.', firstLoadError);
+          await applyCenter(target, { zoom: 8.4, force: true });
+        }
       } catch (error) {
         if (error.name !== 'AbortError') {
           console.warn(error);
