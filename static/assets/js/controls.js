@@ -66,6 +66,13 @@
       const DRAG_THRESHOLD = 6;
 
       const useVerticalTimeline = () => window.matchMedia('(max-width: 640px)').matches;
+      const usePointerDrag = () => {
+        try {
+          return window.matchMedia('(hover: none), (pointer: coarse)').matches;
+        } catch (_) {
+          return false;
+        }
+      };
 
       slotButtons.addEventListener('wheel', (event) => {
         if (useVerticalTimeline()) return;
@@ -76,6 +83,8 @@
       }, { passive: false });
 
       slotButtons.addEventListener('pointerdown', (event) => {
+        if (!usePointerDrag()) return;
+        if (event.pointerType === 'mouse') return;
         if (event.button !== undefined && event.button !== 0) return;
         activePointerId = event.pointerId;
         dragStartX = event.clientX;
