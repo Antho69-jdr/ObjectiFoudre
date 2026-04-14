@@ -164,7 +164,7 @@
       throw lastErr || new Error('Aucun résultat');
     }
 
-    async function applyCenter(center, options = {}) {
+    function stageCenterChange(center, options = {}) {
       const localToken = ++centerChangeToken;
       currentCenter = sanitizeCenter(center);
       saveCurrentCenter();
@@ -177,6 +177,11 @@
       showLoadingGrid(currentCenter);
       if (options.showMarker) showCurrentMarker(currentCenter.lon, currentCenter.lat);
       closeTopPanels();
+      return localToken;
+    }
+
+    async function applyCenter(center, options = {}) {
+      const localToken = stageCenterChange(center, options);
       try {
         await loadData(options.force === true, localToken);
       } catch (err) {

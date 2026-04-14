@@ -20,7 +20,9 @@
       navigator.geolocation.getCurrentPosition(
         async ({ coords }) => {
           try {
-            await applyCenter({ lat: coords.latitude, lon: coords.longitude, label: 'Autour de moi' }, { showMarker: true, zoom: 8.8, force: true });
+            stageCenterChange({ lat: coords.latitude, lon: coords.longitude, label: 'Autour de moi' }, { showMarker: true, zoom: 8.8 });
+            await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+            await loadData(true, centerChangeToken);
           } catch (error) {
             console.warn(error);
             setMetaMessage('Impossible de recalculer la zone autour de vous.');

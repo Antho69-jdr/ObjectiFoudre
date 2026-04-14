@@ -78,11 +78,23 @@
       setLoadingState(true, `Recherche de ${query}…`);
       try {
         const target = await geocodeCity(query, geocodeController.signal);
+
         try {
-          await applyCenter(target, { zoom: 8.4, force: true });
+          stageCenterChange(target, { zoom: 8.4 });
+        } catch (uiError) {
+          console.warn('City found, but center staging hit a UI error.', uiError);
+          currentCenter = sanitizeCenter(target);
+          saveCurrentCenter();
+          cityInput.value = currentCenter.label;
+        }
+
+        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
+        try {
+          await loadData(true, centerChangeToken);
         } catch (firstLoadError) {
           console.warn('Initial city load failed, retrying with forced refresh.', firstLoadError);
-          await applyCenter(target, { zoom: 8.4, force: true });
+          await refreshCurrentData(true, `Chargement météo pour ${target.label}…`);
         }
       } catch (error) {
         if (error.name !== 'AbortError') {
