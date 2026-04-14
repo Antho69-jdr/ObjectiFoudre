@@ -25,12 +25,14 @@
         if (selectionCard.classList.contains('visible')) requestAnimationFrame(positionSelectionCard);
       });
 
-      map.on('load', async () => {
+      map.on('load', () => {
         cityInput.value = currentCenter.label;
-        await loadData().catch(err => {
-          console.warn(err);
-          setMetaMessage('Impossible de charger la zone initiale.');
-        });
+        topbar.classList.add('show-search');
+        requestAnimationFrame(alignTopPanels);
+        updateMetaLine();
+        metaRun.textContent = 'Modèle arome-france : en attente';
+        setMetaMessage('Choisis une zone pour lancer le chargement météo.');
+        hideAppLoader(true);
       });
     }
 

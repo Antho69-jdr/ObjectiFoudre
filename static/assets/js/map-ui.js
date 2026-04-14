@@ -61,6 +61,7 @@
     }
 
     function durationForDistance(distanceKm) {
+      if (isCoarsePointerDevice()) return Math.max(1200, Math.min(2600, 1400 + distanceKm * 1.8));
       return Math.max(2800, Math.min(6100, (3800 + distanceKm * 5.2) / 1.44));
     }
 
@@ -83,6 +84,10 @@
 
     function fadeOutCurrentGridForReload() {
       if (!map.isStyleLoaded()) return;
+      if (prefersReducedGridMotion(getCurrentSlot()?.cells || [])) {
+        removeLayers(true);
+        return;
+      }
       if (map.getLayer('grid-fill')) {
         setGridFillFactor(1);
         animateGridFillFactor(1, 0, 180);

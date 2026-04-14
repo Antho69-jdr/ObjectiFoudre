@@ -17,6 +17,19 @@
       if (dateInput) dateInput.value = nextDate;
     }
 
+    function isCoarsePointerDevice() {
+      try {
+        return window.matchMedia('(hover: none), (pointer: coarse)').matches;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function prefersReducedGridMotion(cells = []) {
+      const hasManyCells = Array.isArray(cells) && cells.length >= GRID_ANIMATION_MAX_CELLS;
+      return isCoarsePointerDevice() || hasManyCells;
+    }
+
     function applySelectedDate(nextDate, { force = true, loadingMessage = 'Chargement de la date…' } = {}) {
       const normalized = normalizeDateIso(nextDate);
       if (normalized === selectedBaseDate && !force) return;

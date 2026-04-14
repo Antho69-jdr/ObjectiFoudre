@@ -22,6 +22,7 @@ const GRID_ANIMATION_CELL_MS = 340;
 const GRID_ANIMATION_STAGGER_SPAN_MS = 170;
 const VISIBILITY_REFRESH_MS = 10 * 60 * 1000;
 const APP_LOADER_MIN_MS = 0;
+const GRID_ANIMATION_MAX_CELLS = 140;
 let userLocationMarker = null;
 let shouldAnimateNextGrid = true;
 let hasCompletedInitialLoad = false;

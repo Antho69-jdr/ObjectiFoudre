@@ -5,7 +5,7 @@ function updateGridLinesButton() {
 
     function applyGridLinesVisibility() {
       if (map.getLayer('grid-borders')) {
-        map.setPaintProperty('grid-borders', 'line-opacity', showGridLines ? 0.5 : 0);
+        map.setPaintProperty('grid-borders', 'line-opacity', showGridLines ? (isCoarsePointerDevice() ? 0.32 : 0.5) : 0);
       }
       updateGridLinesButton();
     }

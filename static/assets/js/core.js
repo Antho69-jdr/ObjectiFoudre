@@ -82,6 +82,11 @@
     }
 
     function animateGridFillFactor(from, to, duration, done = null) {
+      if (prefersReducedGridMotion(getCurrentSlot()?.cells || [])) {
+        setGridFillFactor(to);
+        if (typeof done === 'function') done();
+        return;
+      }
       const start = performance.now();
       const tick = (now) => {
         if (!map.getLayer('grid-fill')) return;

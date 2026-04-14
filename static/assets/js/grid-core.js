@@ -69,10 +69,16 @@
     }
 
     function animateRevealToSource(sourceId, cells, geojsonBuilder = buildGeoJSON, onStep = null, onComplete = null) {
-      const token = ++gridAnimationToken;
-      const orderedCells = sortCellsForReveal(cells);
       const source = map.getSource(sourceId);
       if (!source) return;
+      if (prefersReducedGridMotion(cells)) {
+        source.setData(geojsonBuilder(cells));
+        if (typeof onStep === 'function') onStep();
+        if (typeof onComplete === 'function') onComplete();
+        return;
+      }
+      const token = ++gridAnimationToken;
+      const orderedCells = sortCellsForReveal(cells);
       const start = performance.now();
       const progressByZone = new Map();
       const staggerSpan = GRID_ANIMATION_STAGGER_SPAN_MS * 1.28;

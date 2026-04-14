@@ -55,11 +55,12 @@
 
     function setupSlotButtonsDrag() {
       if (!slotButtons) return;
-      let isPointerDown = false;
+      let activePointerId = null;
       let dragStartX = 0;
       let dragStartY = 0;
       let dragStartScrollLeft = 0;
       let dragStartScrollTop = 0;
+      let dragDistance = 0;
 
       const useVerticalTimeline = () => window.matchMedia('(max-width: 640px)').matches;
 
@@ -72,26 +73,46 @@
       }, { passive: false });
 
       slotButtons.addEventListener('pointerdown', (event) => {
-        isPointerDown = true;
+        if (event.button !== undefined && event.button !== 0) return;
+        activePointerId = event.pointerId;
         dragStartX = event.clientX;
         dragStartY = event.clientY;
         dragStartScrollLeft = slotButtons.scrollLeft;
         dragStartScrollTop = slotButtons.scrollTop;
+        dragDistance = 0;
         slotButtons.classList.add('dragging');
+        try { slotButtons.setPointerCapture(event.pointerId); } catch (_) {}
       });
 
       window.addEventListener('pointermove', (event) => {
-        if (!isPointerDown) return;
+        if (activePointerId === null || event.pointerId !== activePointerId) return;
+        const deltaX = event.clientX - dragStartX;
+        const deltaY = event.clientY - dragStartY;
+        dragDistance = Math.max(dragDistance, Math.abs(useVerticalTimeline() ? deltaY : deltaX));
         if (useVerticalTimeline()) {
-          slotButtons.scrollTop = dragStartScrollTop - (event.clientY - dragStartY);
-          return;
+          slotButtons.scrollTop = dragStartScrollTop - deltaY;
+        } else {
+          slotButtons.scrollLeft = dragStartScrollLeft - deltaX;
         }
-        slotButtons.scrollLeft = dragStartScrollLeft - (event.clientX - dragStartX);
-      });
+        if (dragDistance > 6) event.preventDefault();
+      }, { passive: false });
 
-      const stopDrag = () => {
-        isPointerDown = false;
+      slotButtons.addEventListener('click', (event) => {
+        if (dragDistance > 6) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }, true);
+
+      const stopDrag = (event) => {
+        if (activePointerId === null) return;
+        if (event?.pointerId !== undefined && event.pointerId !== activePointerId) return;
+        try { slotButtons.releasePointerCapture(activePointerId); } catch (_) {}
+        activePointerId = null;
         slotButtons.classList.remove('dragging');
+        requestAnimationFrame(() => {
+          dragDistance = 0;
+        });
       };
 
       window.addEventListener('pointerup', stopDrag);

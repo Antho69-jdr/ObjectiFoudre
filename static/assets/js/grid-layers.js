@@ -59,8 +59,8 @@ function ensureSource(id, data) {
         source: 'grid',
         paint: {
           'line-color': '#ffffff',
-          'line-width': 1,
-          'line-opacity': showGridLines ? 0.5 : 0,
+          'line-width': isCoarsePointerDevice() ? 0.75 : 1,
+          'line-opacity': showGridLines ? (isCoarsePointerDevice() ? 0.32 : 0.5) : 0,
         }
       });
       map.addLayer({
@@ -75,8 +75,10 @@ function ensureSource(id, data) {
       });
 
       map.on('click', 'grid-fill', onGridClick);
-      map.on('mouseenter', 'grid-fill', onGridEnter);
-      map.on('mouseleave', 'grid-fill', onGridLeave);
+      if (!isCoarsePointerDevice()) {
+        map.on('mouseenter', 'grid-fill', onGridEnter);
+        map.on('mouseleave', 'grid-fill', onGridLeave);
+      }
       animateGridFillFactor(0, 1, 260, () => { applyGridLinesVisibility(); updateHighlight(); });
     }
 

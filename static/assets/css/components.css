@@ -146,6 +146,7 @@
       width: min(100%, 1100px);
     }
     .timeline-slot-strip.dragging { cursor: grabbing; }
+    .timeline-slot-strip.dragging .slot-pill { pointer-events: none; }
     .timeline-slot-strip::-webkit-scrollbar { height: 8px; }
     .timeline-slot-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 999px; }
     .timeline-slot-strip .slot-pill {
