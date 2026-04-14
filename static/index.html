@@ -7,14 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Storm Chase" />
-  <link rel="manifest" href="/static/storm-chase.webmanifest?v=0.4.77" />
+  <link rel="manifest" href="/static/storm-chase.webmanifest?v=0.4.78" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <title>Storm Chase MVP — Tactile</title>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/assets/css/main.css?v=0.4.77" />
-<link rel="stylesheet" href="/static/assets/css/components.css?v=0.4.77" />
-<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.4.77" />
+  <link rel="stylesheet" href="/static/assets/css/main.css?v=0.4.78" />
+<link rel="stylesheet" href="/static/assets/css/components.css?v=0.4.78" />
+<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.4.78" />
 </head>
 <body>
   <div id="app">
@@ -28,44 +28,6 @@
     <div id="map"></div>
 
     <div class="right-rail-scroll" id="rightRailScroll">
-    <div class="grid-focus-corner">
-      <button id="bestCellsBtn" class="grid-focus-btn" type="button" aria-label="Mettre en valeur les meilleures cellules" title="Mettre en valeur les meilleures cellules">
-        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3.5 14.6 8.8 20.5 9.7 16.2 13.8 17.2 19.6 12 16.9 6.8 19.6 7.8 13.8 3.5 9.7 9.4 8.8Z"></path>
-        </svg>
-      </button>
-      <button id="infoDrawerBtn" class="grid-focus-btn" type="button" aria-label="Informations" title="Informations">
-        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="9"></circle>
-          <path d="M12 10v6"></path>
-          <path d="M12 7.5h.01"></path>
-        </svg>
-      </button>
-      <button id="gridLinesBtn" class="grid-focus-btn active" type="button" aria-label="Afficher ou masquer les lignes de grille" title="Lignes de grille">
-        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 8h16"></path>
-          <path d="M4 16h16"></path>
-          <path d="M8 4v16"></path>
-          <path d="M16 4v16"></path>
-        </svg>
-      </button>
-      <button id="layerModeBtn" class="grid-focus-btn" type="button" aria-label="Choisir la couche de couleur" title="Couche de couleur">
-        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3 4 8l8 5 8-5-8-5Z"></path>
-          <path d="m4 12 8 5 8-5"></path>
-          <path d="m4 16 8 5 8-5"></path>
-        </svg>
-      </button>
-      <div id="layerPanel" class="layer-panel" aria-hidden="true">
-        <button class="layer-option active" type="button" data-layer-metric="score_global">Global</button>
-        <button class="layer-option" type="button" data-layer-metric="trigger_score">Déclenchement</button>
-        <button class="layer-option" type="button" data-layer-metric="structure_score">Organisation</button>
-        <button class="layer-option" type="button" data-layer-metric="chase_quality_score">Lisibilité</button>
-        <button class="layer-option" type="button" data-layer-metric="stability_score">Stabilité</button>
-        <button class="layer-option" type="button" data-layer-metric="confidence_score">Confiance</button>
-      </div>
-    </div>
-
     <div class="search-dock" id="topbar">
       <div class="mobile-toggle-bar">
         <button id="toggleSearchBtn" class="mobile-toggle-btn" type="button" aria-label="Afficher la recherche de zone" title="Zone et recherche">
@@ -98,7 +60,7 @@
       </div>
     </div>
 
-    <div class="fab-stack">
+    <div class="right-rail-stack">
       <button class="fab" id="locateBtn" aria-label="Me localiser" title="Autour de moi">
         <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3.2"></circle>
@@ -108,12 +70,47 @@
           <path d="M18.5 12h3"></path>
         </svg>
       </button>
+      <button id="gridLinesBtn" class="grid-focus-btn active" type="button" aria-label="Afficher ou masquer les lignes de grille" title="Lignes de grille">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 8h16"></path>
+          <path d="M4 16h16"></path>
+          <path d="M8 4v16"></path>
+          <path d="M16 4v16"></path>
+        </svg>
+      </button>
+      <button id="layerModeBtn" class="grid-focus-btn" type="button" aria-label="Choisir la couche de couleur" title="Couche de couleur">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3 4 8l8 5 8-5-8-5Z"></path>
+          <path d="m4 12 8 5 8-5"></path>
+          <path d="m4 16 8 5 8-5"></path>
+        </svg>
+      </button>
+      <button id="bestCellsBtn" class="grid-focus-btn" type="button" aria-label="Mettre en valeur les meilleures cellules" title="Mettre en valeur les meilleures cellules">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3.5 14.6 8.8 20.5 9.7 16.2 13.8 17.2 19.6 12 16.9 6.8 19.6 7.8 13.8 3.5 9.7 9.4 8.8Z"></path>
+        </svg>
+      </button>
       <button class="fab" id="refreshBtn" aria-label="Actualiser les données" title="Actualiser">
         <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
           <path d="M21 3v6h-6"></path>
         </svg>
       </button>
+      <button id="infoDrawerBtn" class="grid-focus-btn" type="button" aria-label="Informations" title="Informations">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"></circle>
+          <path d="M12 10v6"></path>
+          <path d="M12 7.5h.01"></path>
+        </svg>
+      </button>
+      <div id="layerPanel" class="layer-panel" aria-hidden="true">
+        <button class="layer-option active" type="button" data-layer-metric="score_global">Global</button>
+        <button class="layer-option" type="button" data-layer-metric="trigger_score">Déclenchement</button>
+        <button class="layer-option" type="button" data-layer-metric="structure_score">Organisation</button>
+        <button class="layer-option" type="button" data-layer-metric="chase_quality_score">Lisibilité</button>
+        <button class="layer-option" type="button" data-layer-metric="stability_score">Stabilité</button>
+        <button class="layer-option" type="button" data-layer-metric="confidence_score">Confiance</button>
+      </div>
     </div>
     </div>
 
@@ -238,23 +235,23 @@
       <p id="infoExplanation">—</p>
     </div>
   </div>
-  <script src="/static/assets/js/dom.js?v=0.4.77"></script>
-  <script src="/static/assets/js/utils.js?v=0.4.77"></script>
-  <script src="/static/assets/js/state.js?v=0.4.77"></script>
-  <script src="/static/assets/js/panels.js?v=0.4.77"></script>
-  <script src="/static/assets/js/core.js?v=0.4.77"></script>
-  <script src="/static/assets/js/map-ui.js?v=0.4.77"></script>
-  <script src="/static/assets/js/timeline.js?v=0.4.77"></script>
-  <script src="/static/assets/js/grid-loader.js?v=0.4.77"></script>
-  <script src="/static/assets/js/grid-core.js?v=0.4.77"></script>
-  <script src="/static/assets/js/grid-layers.js?v=0.4.77"></script>
-  <script src="/static/assets/js/grid.js?v=0.4.77"></script>
-  <script src="/static/assets/js/metric-data.js?v=0.4.77"></script>
-  <script src="/static/assets/js/metric-ui.js?v=0.4.77"></script>
-  <script src="/static/assets/js/selection.js?v=0.4.77"></script>
-  <script src="/static/assets/js/data.js?v=0.4.77"></script>
-  <script src="/static/assets/js/services.js?v=0.4.77"></script>
-  <script src="/static/assets/js/controls.js?v=0.4.77"></script>
-  <script src="/static/assets/js/bootstrap.js?v=0.4.77"></script>
+  <script src="/static/assets/js/dom.js?v=0.4.78"></script>
+  <script src="/static/assets/js/utils.js?v=0.4.78"></script>
+  <script src="/static/assets/js/state.js?v=0.4.78"></script>
+  <script src="/static/assets/js/panels.js?v=0.4.78"></script>
+  <script src="/static/assets/js/core.js?v=0.4.78"></script>
+  <script src="/static/assets/js/map-ui.js?v=0.4.78"></script>
+  <script src="/static/assets/js/timeline.js?v=0.4.78"></script>
+  <script src="/static/assets/js/grid-loader.js?v=0.4.78"></script>
+  <script src="/static/assets/js/grid-core.js?v=0.4.78"></script>
+  <script src="/static/assets/js/grid-layers.js?v=0.4.78"></script>
+  <script src="/static/assets/js/grid.js?v=0.4.78"></script>
+  <script src="/static/assets/js/metric-data.js?v=0.4.78"></script>
+  <script src="/static/assets/js/metric-ui.js?v=0.4.78"></script>
+  <script src="/static/assets/js/selection.js?v=0.4.78"></script>
+  <script src="/static/assets/js/data.js?v=0.4.78"></script>
+  <script src="/static/assets/js/services.js?v=0.4.78"></script>
+  <script src="/static/assets/js/controls.js?v=0.4.78"></script>
+  <script src="/static/assets/js/bootstrap.js?v=0.4.78"></script>
 </body>
 </html>

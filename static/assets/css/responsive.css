@@ -52,8 +52,8 @@
       margin-top: 0;
       right: calc(100% + 12px);
       width: min(348px, calc(100vw - 92px));
-      padding: 10px;
-      border-radius: 18px;
+      padding: 0;
+      border-radius: 0;
     }
     body.mobile-ui .search-dock.show-search .search-panel {
       display: grid;
@@ -1554,3 +1554,12 @@
     width: 100%;
   }
 }
+
+    body.mobile-ui .right-rail-stack {
+      top: calc(var(--rail-top-topbar) + env(safe-area-inset-top) + var(--rail-btn-size) + var(--right-rail-gap));
+      right: var(--rail-right);
+    }
+    body.mobile-ui .location-bar {
+      border-radius: 17px;
+      min-height: calc(var(--rail-btn-size) + 4px);
+    }
