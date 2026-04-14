@@ -284,314 +284,223 @@ def shear_proxy_ms(ws10: float, wd10: float, ws100: float, wd100: float) -> floa
     return round(math.sqrt(du * du + dv * dv), 1)
 
 
-def piecewise_score(value: float, points: list[tuple[float, float]], inverse: bool = False) -> int:
-    if value is None or not math.isfinite(value):
-        return 0
-    pts = sorted(points, key=lambda x: x[0], reverse=inverse)
-    if not inverse:
-        if value <= pts[0][0]:
-            return clamp(pts[0][1])
-        if value >= pts[-1][0]:
-            return clamp(pts[-1][1])
-        for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
-            if x1 <= value <= x2:
-                ratio = 0 if x2 == x1 else (value - x1) / (x2 - x1)
-                return clamp(y1 + (y2 - y1) * ratio)
+def score_trigger(cape: float, dewpoint_c: float, rh2m: float, vpd: float, temp_c: float, wetbulb_c: float) -> int:
+    score = 0.0
+
+    # Instabilité utilisable : on évite de sur-récompenser un CAPE élevé seul.
+    if cape < 75:
+        score += 0
+    elif cape < 200:
+        score += 6
+    elif cape < 500:
+        score += 16
+    elif cape < 900:
+        score += 28
+    elif cape < 1500:
+        score += 38
+    elif cape < 2200:
+        score += 45
     else:
-        if value >= pts[0][0]:
-            return clamp(pts[0][1])
-        if value <= pts[-1][0]:
-            return clamp(pts[-1][1])
-        for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
-            if x2 <= value <= x1:
-                ratio = 0 if x1 == x2 else (x1 - value) / (x1 - x2)
-                return clamp(y1 + (y2 - y1) * ratio)
-    return clamp(pts[-1][1])
+        score += 48
 
+    # Humidité basse couche.
+    if dewpoint_c < 7:
+        score -= 16
+    elif dewpoint_c < 10:
+        score -= 8
+    elif dewpoint_c < 13:
+        score += 0
+    elif dewpoint_c < 16:
+        score += 8
+    elif dewpoint_c < 19:
+        score += 14
+    else:
+        score += 18
 
-def score_cape(cape: float) -> int:
-    return piecewise_score(cape, [
-        (0, 0),
-        (100, 8),
-        (300, 20),
-        (700, 40),
-        (1200, 62),
-        (1800, 82),
-        (2500, 96),
-        (3200, 100),
-    ])
-
-
-def score_shear(shear_ms: float) -> int:
-    return piecewise_score(shear_ms, [
-        (0, 0),
-        (6, 10),
-        (10, 28),
-        (14, 46),
-        (18, 66),
-        (22, 84),
-        (28, 96),
-        (35, 100),
-    ])
-
-
-def score_dewpoint(dewpoint_c: float) -> int:
-    return piecewise_score(dewpoint_c, [
-        (0, 0),
-        (8, 8),
-        (10, 24),
-        (12, 42),
-        (14, 62),
-        (17, 84),
-        (20, 96),
-        (23, 100),
-    ])
-
-
-def score_humidity(rh2m: float) -> int:
-    return piecewise_score(rh2m, [
-        (20, 0),
-        (35, 8),
-        (45, 22),
-        (55, 42),
-        (65, 66),
-        (80, 88),
-        (95, 100),
-    ])
-
-
-def score_vpd(vpd: float) -> int:
-    return piecewise_score(vpd, [
-        (3.5, 0),
-        (3.0, 8),
-        (2.4, 20),
-        (1.8, 42),
-        (1.2, 68),
-        (0.8, 86),
-        (0.4, 96),
-        (0.0, 100),
-    ], inverse=True)
-
-
-def score_wetbulb(wetbulb_c: float) -> int:
-    return piecewise_score(wetbulb_c, [
-        (4, 0),
-        (8, 8),
-        (11, 24),
-        (14, 46),
-        (17, 72),
-        (20, 92),
-        (23, 100),
-    ])
-
-
-def score_gusts(gusts: float) -> int:
-    return piecewise_score(gusts, [
-        (0, 10),
-        (8, 18),
-        (12, 28),
-        (16, 44),
-        (20, 62),
-        (24, 78),
-        (30, 92),
-        (36, 100),
-    ])
-
-
-def score_cloud_penalty(cloud_low: float, cloud_mid: float, cloud_high: float) -> int:
-    low = piecewise_score(cloud_low, [(0, 100), (10, 95), (25, 84), (40, 66), (60, 38), (80, 16), (100, 4)])
-    mid = piecewise_score(cloud_mid, [(0, 100), (10, 96), (25, 88), (40, 74), (60, 50), (80, 24), (100, 6)])
-    high = piecewise_score(cloud_high, [(0, 100), (10, 96), (25, 90), (40, 80), (60, 62), (80, 36), (100, 10)])
-    return clamp(low * 0.50 + mid * 0.30 + high * 0.20)
-
-
-def score_timing(dt: datetime) -> int:
-    hour = dt.hour + dt.minute / 60.0
-    if hour < 8:
-        return 8
-    if hour < 10:
-        return 20
-    if hour < 12:
-        return 42
-    if hour < 14:
-        return 62
-    if hour < 17:
-        return 86
-    if hour < 20:
-        return 100
-    if hour < 22:
-        return 70
-    return 30
-
-
-def compute_initiation(cape: float, dewpoint_c: float, rh2m: float, vpd: float, temp_c: float, wetbulb_c: float, dt: datetime) -> tuple[int, dict[str, int]]:
-    cape_s = score_cape(cape)
-    dew_s = score_dewpoint(dewpoint_c)
-    rh_s = score_humidity(rh2m)
-    vpd_s = score_vpd(vpd)
-    wet_s = score_wetbulb(wetbulb_c)
-    timing_s = score_timing(dt)
-    moisture = clamp(dew_s * 0.34 + rh_s * 0.24 + vpd_s * 0.26 + wet_s * 0.16)
-    instability = cape_s
-    score = instability * 0.35 + moisture * 0.35 + timing_s * 0.20
-
-    inhibition_penalty = 0.0
-    if cape >= 1200 and dewpoint_c < 11:
-        inhibition_penalty += 10
-    if temp_c >= 31 and dewpoint_c < 13:
-        inhibition_penalty += 8
-    if cape >= 900 and vpd >= 2.0:
-        inhibition_penalty += 8
-    if rh2m < 40:
-        inhibition_penalty += 8
-    score -= inhibition_penalty
-
-    return clamp(score), {
-        'instability': instability,
-        'moisture': moisture,
-        'timing': timing_s,
-        'inhibition_penalty': clamp(inhibition_penalty),
-        'cape_component': cape_s,
-        'dew_component': dew_s,
-        'humidity_component': rh_s,
-        'vpd_component': vpd_s,
-        'wetbulb_component': wet_s,
-    }
-
-
-def compute_severity(shear_ms: float, gusts: float, cape: float, initiation_score: int) -> tuple[int, dict[str, int]]:
-    shear_s = score_shear(shear_ms)
-    cape_s = score_cape(cape)
-    gust_s = score_gusts(gusts)
-    updraft = clamp(cape_s * 0.75 + max(0, shear_s - 15) * 0.25)
-    organization = clamp(shear_s * 0.82 + gust_s * 0.18)
-    maintenance = clamp(shear_s * 0.55 + cape_s * 0.30 + gust_s * 0.15)
-    score = updraft * 0.40 + organization * 0.40 + maintenance * 0.20
-
-    if initiation_score < 25:
-        score -= 22
-    elif initiation_score < 40:
+    # VPD : préférence pour une couche basse ni saturée ni trop sèche.
+    if vpd < 0.25:
+        score += 2
+    elif vpd < 0.7:
+        score += 10
+    elif vpd < 1.2:
+        score += 14
+    elif vpd < 1.8:
+        score += 8
+    elif vpd < 2.5:
+        score -= 2
+    else:
         score -= 12
 
-    if shear_ms >= 16 and cape < 200:
-        score -= 16
-    elif shear_ms >= 12 and cape < 350:
-        score -= 8
-
-    if cape >= 1500 and shear_ms >= 18:
-        score += 6
-    elif cape >= 900 and shear_ms >= 14:
+    # RH : appoint.
+    if rh2m >= 85:
+        score += 4
+    elif rh2m >= 70:
         score += 3
-
-    return clamp(score), {
-        'updraft': updraft,
-        'organization': organization,
-        'maintenance': maintenance,
-        'shear_component': shear_s,
-        'gust_component': gust_s,
-    }
-
-
-def compute_chaseability(cloud_low: float, cloud_mid: float, cloud_high: float, dt: datetime, gusts: float) -> tuple[int, dict[str, int]]:
-    visibility = score_cloud_penalty(cloud_low, cloud_mid, cloud_high)
-    timing_s = score_timing(dt)
-    photogenicity = clamp(visibility * 0.72 + timing_s * 0.28)
-    comfort = clamp(100 - max(0, gusts - 18) * 3.2)
-    score = visibility * 0.50 + photogenicity * 0.30 + comfort * 0.20
-    return clamp(score), {
-        'visibility': visibility,
-        'photogenicity': photogenicity,
-        'comfort': comfort,
-    }
-
-
-def compute_reliability(reference: dict, neighbours: list[dict]) -> tuple[int, dict[str, int]]:
-    if not neighbours:
-        return 36, {'consistency': 32, 'stability': 34, 'confidence_margin': 44}
-
-    ref_global = reference['pre_global']
-    ref_initiation = reference['trigger']
-    ref_severity = reference['structure']
-    ref_chaseability = reference['quality']
-    gap = abs(ref_initiation - ref_severity)
-    consistency = 90 - gap * 1.1
-    if ref_initiation >= 60 and reference['moisture'] < 40:
-        consistency -= 12
-    if ref_severity >= 65 and ref_initiation < 35:
-        consistency -= 14
-    if ref_chaseability < 20 and ref_global >= 60:
-        consistency -= 8
-
-    global_diffs = [abs(ref_global - n['pre_global']) for n in neighbours]
-    initiation_diffs = [abs(ref_initiation - n['trigger']) for n in neighbours]
-    severity_diffs = [abs(ref_severity - n['structure']) for n in neighbours]
-    stability = 84 - (sum(global_diffs) / len(global_diffs)) * 1.15 - (sum(initiation_diffs) / len(initiation_diffs)) * 0.30 - (sum(severity_diffs) / len(severity_diffs)) * 0.25
-
-    comps = [
-        reference['cape_component'],
-        reference['dew_component'],
-        reference['humidity_component'],
-        reference['vpd_component'],
-        reference['wetbulb_component'],
-        reference['shear_component'],
-    ]
-    sorted_comps = sorted(comps)
-    margin = (sorted_comps[-1] - sorted_comps[0]) * 0.15
-    confidence_margin = max(0, min(sorted_comps[-2], sorted_comps[-1]) - margin)
-
-    score = consistency * 0.40 + stability * 0.35 + confidence_margin * 0.25
-    return clamp(score), {
-        'consistency': clamp(consistency),
-        'stability': clamp(stability),
-        'confidence_margin': clamp(confidence_margin),
-    }
-
-
-def compute_bust_risk(initiation_score: int, severity_score: int, chaseability_score: int, reliability_score: int, moisture_component: int, timing_component: int) -> int:
-    risk = 100.0
-    risk -= initiation_score * 0.42
-    risk -= severity_score * 0.18
-    risk -= reliability_score * 0.20
-    risk -= moisture_component * 0.10
-    risk -= timing_component * 0.07
-    risk -= chaseability_score * 0.03
-
-    if initiation_score < 25:
-        risk += 18
-    elif initiation_score < 40:
-        risk += 10
-    if reliability_score < 35:
-        risk += 12
-    if moisture_component < 30:
-        risk += 10
-    if severity_score >= 70 and initiation_score < 35:
-        risk += 10
-
-    return clamp(risk)
-
-
-def score_global(trigger_score: int, structure_score: int, chase_quality_score: int, stability_score: int, confidence_score: int | None = None) -> int:
-    score = trigger_score * 0.30 + structure_score * 0.30 + chase_quality_score * 0.25 + stability_score * 0.15
-    if trigger_score < 25:
-        score = min(score, 55)
-    elif trigger_score < 40:
-        score = min(score, 68)
-    if chase_quality_score < 15:
+    elif rh2m < 35:
         score -= 8
-    if confidence_score is not None:
-        if confidence_score >= 75:
-            score += 3
-        elif confidence_score >= 60:
-            score += 1
-        elif confidence_score >= 45:
-            score -= 2
-        else:
-            score -= 5
+
+    # Température humide : bon proxy simple d'une couche basse exploitable.
+    if wetbulb_c >= 18:
+        score += 8
+    elif wetbulb_c >= 15:
+        score += 5
+    elif wetbulb_c < 9:
+        score -= 8
+
+    # Cas classiques d'instabilité sèche peu fiable pour du déclenchement réel.
+    if cape >= 1200 and dewpoint_c < 11:
+        score -= 10
+    if temp_c >= 31 and dewpoint_c < 13:
+        score -= 8
+    if cape >= 900 and vpd >= 2.0:
+        score -= 6
+
     return clamp(score)
 
 
+def score_structure(shear_ms: float, gusts: float, cape: float, trigger_score: int) -> int:
+    score = 0.0
+
+    # Cisaillement = axe principal, avec plateau au-delà d'un certain seuil.
+    if shear_ms < 5:
+        score += 0
+    elif shear_ms < 8:
+        score += 8
+    elif shear_ms < 12:
+        score += 20
+    elif shear_ms < 16:
+        score += 34
+    elif shear_ms < 20:
+        score += 47
+    elif shear_ms < 26:
+        score += 58
+    elif shear_ms < 32:
+        score += 62
+    else:
+        score += 60
+
+    # Rafales : appoint, utile pour distinguer un champ de vent un peu plus dynamique.
+    if gusts >= 11:
+        score += 3
+    if gusts >= 16:
+        score += 4
+    if gusts >= 22:
+        score += 4
+
+    # Impossible d'avoir une "bonne organisation chassable" si le signal de déclenchement est très faible.
+    if trigger_score < 20:
+        score -= 18
+    elif trigger_score < 35:
+        score -= 10
+
+    # On évite les faux positifs sur fort shear avec instabilité quasi absente.
+    if shear_ms >= 16 and cape < 200:
+        score -= 14
+    elif shear_ms >= 12 and cape < 350:
+        score -= 7
+
+    return clamp(score)
+
+
+def score_chase_quality(low: float, mid: float, high: float) -> int:
+    score = 100.0
+
+    # La couche basse pénalise le plus la lisibilité terrain.
+    if low >= 95:
+        score -= 46
+    elif low >= 80:
+        score -= 32
+    elif low >= 60:
+        score -= 18
+    elif low >= 40:
+        score -= 8
+
+    if mid >= 95:
+        score -= 24
+    elif mid >= 80:
+        score -= 17
+    elif mid >= 60:
+        score -= 9
+
+    if high >= 98:
+        score -= 10
+    elif high >= 90:
+        score -= 7
+    elif high >= 75:
+        score -= 4
+
+    return clamp(score)
+
+
+def score_stability(reference: dict, neighbours: list[dict]) -> int:
+    if not neighbours:
+        return 35
+
+    ref_global = reference["pre_global"]
+    ref_trigger = reference["trigger"]
+    ref_structure = reference["structure"]
+
+    global_diffs = [abs(ref_global - n["pre_global"]) for n in neighbours]
+    trigger_diffs = [abs(ref_trigger - n["trigger"]) for n in neighbours]
+    structure_diffs = [abs(ref_structure - n["structure"]) for n in neighbours]
+
+    mean_global_diff = sum(global_diffs) / len(global_diffs)
+    mean_trigger_diff = sum(trigger_diffs) / len(trigger_diffs)
+    mean_structure_diff = sum(structure_diffs) / len(structure_diffs)
+
+    score = 78.0
+    score -= mean_global_diff * 1.25
+    score -= mean_trigger_diff * 0.45
+    score -= mean_structure_diff * 0.35
+
+    close_support = sum(1 for n in neighbours if n["pre_global"] >= ref_global - 10)
+    score += close_support * 4
+
+    if ref_global >= 60 and close_support == 0:
+        score -= 10
+    if ref_global >= 70 and mean_global_diff <= 8:
+        score += 8
+    if mean_global_diff >= 18:
+        score -= 10
+
+    return clamp(score)
+
+
+def score_global(trigger_score: int, structure_score: int, chase_quality_score: int, stability_score: int) -> int:
+    return clamp(trigger_score * 0.40 + structure_score * 0.28 + chase_quality_score * 0.14 + stability_score * 0.18)
+
+
 def score_confidence(trigger_score: int, structure_score: int, chase_quality_score: int, stability_score: int, global_score_value: int) -> int:
-    return compute_bust_risk(trigger_score, structure_score, chase_quality_score, stability_score, global_score_value, global_score_value)
+    score = 28.0
+
+    # Équilibre entre déclenchement et organisation.
+    gap = abs(trigger_score - structure_score)
+    if gap <= 8:
+        score += 16
+    elif gap <= 16:
+        score += 10
+    elif gap <= 26:
+        score += 4
+    else:
+        score -= 8
+
+    # La stabilité temporelle pèse lourd sur la confiance.
+    score += stability_score * 0.40
+
+    if global_score_value >= 70:
+        score += 8
+    elif global_score_value >= 55:
+        score += 4
+    elif global_score_value < 25:
+        score -= 6
+
+    if chase_quality_score < 25:
+        score -= 7
+    elif chase_quality_score >= 75:
+        score += 3
+
+    return clamp(score)
+
 
 def potentiel(score_global: int) -> str:
     if score_global < 20:
@@ -606,15 +515,13 @@ def potentiel(score_global: int) -> str:
 
 
 def confiance_label(confidence_score: int) -> str:
-    if confidence_score < 20:
-        return "Très faible"
-    if confidence_score < 40:
+    if confidence_score < 30:
         return "Faible"
-    if confidence_score < 60:
-        return "Modéré"
-    if confidence_score < 80:
-        return "Élevé"
-    return "Très élevé"
+    if confidence_score < 50:
+        return "Moyenne"
+    if confidence_score < 70:
+        return "Bonne"
+    return "Très bonne"
 
 
 def build_summary(
@@ -627,42 +534,42 @@ def build_summary(
     stability_score: int,
     confidence_score: int,
 ) -> str:
-    initiation_text = (
-        "initiation solide"
-        if trigger_score >= 70
-        else "initiation jouable"
+    trigger_text = (
+        "déclenchement favorable"
+        if trigger_score >= 65
+        else "déclenchement possible"
         if trigger_score >= 45
-        else "initiation fragile"
+        else "déclenchement limité"
     )
-    severity_text = (
-        "potentiel sévère crédible"
-        if structure_score >= 70
-        else "potentiel structuré correct"
-        if structure_score >= 45
-        else "structure limitée"
+    structure_text = (
+        "organisation crédible"
+        if structure_score >= 55
+        else "organisation possible"
+        if structure_score >= 35
+        else "organisation faible"
     )
-    chase_text = (
-        "bonne chaseability"
+    quality_text = (
+        "bonne lisibilité terrain"
         if chase_quality_score >= 70
-        else "lecture terrain moyenne"
+        else "qualité de chasse moyenne"
         if chase_quality_score >= 45
-        else "lecture terrain pénalisée"
+        else "visibilité pénalisée"
     )
-    reliability_text = (
-        "signal robuste"
+    stability_text = (
+        "bonne stabilité horaire"
         if stability_score >= 70
-        else "signal exploitable"
+        else "stabilité correcte"
         if stability_score >= 45
-        else "signal encore fragile"
+        else "fenêtre fragile"
     )
-    bust_text = (
-        "risque de bust élevé"
+    conf_text = (
+        "signal robuste"
         if confidence_score >= 70
-        else "risque de bust modéré"
-        if confidence_score >= 40
-        else "risque de bust contenu"
+        else "signal cohérent"
+        if confidence_score >= 50
+        else "signal fragile"
     )
-    return f"{day_label} {slot_label} ({selected_hour}) : {initiation_text}, {severity_text}, {chase_text}, {reliability_text}, {bust_text}."
+    return f"{day_label} {slot_label} ({selected_hour}) : {trigger_text}, {structure_text}, {quality_text}, {stability_text}, {conf_text}."
 
 
 def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
@@ -695,10 +602,10 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
         wd100 = float(hourly.get("wind_direction_100m", [0])[idx] or 0)
         shear = shear_proxy_ms(ws10, wd10, ws100, wd100)
 
-        trigger, initiation_diag = compute_initiation(cape, dew, rh2m, vpd, temp, wetbulb, dt)
-        structure, severity_diag = compute_severity(shear, gusts, cape, trigger)
-        quality, chase_diag = compute_chaseability(cloud_low, cloud_mid, cloud_high, dt, gusts)
-        pre_global = clamp(trigger * 0.34 + structure * 0.33 + quality * 0.33)
+        trigger = score_trigger(cape, dew, rh2m, vpd, temp, wetbulb)
+        structure = score_structure(shear, gusts, cape, trigger)
+        quality = score_chase_quality(cloud_low, cloud_mid, cloud_high)
+        pre_global = clamp(trigger * 0.48 + structure * 0.32 + quality * 0.20)
 
         metrics.append(
             {
@@ -720,9 +627,6 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
                 "structure": structure,
                 "quality": quality,
                 "pre_global": pre_global,
-                **initiation_diag,
-                **severity_diag,
-                **chase_diag,
             }
         )
 
@@ -750,9 +654,9 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
                     for n_idx in range(idx - 1, idx + 2)
                     if n_idx in metrics_by_idx and n_idx != idx
                 ]
-                stability, reliability_diag = compute_reliability(metric, neighbours)
-                conf_score = compute_bust_risk(metric["trigger"], metric["structure"], metric["quality"], stability, metric["moisture"], metric["timing"])
-                global_score = score_global(metric["trigger"], metric["structure"], metric["quality"], stability, conf_score)
+                stability = score_stability(metric, neighbours)
+                global_score = score_global(metric["trigger"], metric["structure"], metric["quality"], stability)
+                conf_score = score_confidence(metric["trigger"], metric["structure"], metric["quality"], stability, global_score)
                 pot = potentiel(global_score)
                 conf = confiance_label(conf_score)
                 selected_hour = metric["dt"].strftime("%Hh")
@@ -802,7 +706,7 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
                     summary=summary,
                 )
 
-                score_key = global_score * 1000 + (100 - conf_score) * 10 + stability
+                score_key = global_score * 1000 + conf_score * 10 + stability
                 if score_key > best_score:
                     best_score = score_key
                     best = row
@@ -891,12 +795,12 @@ def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float
             },
             "requested_date": target_date.isoformat() if target_date is not None else None,
             "legend": {
-                "global_score": "0-100, combine Initiation 30%, Severity 30%, Chaseability 25%, Reliability 15%, avec plafonds anti faux-positifs et ajustement par Bust Risk.",
-                "trigger": "Initiation : instabilité utilisable + humidité basse couche + fenêtre horaire, pénalisée si la couche basse est trop sèche.",
-                "structure": "Severity : potentiel d’intensité et d’organisation via CAPE, shear et dynamique de surface.",
-                "chase_quality": "Chaseability : visibilité terrain, photogénie et confort relatif via nébulosité, timing et vent.",
-                "stability": "Reliability : cohérence interne + stabilité temporelle locale + marge vis-à-vis des seuils.",
-                "confidence": "Bust Risk : risque qu’une cellule paraisse prometteuse mais produise peu ou rien sur le terrain.",
+                "global_score": "0-100, combine déclenchement 40%, organisation 28%, qualité terrain 14%, stabilité 18%",
+                "trigger": "Instabilité utilisable + humidité basse couche (CAPE, Td, VPD, RH, Tw)",
+                "structure": "Cisaillement prioritaire, rafales en appoint, pondéré par le déclenchement",
+                "chase_quality": "Nébulosité / lisibilité terrain",
+                "stability": "Stabilité horaire locale autour du créneau retenu",
+                "confidence": "Équilibre déclenchement/organisation + stabilité horaire + lisibilité terrain",
             },
         },
         "days": days,
@@ -915,8 +819,8 @@ def print_summary(rows: list[OutputRow]) -> None:
         print(f"\n=== {day_label} | {slot_label} ===")
         for r in subset[:5]:
             print(
-                f"- {r.zone} | {r.selected_hour} | global {r.score_global} | init {r.trigger_score} | "
-                f"severity {r.structure_score} | chase {r.chase_quality_score} | bust {r.confidence_score}"
+                f"- {r.zone} | {r.selected_hour} | global {r.score_global} | trig {r.trigger_score} | "
+                f"struct {r.structure_score} | qual {r.chase_quality_score} | conf {r.confidence_score}"
             )
 
 

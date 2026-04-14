@@ -10,7 +10,7 @@
       selectionQuality.textContent = safe(p.chase_quality_score);
       selectionStability.textContent = safe(p.stability_score);
       const stabilityValue = Number(p.stability_score);
-      selectionStabilityLabel.textContent = Number.isFinite(stabilityValue) ? (stabilityValue < 35 ? 'Fenêtre fragile' : stabilityValue < 65 ? 'Stabilité correcte' : stabilityValue < 85 ? 'Bonne stabilité horaire' : 'Très bonne tenue') : '—';
+      selectionStabilityLabel.textContent = Number.isFinite(stabilityValue) ? (stabilityValue < 35 ? 'Signal fragile' : stabilityValue < 65 ? 'Signal exploitable' : stabilityValue < 85 ? 'Signal robuste' : 'Signal très robuste') : '—';
       applyMetricTone(selectionScore, 'score_global', p.score_global);
       applyMetricTone(selectionConfidence, 'confidence_score', p.confidence_score);
       applyMetricTone(selectionTrigger, 'trigger_score', p.trigger_score);
@@ -128,7 +128,7 @@
       dQuality.textContent = safe(p.chase_quality_score);
       dStability.textContent = safe(p.stability_score);
       const detailStabilityValue = Number(p.stability_score);
-      dStabilityLabel.textContent = Number.isFinite(detailStabilityValue) ? (detailStabilityValue < 35 ? 'Fenêtre fragile' : detailStabilityValue < 65 ? 'Stabilité correcte' : detailStabilityValue < 85 ? 'Bonne stabilité horaire' : 'Très bonne tenue') : '—';
+      dStabilityLabel.textContent = Number.isFinite(detailStabilityValue) ? (detailStabilityValue < 35 ? 'Signal fragile' : detailStabilityValue < 65 ? 'Signal exploitable' : detailStabilityValue < 85 ? 'Signal robuste' : 'Signal très robuste') : '—';
       dCape.textContent = safe(p.mucape);
       dShear.textContent = safe(p.shear_ms, ' m/s');
       dRh.textContent = safe(p.relative_humidity_2m, ' %');

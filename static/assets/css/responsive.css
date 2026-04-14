@@ -1698,7 +1698,7 @@
 }
 
 
-/* v0.4.81 detail modal alignment and mobile full-width content */
+/* v0.4.82 detail modal alignment and mobile full-width content */
 .details-modal .details-content {
   width: min(100%, 780px);
   margin: 0 auto;

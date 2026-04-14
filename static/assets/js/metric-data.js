@@ -6,27 +6,27 @@
     const METRIC_INFO = {
       score_global: {
         label: 'Score global',
-        explain: 'Synthèse du potentiel de la cellule. Il combine le déclenchement, l’organisation et la qualité de chasse. Plus la valeur est haute, plus la zone mérite de l’attention, sans garantir à elle seule un orage.'
+        explain: 'Synthèse v2 de l’intérêt réel de la cellule pour une chasse. Il combine Initiation, Severity, Chaseability et Reliability, avec des garde-fous pour éviter les faux positifs trop flatteurs.'
       },
       confidence_score: {
-        label: 'Confiance',
-        explain: 'Indice de robustesse du signal. Il augmente quand plusieurs paramètres vont dans le même sens. Une confiance élevée signifie un signal plus cohérent, pas forcément un risque plus fort.'
+        label: 'Bust Risk',
+        explain: 'Risque qu’une cellule paraisse prometteuse mais produise peu ou rien sur le terrain. Ici, plus la valeur est haute, plus le risque de déplacement inutile augmente.'
       },
       trigger_score: {
-        label: 'Déclenchement',
-        explain: 'Estime la facilité à lancer de la convection. Il repose surtout sur l’instabilité disponible, l’humidité en basse couche, le VPD, le point de rosée et le bulbe humide.'
+        label: 'Initiation',
+        explain: 'Estime la probabilité qu’un orage démarre réellement. Le score croise instabilité, humidité en basse couche, sécheresse relative et fenêtre horaire, puis pénalise les profils trop secs.'
       },
       structure_score: {
-        label: 'Organisation',
-        explain: 'Mesure le potentiel d’organisation des cellules. Il repose principalement sur le cisaillement vertical approximé et la dynamique de surface via les rafales.'
+        label: 'Severity',
+        explain: 'Mesure le potentiel d’intensité et d’organisation si la convection part. Le score repose surtout sur le shear, la CAPE et la dynamique de surface.'
       },
       chase_quality_score: {
-        label: 'Lisibilité',
-        explain: 'Cherche à dire si la zone est exploitable sur le terrain. Il prend en compte surtout la nébulosité et l’environnement visuel, pour éviter les secteurs prometteurs mais peu lisibles.'
+        label: 'Chaseability',
+        explain: 'Mesure l’intérêt terrain pour la chasse. Il combine visibilité, photogénie et confort relatif à partir de la nébulosité, du timing et d’un proxy de vent.'
       },
       stability_score: {
-        label: 'Stabilité',
-        explain: 'Mesure la tenue horaire du signal autour du créneau retenu. Une bonne stabilité signifie que le potentiel ne repose pas sur une seule heure isolée et fragile.'
+        label: 'Reliability',
+        explain: 'Mesure la robustesse du signal. Le score combine cohérence interne des paramètres, stabilité temporelle locale et marge vis-à-vis des seuils utiles.'
       },
       mucape: {
         label: 'CAPE',
@@ -120,14 +120,15 @@
           };
         }
         case 'confidence_score': {
-          const state = value < 35 ? 'Fragile' : value < 65 ? 'Moyenne' : value < 85 ? 'Bonne' : 'Très bonne';
+          const state = value < 20 ? 'Très faible' : value < 40 ? 'Faible' : value < 60 ? 'Modéré' : value < 80 ? 'Élevé' : 'Très élevé';
           return {
             state,
             guide: [
-              rangeLine('Fragile', '0–34 : signal instable ou peu cohérent.'),
-              rangeLine('Moyenne', '35–64 : lecture possible, mais prudence.'),
-              rangeLine('Bonne', '65–84 : plusieurs signaux convergent.'),
-              rangeLine('Très bonne', '85–100 : signal solide pour la cellule.')
+              rangeLine('Très faible', '0–19 : risque de bust contenu.'),
+              rangeLine('Faible', '20–39 : déplacement assez défendable.'),
+              rangeLine('Modéré', '40–59 : prudence, le signal peut décevoir.'),
+              rangeLine('Élevé', '60–79 : risque de faux positif marqué.'),
+              rangeLine('Très élevé', '80–100 : forte probabilité de déplacement peu rentable.')
             ].join('')
           };
         }

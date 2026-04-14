@@ -37,6 +37,7 @@ let selectedFeature = null;
 let selectedBaseDate = getTodayIsoDate();
 let selectedColorMetric = 'score_global';
 let lastGridTemplate = null;
+let activeGridMaskCells = [];
 
 syncDateControls();
 

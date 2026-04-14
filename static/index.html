@@ -7,14 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Storm Chase" />
-  <link rel="manifest" href="/static/storm-chase.webmanifest?v=0.4.81" />
+  <link rel="manifest" href="/static/storm-chase.webmanifest?v=0.5.0" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <title>Storm Chase MVP — Tactile</title>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/assets/css/main.css?v=0.4.81" />
-<link rel="stylesheet" href="/static/assets/css/components.css?v=0.4.81" />
-<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.4.81" />
+  <link rel="stylesheet" href="/static/assets/css/main.css?v=0.5.0" />
+<link rel="stylesheet" href="/static/assets/css/components.css?v=0.5.0" />
+<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.5.0" />
 </head>
 <body>
   <div id="app">
@@ -26,6 +26,13 @@
       </div>
     </div>
     <div id="map"></div>
+    <div id="gridCornerMask" class="grid-corner-mask" aria-hidden="true">
+      <div class="grid-corner-mask-frame"></div>
+      <span class="grid-corner-cutout cutout-tl"></span>
+      <span class="grid-corner-cutout cutout-tr"></span>
+      <span class="grid-corner-cutout cutout-br"></span>
+      <span class="grid-corner-cutout cutout-bl"></span>
+    </div>
 
     <div class="right-rail-scroll" id="rightRailScroll">
     <div class="search-dock" id="topbar">
@@ -96,11 +103,11 @@
       </button>
       <div id="layerPanel" class="layer-panel" aria-hidden="true">
         <button class="layer-option active" type="button" data-layer-metric="score_global">Global</button>
-        <button class="layer-option" type="button" data-layer-metric="trigger_score">Déclenchement</button>
-        <button class="layer-option" type="button" data-layer-metric="structure_score">Organisation</button>
-        <button class="layer-option" type="button" data-layer-metric="chase_quality_score">Lisibilité</button>
-        <button class="layer-option" type="button" data-layer-metric="stability_score">Stabilité</button>
-        <button class="layer-option" type="button" data-layer-metric="confidence_score">Confiance</button>
+        <button class="layer-option" type="button" data-layer-metric="trigger_score">Initiation</button>
+        <button class="layer-option" type="button" data-layer-metric="structure_score">Severity</button>
+        <button class="layer-option" type="button" data-layer-metric="chase_quality_score">Chaseability</button>
+        <button class="layer-option" type="button" data-layer-metric="stability_score">Reliability</button>
+        <button class="layer-option" type="button" data-layer-metric="confidence_score">Bust Risk</button>
       </div>
     </div>
     </div>
@@ -134,14 +141,14 @@
 
       <div class="hero-score">
         <button class="metric-btn" data-metric="score_global"><span class="label">Score global</span><span class="value" id="selectionScore">-</span><span class="hint" id="selectionPotential">-</span></button>
-        <button class="metric-btn" data-metric="confidence_score"><span class="label">Confiance</span><span class="value" id="selectionConfidence">-</span><span class="hint" id="selectionConfidenceLabel">-</span></button>
+        <button class="metric-btn" data-metric="confidence_score"><span class="label">Bust Risk</span><span class="value" id="selectionConfidence">-</span><span class="hint" id="selectionConfidenceLabel">-</span></button>
       </div>
 
       <div class="quick-grid">
-        <button class="metric-btn" data-metric="trigger_score"><span class="label">Déclenchement</span><span class="value" id="selectionTrigger">-</span></button>
-        <button class="metric-btn" data-metric="structure_score"><span class="label">Organisation</span><span class="value" id="selectionStructure">-</span></button>
-        <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Lisibilité</span><span class="value" id="selectionQuality">-</span></button>
-        <button class="metric-btn" data-metric="stability_score"><span class="label">Stabilité</span><span class="value" id="selectionStability">-</span><span class="hint" id="selectionStabilityLabel">-</span></button>
+        <button class="metric-btn" data-metric="trigger_score"><span class="label">Initiation</span><span class="value" id="selectionTrigger">-</span></button>
+        <button class="metric-btn" data-metric="structure_score"><span class="label">Severity</span><span class="value" id="selectionStructure">-</span></button>
+        <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Chaseability</span><span class="value" id="selectionQuality">-</span></button>
+        <button class="metric-btn" data-metric="stability_score"><span class="label">Reliability</span><span class="value" id="selectionStability">-</span><span class="hint" id="selectionStabilityLabel">-</span></button>
       </div>
 
 
@@ -168,11 +175,11 @@
           <div class="details-group-title">Lecture rapide des scores</div>
           <div class="details-grid details-grid-score">
             <button class="metric-btn" data-metric="score_global"><span class="label">Score global</span><span class="value" id="dScoreGlobal">-</span><span class="hint" id="dPotential">-</span></button>
-            <button class="metric-btn" data-metric="confidence_score"><span class="label">Confiance</span><span class="value" id="dConfidence">-</span><span class="hint" id="dConfidenceLabel">-</span></button>
-            <button class="metric-btn" data-metric="trigger_score"><span class="label">Déclenchement</span><span class="value" id="dTrigger">-</span><span class="hint">Capacité à initier la convection</span></button>
-            <button class="metric-btn" data-metric="structure_score"><span class="label">Organisation</span><span class="value" id="dStructure">-</span><span class="hint">Potentiel de structure orageuse</span></button>
-            <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Lisibilité</span><span class="value" id="dQuality">-</span><span class="hint">Lecture terrain et qualité d’observation</span></button>
-            <button class="metric-btn" data-metric="stability_score"><span class="label">Stabilité</span><span class="value" id="dStability">-</span><span class="hint" id="dStabilityLabel">-</span></button>
+            <button class="metric-btn" data-metric="confidence_score"><span class="label">Bust Risk</span><span class="value" id="dConfidence">-</span><span class="hint" id="dConfidenceLabel">-</span></button>
+            <button class="metric-btn" data-metric="trigger_score"><span class="label">Initiation</span><span class="value" id="dTrigger">-</span><span class="hint">Capacité à initier la convection</span></button>
+            <button class="metric-btn" data-metric="structure_score"><span class="label">Severity</span><span class="value" id="dStructure">-</span><span class="hint">Potentiel de structure orageuse</span></button>
+            <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Chaseability</span><span class="value" id="dQuality">-</span><span class="hint">Lecture terrain et qualité d’observation</span></button>
+            <button class="metric-btn" data-metric="stability_score"><span class="label">Reliability</span><span class="value" id="dStability">-</span><span class="hint" id="dStabilityLabel">-</span></button>
           </div>
         </div>
 
@@ -208,20 +215,20 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge">Version : v0.4.81</div><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 5 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge">Version : v0.5.0</div><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 5 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
       <div class="details-header info-drawer-header">
         <div>
           <div class="title" id="infoDrawerTitle">Guide de lecture</div>
-          <div class="small muted">Méthodologie du score, catégories et repères terrain</div>
+          <div class="small muted">Méthodologie v2, catégories, bust risk et repères terrain</div>
         </div>
         <button class="icon-btn" id="closeDrawerBtn" aria-label="Fermer">×</button>
       </div>
 
       <section class="drawer-section drawer-intro">
-        <p>Cette carte ne prédit pas une cellule orageuse exacte. Elle classe chaque maille selon la qualité de l’environnement convectif au créneau sélectionné, afin d’identifier les zones à surveiller, les repositionnements utiles et les secteurs à éviter.</p>
+        <p>Cette carte classe chaque maille selon son intérêt réel pour une chasse. Le modèle v2 cherche moins à répondre “peut-il y avoir de l’orage ?” qu’à répondre “cela vaut-il le déplacement, au bon moment, avec un risque de bust acceptable ?”.</p>
       </section>
 
       <section class="drawer-section">
@@ -231,10 +238,10 @@
           <div class="legend-scale"><span>0</span><span>35</span><span>65</span><span>85</span><span>100</span></div>
         </div>
         <div class="drawer-scale-grid">
-          <div class="drawer-scale-card"><strong>0–34</strong><span>Bleu : signal faible, environnement peu exploitable ou peu réactif.</span></div>
-          <div class="drawer-scale-card"><strong>35–64</strong><span>Vert : potentiel modéré, surveillance utile si le contexte synoptique aide.</span></div>
-          <div class="drawer-scale-card"><strong>65–84</strong><span>Orange : environnement intéressant, zone à privilégier pour le suivi.</span></div>
-          <div class="drawer-scale-card"><strong>85–100</strong><span>Rouge : meilleure combinaison actuelle entre déclenchement, organisation, lisibilité et tenue.</span></div>
+          <div class="drawer-scale-card"><strong>0–34</strong><span>Faible : environnement peu réactif ou peu exploitable.</span></div>
+          <div class="drawer-scale-card"><strong>35–64</strong><span>Modéré : fenêtre surveillable, intérêt tactique possible.</span></div>
+          <div class="drawer-scale-card"><strong>65–84</strong><span>Élevé : zone prioritaire si le contexte réel confirme.</span></div>
+          <div class="drawer-scale-card"><strong>85–100</strong><span>Très élevé : combinaison solide entre initiation, sévérité, chaseability et fiabilité.</span></div>
         </div>
       </section>
 
@@ -242,41 +249,41 @@
         <div class="small drawer-section-title">Comment est calculé le score global</div>
         <p>Le score global est une synthèse de quatre catégories notées sur 100. Chaque catégorie décrit une partie différente du risque utile pour la chasse. Le score final privilégie les mailles qui combinent un déclenchement crédible, une structure orageuse exploitable, une lecture terrain correcte et une fenêtre horaire qui ne s’effondre pas immédiatement.</p>
         <div class="drawer-formula-card">
-          <div class="drawer-formula-line"><strong>Score global</strong> = déclenchement + organisation + lisibilité + stabilité</div>
-          <div class="drawer-formula-note">La pondération exacte reste interne au modèle, mais la logique générale est : sans déclenchement le reste sert peu, et une très bonne dynamique peut être pénalisée si la lisibilité terrain ou la tenue temporelle sont mauvaises.</div>
+          <div class="drawer-formula-line"><strong>Score global</strong> = Initiation 30% + Severity 30% + Chaseability 25% + Reliability 15%</div>
+          <div class="drawer-formula-note">Le modèle applique aussi des plafonds anti faux-positifs : un bon shear sans initiation crédible, ou une belle instabilité dans une basse couche trop sèche, ne doit pas produire un score global artificiellement haut. Le Bust Risk est lu à part pour estimer le risque de déplacement inutile.</div>
         </div>
       </section>
 
       <section class="drawer-section">
-        <div class="small drawer-section-title">Les 4 catégories détaillées</div>
+        <div class="small drawer-section-title">Les 4 catégories v2</div>
         <div class="drawer-category-list">
           <article class="drawer-category-card">
-            <h3>1. Déclenchement</h3>
-            <p>Mesure la capacité de l’air à produire de la convection. Cette partie s’appuie surtout sur la CAPE, le point de rosée, l’humidité basse couche, le VPD et le bulbe humide. Un bon score indique qu’un déclenchement orageux est thermodynamiquement plausible.</p>
+            <h3>1. Initiation</h3>
+            <p>Mesure la probabilité qu’un orage démarre réellement. Le score croise CAPE, point de rosée, humidité 2 m, VPD, bulbe humide et fenêtre horaire. Une belle instabilité seule ne suffit pas : une basse couche trop sèche ou un timing médiocre font chuter l’initiation.</p>
             <ul>
               <li>Monte si l’instabilité et l’humidité utile augmentent.</li>
               <li>Baisse si l’air est trop sec ou si l’énergie disponible reste limitée.</li>
             </ul>
           </article>
           <article class="drawer-category-card">
-            <h3>2. Organisation</h3>
-            <p>Évalue la capacité du contexte à structurer les orages. Elle repose surtout sur le cisaillement et la dynamique associée. Un score élevé suggère une meilleure tenue de structure, des ascendances plus organisées et un intérêt plus fort pour la chasse.</p>
+            <h3>2. Severity</h3>
+            <p>Évalue le potentiel d’intensité et d’organisation si l’orage part. Le score repose surtout sur CAPE, shear et rafales. Il monte avec les combinaisons instabilité + cisaillement cohérentes, et baisse si le contexte est dynamique mais trop pauvre en énergie.</p>
             <ul>
               <li>Monte avec un cisaillement exploitable et une dynamique plus favorable.</li>
               <li>Baisse si les cellules risquent de rester peu structurées ou très brèves.</li>
             </ul>
           </article>
           <article class="drawer-category-card">
-            <h3>3. Lisibilité</h3>
-            <p>Indique la qualité potentielle d’observation et de déplacement. La lisibilité pénalise surtout la nébulosité basse et moyenne, qui dégrade souvent l’insolation, la lecture du ciel et la qualité photo/vidéo.</p>
+            <h3>3. Chaseability</h3>
+            <p>Indique si la zone est agréable et utile à chasser. Le score combine visibilité, photogénie et confort relatif via la nébulosité, le timing et un proxy de vent. Une zone peut être météo-intéressante mais peu chassable visuellement.</p>
             <ul>
               <li>Monte quand le ciel reste plus propre et plus lisible.</li>
               <li>Baisse en cas d’enclume diffuse, crasse ou masquage nuageux bas/moyen.</li>
             </ul>
           </article>
           <article class="drawer-category-card">
-            <h3>4. Stabilité</h3>
-            <p>Mesure la solidité du signal autour du créneau choisi. Un bon score signifie que la fenêtre favorable tient mieux dans le temps, donc moins de risque de partir sur un faux optimum très bref.</p>
+            <h3>4. Reliability</h3>
+            <p>Mesure la robustesse du signal. Le score combine cohérence interne des paramètres, stabilité temporelle autour du créneau retenu et marge vis-à-vis des seuils. Il sert à distinguer un vrai signal d’un optimum plus fragile.</p>
             <ul>
               <li>Monte si le signal reste cohérent avant et après le créneau retenu.</li>
               <li>Baisse si la fenêtre paraît fragile ou rapidement dégradée.</li>
@@ -286,13 +293,13 @@
       </section>
 
       <section class="drawer-section">
-        <div class="small drawer-section-title">Repères pratiques pour la chasse</div>
+        <div class="small drawer-section-title">Repères pratiques v2</div>
         <ul class="drawer-bullet-list">
-          <li><strong>Score global élevé + confiance élevée</strong> : zone prioritaire pour le positionnement.</li>
-          <li><strong>Déclenchement élevé mais organisation faible</strong> : convection possible, mais structures moins propres.</li>
-          <li><strong>Organisation élevée mais déclenchement faible</strong> : bon environnement théorique, mais déclenchement incertain.</li>
-          <li><strong>Lisibilité faible</strong> : potentiel météo parfois correct, mais chasse plus compliquée visuellement.</li>
-          <li><strong>Stabilité faible</strong> : créneau intéressant mais fragile, intérêt surtout tactique et court.</li>
+          <li><strong>Score global élevé + Bust Risk faible</strong> : zone prioritaire pour le positionnement.</li>
+          <li><strong>Initiation élevée mais Severity faible</strong> : convection possible, mais structures moins propres.</li>
+          <li><strong>Severity élevée mais Initiation faible</strong> : beau potentiel théorique, mais risque de bust encore marqué.</li>
+          <li><strong>Chaseability faible</strong> : potentiel météo parfois correct, mais lecture terrain plus compliquée.</li>
+          <li><strong>Reliability faible</strong> : créneau intéressant mais fragile, intérêt surtout tactique et court.</li>
         </ul>
       </section>
 
@@ -315,23 +322,23 @@
       <p id="infoExplanation">—</p>
     </div>
   </div>
-  <script src="/static/assets/js/dom.js?v=0.4.81"></script>
-  <script src="/static/assets/js/utils.js?v=0.4.81"></script>
-  <script src="/static/assets/js/state.js?v=0.4.81"></script>
-  <script src="/static/assets/js/panels.js?v=0.4.81"></script>
-  <script src="/static/assets/js/core.js?v=0.4.81"></script>
-  <script src="/static/assets/js/map-ui.js?v=0.4.81"></script>
-  <script src="/static/assets/js/timeline.js?v=0.4.81"></script>
-  <script src="/static/assets/js/grid-loader.js?v=0.4.81"></script>
-  <script src="/static/assets/js/grid-core.js?v=0.4.81"></script>
-  <script src="/static/assets/js/grid-layers.js?v=0.4.81"></script>
-  <script src="/static/assets/js/grid.js?v=0.4.81"></script>
-  <script src="/static/assets/js/metric-data.js?v=0.4.81"></script>
-  <script src="/static/assets/js/metric-ui.js?v=0.4.81"></script>
-  <script src="/static/assets/js/selection.js?v=0.4.81"></script>
-  <script src="/static/assets/js/data.js?v=0.4.81"></script>
-  <script src="/static/assets/js/services.js?v=0.4.81"></script>
-  <script src="/static/assets/js/controls.js?v=0.4.81"></script>
-  <script src="/static/assets/js/bootstrap.js?v=0.4.81"></script>
+  <script src="/static/assets/js/dom.js?v=0.5.0"></script>
+  <script src="/static/assets/js/utils.js?v=0.5.0"></script>
+  <script src="/static/assets/js/state.js?v=0.5.0"></script>
+  <script src="/static/assets/js/panels.js?v=0.5.0"></script>
+  <script src="/static/assets/js/core.js?v=0.5.0"></script>
+  <script src="/static/assets/js/map-ui.js?v=0.5.0"></script>
+  <script src="/static/assets/js/timeline.js?v=0.5.0"></script>
+  <script src="/static/assets/js/grid-loader.js?v=0.5.0"></script>
+  <script src="/static/assets/js/grid-core.js?v=0.5.0"></script>
+  <script src="/static/assets/js/grid-layers.js?v=0.5.0"></script>
+  <script src="/static/assets/js/grid.js?v=0.5.0"></script>
+  <script src="/static/assets/js/metric-data.js?v=0.5.0"></script>
+  <script src="/static/assets/js/metric-ui.js?v=0.5.0"></script>
+  <script src="/static/assets/js/selection.js?v=0.5.0"></script>
+  <script src="/static/assets/js/data.js?v=0.5.0"></script>
+  <script src="/static/assets/js/services.js?v=0.5.0"></script>
+  <script src="/static/assets/js/controls.js?v=0.5.0"></script>
+  <script src="/static/assets/js/bootstrap.js?v=0.5.0"></script>
 </body>
 </html>
