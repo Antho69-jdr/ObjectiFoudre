@@ -1513,3 +1513,42 @@
     opacity: 0.72 !important;
   }
 }
+
+
+/* v0.4.75 right rail touch shield */
+@media (max-width: 900px) and (orientation: landscape) {
+  body.mobile-ui .right-rail-scroll,
+  .right-rail-scroll {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    width: 52px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    pointer-events: auto !important;
+    touch-action: pan-y !important;
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    background: transparent !important;
+  }
+
+  body.mobile-ui .right-rail-scroll > *,
+  .right-rail-scroll > * {
+    pointer-events: auto !important;
+    flex: 0 0 auto !important;
+  }
+
+  body.mobile-ui .right-rail-scroll::before,
+  body.mobile-ui .right-rail-scroll::after,
+  .right-rail-scroll::before,
+  .right-rail-scroll::after {
+    content: "";
+    display: block;
+    flex: 0 0 1px;
+    width: 100%;
+  }
+}

@@ -1,3 +1,15 @@
+    function setupRightRailTouchShield() {
+      if (!rightRailScroll) return;
+
+      const swallow = (event) => {
+        event.stopPropagation();
+      };
+
+      ['pointerdown', 'pointerup', 'pointercancel', 'click', 'wheel', 'touchstart', 'touchmove', 'touchend'].forEach((type) => {
+        rightRailScroll.addEventListener(type, swallow, { passive: true });
+      });
+    }
+
     function setupAppLifecycle() {
       window.addEventListener('resize', () => {
         if (!isMobileLayout()) closeTopPanels();
@@ -20,6 +32,7 @@
       });
 
       registerPWA();
+      setupRightRailTouchShield();
 
       map.on('move', () => {
         if (selectionCard.classList.contains('visible')) requestAnimationFrame(positionSelectionCard);
