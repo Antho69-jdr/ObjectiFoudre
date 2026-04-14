@@ -3,11 +3,39 @@ function ensureSource(id, data) {
       else map.addSource(id, { type: 'geojson', data });
     }
 
+
+
+    function buildGridOutlineGeoJSON(cells) {
+      const template = deriveGridTemplate(cells);
+      if (!template) return { type: 'FeatureCollection', features: [] };
+      const lats = cells.map(cell => Number(cell.lat)).filter(Number.isFinite);
+      const lons = cells.map(cell => Number(cell.lon)).filter(Number.isFinite);
+      if (!lats.length || !lons.length) return { type: 'FeatureCollection', features: [] };
+      const halfH = template.cellHeightDeg / 2;
+      const halfW = template.cellWidthDeg / 2;
+      const north = Math.max(...lats) + halfH;
+      const south = Math.min(...lats) - halfH;
+      const east = Math.max(...lons) + halfW;
+      const west = Math.min(...lons) - halfW;
+      return {
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[[west, south], [east, south], [east, north], [west, north], [west, south]]],
+          },
+        }],
+      };
+    }
+
     function removeLoaderLayers() {
       clearGridRevealFailsafe();
       gridAnimationToken += 1;
       stopLoaderPulse();
       if (map.getLayer('grid-loader-fill')) map.removeLayer('grid-loader-fill');
+      if (map.getLayer('grid-loader-outline')) map.removeLayer('grid-loader-outline');
       if (map.getSource('grid-loader')) map.removeSource('grid-loader');
     }
 
@@ -25,6 +53,20 @@ function ensureSource(id, data) {
           'fill-opacity': ['get', 'fill_opacity'],
         }
       });
+      map.addLayer({
+        id: 'grid-loader-outline',
+        type: 'line',
+        source: 'grid-loader',
+        paint: {
+          'line-color': 'rgba(255,255,255,0.22)',
+          'line-width': 1.1,
+          'line-opacity': 0.4,
+        },
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round',
+        }
+      });
       startLoaderPulse();
     }
 
@@ -33,6 +75,8 @@ function ensureSource(id, data) {
       gridAnimationToken += 1;
       removeLoaderLayers();
       if (map.getLayer('grid-highlight')) map.removeLayer('grid-highlight');
+      if (map.getLayer('grid-outline')) map.removeLayer('grid-outline');
+      if (map.getSource('grid-outline')) map.removeSource('grid-outline');
       if (map.getLayer('grid-borders')) map.removeLayer('grid-borders');
       if (map.getLayer('grid-fill')) map.removeLayer('grid-fill');
       if (map.getSource('grid')) map.removeSource('grid');
@@ -41,8 +85,9 @@ function ensureSource(id, data) {
       map.off('mouseleave', 'grid-fill', onGridLeave);
     }
 
-    function addLayers(data) {
+    function addLayers(data, cells = []) {
       ensureSource('grid', data);
+      ensureSource('grid-outline', buildGridOutlineGeoJSON(cells));
       map.addLayer({
         id: 'grid-fill',
         type: 'fill',
@@ -61,6 +106,20 @@ function ensureSource(id, data) {
           'line-color': '#ffffff',
           'line-width': isCoarsePointerDevice() ? 0.75 : 1,
           'line-opacity': showGridLines ? (isCoarsePointerDevice() ? 0.32 : 0.5) : 0,
+        }
+      });
+      map.addLayer({
+        id: 'grid-outline',
+        type: 'line',
+        source: 'grid-outline',
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': isCoarsePointerDevice() ? 1.6 : 1.85,
+          'line-opacity': showGridLines ? 0.7 : 0.42,
+        },
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round',
         }
       });
       map.addLayer({

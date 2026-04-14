@@ -582,7 +582,7 @@
       padding: 18px;
       display: none;
     }
-    .details-modal.visible { display: block; }
+    .details-modal.visible { display: grid; }
     .details-header {
       display: flex;
       justify-content: space-between;
@@ -1069,16 +1069,26 @@
 }
 
 
-/* v0.4.80 details grouping + mobile full-screen overlays */
-.details-section {
+/* v0.4.81 centered details layout + richer metric help */
+.details-modal {
+  display: none;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+}
+.details-modal.visible { display: grid; }
+.details-content {
+  width: min(100%, 780px);
+  display: grid;
+  gap: 16px;
+  margin: 0 auto;
+}
+.details-group {
+  width: 100%;
   display: grid;
   gap: 10px;
-  margin-top: 16px;
+  justify-items: stretch;
 }
-.details-section:first-of-type {
-  margin-top: 14px;
-}
-.details-section-title {
+.details-group-title {
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -1088,11 +1098,32 @@
 .details-grid-score {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+.details-grid-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 .details-modal .summary-box {
-  margin-bottom: 2px;
+  width: 100%;
+  margin-bottom: 0;
 }
 .details-modal .metric-btn {
   min-height: 88px;
+}
+.metric-info-scales {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.metric-info-scale-card {
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.035);
+  padding: 10px 12px;
+  color: #c8d5ea;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.metric-info-scale-card strong {
+  color: #eef4ff;
 }
 
 @media (max-width: 900px) {

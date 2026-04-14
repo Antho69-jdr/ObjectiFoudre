@@ -7,6 +7,9 @@ function updateGridLinesButton() {
       if (map.getLayer('grid-borders')) {
         map.setPaintProperty('grid-borders', 'line-opacity', showGridLines ? (isCoarsePointerDevice() ? 0.32 : 0.5) : 0);
       }
+      if (map.getLayer('grid-outline')) {
+        map.setPaintProperty('grid-outline', 'line-opacity', showGridLines ? 0.7 : 0.42);
+      }
       updateGridLinesButton();
     }
 
@@ -61,7 +64,7 @@ function updateGridLinesButton() {
         return;
       }
       stopLoaderPulse();
-      addLayers(buildGeoJSON(cells));
+      addLayers(buildGeoJSON(cells), cells);
       if (shouldAnimateNextGrid) {
         scheduleGridRevealFailsafe(cells);
         animateGridReveal(cells, () => {

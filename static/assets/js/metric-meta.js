@@ -87,6 +87,92 @@
     function rangeLine(label, text) {
       return `<div><strong>${label} :</strong> ${text}</div>`;
     }
+
+    function scaleCard(title, text) {
+      return `<div class="metric-info-scale-card"><strong>${title}</strong><div>${text}</div></div>`;
+    }
+
+    function scoreConstruction(metricKey) {
+      switch (metricKey) {
+        case 'score_global':
+          return [
+            scaleCard('Construction du score global', 'Le score global est une moyenne pondérée de quatre sous-scores sur 100 : déclenchement 35 %, organisation 30 %, lisibilité 20 % et stabilité 15 %.'),
+            scaleCard('Lecture directe', '0–34 faible, 35–64 modéré, 65–84 élevé, 85–100 très élevé.')
+          ].join('');
+        case 'trigger_score':
+          return [
+            scaleCard('Métriques utilisées', 'CAPE, humidité 2 m, point de rosée, bulbe humide, VPD et température de surface.'),
+            scaleCard('Lecture du sous-score', '0–34 déclenchement faible, 35–64 signal exploitable, 65–84 déclenchement favorable, 85–100 déclenchement très favorable.')
+          ].join('');
+        case 'structure_score':
+          return [
+            scaleCard('Métriques utilisées', 'Shear approximé et rafales 10 m, pour estimer l’organisation potentielle de la convection.'),
+            scaleCard('Lecture du sous-score', '0–34 peu organisée, 35–64 organisation moyenne, 65–84 environnement structurant, 85–100 organisation très favorable.')
+          ].join('');
+        case 'chase_quality_score':
+          return [
+            scaleCard('Métriques utilisées', 'Nuages bas, moyens et hauts, avec une logique terrain orientée lisibilité et chauffage.'),
+            scaleCard('Lecture du sous-score', '0–34 lisibilité faible, 35–64 correcte, 65–84 bonne, 85–100 excellente visibilité tactique.')
+          ].join('');
+        case 'stability_score':
+          return [
+            scaleCard('Métriques utilisées', 'Cohérence du signal autour de l’heure retenue, avant et après le créneau optimal.'),
+            scaleCard('Lecture du sous-score', '0–34 fenêtre fragile, 35–64 correcte, 65–84 bonne tenue, 85–100 très bonne persistance.')
+          ].join('');
+        case 'confidence_score':
+          return [
+            scaleCard('Ce que mesure la confiance', 'Elle ne remplace pas le score global : elle indique à quel point les métriques vont dans le même sens.'),
+            scaleCard('Lecture du sous-score', '0–34 fragile, 35–64 moyenne, 65–84 bonne, 85–100 très bonne cohérence du signal.')
+          ].join('');
+        case 'mucape':
+          return [
+            scaleCard('Barème utilisé', '< 200 J/kg très faible · 200–799 faible · 800–1499 correcte · 1500–2499 forte · ≥ 2500 très forte.')
+          ].join('');
+        case 'shear_ms':
+          return [
+            scaleCard('Barème utilisé', '< 10 m/s faible · 10–14.9 correct · 15–25 favorable · > 25 très dynamique.')
+          ].join('');
+        case 'relative_humidity_2m':
+          return [
+            scaleCard('Barème utilisé', '< 50 % sèche · 50–64 moyenne · 65–74 humide · ≥ 75 très humide.')
+          ].join('');
+        case 'vapour_pressure_deficit':
+          return [
+            scaleCard('Barème utilisé', '≤ 0.8 très favorable · 0.81–1.4 favorable · 1.41–2.2 moyen · > 2.2 sec.')
+          ].join('');
+        case 'wet_bulb_temperature_2m':
+          return [
+            scaleCard('Barème utilisé', '< 12 °C basse · 12–15.9 °C moyenne · ≥ 16 °C favorable.')
+          ].join('');
+        case 'dewpoint_c':
+          return [
+            scaleCard('Barème utilisé', '< 8 °C bas · 8–11.9 °C correct · 12–15.9 °C humide · ≥ 16 °C très humide.')
+          ].join('');
+        case 'temp_c':
+          return [
+            scaleCard('Barème utilisé', '< 18 °C limitée · 18–23.9 °C correcte · 24–29.9 °C chaude · ≥ 30 °C très chaude.')
+          ].join('');
+        case 'wind_gusts_10m':
+          return [
+            scaleCard('Barème utilisé', '< 12 m/s faibles · 12–17.9 m/s présentes · ≥ 18 m/s dynamiques.')
+          ].join('');
+        case 'cloud_cover_low':
+        case 'cloud_cover_mid':
+          return [
+            scaleCard('Barème utilisé', '0–55 % favorables · 56–75 % acceptables · > 75 % pénalisants.')
+          ].join('');
+        case 'cloud_cover_high':
+          return [
+            scaleCard('Barème utilisé', '0–70 % limités · 71–89 % présents · ≥ 90 % envahissants.')
+          ].join('');
+        case 'selected_hour':
+          return [
+            scaleCard('Lecture', 'Il ne s’agit pas d’un score : c’est l’heure retenue comme optimum local pour la cellule.')
+          ].join('');
+        default:
+          return '';
+      }
+    }
     function operationalGuide(metricKey, rawValue) {
       const value = toNumber(rawValue);
       if (metricKey === 'selected_hour') {
@@ -262,6 +348,8 @@
       infoMetricValue.textContent = currentValue || '—';
       infoExplanation.innerHTML = `
         <div class="metric-info-explain">${meta.explain}</div>
+        <div class="metric-info-heading"><strong>Barème utilisé</strong></div>
+        <div class="metric-info-scales">${scoreConstruction(metricKey)}</div>
         <div class="metric-info-heading"><strong>Lecture terrain</strong></div>
         <div class="metric-info-guide">${op.guide}</div>
       `;

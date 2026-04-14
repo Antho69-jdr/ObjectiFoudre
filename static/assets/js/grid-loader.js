@@ -21,22 +21,24 @@
       };
     }
 
+    function fitLoaderGridSize(template) {
+      if (!template) return { rows: LOADER_GRID_SIZE, cols: LOADER_GRID_SIZE };
+      const rows = Math.max(3, Math.min(15, template.rows || LOADER_GRID_SIZE));
+      const cols = Math.max(3, Math.min(15, template.cols || LOADER_GRID_SIZE));
+      return { rows, cols };
+    }
+
     function getLoaderTemplate(center) {
       const currentCells = getCurrentSlot()?.cells || [];
       const derived = deriveGridTemplate(currentCells);
       if (derived) {
         lastGridTemplate = derived;
-        return {
-          rows: LOADER_GRID_SIZE,
-          cols: LOADER_GRID_SIZE,
-          cellHeightDeg: derived.cellHeightDeg,
-          cellWidthDeg: derived.cellWidthDeg,
-        };
+        return { ...derived, ...fitLoaderGridSize(derived) };
       }
       if (lastGridTemplate) {
         return {
-          rows: LOADER_GRID_SIZE,
-          cols: LOADER_GRID_SIZE,
+          rows: fitLoaderGridSize(lastGridTemplate).rows,
+          cols: fitLoaderGridSize(lastGridTemplate).cols,
           cellHeightDeg: Number.isFinite(lastGridTemplate.cellHeightDeg) && lastGridTemplate.cellHeightDeg > 0
             ? lastGridTemplate.cellHeightDeg
             : kmToDegLat(LOADER_CELL_SIZE_KM),
@@ -56,6 +58,7 @@
 
     function buildLoaderCells(center) {
       const cells = [];
+      if (!center || !Number.isFinite(Number(center.lat)) || !Number.isFinite(Number(center.lon))) return cells;
       const template = getLoaderTemplate(center);
       const latStep = template.cellHeightDeg;
       const lonStep = template.cellWidthDeg;

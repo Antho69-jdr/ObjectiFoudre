@@ -1696,3 +1696,35 @@
     padding-bottom: calc(104px + env(safe-area-inset-bottom)) !important;
   }
 }
+
+
+/* v0.4.81 detail modal alignment and mobile full-width content */
+.details-modal .details-content {
+  width: min(100%, 780px);
+  margin: 0 auto;
+}
+@media (max-width: 900px) {
+  body.mobile-ui .details-modal,
+  body.mobile-ui .info-drawer {
+    display: none;
+    align-content: start !important;
+    justify-items: stretch !important;
+  }
+  body.mobile-ui .details-modal.visible,
+  body.mobile-ui .info-drawer.visible {
+    display: grid !important;
+  }
+  body.mobile-ui .details-modal .details-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+  }
+}
+@media (min-width: 901px) {
+  .details-modal {
+    align-content: start;
+  }
+  .details-modal .details-content {
+    max-width: min(100%, 780px);
+  }
+}

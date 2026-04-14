@@ -36,6 +36,7 @@ let selectedSlotKey = null;
 let selectedFeature = null;
 let selectedBaseDate = getTodayIsoDate();
 let selectedColorMetric = 'score_global';
+let lastGridTemplate = null;
 
 syncDateControls();
 
