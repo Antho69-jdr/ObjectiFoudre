@@ -11,7 +11,7 @@
       gap: 10px;
       position: absolute;
       right: calc(100% + 14px);
-      width: min(380px, calc(100vw - 108px));
+      width: min(392px, calc(100vw - 108px));
       padding: 14px;
       background: rgba(8, 17, 30, 0.82);
       border: 1px solid rgba(255,255,255,0.12);
@@ -24,6 +24,27 @@
       top: 0;
       right: calc(100% + 12px);
       z-index: 26;
+      gap: 12px;
+      padding: 12px;
+      border-radius: 20px;
+      background:
+        linear-gradient(180deg, rgba(11, 21, 36, 0.9), rgba(7, 14, 25, 0.82)),
+        rgba(8, 17, 30, 0.82);
+      border-color: rgba(255,255,255,0.11);
+      box-shadow: 0 18px 40px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.035);
+    }
+    .search-panel::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background: linear-gradient(135deg, rgba(96,165,250,0.12), transparent 42%);
+      opacity: 0.9;
+    }
+    .search-panel > * {
+      position: relative;
+      z-index: 1;
     }
     .search-dock,
     .mobile-toggle-bar,
@@ -264,6 +285,32 @@
       display: block;
       color: currentColor;
       pointer-events: none;
+    }
+
+    .search-panel .icon-only-btn {
+      border-color: rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.045);
+      transition: transform 120ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    }
+    .search-panel .icon-only-btn:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.16);
+    }
+    .search-panel .icon-only-btn:focus-visible,
+    .search-panel .location-input:focus-visible {
+      outline: none;
+    }
+    .search-panel #searchCityBtn {
+      background: rgba(59,130,246,0.18);
+      border-color: rgba(96,165,250,0.28);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .search-panel #searchCityBtn:hover {
+      background: rgba(59,130,246,0.28);
+      border-color: rgba(96,165,250,0.42);
+    }
+    .search-panel #aroundMeBtn {
+      background: rgba(255,255,255,0.035);
     }
 
     .ghost-btn { background: rgba(255,255,255,0.04); }

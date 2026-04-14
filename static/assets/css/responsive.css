@@ -51,7 +51,9 @@
       display: none;
       margin-top: 0;
       right: calc(100% + 12px);
-      width: min(340px, calc(100vw - 92px));
+      width: min(348px, calc(100vw - 92px));
+      padding: 10px;
+      border-radius: 18px;
     }
     body.mobile-ui .search-dock.show-search .search-panel {
       display: grid;
