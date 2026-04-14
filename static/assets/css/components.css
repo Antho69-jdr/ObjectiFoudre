@@ -1192,34 +1192,3 @@
 }
 
 
-/* v0.4.82 projected corner mask for grid envelope */
-.grid-corner-mask {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 0;
-  height: 0;
-  z-index: 6;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 120ms ease;
-  --grid-mask-radius: 16px;
-  --grid-mask-bg: rgba(7, 15, 27, 0.98);
-}
-.grid-corner-mask.visible { opacity: 1; }
-.grid-corner-mask-frame {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--grid-mask-radius);
-  box-shadow: inset 0 0 0 1.35px rgba(255,255,255,0.72), inset 0 0 0 3px rgba(255,255,255,0.06);
-}
-.grid-corner-cutout {
-  position: absolute;
-  width: calc(var(--grid-mask-radius) * 2);
-  height: calc(var(--grid-mask-radius) * 2);
-  background: var(--grid-mask-bg);
-}
-.cutout-tl { left: 0; top: 0; border-radius: 0 0 100% 0; }
-.cutout-tr { right: 0; top: 0; border-radius: 0 0 0 100%; }
-.cutout-br { right: 0; bottom: 0; border-radius: 100% 0 0 0; }
-.cutout-bl { left: 0; bottom: 0; border-radius: 0 100% 0 0; }
