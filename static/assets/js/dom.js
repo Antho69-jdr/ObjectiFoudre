@@ -30,6 +30,8 @@ const selectionStabilityLabel = document.getElementById('selectionStabilityLabel
 const closeSelectionBtn = document.getElementById('closeSelectionBtn');
 const openDetailsBtn = document.getElementById('openDetailsBtn');
 const recenterBtn = document.getElementById('recenterBtn');
+const exportSlotCsvBtn = document.getElementById('exportSlotCsvBtn');
+const exportDayCellCsvBtn = document.getElementById('exportDayCellCsvBtn');
 const bestCellsBtn = document.getElementById('bestCellsBtn');
 
 const modalBackdrop = document.getElementById('modalBackdrop');

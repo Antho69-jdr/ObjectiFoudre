@@ -8,24 +8,27 @@
 
     function deriveGridTemplate(cells) {
       if (!Array.isArray(cells) || !cells.length) return null;
-      const latValues = [...new Set(cells.map(cell => Number(cell.lat).toFixed(6)))].sort((a, b) => Number(b) - Number(a));
-      const lonValues = [...new Set(cells.map(cell => Number(cell.lon).toFixed(6)))].sort((a, b) => Number(a) - Number(b));
-      const sample = cells[0] || {};
-      const cellHeightDeg = Number(sample.cell_height_deg);
-      const cellWidthDeg = Number(sample.cell_width_deg);
+      const rowsByLat = new Map();
+      for (const cell of cells) {
+        const key = Number(cell.lat).toFixed(6);
+        if (!rowsByLat.has(key)) rowsByLat.set(key, []);
+        rowsByLat.get(key).push(cell);
+      }
+      const sortedRows = [...rowsByLat.entries()].sort((a, b) => Number(b[0]) - Number(a[0]));
+      const rowTemplates = sortedRows.map(([latKey, rowCells]) => {
+        const sorted = [...rowCells].sort((a, b) => Number(a.lon) - Number(b.lon));
+        return {
+          lat: Number(latKey),
+          cols: sorted.length,
+          cellWidthDeg: Number(sorted[0]?.cell_width_deg) || kmToDegLon(LOADER_CELL_SIZE_KM, Number(latKey)),
+        };
+      });
       return {
-        rows: Math.max(1, latValues.length),
-        cols: Math.max(1, lonValues.length),
-        cellHeightDeg: Number.isFinite(cellHeightDeg) && cellHeightDeg > 0 ? cellHeightDeg : kmToDegLat(LOADER_CELL_SIZE_KM),
-        cellWidthDeg: Number.isFinite(cellWidthDeg) && cellWidthDeg > 0 ? cellWidthDeg : kmToDegLon(LOADER_CELL_SIZE_KM, Number(sample.lat) || currentCenter.lat),
+        rows: rowTemplates.length,
+        cols: Math.max(...rowTemplates.map(row => row.cols), LOADER_GRID_SIZE),
+        cellHeightDeg: Number(cells[0]?.cell_height_deg) || kmToDegLat(LOADER_CELL_SIZE_KM),
+        rowTemplates,
       };
-    }
-
-    function fitLoaderGridSize(template) {
-      if (!template) return { rows: LOADER_GRID_SIZE, cols: LOADER_GRID_SIZE };
-      const rows = Math.max(3, Math.min(15, template.rows || LOADER_GRID_SIZE));
-      const cols = Math.max(3, Math.min(15, template.cols || LOADER_GRID_SIZE));
-      return { rows, cols };
     }
 
     function getLoaderTemplate(center) {
@@ -33,55 +36,48 @@
       const derived = deriveGridTemplate(currentCells);
       if (derived) {
         lastGridTemplate = derived;
-        return { ...derived, ...fitLoaderGridSize(derived) };
+        return derived;
       }
-      if (lastGridTemplate) {
-        return {
-          rows: fitLoaderGridSize(lastGridTemplate).rows,
-          cols: fitLoaderGridSize(lastGridTemplate).cols,
-          cellHeightDeg: Number.isFinite(lastGridTemplate.cellHeightDeg) && lastGridTemplate.cellHeightDeg > 0
-            ? lastGridTemplate.cellHeightDeg
-            : kmToDegLat(LOADER_CELL_SIZE_KM),
-          cellWidthDeg: Number.isFinite(lastGridTemplate.cellWidthDeg) && lastGridTemplate.cellWidthDeg > 0
-            ? lastGridTemplate.cellWidthDeg
-            : kmToDegLon(LOADER_CELL_SIZE_KM, center.lat),
-        };
+      if (lastGridTemplate) return lastGridTemplate;
+      const rows = Math.max(3, Math.round(GRID_SIDE_KM / LOADER_CELL_SIZE_KM) | 1);
+      const cols = rows;
+      const cellHeightDeg = kmToDegLat(LOADER_CELL_SIZE_KM);
+      const rowOffset = (rows - 1) / 2;
+      const rowTemplates = [];
+      for (let row = 0; row < rows; row += 1) {
+        const rowFromCenter = rowOffset - row;
+        const lat = center.lat + rowFromCenter * cellHeightDeg;
+        rowTemplates.push({ lat, cols, cellWidthDeg: kmToDegLon(LOADER_CELL_SIZE_KM, lat) });
       }
-      const latStep = kmToDegLat(LOADER_CELL_SIZE_KM);
-      return {
-        rows: LOADER_GRID_SIZE,
-        cols: LOADER_GRID_SIZE,
-        cellHeightDeg: latStep,
-        cellWidthDeg: kmToDegLon(LOADER_CELL_SIZE_KM, center.lat),
-      };
+      return { rows, cols, cellHeightDeg, rowTemplates };
     }
 
     function buildLoaderCells(center) {
       const cells = [];
       if (!center || !Number.isFinite(Number(center.lat)) || !Number.isFinite(Number(center.lon))) return cells;
       const template = getLoaderTemplate(center);
-      const latStep = template.cellHeightDeg;
-      const lonStep = template.cellWidthDeg;
       const rowOffset = (template.rows - 1) / 2;
-      const colOffset = (template.cols - 1) / 2;
       let idx = 0;
-      for (let row = 0; row < template.rows; row += 1) {
-        for (let col = 0; col < template.cols; col += 1) {
-          const rowFromCenter = rowOffset - row;
+      template.rowTemplates.forEach((rowTemplate, row) => {
+        const rowFromCenter = rowOffset - row;
+        const lat = Number.isFinite(rowTemplate.lat) ? rowTemplate.lat : center.lat + rowFromCenter * template.cellHeightDeg;
+        const cellWidthDeg = Number(rowTemplate.cellWidthDeg) || kmToDegLon(LOADER_CELL_SIZE_KM, lat);
+        const colOffset = (rowTemplate.cols - 1) / 2;
+        for (let col = 0; col < rowTemplate.cols; col += 1) {
           const colFromCenter = col - colOffset;
           cells.push({
             zone: `loader-${idx++}`,
-            lat: center.lat + rowFromCenter * latStep,
-            lon: center.lon + colFromCenter * lonStep,
-            cell_height_deg: latStep,
-            cell_width_deg: lonStep,
+            lat,
+            lon: center.lon + colFromCenter * cellWidthDeg,
+            cell_height_deg: template.cellHeightDeg,
+            cell_width_deg: cellWidthDeg,
             score_global: 18 + ((row + col) % 5) * 5,
             confidence_score: 42,
             chase_quality_score: 55,
             is_loader: true,
           });
         }
-      }
+      });
       return cells;
     }
 

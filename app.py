@@ -19,7 +19,7 @@ STATIC_DIR = BASE_DIR / "static"
 CACHE_TTL_SECONDS = 15 * 60
 STALE_TTL_SECONDS = 2 * 60 * 60
 
-app = FastAPI(title="Storm Chase", version="1.5.2")
+app = FastAPI(title="Storm Chase", version="1.5.4")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -80,7 +80,10 @@ def _nearest_recent_cache(lat: float, lon: float, target_date: Date | None, ttl:
         if (now - float(entry["ts"])) >= ttl:
             continue
         try:
-            e_lat_s, e_lon_s, e_date_key = key.split(":")
+            parts = key.split(":")
+            if len(parts) < 3:
+                continue
+            e_lat_s, e_lon_s, e_date_key = parts[:3]
             e_lat = float(e_lat_s)
             e_lon = float(e_lon_s)
         except Exception:
@@ -96,8 +99,8 @@ def _nearest_recent_cache(lat: float, lon: float, target_date: Date | None, ttl:
     return best, best_dist
 
 
-async def _build_payload(lat: float, lon: float, label: str, target_date: Date | None) -> dict[str, Any]:
-    payload = await asyncio.to_thread(build_latest_payload, lat, lon, label, target_date)
+async def _build_payload(lat: float, lon: float, label: str, target_date: Date | None, mode: str = "auto") -> dict[str, Any]:
+    payload = await asyncio.to_thread(build_latest_payload, lat, lon, label, target_date, mode)
     return _merge_label(payload, label)
 
 
@@ -108,10 +111,15 @@ def _csv_escape(value: Any) -> str:
     return text
 
 
-def _analysis_rows(lat: float, lon: float, label: str, target_date: Date | None) -> list[dict[str, Any]]:
+def _analysis_rows(lat: float, lon: float, label: str, target_date: Date | None, zone: str | None = None, slot: str | None = None) -> list[dict[str, Any]]:
     points = build_grid(center_lat=lat, center_lon=lon, zone_prefix=label)
-    rows = fetch_model(points, target_date=target_date)
-    return flatten_rows_for_analysis(rows)
+    rows = fetch_model(points, target_date=target_date, mode="historical")
+    flattened = flatten_rows_for_analysis(rows)
+    if zone:
+        flattened = [row for row in flattened if str(row.get("zone")) == zone]
+    if slot:
+        flattened = [row for row in flattened if str(row.get("slot_key")) == slot]
+    return flattened
 
 
 def _analysis_csv(rows: list[dict[str, Any]]) -> str:
@@ -184,8 +192,9 @@ async def latest(
     label: str = Query(DEFAULT_CENTER_LABEL, min_length=1, max_length=120),
     date: Date | None = Query(None),
     force: bool = False,
+    mode: str = Query("auto", pattern="^(auto|forecast|historical)$"),
 ) -> dict:
-    key = _cache_key(lat, lon, date)
+    key = _cache_key(lat, lon, date) + f':{mode}'
     cached = _cache.get(key)
     if not force and _cache_fresh(cached):
         return _merge_label(cached["payload"], label)
@@ -197,7 +206,7 @@ async def latest(
 
         task = _inflight.get(key)
         if task is None or task.done():
-            task = asyncio.create_task(_build_payload(lat, lon, label, date))
+            task = asyncio.create_task(_build_payload(lat, lon, label, date, mode))
             _inflight[key] = task
 
     try:
@@ -240,7 +249,7 @@ async def historical_analysis(
     date: Date = Query(...),
 ) -> dict:
     points = build_grid(center_lat=lat, center_lon=lon, zone_prefix=label)
-    rows = await asyncio.to_thread(fetch_model, points, date)
+    rows = await asyncio.to_thread(fetch_model, points, date, "historical")
     return build_historical_analysis_payload(rows, lat, lon, label, date)
 
 
@@ -250,10 +259,17 @@ async def historical_analysis_csv(
     lon: float = Query(4.8357, ge=-180, le=180),
     label: str = Query(DEFAULT_CENTER_LABEL, min_length=1, max_length=120),
     date: Date = Query(...),
+    zone: str | None = Query(None),
+    slot: str | None = Query(None),
 ) -> PlainTextResponse:
-    rows = await asyncio.to_thread(_analysis_rows, lat, lon, label, date)
+    rows = await asyncio.to_thread(_analysis_rows, lat, lon, label, date, zone, slot)
     csv_text = _analysis_csv(rows)
-    filename = f"storm-chase-historical-{date.isoformat()}.csv"
+    suffix = ""
+    if zone:
+        suffix += f"-{zone}"
+    if slot:
+        suffix += f"-{slot}"
+    filename = f"storm-chase-historical-{date.isoformat()}{suffix}.csv"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return PlainTextResponse(csv_text, media_type="text/csv; charset=utf-8", headers=headers)
 

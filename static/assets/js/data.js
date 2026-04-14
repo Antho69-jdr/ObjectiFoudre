@@ -1,3 +1,10 @@
+    function payloadHasUsableSlots(nextPayload, requestedDayKey) {
+      const days = Array.isArray(nextPayload?.days) ? nextPayload.days : [];
+      const requestedDay = days.find(day => day?.day_key === requestedDayKey);
+      if (requestedDay) return Array.isArray(requestedDay.slots) && requestedDay.slots.length > 0;
+      return days.some(day => Array.isArray(day?.slots) && day.slots.length > 0);
+    }
+
     async function loadData(force = false, centerToken = centerChangeToken) {
       const signature = `${currentCenter.lat}|${currentCenter.lon}|${currentCenter.label}|${selectedBaseDate}`;
       if (!force && payload && signature === lastFetchSignature) {
@@ -14,12 +21,21 @@
       dataFetchController = controller;
       const fetchToken = ++activeFetchToken;
       isFetchingData = true;
-      const params = new URLSearchParams({ lat: String(currentCenter.lat), lon: String(currentCenter.lon), label: currentCenter.label, date: selectedBaseDate });
-      if (force) params.set('force', 'true');
+      const buildParams = (mode = 'auto') => {
+        const params = new URLSearchParams({ lat: String(currentCenter.lat), lon: String(currentCenter.lon), label: currentCenter.label, date: selectedBaseDate, mode });
+        if (force) params.set('force', 'true');
+        return params;
+      };
       try {
-        const response = await fetch(`/api/latest?${params.toString()}`, { cache: 'no-store', signal: controller.signal });
+        let response = await fetch(`/api/latest?${buildParams('auto').toString()}`, { cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const nextPayload = await response.json();
+        let nextPayload = await response.json();
+        const requestedDayKey = normalizeDateIso(selectedBaseDate);
+        if (requestedDayKey === getTodayIsoDate() && !payloadHasUsableSlots(nextPayload, requestedDayKey)) {
+          response = await fetch(`/api/latest?${buildParams('historical').toString()}`, { cache: 'no-store', signal: controller.signal });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          nextPayload = await response.json();
+        }
         if (fetchToken != activeFetchToken || centerToken !== centerChangeToken) return payload;
         payload = nextPayload;
         lastFetchSignature = signature;

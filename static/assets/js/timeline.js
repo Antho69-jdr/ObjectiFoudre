@@ -30,10 +30,11 @@
       if (!selectedSlotKey || !slots.some(s => s.slot_key === selectedSlotKey)) selectedSlotKey = slots[0].slot_key;
       const todayHour = new Date().getHours();
       const isToday = normalizeDateIso(selectedBaseDate) === getTodayIsoDate();
+      const forecastMode = String(payload?.meta?.analysis_type || '').toLowerCase() !== 'historical';
       for (const slot of slots) {
         const btn = document.createElement('button');
         const startHour = Number(String(slot.slot_key || '').split('-')[0]);
-        const isPastForecastSlot = isToday && Number.isFinite(startHour) && startHour < todayHour;
+        const isPastForecastSlot = forecastMode && isToday && Number.isFinite(startHour) && startHour < todayHour;
         btn.textContent = slot.slot_label;
         btn.className = `slot-pill ${slot.slot_key === selectedSlotKey ? 'active' : ''} ${isPastForecastSlot ? 'is-disabled' : ''}`.trim();
         if (isPastForecastSlot) btn.disabled = true;

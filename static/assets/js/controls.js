@@ -303,6 +303,49 @@
       });
     }
 
+
+    function downloadHistoricalCsv(params, filenameHint = '') {
+      const query = new URLSearchParams(params);
+      const url = `/api/historical-analysis.csv?${query.toString()}`;
+      const link = document.createElement('a');
+      link.href = url;
+      if (filenameHint) link.download = filenameHint;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+
+    function exportCurrentSlotCsv() {
+      const slotKey = selectedFeature?.slot_key || selectedSlotKey;
+      if (!slotKey) {
+        setMetaMessage('Sélectionne d’abord un créneau historical pour exporter le CSV.');
+        return;
+      }
+      downloadHistoricalCsv({
+        lat: String(currentCenter.lat),
+        lon: String(currentCenter.lon),
+        label: currentCenter.label,
+        date: selectedBaseDate,
+        slot: slotKey,
+      }, `storm-chase-${selectedBaseDate}-${slotKey}.csv`);
+      setMetaMessage(`Export CSV du créneau ${slotKey} lancé.`);
+    }
+
+    function exportSelectedCellDayCsv() {
+      if (!selectedFeature?.zone) {
+        setMetaMessage('Sélectionne d’abord une cellule pour exporter sa journée complète.');
+        return;
+      }
+      downloadHistoricalCsv({
+        lat: String(currentCenter.lat),
+        lon: String(currentCenter.lon),
+        label: currentCenter.label,
+        date: selectedBaseDate,
+        zone: selectedFeature.zone,
+      }, `storm-chase-${selectedBaseDate}-${selectedFeature.zone}.csv`);
+      setMetaMessage(`Export CSV de la cellule ${selectedFeature.zone} lancé.`);
+    }
+
     function setupPrimaryControls() {
       toggleSearchBtn.addEventListener('click', (event) => {
         event.preventDefault();
@@ -326,6 +369,8 @@
         map.easeTo({ center: [Number(selectedFeature.lon), Number(selectedFeature.lat)], duration: 700, zoom: Math.max(map.getZoom(), 10.2) });
       });
       closeDetailsBtn.addEventListener('click', closeDetails);
+      exportSlotCsvBtn?.addEventListener('click', exportCurrentSlotCsv);
+      exportDayCellCsvBtn?.addEventListener('click', exportSelectedCellDayCsv);
       modalBackdrop.addEventListener('click', closeDetails);
       closeInfoBtn.addEventListener('click', closeMetricInfo);
       infoBackdrop.addEventListener('click', closeMetricInfo);

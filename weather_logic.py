@@ -84,12 +84,28 @@ def batch_size_for_points(points: list[Point]) -> int:
     return max(1, math.ceil(len(points) / TARGET_BATCHES))
 
 
-def api_context(target_date: Date | None) -> tuple[str, dict[str, str], str]:
+def api_context(target_date: Date | None, mode: str = "auto") -> tuple[str, dict[str, str], str]:
     today = local_today()
     if target_date is not None and target_date < HISTORICAL_MIN_DATE:
         raise ValueError(f"Date trop ancienne pour l'archive de prévisions Open-Meteo : {target_date.isoformat()} < {HISTORICAL_MIN_DATE.isoformat()}")
 
-    if target_date is not None and target_date < today:
+    if mode == "historical":
+        if target_date is None:
+            target_date = today
+        return HISTORICAL_API_BASE, {
+            "start_date": target_date.isoformat(),
+            "end_date": target_date.isoformat(),
+        }, "historical"
+
+    if mode == "forecast":
+        forecast_ref = target_date if target_date is not None else today
+        forecast_days = max(1, min(FORECAST_MAX_DAYS, (forecast_ref - today).days + 1))
+        return FORECAST_API_BASE, {
+            "forecast_days": str(forecast_days),
+            "past_days": "0",
+        }, "forecast"
+
+    if target_date is not None and target_date <= today:
         return HISTORICAL_API_BASE, {
             "start_date": target_date.isoformat(),
             "end_date": target_date.isoformat(),
@@ -233,10 +249,10 @@ def get_json(url: str, retries: int = 4, timeout: int = 60) -> dict:
     raise RuntimeError(f"Échec après {retries} tentatives: {last_error}")
 
 
-def build_api_url(points: list[Point], target_date: Date | None = None) -> str:
+def build_api_url(points: list[Point], target_date: Date | None = None, mode: str = "auto") -> str:
     latitudes = ",".join(str(p.lat) for p in points)
     longitudes = ",".join(str(p.lon) for p in points)
-    api_base, date_params, api_mode = api_context(target_date)
+    api_base, date_params, api_mode = api_context(target_date, mode=mode)
     params = {
         "latitude": latitudes,
         "longitude": longitudes,
@@ -926,7 +942,7 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
     return rows
 
 
-def fetch_model(points: list[Point], target_date: Date | None = None) -> list[OutputRow]:
+def fetch_model(points: list[Point], target_date: Date | None = None, mode: str = "auto") -> list[OutputRow]:
     batch_size = batch_size_for_points(points)
     batches = list(chunks(points, batch_size))
     total_batches = len(batches)
@@ -934,7 +950,7 @@ def fetch_model(points: list[Point], target_date: Date | None = None) -> list[Ou
     day_mode = target_date.isoformat() if target_date is not None else "jours glissants"
     for batch_index, batch in enumerate(batches, start=1):
         print(f"{FORECAST_MODEL_LABEL if (target_date is None or target_date >= local_today()) else HISTORICAL_MODEL} | lot {batch_index}/{total_batches} | {len(batch)} points | {day_mode}")
-        url = build_api_url(batch, target_date=target_date)
+        url = build_api_url(batch, target_date=target_date, mode=mode)
         payload = get_json(url)
         structures = location_structures(payload)
         for point, loc in zip(batch, structures):
@@ -1095,7 +1111,8 @@ def build_latest_payload(
     center_lon: float = DEFAULT_CENTER_LON,
     center_label: str = DEFAULT_CENTER_LABEL,
     target_date: Date | None = None,
+    mode: str = "auto",
 ) -> dict:
     points = build_grid(center_lat=center_lat, center_lon=center_lon, zone_prefix=center_label)
-    rows = fetch_model(points, target_date=target_date)
+    rows = fetch_model(points, target_date=target_date, mode=mode)
     return group_for_output(rows, center_lat, center_lon, center_label, target_date=target_date)

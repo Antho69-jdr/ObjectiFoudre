@@ -1192,3 +1192,7 @@
 }
 
 
+
+.action-row-export button {
+  font-size: 12px;
+}
