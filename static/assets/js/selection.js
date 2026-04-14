@@ -17,7 +17,6 @@
       applyMetricTone(selectionStructure, 'structure_score', p.structure_score);
       applyMetricTone(selectionQuality, 'chase_quality_score', p.chase_quality_score);
       applyMetricTone(selectionStability, 'stability_score', p.stability_score);
-      selectionSummary.textContent = p.summary || 'Aucun résumé disponible.';
       selectionCard.classList.add('visible');
       requestAnimationFrame(positionSelectionCard);
     }

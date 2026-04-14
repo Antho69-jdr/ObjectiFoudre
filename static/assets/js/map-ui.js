@@ -12,7 +12,7 @@
 
     function setLoadingState(isLoading, message) {
       searchCityBtn.disabled = isLoading;
-      aroundMeBtn.disabled = isLoading;
+      if (typeof aroundMeBtn !== 'undefined' && aroundMeBtn) aroundMeBtn.disabled = isLoading;
       locateBtn.disabled = isLoading;
       refreshBtn.disabled = isLoading;
       if (message) setMetaMessage(message);

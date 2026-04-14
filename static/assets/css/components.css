@@ -938,3 +938,132 @@
     pointer-events: auto;
   }
 }
+
+/* v0.4.79 UI refinement */
+.search-panel .location-bar {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.selection-card {
+  width: min(360px, calc(100vw - 44px));
+  padding: 14px;
+}
+.selection-top {
+  margin-bottom: 10px;
+}
+.selection-title {
+  font-size: 16px;
+}
+.selection-subtitle {
+  font-size: 11px;
+  line-height: 1.35;
+}
+.selection-card .hero-score {
+  margin-bottom: 10px;
+}
+.selection-card .quick-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 0;
+}
+.selection-card .metric-btn {
+  padding: 10px;
+}
+.selection-card .metric-btn .label {
+  font-size: 10px;
+}
+.selection-card .metric-btn .value {
+  font-size: 14px;
+  margin-top: 4px;
+}
+.selection-card .metric-btn .hint {
+  margin-top: 2px;
+  font-size: 10px;
+}
+.selection-card .action-row {
+  margin-top: 10px;
+}
+
+.info-drawer {
+  width: min(420px, calc(100vw - 96px));
+  padding: 18px;
+}
+.info-drawer-header {
+  position: sticky;
+  top: -18px;
+  z-index: 2;
+  margin: -18px -18px 16px;
+  padding: 18px 18px 14px;
+  background: linear-gradient(180deg, rgba(8,17,30,0.96), rgba(8,17,30,0.88));
+  backdrop-filter: blur(18px) saturate(1.04);
+  -webkit-backdrop-filter: blur(18px) saturate(1.04);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.info-drawer .title {
+  font-size: 18px;
+}
+.info-drawer p,
+.info-drawer li {
+  color: #c8d5ea;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.drawer-intro {
+  margin-top: 0;
+}
+.drawer-section {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+.drawer-section-title {
+  font-weight: 800;
+  color: #eef4ff;
+  letter-spacing: 0.01em;
+}
+.drawer-scale-grid,
+.drawer-category-list {
+  display: grid;
+  gap: 10px;
+}
+.drawer-scale-grid {
+  grid-template-columns: 1fr 1fr;
+}
+.drawer-scale-card,
+.drawer-formula-card,
+.drawer-category-card {
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.035);
+  padding: 12px;
+}
+.drawer-scale-card {
+  display: grid;
+  gap: 4px;
+}
+.drawer-scale-card strong,
+.drawer-category-card h3 {
+  margin: 0;
+  font-size: 13px;
+  color: #eef4ff;
+}
+.drawer-scale-card span,
+.drawer-formula-note,
+.drawer-category-card p {
+  color: #c8d5ea;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.drawer-formula-line {
+  font-size: 13px;
+  color: #eef4ff;
+}
+.drawer-category-card ul,
+.drawer-bullet-list {
+  margin: 0;
+  padding-left: 18px;
+}
+.drawer-category-card ul {
+  display: grid;
+  gap: 6px;
+}

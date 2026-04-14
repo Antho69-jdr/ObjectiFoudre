@@ -14,7 +14,6 @@ const rightRailScroll = document.getElementById('rightRailScroll');
 const toggleSearchBtn = document.getElementById('toggleSearchBtn');
 const cityInput = document.getElementById('cityInput');
 const searchCityBtn = document.getElementById('searchCityBtn');
-const aroundMeBtn = document.getElementById('aroundMeBtn');
 
 const selectionCard = document.getElementById('selectionCard');
 const selectionTitle = document.getElementById('selectionTitle');
@@ -28,7 +27,6 @@ const selectionStructure = document.getElementById('selectionStructure');
 const selectionQuality = document.getElementById('selectionQuality');
 const selectionStability = document.getElementById('selectionStability');
 const selectionStabilityLabel = document.getElementById('selectionStabilityLabel');
-const selectionSummary = document.getElementById('selectionSummary');
 const closeSelectionBtn = document.getElementById('closeSelectionBtn');
 const openDetailsBtn = document.getElementById('openDetailsBtn');
 const recenterBtn = document.getElementById('recenterBtn');

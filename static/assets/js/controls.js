@@ -309,7 +309,14 @@
         event.stopPropagation();
         const shouldOpen = !topbar.classList.contains('show-search');
         closeTopPanels();
-        if (shouldOpen) topbar.classList.add('show-search');
+        if (cityInput) {
+          cityInput.value = '';
+          cityInput.placeholder = 'Tape une ville, un secteur ou un point de départ…';
+        }
+        if (shouldOpen) {
+          topbar.classList.add('show-search');
+          requestAnimationFrame(() => cityInput?.focus({ preventScroll: true }));
+        }
         requestAnimationFrame(alignTopPanels);
       });
       closeSelectionBtn.addEventListener('click', closeSelection);
@@ -329,7 +336,7 @@
       refreshBtn.addEventListener('click', () => refreshCurrentData(true));
       bestCellsBtn.addEventListener('click', toggleBestCellsMode);
       gridLinesBtn.addEventListener('click', toggleGridLines);
-      aroundMeBtn.addEventListener('click', locateUser);
+      if (typeof aroundMeBtn !== 'undefined' && aroundMeBtn) aroundMeBtn.addEventListener('click', locateUser);
       searchCityBtn.addEventListener('click', handleCitySearch);
       cityInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') handleCitySearch(); });
 
