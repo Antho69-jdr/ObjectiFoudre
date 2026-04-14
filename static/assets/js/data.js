@@ -42,7 +42,6 @@
         shouldAnimateNextGrid = true;
         lastFetchAt = Date.now();
         const days = getDays();
-        const requestedDayKey = normalizeDateIso(selectedBaseDate);
         selectedDayKey = days.find(d => d.day_key === requestedDayKey)?.day_key || days.find(d => d.day_key === selectedDayKey)?.day_key || days[0]?.day_key || null;
         const currentDay = getCurrentDay();
         selectedSlotKey = currentDay?.slots?.find(s => s.slot_key === selectedSlotKey)?.slot_key || currentDay?.slots?.[0]?.slot_key || null;
