@@ -61,6 +61,9 @@
       let dragStartScrollLeft = 0;
       let dragStartScrollTop = 0;
       let dragDistance = 0;
+      let hasDragged = false;
+      let suppressNextClick = false;
+      const DRAG_THRESHOLD = 6;
 
       const useVerticalTimeline = () => window.matchMedia('(max-width: 640px)').matches;
 
@@ -80,7 +83,8 @@
         dragStartScrollLeft = slotButtons.scrollLeft;
         dragStartScrollTop = slotButtons.scrollTop;
         dragDistance = 0;
-        slotButtons.classList.add('dragging');
+        hasDragged = false;
+        suppressNextClick = false;
         try { slotButtons.setPointerCapture(event.pointerId); } catch (_) {}
       });
 
@@ -89,18 +93,28 @@
         const deltaX = event.clientX - dragStartX;
         const deltaY = event.clientY - dragStartY;
         dragDistance = Math.max(dragDistance, Math.abs(useVerticalTimeline() ? deltaY : deltaX));
+
+        if (!hasDragged && dragDistance > DRAG_THRESHOLD) {
+          hasDragged = true;
+          suppressNextClick = true;
+          slotButtons.classList.add('dragging');
+        }
+
+        if (!hasDragged) return;
+
         if (useVerticalTimeline()) {
           slotButtons.scrollTop = dragStartScrollTop - deltaY;
         } else {
           slotButtons.scrollLeft = dragStartScrollLeft - deltaX;
         }
-        if (dragDistance > 6) event.preventDefault();
+        event.preventDefault();
       }, { passive: false });
 
       slotButtons.addEventListener('click', (event) => {
-        if (dragDistance > 6) {
+        if (suppressNextClick) {
           event.preventDefault();
           event.stopPropagation();
+          suppressNextClick = false;
         }
       }, true);
 
@@ -112,6 +126,8 @@
         slotButtons.classList.remove('dragging');
         requestAnimationFrame(() => {
           dragDistance = 0;
+          hasDragged = false;
+          suppressNextClick = false;
         });
       };
 
