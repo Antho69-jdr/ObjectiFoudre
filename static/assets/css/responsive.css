@@ -320,12 +320,14 @@
         display: flex;
         flex-direction: column;
         gap: 10px;
-        align-items: flex-end;
+        align-items: stretch;
+        width: var(--right-rail-width);
         overflow-y: auto;
         overflow-x: visible;
         padding-right: 0;
         scrollbar-width: none;
-        pointer-events: none;
+        pointer-events: auto;
+        touch-action: pan-y;
       }
       body.mobile-ui .right-rail-scroll::-webkit-scrollbar { display: none; }
       body.mobile-ui .right-rail-scroll > * {
@@ -346,6 +348,8 @@
       body.mobile-ui .mobile-toggle-bar {
         display: grid;
         gap: 10px;
+        width: 100%;
+        pointer-events: auto;
       }
       body.mobile-ui .timeline-dock {
         left: 0;
