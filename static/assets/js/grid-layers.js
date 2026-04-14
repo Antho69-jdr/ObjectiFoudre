@@ -4,6 +4,56 @@ function ensureSource(id, data) {
     }
 
 
+    function hideGridCornerMask() {
+      activeGridMaskCells = [];
+      if (!gridCornerMask) return;
+      gridCornerMask.classList.remove('visible');
+      gridCornerMask.style.width = '0px';
+      gridCornerMask.style.height = '0px';
+    }
+
+    function projectGridEnvelopeBounds(cells) {
+      const template = deriveGridTemplate(cells);
+      if (!template || !Array.isArray(cells) || !cells.length || !map) return null;
+      const lats = cells.map((cell) => Number(cell.lat)).filter(Number.isFinite);
+      const lons = cells.map((cell) => Number(cell.lon)).filter(Number.isFinite);
+      if (!lats.length || !lons.length) return null;
+      const halfH = Number(template.cellHeightDeg || 0) / 2;
+      const halfW = Number(template.cellWidthDeg || 0) / 2;
+      const north = Math.max(...lats) + halfH;
+      const south = Math.min(...lats) - halfH;
+      const east = Math.max(...lons) + halfW;
+      const west = Math.min(...lons) - halfW;
+      const nw = map.project([west, north]);
+      const se = map.project([east, south]);
+      const left = Math.min(nw.x, se.x);
+      const top = Math.min(nw.y, se.y);
+      const width = Math.abs(se.x - nw.x);
+      const height = Math.abs(se.y - nw.y);
+      if (!Number.isFinite(left + top + width + height) || width < 20 || height < 20) return null;
+      return { left, top, width, height };
+    }
+
+    function updateGridCornerMask(cells = activeGridMaskCells) {
+      if (!gridCornerMask || !Array.isArray(cells) || !cells.length) {
+        hideGridCornerMask();
+        return;
+      }
+      const bounds = projectGridEnvelopeBounds(cells);
+      if (!bounds) {
+        hideGridCornerMask();
+        return;
+      }
+      activeGridMaskCells = cells;
+      const radius = Math.max(10, Math.min(28, Math.round(Math.min(bounds.width, bounds.height) * 0.085)));
+      gridCornerMask.style.left = `${Math.round(bounds.left)}px`;
+      gridCornerMask.style.top = `${Math.round(bounds.top)}px`;
+      gridCornerMask.style.width = `${Math.round(bounds.width)}px`;
+      gridCornerMask.style.height = `${Math.round(bounds.height)}px`;
+      gridCornerMask.style.setProperty('--grid-mask-radius', `${radius}px`);
+      gridCornerMask.classList.add('visible');
+    }
+
 
     function buildGridOutlineGeoJSON(cells) {
       const template = deriveGridTemplate(cells);
@@ -37,6 +87,7 @@ function ensureSource(id, data) {
       if (map.getLayer('grid-loader-fill')) map.removeLayer('grid-loader-fill');
       if (map.getLayer('grid-loader-outline')) map.removeLayer('grid-loader-outline');
       if (map.getSource('grid-loader')) map.removeSource('grid-loader');
+      if (!getCurrentSlot()?.cells?.length) hideGridCornerMask();
     }
 
     function showLoadingGrid(center) {
@@ -44,6 +95,7 @@ function ensureSource(id, data) {
       removeLoaderLayers();
       const cells = buildLoaderCells(center);
       ensureSource('grid-loader', buildLoaderGeoJSON(cells, 0));
+      updateGridCornerMask(cells);
       map.addLayer({
         id: 'grid-loader-fill',
         type: 'fill',
@@ -80,6 +132,7 @@ function ensureSource(id, data) {
       if (map.getLayer('grid-borders')) map.removeLayer('grid-borders');
       if (map.getLayer('grid-fill')) map.removeLayer('grid-fill');
       if (map.getSource('grid')) map.removeSource('grid');
+      hideGridCornerMask();
       map.off('click', 'grid-fill', onGridClick);
       map.off('mouseenter', 'grid-fill', onGridEnter);
       map.off('mouseleave', 'grid-fill', onGridLeave);
@@ -138,7 +191,8 @@ function ensureSource(id, data) {
         map.on('mouseenter', 'grid-fill', onGridEnter);
         map.on('mouseleave', 'grid-fill', onGridLeave);
       }
-      animateGridFillFactor(0, 1, 260, () => { applyGridLinesVisibility(); updateHighlight(); });
+      updateGridCornerMask(cells);
+      animateGridFillFactor(0, 1, 260, () => { applyGridLinesVisibility(); updateHighlight(); updateGridCornerMask(cells); });
     }
 
     function onGridEnter() {

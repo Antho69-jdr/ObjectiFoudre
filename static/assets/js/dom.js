@@ -75,3 +75,5 @@ const locateBtn = document.getElementById('locateBtn');
 const refreshBtn = document.getElementById('refreshBtn');
 const installChip = document.getElementById('installChip');
 const appLoader = document.getElementById('appLoader');
+
+const gridCornerMask = document.getElementById('gridCornerMask');
