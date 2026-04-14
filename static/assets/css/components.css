@@ -870,3 +870,16 @@
   opacity: 0;
   pointer-events: none;
 }
+
+
+@media (hover: hover) and (pointer: fine) {
+  .timeline-slot-strip {
+    cursor: default;
+    user-select: auto;
+    scroll-snap-type: none;
+  }
+
+  .timeline-slot-strip.dragging .slot-pill {
+    pointer-events: auto;
+  }
+}

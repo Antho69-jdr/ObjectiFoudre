@@ -66,7 +66,7 @@
       const DRAG_THRESHOLD = 6;
 
       const useVerticalTimeline = () => window.matchMedia('(max-width: 640px)').matches;
-      const usePointerDrag = () => {
+      const useTouchDrag = () => {
         try {
           return window.matchMedia('(hover: none), (pointer: coarse)').matches;
         } catch (_) {
@@ -82,8 +82,21 @@
         }
       }, { passive: false });
 
+      const stopDrag = (event) => {
+        if (activePointerId === null) return;
+        if (event?.pointerId !== undefined && event.pointerId !== activePointerId) return;
+        try { slotButtons.releasePointerCapture(activePointerId); } catch (_) {}
+        activePointerId = null;
+        slotButtons.classList.remove('dragging');
+        requestAnimationFrame(() => {
+          dragDistance = 0;
+          hasDragged = false;
+          suppressNextClick = false;
+        });
+      };
+
       slotButtons.addEventListener('pointerdown', (event) => {
-        if (!usePointerDrag()) return;
+        if (!useTouchDrag()) return;
         if (event.pointerType === 'mouse') return;
         if (event.button !== undefined && event.button !== 0) return;
         activePointerId = event.pointerId;
@@ -120,6 +133,7 @@
       }, { passive: false });
 
       slotButtons.addEventListener('click', (event) => {
+        if (!useTouchDrag()) return;
         if (suppressNextClick) {
           event.preventDefault();
           event.stopPropagation();
@@ -127,19 +141,9 @@
         }
       }, true);
 
-      const stopDrag = (event) => {
-        if (activePointerId === null) return;
-        if (event?.pointerId !== undefined && event.pointerId !== activePointerId) return;
-        try { slotButtons.releasePointerCapture(activePointerId); } catch (_) {}
-        activePointerId = null;
-        slotButtons.classList.remove('dragging');
-        requestAnimationFrame(() => {
-          dragDistance = 0;
-          hasDragged = false;
-          suppressNextClick = false;
-        });
-      };
-
+      slotButtons.addEventListener('pointerup', stopDrag);
+      slotButtons.addEventListener('pointercancel', stopDrag);
+      slotButtons.addEventListener('lostpointercapture', stopDrag);
       window.addEventListener('pointerup', stopDrag);
       window.addEventListener('pointercancel', stopDrag);
     }
