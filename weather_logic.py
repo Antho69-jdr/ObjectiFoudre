@@ -150,6 +150,11 @@ class OutputRow:
     shear_ms: float
     temp_c: float
     dewpoint_c: float
+    analysis_mode: str
+    metrics_used: dict[str, float]
+    metric_scores: dict[str, int]
+    category_breakdown: dict[str, dict[str, int]]
+    diagnostics: list[str]
     summary: str
 
 
@@ -593,6 +598,51 @@ def score_global(trigger_score: int, structure_score: int, chase_quality_score: 
 def score_confidence(trigger_score: int, structure_score: int, chase_quality_score: int, stability_score: int, global_score_value: int) -> int:
     return compute_bust_risk(trigger_score, structure_score, chase_quality_score, stability_score, global_score_value, global_score_value)
 
+
+def build_cell_diagnostics(metric: dict, reliability_diag: dict[str, int], global_score: int, bust_risk: int) -> list[str]:
+    diagnostics: list[str] = []
+
+    if metric['trigger'] >= 70:
+        diagnostics.append("Initiation solide : instabilité et humidité basses couches bien alignées.")
+    elif metric['trigger'] >= 45:
+        diagnostics.append("Initiation jouable : déclenchement plausible mais encore sensible au timing local.")
+    else:
+        diagnostics.append("Initiation fragile : risque de blocage ou de convection trop dispersée.")
+
+    if metric['structure'] >= 70:
+        diagnostics.append("Severity crédible : combinaison CAPE / shear favorable à une convection organisée.")
+    elif metric['structure'] >= 45:
+        diagnostics.append("Severity modérée : intensité possible mais organisation encore limitée.")
+    else:
+        diagnostics.append("Severity faible : structure orageuse probablement brève ou peu marquée.")
+
+    if metric['quality'] >= 70:
+        diagnostics.append("Chaseability élevée : visibilité et lecture terrain favorables.")
+    elif metric['quality'] >= 45:
+        diagnostics.append("Chaseability moyenne : potentiel exploitable avec compromis visuels.")
+    else:
+        diagnostics.append("Chaseability pénalisée : nébulosité ou confort terrain peu favorables.")
+
+    if reliability_diag['consistency'] < 40:
+        diagnostics.append("Fiabilité pénalisée par des signaux internes contradictoires.")
+    if reliability_diag['stability'] < 40:
+        diagnostics.append("Fiabilité pénalisée par une forte variabilité horaire locale.")
+    if metric['moisture'] < 35:
+        diagnostics.append("Humidité basse couche trop limitée pour soutenir durablement l’initiation.")
+    if metric['vpd_component'] < 35:
+        diagnostics.append("VPD élevé : l’air proche du sol reste trop sec pour limiter le risque de bust.")
+    if metric['cloud_score'] < 35:
+        diagnostics.append("Nébulosité défavorable à la lecture terrain et à la photogénie.")
+    if bust_risk >= 70:
+        diagnostics.append("Bust Risk élevé : scénario séduisant sur le papier mais encore fragile sur le terrain.")
+    elif bust_risk <= 35:
+        diagnostics.append("Bust Risk contenu : signaux suffisamment robustes pour une analyse historical comparative.")
+    if global_score >= 75:
+        diagnostics.append("Cellule prioritaire en historical analysis : signal global franchement au-dessus du bruit de fond.")
+
+    return diagnostics[:8]
+
+
 def potentiel(score_global: int) -> str:
     if score_global < 20:
         return "Très faible"
@@ -767,6 +817,62 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
                     conf_score,
                 )
 
+                metric_scores = {
+                    "cape_score": metric["cape_component"],
+                    "dewpoint_score": metric["dew_component"],
+                    "humidity_score": metric["humidity_component"],
+                    "vpd_score": metric["vpd_component"],
+                    "wetbulb_score": metric["wetbulb_component"],
+                    "timing_score": metric["timing"],
+                    "shear_score": metric["shear_component"],
+                    "gust_score": metric["gust_component"],
+                    "cloud_score": metric["cloud_score"],
+                }
+                metrics_used = {
+                    "cape_jkg": round(metric["cape"], 1),
+                    "temperature_c": round(metric["temp"], 1),
+                    "dewpoint_c": round(metric["dew"], 1),
+                    "relative_humidity_2m": round(metric["rh2m"], 1),
+                    "vapour_pressure_deficit": round(metric["vpd"], 2),
+                    "wet_bulb_temperature_2m": round(metric["wetbulb"], 1),
+                    "cloud_cover_low": round(metric["cloud_low"], 1),
+                    "cloud_cover_mid": round(metric["cloud_mid"], 1),
+                    "cloud_cover_high": round(metric["cloud_high"], 1),
+                    "wind_gusts_10m": round(metric["gusts"], 1),
+                    "shear_ms": round(metric["shear"], 1),
+                }
+                category_breakdown = {
+                    "initiation": {
+                        "score": metric["trigger"],
+                        "instability": metric["instability"],
+                        "moisture": metric["moisture"],
+                        "timing": metric["timing"],
+                        "inhibition_penalty": metric["inhibition_penalty"],
+                    },
+                    "severity": {
+                        "score": metric["structure"],
+                        "updraft": metric["updraft"],
+                        "organization": metric["organization"],
+                        "maintenance": metric["maintenance"],
+                    },
+                    "chaseability": {
+                        "score": metric["quality"],
+                        "visibility": metric["visibility"],
+                        "photogenicity": metric["photogenicity"],
+                        "comfort": metric["comfort"],
+                    },
+                    "reliability": {
+                        "score": stability,
+                        "consistency": reliability_diag["consistency"],
+                        "stability": reliability_diag["stability"],
+                        "confidence_margin": reliability_diag["confidence_margin"],
+                    },
+                    "bust_risk": {
+                        "score": conf_score,
+                    },
+                }
+                diagnostics = build_cell_diagnostics(metric, reliability_diag, global_score, conf_score)
+
                 row = OutputRow(
                     day_key=day_key,
                     day_label=day_label,
@@ -799,6 +905,11 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
                     shear_ms=round(metric["shear"], 1),
                     temp_c=round(metric["temp"], 1),
                     dewpoint_c=round(metric["dew"], 1),
+                    analysis_mode="historical" if point and metric["dt"].date() < local_today() else "forecast",
+                    metrics_used=metrics_used,
+                    metric_scores=metric_scores,
+                    category_breakdown=category_breakdown,
+                    diagnostics=diagnostics,
                     summary=summary,
                 )
 
@@ -828,6 +939,41 @@ def fetch_model(points: list[Point], target_date: Date | None = None) -> list[Ou
             rows.extend(rows_for_location(point, loc))
         time.sleep(0.35)
     return rows
+
+
+def flatten_rows_for_analysis(rows: list[OutputRow]) -> list[dict]:
+    flattened: list[dict] = []
+    for row in rows:
+        entry = asdict(row)
+        entry["analysis_rank"] = round(row.score_global - row.confidence_score * 0.35 + row.stability_score * 0.15, 1)
+        flattened.append(entry)
+    return flattened
+
+
+def build_historical_analysis_payload(rows: list[OutputRow], center_lat: float, center_lon: float, center_label: str, target_date: Date | None) -> dict:
+    flattened = flatten_rows_for_analysis(rows)
+    days = sorted({row.day_key for row in rows})
+    slots = sorted({row.slot_key for row in rows})
+    top_cells = sorted(flattened, key=lambda cell: (cell["analysis_rank"], cell["score_global"], -cell["confidence_score"]), reverse=True)[:30]
+    return {
+        "meta": {
+            "generated_at": datetime.now(ZoneInfo("Europe/Paris")).isoformat(timespec="seconds"),
+            "analysis_type": "historical" if target_date is not None and target_date < local_today() else "forecast",
+            "target_date": target_date.isoformat() if target_date is not None else None,
+            "center": {"lat": center_lat, "lon": center_lon, "label": center_label},
+            "rows": len(flattened),
+            "days": days,
+            "slots": slots,
+            "methodology": {
+                "goal": "Comparer les sous-scores v2 et le score global à des observations orageuses réelles sur une base historique.",
+                "global_score": "Initiation 30%, Severity 30%, Chaseability 25%, Reliability 15%, avec plafonds anti faux positifs et ajustement via Bust Risk.",
+                "recommended_join_key": "selected_time_iso + lat/lon ou zone pour recroiser avec éclairs, radar ou observations terrain.",
+            },
+        },
+        "top_cells": top_cells,
+        "rows": flattened,
+    }
+
 
 
 def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float, center_label: str, target_date: Date | None = None) -> dict:

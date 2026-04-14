@@ -9,17 +9,17 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from weather_logic import DEFAULT_CENTER_LABEL, build_latest_payload
+from weather_logic import DEFAULT_CENTER_LABEL, build_historical_analysis_payload, build_latest_payload, build_grid, fetch_model, flatten_rows_for_analysis
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 CACHE_TTL_SECONDS = 15 * 60
 STALE_TTL_SECONDS = 2 * 60 * 60
 
-app = FastAPI(title="Storm Chase", version="1.4.67")
+app = FastAPI(title="Storm Chase", version="1.5.2")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -101,6 +101,66 @@ async def _build_payload(lat: float, lon: float, label: str, target_date: Date |
     return _merge_label(payload, label)
 
 
+def _csv_escape(value: Any) -> str:
+    text = "" if value is None else str(value)
+    if any(ch in text for ch in [',', '"', '\n']):
+        text = '"' + text.replace('"', '""') + '"'
+    return text
+
+
+def _analysis_rows(lat: float, lon: float, label: str, target_date: Date | None) -> list[dict[str, Any]]:
+    points = build_grid(center_lat=lat, center_lon=lon, zone_prefix=label)
+    rows = fetch_model(points, target_date=target_date)
+    return flatten_rows_for_analysis(rows)
+
+
+def _analysis_csv(rows: list[dict[str, Any]]) -> str:
+    base_fields = [
+        'day_key','day_label','slot_key','slot_label','selected_time_iso','selected_hour','zone','lat','lon',
+        'score_global','trigger_score','structure_score','chase_quality_score','stability_score','confidence_score',
+        'potentiel','confiance','analysis_rank','mucape','relative_humidity_2m','vapour_pressure_deficit',
+        'wet_bulb_temperature_2m','cloud_cover_low','cloud_cover_mid','cloud_cover_high','wind_gusts_10m','shear_ms',
+        'temp_c','dewpoint_c','analysis_mode','summary'
+    ]
+    metric_score_fields = ['cape_score','dewpoint_score','humidity_score','vpd_score','wetbulb_score','timing_score','shear_score','gust_score','cloud_score']
+    breakdown_fields = [
+        'initiation_instability','initiation_moisture','initiation_timing','initiation_inhibition_penalty',
+        'severity_updraft','severity_organization','severity_maintenance',
+        'chaseability_visibility','chaseability_photogenicity','chaseability_comfort',
+        'reliability_consistency','reliability_stability','reliability_confidence_margin'
+    ]
+    header = base_fields + metric_score_fields + breakdown_fields + ['diagnostics']
+    lines = [','.join(header)]
+    for row in rows:
+        metric_scores = row.get('metric_scores', {})
+        breakdown = row.get('category_breakdown', {})
+        mapped = {
+            'initiation_instability': breakdown.get('initiation', {}).get('instability', ''),
+            'initiation_moisture': breakdown.get('initiation', {}).get('moisture', ''),
+            'initiation_timing': breakdown.get('initiation', {}).get('timing', ''),
+            'initiation_inhibition_penalty': breakdown.get('initiation', {}).get('inhibition_penalty', ''),
+            'severity_updraft': breakdown.get('severity', {}).get('updraft', ''),
+            'severity_organization': breakdown.get('severity', {}).get('organization', ''),
+            'severity_maintenance': breakdown.get('severity', {}).get('maintenance', ''),
+            'chaseability_visibility': breakdown.get('chaseability', {}).get('visibility', ''),
+            'chaseability_photogenicity': breakdown.get('chaseability', {}).get('photogenicity', ''),
+            'chaseability_comfort': breakdown.get('chaseability', {}).get('comfort', ''),
+            'reliability_consistency': breakdown.get('reliability', {}).get('consistency', ''),
+            'reliability_stability': breakdown.get('reliability', {}).get('stability', ''),
+            'reliability_confidence_margin': breakdown.get('reliability', {}).get('confidence_margin', ''),
+        }
+        output = []
+        for field in base_fields:
+            output.append(_csv_escape(row.get(field, '')))
+        for field in metric_score_fields:
+            output.append(_csv_escape(metric_scores.get(field, '')))
+        for field in breakdown_fields:
+            output.append(_csv_escape(mapped.get(field, '')))
+        output.append(_csv_escape(' | '.join(row.get('diagnostics', []))))
+        lines.append(','.join(output))
+    return '\n'.join(lines)
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -170,6 +230,32 @@ async def latest(
             if _inflight.get(key) is task:
                 _inflight.pop(key, None)
         return _merge_label(payload, label)
+
+
+@app.get("/api/historical-analysis")
+async def historical_analysis(
+    lat: float = Query(45.7640, ge=-90, le=90),
+    lon: float = Query(4.8357, ge=-180, le=180),
+    label: str = Query(DEFAULT_CENTER_LABEL, min_length=1, max_length=120),
+    date: Date = Query(...),
+) -> dict:
+    points = build_grid(center_lat=lat, center_lon=lon, zone_prefix=label)
+    rows = await asyncio.to_thread(fetch_model, points, date)
+    return build_historical_analysis_payload(rows, lat, lon, label, date)
+
+
+@app.get("/api/historical-analysis.csv")
+async def historical_analysis_csv(
+    lat: float = Query(45.7640, ge=-90, le=90),
+    lon: float = Query(4.8357, ge=-180, le=180),
+    label: str = Query(DEFAULT_CENTER_LABEL, min_length=1, max_length=120),
+    date: Date = Query(...),
+) -> PlainTextResponse:
+    rows = await asyncio.to_thread(_analysis_rows, lat, lon, label, date)
+    csv_text = _analysis_csv(rows)
+    filename = f"storm-chase-historical-{date.isoformat()}.csv"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return PlainTextResponse(csv_text, media_type="text/csv; charset=utf-8", headers=headers)
 
 
 @app.get("/")
