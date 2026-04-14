@@ -498,7 +498,8 @@ def compute_severity(shear_ms: float, gusts: float, cape: float, initiation_scor
 
 
 def compute_chaseability(cloud_low: float, cloud_mid: float, cloud_high: float, dt: datetime, gusts: float) -> tuple[int, dict[str, int]]:
-    visibility = score_cloud_penalty(cloud_low, cloud_mid, cloud_high)
+    cloud_score = score_cloud_penalty(cloud_low, cloud_mid, cloud_high)
+    visibility = cloud_score
     timing_s = score_timing(dt)
     photogenicity = clamp(visibility * 0.72 + timing_s * 0.28)
     comfort = clamp(100 - max(0, gusts - 18) * 3.2)
@@ -507,6 +508,7 @@ def compute_chaseability(cloud_low: float, cloud_mid: float, cloud_high: float, 
         'visibility': visibility,
         'photogenicity': photogenicity,
         'comfort': comfort,
+        'cloud_score': cloud_score,
     }
 
 
