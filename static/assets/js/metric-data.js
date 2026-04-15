@@ -6,7 +6,7 @@
     const METRIC_INFO = {
       score_global: {
         label: 'Score global',
-        explain: 'Synthèse v2 de l’intérêt réel de la cellule pour une chasse. Il combine Probabilité orage, Sévérité, Qualité de chasse et Fiabilité, avec des garde-fous pour éviter les faux positifs trop flatteurs.'
+        explain: 'Synthèse v2 de l’intérêt réel de la cellule pour une chasse. Il combine Probabilité orage, Sévérité et Qualité de chasse. La Probabilité orage fusionne déjà initiation brute, fiabilité locale et pénalité de Bust Risk.'
       },
       confidence_score: {
         label: 'Bust Risk',
@@ -14,7 +14,7 @@
       },
       trigger_score: {
         label: 'Probabilité orage',
-        explain: 'Estime la probabilité qu’un orage démarre réellement. Le score croise instabilité, humidité en basse couche, sécheresse relative et fenêtre horaire, puis pénalise les profils trop secs.'
+        explain: 'Estime la probabilité réelle d’obtenir une convection exploitable. Le score fusionne l’initiation brute, la fiabilité locale du signal et une pénalité de Bust Risk pour éviter les faux positifs flatteurs.'
       },
       structure_score: {
         label: 'Sévérité',
@@ -26,7 +26,7 @@
       },
       stability_score: {
         label: 'Fiabilité',
-        explain: 'Mesure la robustesse du signal. Le score combine cohérence interne des paramètres, stabilité temporelle locale et marge vis-à-vis des seuils utiles.'
+        explain: 'Toujours calculée en interne, mais désormais réinjectée dans la Probabilité orage. Elle mesure la robustesse du signal via cohérence interne, stabilité locale et marge vis-à-vis des seuils.'
       },
       mucape: {
         label: 'CAPE',

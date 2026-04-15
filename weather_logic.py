@@ -593,23 +593,22 @@ def compute_bust_risk(initiation_score: int, severity_score: int, chaseability_s
     return clamp(risk)
 
 
+def compute_storm_probability(initiation_score: int, reliability_score: int, bust_risk: int) -> int:
+    """Fuse initiation, reliability and bust risk into a single storm probability axis."""
+    safe_signal = clamp(100 - bust_risk)
+    return clamp(initiation_score * 0.58 + reliability_score * 0.27 + safe_signal * 0.15)
+
+
 def score_global(trigger_score: int, structure_score: int, chase_quality_score: int, stability_score: int, confidence_score: int | None = None) -> int:
-    score = trigger_score * 0.30 + structure_score * 0.30 + chase_quality_score * 0.25 + stability_score * 0.15
+    score = trigger_score * 0.40 + structure_score * 0.30 + chase_quality_score * 0.30
     if trigger_score < 25:
-        score = min(score, 55)
+        score = min(score, 48)
     elif trigger_score < 40:
-        score = min(score, 68)
-    if chase_quality_score < 15:
-        score -= 8
-    if confidence_score is not None:
-        if confidence_score >= 75:
-            score += 3
-        elif confidence_score >= 60:
-            score += 1
-        elif confidence_score >= 45:
-            score -= 2
-        else:
-            score -= 5
+        score = min(score, 58)
+
+    if chase_quality_score < 20:
+        score = min(score, 62)
+
     return clamp(score)
 
 
@@ -730,7 +729,7 @@ def build_summary(
         if confidence_score >= 40
         else "risque de bust contenu"
     )
-    return f"{day_label} {slot_label} ({selected_hour}) : {initiation_text}, {severity_text}, {chase_text}, {reliability_text}, {bust_text}."
+    return f"{day_label} {slot_label} ({selected_hour}) : {initiation_text}, {severity_text}, {chase_text}. Appui : {reliability_text}, avec {bust_text}."
 
 
 def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
@@ -820,7 +819,8 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
                 ]
                 stability, reliability_diag = compute_reliability(metric, neighbours)
                 conf_score = compute_bust_risk(metric["trigger"], metric["structure"], metric["quality"], stability, metric["moisture"], metric["timing"])
-                global_score = score_global(metric["trigger"], metric["structure"], metric["quality"], stability, conf_score)
+                storm_probability = compute_storm_probability(metric["trigger"], stability, conf_score)
+                global_score = score_global(storm_probability, metric["structure"], metric["quality"], stability, conf_score)
                 pot = potentiel(global_score)
                 conf = confiance_label(conf_score)
                 selected_hour = metric["dt"].strftime("%Hh")
@@ -828,7 +828,7 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
                     day_label,
                     slot_label,
                     selected_hour,
-                    metric["trigger"],
+                    storm_probability,
                     metric["structure"],
                     metric["quality"],
                     stability,
@@ -861,7 +861,10 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
                 }
                 category_breakdown = {
                     "initiation": {
-                        "score": metric["trigger"],
+                        "score": storm_probability,
+                        "raw_initiation": metric["trigger"],
+                        "reliability_support": stability,
+                        "bust_risk_penalty": conf_score,
                         "instability": metric["instability"],
                         "moisture": metric["moisture"],
                         "timing": metric["timing"],
@@ -904,7 +907,7 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
                     lon=point.lon,
                     cell_height_deg=point.cell_height_deg,
                     cell_width_deg=point.cell_width_deg,
-                    trigger_score=metric["trigger"],
+                    trigger_score=storm_probability,
                     structure_score=metric["structure"],
                     chase_quality_score=metric["quality"],
                     stability_score=stability,
@@ -984,7 +987,7 @@ def build_historical_analysis_payload(rows: list[OutputRow], center_lat: float, 
             "slots": slots,
             "methodology": {
                 "goal": "Comparer les sous-scores v2 et le score global à des observations orageuses réelles sur une base historique.",
-                "global_score": "Initiation 30%, Severity 30%, Chaseability 25%, Reliability 15%, avec plafonds anti faux positifs et ajustement via Bust Risk.",
+                "global_score": "Probabilité orage 40%, Sévérité 30%, Qualité de chasse 30%. La probabilité orage fusionne initiation brute, fiabilité locale et pénalité de Bust Risk.",
                 "recommended_join_key": "selected_time_iso + lat/lon ou zone pour recroiser avec éclairs, radar ou observations terrain.",
             },
         },
@@ -1055,7 +1058,7 @@ def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float
             },
             "requested_date": target_date.isoformat() if target_date is not None else None,
             "legend": {
-                "global_score": "0-100, combine Initiation 30%, Severity 30%, Chaseability 25%, Reliability 15%, avec plafonds anti faux-positifs et ajustement par Bust Risk.",
+                "global_score": "0-100, combine Probabilité orage 40%, Sévérité 30% et Qualité de chasse 30%. La Probabilité orage intègre aussi la fiabilité et le Bust Risk.",
                 "trigger": "Initiation : instabilité utilisable + humidité basse couche + fenêtre horaire, pénalisée si la couche basse est trop sèche.",
                 "structure": "Severity : potentiel d’intensité et d’organisation via CAPE, shear et dynamique de surface.",
                 "chase_quality": "Chaseability : visibilité terrain, photogénie et confort relatif via nébulosité, timing et vent.",
@@ -1079,7 +1082,7 @@ def print_summary(rows: list[OutputRow]) -> None:
         print(f"\n=== {day_label} | {slot_label} ===")
         for r in subset[:5]:
             print(
-                f"- {r.zone} | {r.selected_hour} | global {r.score_global} | init {r.trigger_score} | "
+                f"- {r.zone} | {r.selected_hour} | global {r.score_global} | proba {r.trigger_score} | "
                 f"severity {r.structure_score} | chase {r.chase_quality_score} | bust {r.confidence_score}"
             )
 
