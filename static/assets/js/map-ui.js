@@ -1,9 +1,21 @@
+    function formatCacheIndicator(cacheMeta) {
+      if (!cacheMeta || typeof cacheMeta !== 'object') return 'Source : données fraîches';
+      const isHit = cacheMeta.hit === true;
+      const ageSeconds = Number(cacheMeta.age_seconds);
+      if (isHit && Number.isFinite(ageSeconds)) {
+        if (ageSeconds < 60) return 'Source : cache < 1 min';
+        const ageMinutes = Math.max(1, Math.round(ageSeconds / 60));
+        return `Source : cache ${ageMinutes} min`;
+      }
+      return 'Source : données fraîches';
+    }
+
     function updateMetaLine() {
       const centerLabel = payload?.meta?.center?.label || currentCenter.label || 'Zone';
       const generated = formatFrenchRun(payload?.meta?.generated_at || '');
-      const model = payload?.meta?.model || 'arome_france';
       metaCenter.textContent = `Zone : ${centerLabel}`;
-      metaRun.textContent = `Modèle arome-france : ${generated}`;
+      const sourceIndicator = formatCacheIndicator(payload?.meta?.cache);
+      metaRun.textContent = `Modèle arome-france : ${generated} · ${sourceIndicator}`;
     }
 
     function setMetaMessage(message) {
