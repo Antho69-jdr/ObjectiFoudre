@@ -73,7 +73,7 @@
       document.querySelectorAll('.layer-option').forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.layerMetric === selectedColorMetric);
       });
-      if (layerModeBtn) layerModeBtn.classList.toggle('active', selectedColorMetric !== 'score_global');
+      if (layerModeBtn) layerModeBtn.classList.toggle('active', selectedColorMetric !== 'trigger_score');
     }
 
     function opacityFromConfidence(confidence) {

@@ -36,7 +36,7 @@ let selectedDayKey = null;
 let selectedSlotKey = null;
 let selectedFeature = null;
 let selectedBaseDate = getTodayIsoDate();
-let selectedColorMetric = 'score_global';
+let selectedColorMetric = 'trigger_score';
 let lastGridTemplate = null;
 let activeGridMaskCells = [];
 

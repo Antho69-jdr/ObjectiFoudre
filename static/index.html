@@ -7,14 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Storm Chase" />
-  <link rel="manifest" href="/static/storm-chase.webmanifest?v=0.5.6" />
+  <link rel="manifest" href="/static/storm-chase.webmanifest?v=0.5.7" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <title>Storm Chase MVP — Tactile</title>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/assets/css/main.css?v=0.5.6" />
-<link rel="stylesheet" href="/static/assets/css/components.css?v=0.5.6" />
-<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.5.6" />
+  <link rel="stylesheet" href="/static/assets/css/main.css?v=0.5.7" />
+<link rel="stylesheet" href="/static/assets/css/components.css?v=0.5.7" />
+<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.5.7" />
 </head>
 <body>
   <div id="app">
@@ -95,12 +95,9 @@
         </svg>
       </button>
       <div id="layerPanel" class="layer-panel" aria-hidden="true">
-        <button class="layer-option active" type="button" data-layer-metric="score_global">Global</button>
-        <button class="layer-option" type="button" data-layer-metric="trigger_score">Initiation</button>
-        <button class="layer-option" type="button" data-layer-metric="structure_score">Severity</button>
-        <button class="layer-option" type="button" data-layer-metric="chase_quality_score">Chaseability</button>
-        <button class="layer-option" type="button" data-layer-metric="stability_score">Reliability</button>
-        <button class="layer-option" type="button" data-layer-metric="confidence_score">Bust Risk</button>
+        <button class="layer-option active" type="button" data-layer-metric="trigger_score">Probabilité orage</button>
+        <button class="layer-option" type="button" data-layer-metric="chase_quality_score">Qualité de chasse</button>
+        <button class="layer-option" type="button" data-layer-metric="structure_score">Sévérité</button>
       </div>
     </div>
     </div>
@@ -138,10 +135,10 @@
       </div>
 
       <div class="quick-grid">
-        <button class="metric-btn" data-metric="trigger_score"><span class="label">Initiation</span><span class="value" id="selectionTrigger">-</span></button>
-        <button class="metric-btn" data-metric="structure_score"><span class="label">Severity</span><span class="value" id="selectionStructure">-</span></button>
-        <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Chaseability</span><span class="value" id="selectionQuality">-</span></button>
-        <button class="metric-btn" data-metric="stability_score"><span class="label">Reliability</span><span class="value" id="selectionStability">-</span><span class="hint" id="selectionStabilityLabel">-</span></button>
+        <button class="metric-btn" data-metric="trigger_score"><span class="label">Probabilité orage</span><span class="value" id="selectionTrigger">-</span></button>
+        <button class="metric-btn" data-metric="structure_score"><span class="label">Sévérité</span><span class="value" id="selectionStructure">-</span></button>
+        <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Qualité de chasse</span><span class="value" id="selectionQuality">-</span></button>
+        <button class="metric-btn" data-metric="stability_score"><span class="label">Fiabilité</span><span class="value" id="selectionStability">-</span><span class="hint" id="selectionStabilityLabel">-</span></button>
       </div>
 
 
@@ -173,10 +170,10 @@
           <div class="details-grid details-grid-score">
             <button class="metric-btn" data-metric="score_global"><span class="label">Score global</span><span class="value" id="dScoreGlobal">-</span><span class="hint" id="dPotential">-</span></button>
             <button class="metric-btn" data-metric="confidence_score"><span class="label">Bust Risk</span><span class="value" id="dConfidence">-</span><span class="hint" id="dConfidenceLabel">-</span></button>
-            <button class="metric-btn" data-metric="trigger_score"><span class="label">Initiation</span><span class="value" id="dTrigger">-</span><span class="hint">Capacité à initier la convection</span></button>
-            <button class="metric-btn" data-metric="structure_score"><span class="label">Severity</span><span class="value" id="dStructure">-</span><span class="hint">Potentiel de structure orageuse</span></button>
-            <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Chaseability</span><span class="value" id="dQuality">-</span><span class="hint">Lecture terrain et qualité d’observation</span></button>
-            <button class="metric-btn" data-metric="stability_score"><span class="label">Reliability</span><span class="value" id="dStability">-</span><span class="hint" id="dStabilityLabel">-</span></button>
+            <button class="metric-btn" data-metric="trigger_score"><span class="label">Probabilité orage</span><span class="value" id="dTrigger">-</span><span class="hint">Probabilité que la convection déclenche réellement</span></button>
+            <button class="metric-btn" data-metric="structure_score"><span class="label">Sévérité</span><span class="value" id="dStructure">-</span><span class="hint">Potentiel d’intensité et d’organisation orageuse</span></button>
+            <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Qualité de chasse</span><span class="value" id="dQuality">-</span><span class="hint">Lecture terrain, visibilité et intérêt photo</span></button>
+            <button class="metric-btn" data-metric="stability_score"><span class="label">Fiabilité</span><span class="value" id="dStability">-</span><span class="hint" id="dStabilityLabel">-</span></button>
           </div>
         </div>
 
@@ -212,7 +209,7 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge">Version : v0.5.5</div><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 5 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge">Version : v0.5.7</div><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
@@ -246,7 +243,7 @@
         <div class="small drawer-section-title">Comment est calculé le score global</div>
         <p>Le score global est une synthèse de quatre catégories notées sur 100. Chaque catégorie décrit une partie différente du risque utile pour la chasse. Le score final privilégie les mailles qui combinent un déclenchement crédible, une structure orageuse exploitable, une lecture terrain correcte et une fenêtre horaire qui ne s’effondre pas immédiatement.</p>
         <div class="drawer-formula-card">
-          <div class="drawer-formula-line"><strong>Score global</strong> = Initiation 30% + Severity 30% + Chaseability 25% + Reliability 15%</div>
+          <div class="drawer-formula-line"><strong>Score global</strong> = Initiation 30% + Severity 30% + Chaseability 25% + Fiabilité 15%</div>
           <div class="drawer-formula-note">Le modèle applique aussi des plafonds anti faux-positifs : un bon shear sans initiation crédible, ou une belle instabilité dans une basse couche trop sèche, ne doit pas produire un score global artificiellement haut. Le Bust Risk est lu à part pour estimer le risque de déplacement inutile.</div>
         </div>
       </section>
@@ -279,7 +276,7 @@
             </ul>
           </article>
           <article class="drawer-category-card">
-            <h3>4. Reliability</h3>
+            <h3>4. Fiabilité</h3>
             <p>Mesure la robustesse du signal. Le score combine cohérence interne des paramètres, stabilité temporelle autour du créneau retenu et marge vis-à-vis des seuils. Il sert à distinguer un vrai signal d’un optimum plus fragile.</p>
             <ul>
               <li>Monte si le signal reste cohérent avant et après le créneau retenu.</li>
@@ -296,7 +293,7 @@
           <li><strong>Initiation élevée mais Severity faible</strong> : convection possible, mais structures moins propres.</li>
           <li><strong>Severity élevée mais Initiation faible</strong> : beau potentiel théorique, mais risque de bust encore marqué.</li>
           <li><strong>Chaseability faible</strong> : potentiel météo parfois correct, mais lecture terrain plus compliquée.</li>
-          <li><strong>Reliability faible</strong> : créneau intéressant mais fragile, intérêt surtout tactique et court.</li>
+          <li><strong>Fiabilité faible</strong> : créneau intéressant mais fragile, intérêt surtout tactique et court.</li>
         </ul>
       </section>
 
@@ -319,23 +316,23 @@
       <p id="infoExplanation">—</p>
     </div>
   </div>
-  <script src="/static/assets/js/dom.js?v=0.5.6"></script>
-  <script src="/static/assets/js/utils.js?v=0.5.6"></script>
-  <script src="/static/assets/js/state.js?v=0.5.6"></script>
-  <script src="/static/assets/js/panels.js?v=0.5.6"></script>
-  <script src="/static/assets/js/core.js?v=0.5.6"></script>
-  <script src="/static/assets/js/map-ui.js?v=0.5.6"></script>
-  <script src="/static/assets/js/timeline.js?v=0.5.6"></script>
-  <script src="/static/assets/js/grid-loader.js?v=0.5.6"></script>
-  <script src="/static/assets/js/grid-core.js?v=0.5.6"></script>
-  <script src="/static/assets/js/grid-layers.js?v=0.5.6"></script>
-  <script src="/static/assets/js/grid.js?v=0.5.6"></script>
-  <script src="/static/assets/js/metric-data.js?v=0.5.6"></script>
-  <script src="/static/assets/js/metric-ui.js?v=0.5.6"></script>
-  <script src="/static/assets/js/selection.js?v=0.5.6"></script>
-  <script src="/static/assets/js/data.js?v=0.5.6"></script>
-  <script src="/static/assets/js/services.js?v=0.5.6"></script>
-  <script src="/static/assets/js/controls.js?v=0.5.6"></script>
-  <script src="/static/assets/js/bootstrap.js?v=0.5.6"></script>
+  <script src="/static/assets/js/dom.js?v=0.5.7"></script>
+  <script src="/static/assets/js/utils.js?v=0.5.7"></script>
+  <script src="/static/assets/js/state.js?v=0.5.7"></script>
+  <script src="/static/assets/js/panels.js?v=0.5.7"></script>
+  <script src="/static/assets/js/core.js?v=0.5.7"></script>
+  <script src="/static/assets/js/map-ui.js?v=0.5.7"></script>
+  <script src="/static/assets/js/timeline.js?v=0.5.7"></script>
+  <script src="/static/assets/js/grid-loader.js?v=0.5.7"></script>
+  <script src="/static/assets/js/grid-core.js?v=0.5.7"></script>
+  <script src="/static/assets/js/grid-layers.js?v=0.5.7"></script>
+  <script src="/static/assets/js/grid.js?v=0.5.7"></script>
+  <script src="/static/assets/js/metric-data.js?v=0.5.7"></script>
+  <script src="/static/assets/js/metric-ui.js?v=0.5.7"></script>
+  <script src="/static/assets/js/selection.js?v=0.5.7"></script>
+  <script src="/static/assets/js/data.js?v=0.5.7"></script>
+  <script src="/static/assets/js/services.js?v=0.5.7"></script>
+  <script src="/static/assets/js/controls.js?v=0.5.7"></script>
+  <script src="/static/assets/js/bootstrap.js?v=0.5.7"></script>
 </body>
 </html>

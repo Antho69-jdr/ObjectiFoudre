@@ -41,7 +41,7 @@
       layerPanel.addEventListener('click', (event) => event.stopPropagation());
       document.querySelectorAll('.layer-option').forEach((btn) => {
         btn.addEventListener('click', () => {
-          selectedColorMetric = btn.dataset.layerMetric || 'score_global';
+          selectedColorMetric = btn.dataset.layerMetric || 'trigger_score';
           syncLayerModeUI();
           refreshGridColors();
         });

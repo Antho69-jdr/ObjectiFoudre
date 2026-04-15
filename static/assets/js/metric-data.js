@@ -6,26 +6,26 @@
     const METRIC_INFO = {
       score_global: {
         label: 'Score global',
-        explain: 'Synthèse v2 de l’intérêt réel de la cellule pour une chasse. Il combine Initiation, Severity, Chaseability et Reliability, avec des garde-fous pour éviter les faux positifs trop flatteurs.'
+        explain: 'Synthèse v2 de l’intérêt réel de la cellule pour une chasse. Il combine Probabilité orage, Sévérité, Qualité de chasse et Fiabilité, avec des garde-fous pour éviter les faux positifs trop flatteurs.'
       },
       confidence_score: {
         label: 'Bust Risk',
         explain: 'Risque qu’une cellule paraisse prometteuse mais produise peu ou rien sur le terrain. Ici, plus la valeur est haute, plus le risque de déplacement inutile augmente.'
       },
       trigger_score: {
-        label: 'Initiation',
+        label: 'Probabilité orage',
         explain: 'Estime la probabilité qu’un orage démarre réellement. Le score croise instabilité, humidité en basse couche, sécheresse relative et fenêtre horaire, puis pénalise les profils trop secs.'
       },
       structure_score: {
-        label: 'Severity',
+        label: 'Sévérité',
         explain: 'Mesure le potentiel d’intensité et d’organisation si la convection part. Le score repose surtout sur le shear, la CAPE et la dynamique de surface.'
       },
       chase_quality_score: {
-        label: 'Chaseability',
+        label: 'Qualité de chasse',
         explain: 'Mesure l’intérêt terrain pour la chasse. Il combine visibilité, photogénie et confort relatif à partir de la nébulosité, du timing et d’un proxy de vent.'
       },
       stability_score: {
-        label: 'Reliability',
+        label: 'Fiabilité',
         explain: 'Mesure la robustesse du signal. Le score combine cohérence interne des paramètres, stabilité temporelle locale et marge vis-à-vis des seuils utiles.'
       },
       mucape: {
