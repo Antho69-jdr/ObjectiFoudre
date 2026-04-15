@@ -188,10 +188,14 @@
       selectedFeature = null;
       selectedDayKey = null;
       selectedSlotKey = null;
+      payload = null;
       lastFetchSignature = '';
+      lastGridTemplate = null;
       shouldAnimateNextGrid = true;
       closeSelection();
       closeDetails();
+      renderDayButtons();
+      renderSlotButtons();
       if (map?.isStyleLoaded?.()) {
         removeLayers();
       }

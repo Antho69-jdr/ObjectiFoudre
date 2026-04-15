@@ -364,13 +364,7 @@
       });
       closeSelectionBtn.addEventListener('click', closeSelection);
       openDetailsBtn.addEventListener('click', openDetails);
-      recenterBtn.addEventListener('click', () => {
-        if (!selectedFeature) return;
-        map.easeTo({ center: [Number(selectedFeature.lon), Number(selectedFeature.lat)], duration: 700, zoom: Math.max(map.getZoom(), 10.2) });
-      });
       closeDetailsBtn.addEventListener('click', closeDetails);
-      exportSlotCsvBtn?.addEventListener('click', exportCurrentSlotCsv);
-      exportDayCellCsvBtn?.addEventListener('click', exportSelectedCellDayCsv);
       modalBackdrop.addEventListener('click', closeDetails);
       closeInfoBtn.addEventListener('click', closeMetricInfo);
       infoBackdrop.addEventListener('click', closeMetricInfo);

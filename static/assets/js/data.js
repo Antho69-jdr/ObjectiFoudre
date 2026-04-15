@@ -12,7 +12,10 @@
         updateMetaLine();
         renderDayButtons();
         renderSlotButtons();
-        refreshMap();
+        requestAnimationFrame(() => {
+          renderSlotButtons();
+          refreshMap();
+        });
         return payload;
       }
 
@@ -37,6 +40,8 @@
           nextPayload = await response.json();
         }
         if (fetchToken != activeFetchToken || centerToken !== centerChangeToken) return payload;
+        const previousSignature = lastFetchSignature;
+        const previousSelectedSlotKey = selectedSlotKey;
         payload = nextPayload;
         lastFetchSignature = signature;
         shouldAnimateNextGrid = true;
@@ -45,14 +50,20 @@
         const preferredDay = getPreferredDay(days, requestedDayKey);
         selectedDayKey = preferredDay?.day_key || null;
         const renderableSlots = getRenderableSlots(preferredDay);
-        selectedSlotKey = renderableSlots.find(s => s.slot_key === selectedSlotKey)?.slot_key || renderableSlots[0]?.slot_key || null;
+        const canPreserveSlot = previousSignature === signature && !!previousSelectedSlotKey;
+        selectedSlotKey = canPreserveSlot && renderableSlots.some(s => s.slot_key === previousSelectedSlotKey)
+          ? previousSelectedSlotKey
+          : (renderableSlots[0]?.slot_key || null);
         cityInput.value = payload?.meta?.center?.label || currentCenter.label;
         currentCenter = sanitizeCenter(payload?.meta?.center || currentCenter);
         saveCurrentCenter();
         updateMetaLine();
         renderDayButtons();
         renderSlotButtons();
-        refreshMap();
+        requestAnimationFrame(() => {
+          renderSlotButtons();
+          refreshMap();
+        });
         return payload;
       } catch (err) {
         if (err.name == 'AbortError') return payload;

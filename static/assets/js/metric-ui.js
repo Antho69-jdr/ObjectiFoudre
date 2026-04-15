@@ -1,9 +1,13 @@
 function openMetricInfo(metricKey, currentValue) {
       const meta = METRIC_INFO[metricKey];
       if (!meta) return;
-      const op = operationalGuide(metricKey, currentValue);
+      const featureValue = selectedFeature && Object.prototype.hasOwnProperty.call(selectedFeature, metricKey)
+        ? selectedFeature[metricKey]
+        : currentValue;
+      const displayValue = featureValue === undefined || featureValue === null || featureValue === '' ? (currentValue || '—') : featureValue;
+      const op = operationalGuide(metricKey, featureValue);
       infoMetricLabel.textContent = `${meta.label} · ${op.state}`;
-      infoMetricValue.textContent = currentValue || '—';
+      infoMetricValue.textContent = displayValue || '—';
       infoExplanation.innerHTML = `
         <div class="metric-info-explain">${meta.explain}</div>
         <div class="metric-info-heading"><strong>Lecture terrain</strong></div>

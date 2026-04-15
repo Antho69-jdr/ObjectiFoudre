@@ -99,7 +99,7 @@
         };
       }
       if (value === null) {
-        return { state: 'Valeur indisponible', guide: rangeLine('Lecture', 'aucune interprétation fiable tant que la donnée n’est pas chargée.') };
+        return { state: 'Valeur indisponible', guide: rangeLine('Lecture', 'la cellule sélectionnée ne contient pas encore cette valeur brute ou elle n’a pas été transmise au panneau.') };
       }
 
       switch (metricKey) {
