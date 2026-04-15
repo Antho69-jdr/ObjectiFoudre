@@ -20,9 +20,7 @@
       navigator.geolocation.getCurrentPosition(
         async ({ coords }) => {
           try {
-            stageCenterChange({ lat: coords.latitude, lon: coords.longitude, label: 'Autour de moi' }, { showMarker: true, zoom: 8.8 });
-            await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-            await loadData(true, centerChangeToken);
+            await applyCenter({ lat: coords.latitude, lon: coords.longitude, label: 'Autour de moi' }, { showMarker: true, zoom: 8.8, force: true });
           } catch (error) {
             console.warn(error);
             setMetaMessage('Impossible de recalculer la zone autour de vous.');
@@ -40,7 +38,7 @@
 
     function registerPWA() {
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js?v=0.5.0').catch(() => {});
+        navigator.serviceWorker.register('/sw.js?v=0.5.9').catch(() => {});
       }
       window.addEventListener('beforeinstallprompt', (event) => {
         event.preventDefault();

@@ -170,9 +170,15 @@
       saveCurrentCenter();
       cityInput.value = currentCenter.label;
       selectedFeature = null;
+      selectedDayKey = null;
+      selectedSlotKey = null;
+      lastFetchSignature = '';
+      shouldAnimateNextGrid = true;
       closeSelection();
       closeDetails();
-      fadeOutCurrentGridForReload();
+      if (map?.isStyleLoaded?.()) {
+        removeLayers();
+      }
       animateCameraToCenter(currentCenter, Number.isFinite(options.zoom) ? options.zoom : null);
       showLoadingGrid(currentCenter);
       if (options.showMarker) showCurrentMarker(currentCenter.lon, currentCenter.lat);
