@@ -38,7 +38,7 @@
 
     function registerPWA() {
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js?v=0.5.16').catch(() => {});
+        navigator.serviceWorker.register('/sw.js?v=0.5.17').catch(() => {});
       }
       window.addEventListener('beforeinstallprompt', (event) => {
         event.preventDefault();

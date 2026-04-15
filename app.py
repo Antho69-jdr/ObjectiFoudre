@@ -16,10 +16,10 @@ from weather_logic import DEFAULT_CENTER_LABEL, build_historical_analysis_payloa
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
-CACHE_TTL_SECONDS = 15 * 60
+CACHE_TTL_SECONDS = 60 * 60
 STALE_TTL_SECONDS = 2 * 60 * 60
 
-app = FastAPI(title="Storm Chase", version="1.5.4")
+app = FastAPI(title="Storm Chase", version="1.5.17")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -37,6 +37,20 @@ _lock = asyncio.Lock()
 def _cache_key(lat: float, lon: float, target_date: Date | None) -> str:
     date_key = target_date.isoformat() if target_date is not None else "auto"
     return f"{lat:.2f}:{lon:.2f}:{date_key}"
+
+
+def _latest_cache_key(lat: float, lon: float, target_date: Date | None, mode: str) -> str:
+    return f"latest:{_cache_key(lat, lon, target_date)}:{mode}"
+
+
+def _historical_cache_key(lat: float, lon: float, target_date: Date, label: str, mode: str, zone: str | None = None, slot: str | None = None) -> str:
+    suffix = []
+    if zone:
+        suffix.append(f"zone={zone}")
+    if slot:
+        suffix.append(f"slot={slot}")
+    suffix_key = ":".join(suffix) if suffix else "all"
+    return f"historical:{_cache_key(lat, lon, target_date)}:{label}:{mode}:{suffix_key}"
 
 
 def _cache_fresh(entry: dict[str, Any] | None, ttl: int = CACHE_TTL_SECONDS) -> bool:
@@ -63,6 +77,28 @@ def _stale_payload(entry: dict[str, Any], label: str, warning: str) -> dict[str,
     meta["cached_at_epoch"] = entry["ts"]
     stale["meta"] = meta
     return stale
+
+
+def _with_cache_meta(payload: dict[str, Any], *, hit: bool, created_at: float | None = None, ttl: int = CACHE_TTL_SECONDS, backend: str = "memory") -> dict[str, Any]:
+    out = dict(payload)
+    meta = dict(out.get("meta", {}))
+    cache_meta = dict(meta.get("cache", {}))
+    now = time.time()
+    cache_meta["backend"] = backend
+    cache_meta["hit"] = hit
+    cache_meta["ttl_seconds"] = ttl
+    if created_at is not None:
+        age = max(0, int(now - created_at))
+        cache_meta["created_at_epoch"] = created_at
+        cache_meta["age_seconds"] = age
+        cache_meta["expires_in_seconds"] = max(0, ttl - age)
+    else:
+        cache_meta["created_at_epoch"] = now
+        cache_meta["age_seconds"] = 0
+        cache_meta["expires_in_seconds"] = ttl
+    meta["cache"] = cache_meta
+    out["meta"] = meta
+    return out
 
 
 def _distance_km(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
@@ -120,6 +156,26 @@ def _analysis_rows(lat: float, lon: float, label: str, target_date: Date | None,
     if slot:
         flattened = [row for row in flattened if str(row.get("slot_key")) == slot]
     return flattened
+
+
+def _get_cached_value(key: str, ttl: int = CACHE_TTL_SECONDS) -> dict[str, Any] | None:
+    entry = _cache.get(key)
+    if _cache_fresh(entry, ttl=ttl):
+        return entry
+    return None
+
+
+def _set_cached_value(key: str, payload: Any) -> dict[str, Any]:
+    entry = {"ts": time.time(), "payload": payload}
+    _cache[key] = entry
+    return entry
+
+
+def _purge_expired_cache(now: float | None = None) -> None:
+    current = now or time.time()
+    expired = [key for key, entry in _cache.items() if (current - float(entry.get("ts", 0))) >= STALE_TTL_SECONDS]
+    for key in expired:
+        _cache.pop(key, None)
 
 
 def _analysis_csv(rows: list[dict[str, Any]]) -> str:
@@ -194,15 +250,18 @@ async def latest(
     force: bool = False,
     mode: str = Query("auto", pattern="^(auto|forecast|historical|mock)$"),
 ) -> dict:
-    key = _cache_key(lat, lon, date) + f':{mode}'
-    cached = _cache.get(key)
-    if not force and _cache_fresh(cached):
-        return _merge_label(cached["payload"], label)
+    _purge_expired_cache()
+    key = _latest_cache_key(lat, lon, date, mode)
+    cached = _get_cached_value(key)
+    if not force and cached is not None:
+        payload = _merge_label(cached["payload"], label)
+        return _with_cache_meta(payload, hit=True, created_at=cached["ts"])
 
     async with _lock:
-        cached = _cache.get(key)
-        if not force and _cache_fresh(cached):
-            return _merge_label(cached["payload"], label)
+        cached = _get_cached_value(key)
+        if not force and cached is not None:
+            payload = _merge_label(cached["payload"], label)
+            return _with_cache_meta(payload, hit=True, created_at=cached["ts"])
 
         task = _inflight.get(key)
         if task is None or task.done():
@@ -218,36 +277,39 @@ async def latest(
 
         cached = _cache.get(key)
         if cached is not None and _cache_fresh(cached, ttl=STALE_TTL_SECONDS):
-            return _stale_payload(
+            stale_payload = _stale_payload(
                 cached,
                 label=label,
                 warning=f"Données mises en cache utilisées après erreur de rafraîchissement: {exc}",
             )
+            return _with_cache_meta(stale_payload, hit=True, created_at=cached["ts"], ttl=STALE_TTL_SECONDS)
 
         nearby, dist = _nearest_recent_cache(lat, lon, date)
         if nearby is not None:
-            return _stale_payload(
+            stale_payload = _stale_payload(
                 nearby,
                 label=label,
                 warning=f"Données de secours d'une zone voisine (~{round(dist)} km) utilisées après erreur de rafraîchissement: {exc}",
             )
+            return _with_cache_meta(stale_payload, hit=True, created_at=nearby["ts"], ttl=STALE_TTL_SECONDS)
 
         try:
             mock_payload = await asyncio.to_thread(build_latest_payload, lat, lon, label, date, "mock")
             meta = dict(mock_payload.get("meta", {}))
             meta["warning"] = f"Mode mock aléatoire activé après erreur Open-Meteo: {exc}"
             mock_payload["meta"] = meta
-            return mock_payload
+            return _with_cache_meta(mock_payload, hit=False)
         except Exception:
             pass
 
         raise HTTPException(status_code=502, detail=f"Weather refresh failed: {exc}")
     else:
         async with _lock:
-            _cache[key] = {"ts": time.time(), "payload": payload}
+            entry = _set_cached_value(key, payload)
             if _inflight.get(key) is task:
                 _inflight.pop(key, None)
-        return _merge_label(payload, label)
+        merged = _merge_label(payload, label)
+        return _with_cache_meta(merged, hit=False, created_at=entry["ts"])
 
 
 @app.get("/api/historical-analysis")
@@ -257,13 +319,21 @@ async def historical_analysis(
     label: str = Query(DEFAULT_CENTER_LABEL, min_length=1, max_length=120),
     date: Date = Query(...),
     mode: str = Query("historical", pattern="^(historical|mock)$"),
+    force: bool = False,
 ) -> dict:
+    _purge_expired_cache()
+    key = _historical_cache_key(lat, lon, date, label, mode)
+    cached = _get_cached_value(key)
+    if not force and cached is not None:
+        return _with_cache_meta(cached["payload"], hit=True, created_at=cached["ts"])
+
     points = build_grid(center_lat=lat, center_lon=lon, zone_prefix=label)
     rows = await asyncio.to_thread(fetch_model, points, date, mode)
     payload = build_historical_analysis_payload(rows, lat, lon, label, date)
     if mode == "mock":
         payload.setdefault("meta", {})["warning"] = "Analyse mock aléatoire : données synthétiques, pas d'observation Open-Meteo."
-    return payload
+    entry = _set_cached_value(key, payload)
+    return _with_cache_meta(payload, hit=False, created_at=entry["ts"])
 
 
 @app.get("/api/historical-analysis.csv")
@@ -275,8 +345,16 @@ async def historical_analysis_csv(
     zone: str | None = Query(None),
     slot: str | None = Query(None),
     mode: str = Query("historical", pattern="^(historical|mock)$"),
+    force: bool = False,
 ) -> PlainTextResponse:
-    rows = await asyncio.to_thread(_analysis_rows, lat, lon, label, date, zone, slot, mode)
+    _purge_expired_cache()
+    key = _historical_cache_key(lat, lon, date, label, mode, zone=zone, slot=slot)
+    cached = _get_cached_value(key)
+    if not force and cached is not None:
+        rows = cached["payload"]
+    else:
+        rows = await asyncio.to_thread(_analysis_rows, lat, lon, label, date, zone, slot, mode)
+        _set_cached_value(key, rows)
     csv_text = _analysis_csv(rows)
     suffix = ""
     if zone:
