@@ -1,6 +1,6 @@
     function syncSlotSelection(nextSlotKey) {
       const currentDay = getCurrentDay();
-      const nextSlot = currentDay?.slots?.find(s => s.slot_key === nextSlotKey);
+      const nextSlot = getRenderableSlots(currentDay).find(s => s.slot_key === nextSlotKey);
       if (!nextSlot) return;
       selectedSlotKey = nextSlot.slot_key;
       closeSelection();

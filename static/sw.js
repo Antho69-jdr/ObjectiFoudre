@@ -1,4 +1,4 @@
-const CACHE_NAME = 'storm-chase-v0.5.9';
+const CACHE_NAME = 'storm-chase-v0.5.10';
 const ASSETS = [
   '/',
   '/static/storm-chase.webmanifest',

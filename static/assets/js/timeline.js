@@ -2,14 +2,16 @@
       const days = getDays();
       dayButtons.innerHTML = '';
       if (!days.length) return;
-      if (!selectedDayKey || !days.some(d => d.day_key === selectedDayKey)) selectedDayKey = days[0].day_key;
+      const preferredDay = getPreferredDay(days, selectedDayKey);
+      if (!preferredDay) return;
+      selectedDayKey = preferredDay.day_key;
       for (const day of days) {
         const btn = document.createElement('button');
         btn.textContent = day.day_label;
         btn.className = day.day_key === selectedDayKey ? 'active' : '';
         btn.onclick = () => {
           selectedDayKey = day.day_key;
-          const firstSlot = getCurrentDay()?.slots?.[0];
+          const firstSlot = getRenderableSlots(getCurrentDay())[0];
           if (firstSlot) selectedSlotKey = firstSlot.slot_key;
           closeSelection();
           closeDetails();
@@ -25,7 +27,7 @@
     function renderSlotButtons() {
       const day = getCurrentDay();
       slotButtons.innerHTML = '';
-      const slots = day?.slots || [];
+      const slots = getRenderableSlots(day);
       if (!slots.length) return;
       if (!selectedSlotKey || !slots.some(s => s.slot_key === selectedSlotKey)) selectedSlotKey = slots[0].slot_key;
       const todayHour = new Date().getHours();

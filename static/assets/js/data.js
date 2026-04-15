@@ -42,9 +42,10 @@
         shouldAnimateNextGrid = true;
         lastFetchAt = Date.now();
         const days = getDays();
-        selectedDayKey = days.find(d => d.day_key === requestedDayKey)?.day_key || days.find(d => d.day_key === selectedDayKey)?.day_key || days[0]?.day_key || null;
-        const currentDay = getCurrentDay();
-        selectedSlotKey = currentDay?.slots?.find(s => s.slot_key === selectedSlotKey)?.slot_key || currentDay?.slots?.[0]?.slot_key || null;
+        const preferredDay = getPreferredDay(days, requestedDayKey);
+        selectedDayKey = preferredDay?.day_key || null;
+        const renderableSlots = getRenderableSlots(preferredDay);
+        selectedSlotKey = renderableSlots.find(s => s.slot_key === selectedSlotKey)?.slot_key || renderableSlots[0]?.slot_key || null;
         cityInput.value = payload?.meta?.center?.label || currentCenter.label;
         currentCenter = sanitizeCenter(payload?.meta?.center || currentCenter);
         saveCurrentCenter();
