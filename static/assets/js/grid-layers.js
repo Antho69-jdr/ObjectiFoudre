@@ -126,7 +126,7 @@ function ensureSource(id, data) {
     function removeLayers(keepLoader = false) {
       clearGridRevealFailsafe();
       gridAnimationToken += 1;
-      if (!keepLoader) removeLoaderLayers();
+      removeLoaderLayers();
       if (map.getLayer('grid-highlight')) map.removeLayer('grid-highlight');
       if (map.getLayer('grid-outline')) map.removeLayer('grid-outline');
       if (map.getSource('grid-outline')) map.removeSource('grid-outline');

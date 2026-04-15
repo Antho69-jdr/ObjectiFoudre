@@ -178,9 +178,7 @@
       closeDetails();
       if (dayButtons) dayButtons.innerHTML = '';
       if (slotButtons) slotButtons.innerHTML = '';
-      if (map?.isStyleLoaded?.()) {
-        removeLayers();
-      }
+      fadeOutCurrentGridForReload();
       animateCameraToCenter(currentCenter, Number.isFinite(options.zoom) ? options.zoom : null);
       showLoadingGrid(currentCenter);
       if (options.showMarker) showCurrentMarker(currentCenter.lon, currentCenter.lat);

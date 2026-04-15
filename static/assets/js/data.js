@@ -94,13 +94,20 @@
       try {
         const target = await geocodeCity(query, geocodeController.signal);
         try {
-          await applyCenter(target, { zoom: 8.4, force: true });
-        } catch (firstLoadError) {
-          console.warn('Initial city load failed, retrying with forced refresh.', firstLoadError);
+          stageCenterChange(target, { zoom: 8.4 });
+        } catch (uiError) {
+          console.warn('City found, but center staging hit a UI error.', uiError);
           currentCenter = sanitizeCenter(target);
           saveCurrentCenter();
           cityInput.value = currentCenter.label;
-          stageCenterChange(target, { zoom: 8.4 });
+        }
+
+        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
+        try {
+          await loadData(true, centerChangeToken);
+        } catch (firstLoadError) {
+          console.warn('Initial city load failed, retrying with forced refresh.', firstLoadError);
           await refreshCurrentData(true, `Chargement météo pour ${target.label}…`);
         }
       } catch (error) {
