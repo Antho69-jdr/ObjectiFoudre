@@ -362,28 +362,28 @@
         }
         requestAnimationFrame(alignTopPanels);
       });
-      closeSelectionBtn.addEventListener('click', closeSelection);
-      openDetailsBtn.addEventListener('click', openDetails);
-      recenterBtn.addEventListener('click', () => {
+      closeSelectionBtn?.addEventListener('click', closeSelection);
+      openDetailsBtn?.addEventListener('click', openDetails);
+      recenterBtn?.addEventListener('click', () => {
         if (!selectedFeature) return;
         map.easeTo({ center: [Number(selectedFeature.lon), Number(selectedFeature.lat)], duration: 700, zoom: Math.max(map.getZoom(), 10.2) });
       });
-      closeDetailsBtn.addEventListener('click', closeDetails);
+      closeDetailsBtn?.addEventListener('click', closeDetails);
       exportSlotCsvBtn?.addEventListener('click', exportCurrentSlotCsv);
       exportDayCellCsvBtn?.addEventListener('click', exportSelectedCellDayCsv);
-      modalBackdrop.addEventListener('click', closeDetails);
-      closeInfoBtn.addEventListener('click', closeMetricInfo);
-      infoBackdrop.addEventListener('click', closeMetricInfo);
-      infoDrawerBtn.addEventListener('click', () => infoDrawer.classList.contains('visible') ? closeInfoDrawer() : openInfoDrawer());
-      closeDrawerBtn.addEventListener('click', closeInfoDrawer);
-      drawerBackdrop.addEventListener('click', closeInfoDrawer);
-      locateBtn.addEventListener('click', locateUser);
-      refreshBtn.addEventListener('click', () => refreshCurrentData(true));
-      bestCellsBtn.addEventListener('click', toggleBestCellsMode);
-      gridLinesBtn.addEventListener('click', toggleGridLines);
+      modalBackdrop?.addEventListener('click', closeDetails);
+      closeInfoBtn?.addEventListener('click', closeMetricInfo);
+      infoBackdrop?.addEventListener('click', closeMetricInfo);
+      infoDrawerBtn?.addEventListener('click', () => infoDrawer.classList.contains('visible') ? closeInfoDrawer() : openInfoDrawer());
+      closeDrawerBtn?.addEventListener('click', closeInfoDrawer);
+      drawerBackdrop?.addEventListener('click', closeInfoDrawer);
+      locateBtn?.addEventListener('click', locateUser);
+      refreshBtn?.addEventListener('click', () => refreshCurrentData(true));
+      bestCellsBtn?.addEventListener('click', toggleBestCellsMode);
+      gridLinesBtn?.addEventListener('click', toggleGridLines);
       if (typeof aroundMeBtn !== 'undefined' && aroundMeBtn) aroundMeBtn.addEventListener('click', locateUser);
-      searchCityBtn.addEventListener('click', handleCitySearch);
-      cityInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') handleCitySearch(); });
+      searchCityBtn?.addEventListener('click', handleCitySearch);
+      cityInput?.addEventListener('keydown', (event) => { if (event.key === 'Enter') handleCitySearch(); });
 
       document.addEventListener('click', (event) => {
         if (!topbar.contains(event.target)) closeTopPanels();
@@ -416,5 +416,5 @@
       setupTimelineToggle();
       setupBottomUiLayoutSync();
 
-      installChip.addEventListener('click', installApp);
+      installChip?.addEventListener('click', installApp);
     }
