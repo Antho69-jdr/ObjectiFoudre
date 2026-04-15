@@ -111,9 +111,9 @@ def _csv_escape(value: Any) -> str:
     return text
 
 
-def _analysis_rows(lat: float, lon: float, label: str, target_date: Date | None, zone: str | None = None, slot: str | None = None) -> list[dict[str, Any]]:
+def _analysis_rows(lat: float, lon: float, label: str, target_date: Date | None, zone: str | None = None, slot: str | None = None, mode: str = "historical") -> list[dict[str, Any]]:
     points = build_grid(center_lat=lat, center_lon=lon, zone_prefix=label)
-    rows = fetch_model(points, target_date=target_date, mode="historical")
+    rows = fetch_model(points, target_date=target_date, mode=mode)
     flattened = flatten_rows_for_analysis(rows)
     if zone:
         flattened = [row for row in flattened if str(row.get("zone")) == zone]
@@ -192,7 +192,7 @@ async def latest(
     label: str = Query(DEFAULT_CENTER_LABEL, min_length=1, max_length=120),
     date: Date | None = Query(None),
     force: bool = False,
-    mode: str = Query("auto", pattern="^(auto|forecast|historical)$"),
+    mode: str = Query("auto", pattern="^(auto|forecast|historical|mock)$"),
 ) -> dict:
     key = _cache_key(lat, lon, date) + f':{mode}'
     cached = _cache.get(key)
@@ -232,6 +232,15 @@ async def latest(
                 warning=f"Données de secours d'une zone voisine (~{round(dist)} km) utilisées après erreur de rafraîchissement: {exc}",
             )
 
+        try:
+            mock_payload = await asyncio.to_thread(build_latest_payload, lat, lon, label, date, "mock")
+            meta = dict(mock_payload.get("meta", {}))
+            meta["warning"] = f"Mode mock aléatoire activé après erreur Open-Meteo: {exc}"
+            mock_payload["meta"] = meta
+            return mock_payload
+        except Exception:
+            pass
+
         raise HTTPException(status_code=502, detail=f"Weather refresh failed: {exc}")
     else:
         async with _lock:
@@ -247,10 +256,14 @@ async def historical_analysis(
     lon: float = Query(4.8357, ge=-180, le=180),
     label: str = Query(DEFAULT_CENTER_LABEL, min_length=1, max_length=120),
     date: Date = Query(...),
+    mode: str = Query("historical", pattern="^(historical|mock)$"),
 ) -> dict:
     points = build_grid(center_lat=lat, center_lon=lon, zone_prefix=label)
-    rows = await asyncio.to_thread(fetch_model, points, date, "historical")
-    return build_historical_analysis_payload(rows, lat, lon, label, date)
+    rows = await asyncio.to_thread(fetch_model, points, date, mode)
+    payload = build_historical_analysis_payload(rows, lat, lon, label, date)
+    if mode == "mock":
+        payload.setdefault("meta", {})["warning"] = "Analyse mock aléatoire : données synthétiques, pas d'observation Open-Meteo."
+    return payload
 
 
 @app.get("/api/historical-analysis.csv")
@@ -261,8 +274,9 @@ async def historical_analysis_csv(
     date: Date = Query(...),
     zone: str | None = Query(None),
     slot: str | None = Query(None),
+    mode: str = Query("historical", pattern="^(historical|mock)$"),
 ) -> PlainTextResponse:
-    rows = await asyncio.to_thread(_analysis_rows, lat, lon, label, date, zone, slot)
+    rows = await asyncio.to_thread(_analysis_rows, lat, lon, label, date, zone, slot, mode)
     csv_text = _analysis_csv(rows)
     suffix = ""
     if zone:

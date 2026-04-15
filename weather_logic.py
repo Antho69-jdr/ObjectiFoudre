@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import socket
 import ssl
 import sys
@@ -76,6 +77,12 @@ def km_to_deg_lon(km: float, lat: float) -> float:
     return km / (111.0 * math.cos(math.radians(lat)))
 
 
+def distance_km(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
+    dx = (a_lon - b_lon) * 111.0 * math.cos(math.radians((a_lat + b_lat) / 2))
+    dy = (a_lat - b_lat) * 111.0
+    return math.hypot(dx, dy)
+
+
 def local_today() -> Date:
     return datetime.now(ZoneInfo("Europe/Paris")).date()
 
@@ -88,6 +95,14 @@ def api_context(target_date: Date | None, mode: str = "auto") -> tuple[str, dict
     today = local_today()
     if target_date is not None and target_date < HISTORICAL_MIN_DATE:
         raise ValueError(f"Date trop ancienne pour l'archive de prévisions Open-Meteo : {target_date.isoformat()} < {HISTORICAL_MIN_DATE.isoformat()}")
+
+    if mode == "mock":
+        if target_date is None:
+            target_date = today
+        return "mock://local", {
+            "start_date": target_date.isoformat(),
+            "end_date": target_date.isoformat(),
+        }, "mock"
 
     if mode == "historical":
         if target_date is None:
@@ -262,7 +277,9 @@ def build_api_url(points: list[Point], target_date: Date | None = None, mode: st
         "format": "json",
         **date_params,
     }
-    if api_mode == "historical":
+    if api_mode == "mock":
+        params["models"] = "mock_random"
+    elif api_mode == "historical":
         params["models"] = HISTORICAL_MODEL
     elif api_mode == "forecast":
         # Forecast is intentionally pinned to AROME France and limited to 2 days.
@@ -945,7 +962,116 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
     return rows
 
 
+def _stable_seed(*parts: object) -> int:
+    total = 0
+    for part in parts:
+        for ch in str(part):
+            total = (total * 131 + ord(ch)) % (2 ** 32)
+    return total
+
+
+def _mock_times_for_date(target_date: Date | None) -> list[datetime]:
+    base = target_date or local_today()
+    tz = ZoneInfo("Europe/Paris")
+    return [datetime(base.year, base.month, base.day, hour, 0, tzinfo=tz) for hour in range(24)]
+
+
+def generate_mock_location(point: Point, target_date: Date | None = None, seed_base: int | None = None) -> dict:
+    base_date = target_date or local_today()
+    day_seed = seed_base if seed_base is not None else _stable_seed(base_date.isoformat(), round(point.lat, 3), round(point.lon, 3))
+    rng = random.Random(day_seed)
+    times = _mock_times_for_date(base_date)
+
+    # Synthetic storm corridors for deterministic but non-uniform fields.
+    centers = []
+    for idx in range(3):
+        cx = DEFAULT_CENTER_LAT + rng.uniform(-0.65, 0.65)
+        cy = DEFAULT_CENTER_LON + rng.uniform(-0.9, 0.9)
+        peak_hour = rng.randint(11, 20)
+        spatial_km = rng.uniform(18, 42)
+        temporal_h = rng.uniform(1.6, 3.8)
+        strength = rng.uniform(0.55, 1.0)
+        centers.append((cx, cy, peak_hour, spatial_km, temporal_h, strength))
+
+    def influence(dt: datetime) -> float:
+        val = 0.0
+        for cx, cy, peak_hour, spatial_km, temporal_h, strength in centers:
+            dist = distance_km(point.lat, point.lon, cx, cy)
+            spatial = math.exp(-((dist / spatial_km) ** 2))
+            temporal = math.exp(-(((dt.hour - peak_hour) / temporal_h) ** 2))
+            val = max(val, strength * spatial * temporal)
+        return max(0.0, min(1.0, val))
+
+    # Site-specific background so adjacent cells feel related without being identical.
+    site_rng = random.Random(_stable_seed("site", point.zone, base_date.isoformat()))
+    moisture_bias = site_rng.uniform(-1.6, 1.8)
+    temp_bias = site_rng.uniform(-1.3, 1.3)
+    cloud_bias = site_rng.uniform(-10, 10)
+    dir10 = site_rng.uniform(140, 240)
+    dir100 = dir10 + site_rng.uniform(-35, 35)
+
+    hourly = {k: [] for k in HOURLY_VARS}
+    hourly['time'] = [dt.isoformat() for dt in times]
+
+    for hour_idx, dt in enumerate(times):
+        diurnal = math.sin(((dt.hour - 6) / 24.0) * math.pi * 2)
+        storm = influence(dt)
+        noise_rng = random.Random(_stable_seed(point.zone, dt.isoformat(), base_date.isoformat()))
+
+        temp = 16.0 + 9.5 * max(0.0, diurnal) + temp_bias + noise_rng.uniform(-0.8, 0.8)
+        dew = 7.5 + storm * 10.5 + moisture_bias + noise_rng.uniform(-0.9, 0.9)
+        rh = max(22.0, min(98.0, 46.0 + storm * 38.0 - max(0, temp - dew) * 2.1 + noise_rng.uniform(-4.0, 4.0)))
+        cape = max(0.0, 40.0 + storm * 2400.0 + max(0.0, diurnal) * 350.0 + noise_rng.uniform(-120.0, 120.0))
+        vpd = max(0.05, min(3.6, 2.7 - storm * 1.8 + (temp - dew) * 0.07 + noise_rng.uniform(-0.12, 0.12)))
+        wetbulb = max(-2.0, min(24.0, dew + (temp - dew) * 0.33 + noise_rng.uniform(-0.5, 0.5)))
+        cloud_low = max(0.0, min(100.0, 12.0 + storm * 52.0 + cloud_bias + noise_rng.uniform(-12.0, 12.0)))
+        cloud_mid = max(0.0, min(100.0, 18.0 + storm * 58.0 + cloud_bias * 0.4 + noise_rng.uniform(-10.0, 10.0)))
+        cloud_high = max(0.0, min(100.0, 20.0 + storm * 42.0 + cloud_bias * 0.25 + noise_rng.uniform(-12.0, 12.0)))
+        gusts = max(2.0, min(38.0, 7.0 + storm * 21.0 + noise_rng.uniform(-2.5, 2.5)))
+        ws10 = max(1.0, min(18.0, 3.5 + storm * 6.5 + noise_rng.uniform(-1.3, 1.3)))
+        ws100 = max(ws10 + 1.0, min(28.0, ws10 + 3.2 + storm * 3.5 + noise_rng.uniform(-1.0, 1.0)))
+        wd10 = (dir10 + noise_rng.uniform(-18.0, 18.0)) % 360
+        wd100 = (dir100 + noise_rng.uniform(-22.0, 22.0)) % 360
+
+        hourly['cape'].append(round(cape, 1))
+        hourly['temperature_2m'].append(round(temp, 1))
+        hourly['dew_point_2m'].append(round(dew, 1))
+        hourly['relative_humidity_2m'].append(round(rh, 1))
+        hourly['vapour_pressure_deficit'].append(round(vpd, 2))
+        hourly['wet_bulb_temperature_2m'].append(round(wetbulb, 1))
+        hourly['cloud_cover_low'].append(round(cloud_low, 1))
+        hourly['cloud_cover_mid'].append(round(cloud_mid, 1))
+        hourly['cloud_cover_high'].append(round(cloud_high, 1))
+        hourly['wind_gusts_10m'].append(round(gusts, 1))
+        hourly['wind_speed_10m'].append(round(ws10, 1))
+        hourly['wind_speed_100m'].append(round(ws100, 1))
+        hourly['wind_direction_10m'].append(round(wd10, 1))
+        hourly['wind_direction_100m'].append(round(wd100, 1))
+
+    return {
+        'latitude': point.lat,
+        'longitude': point.lon,
+        'generationtime_ms': 0.1,
+        'timezone': 'Europe/Paris',
+        'elevation': 300,
+        'hourly': hourly,
+        'models': 'mock_random',
+    }
+
+
+def fetch_mock_model(points: list[Point], target_date: Date | None = None) -> list[OutputRow]:
+    rows: list[OutputRow] = []
+    for point in points:
+        loc = generate_mock_location(point, target_date=target_date)
+        rows.extend(rows_for_location(point, loc))
+    return rows
+
+
 def fetch_model(points: list[Point], target_date: Date | None = None, mode: str = "auto") -> list[OutputRow]:
+    if mode == "mock":
+        print(f"mock_random | {len(points)} points | {(target_date or local_today()).isoformat()}")
+        return fetch_mock_model(points, target_date=target_date)
+
     batch_size = batch_size_for_points(points)
     batches = list(chunks(points, batch_size))
     total_batches = len(batches)
@@ -997,7 +1123,7 @@ def build_historical_analysis_payload(rows: list[OutputRow], center_lat: float, 
 
 
 
-def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float, center_label: str, target_date: Date | None = None) -> dict:
+def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float, center_label: str, target_date: Date | None = None, model_name: str | None = None) -> dict:
     days_map: dict[str, dict] = {}
     for row in rows:
         day = days_map.setdefault(
@@ -1047,7 +1173,7 @@ def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float
     return {
         "meta": {
             "generated_at": generated_at,
-            "model": FORECAST_MODEL_LABEL if (target_date is None or target_date >= local_today()) else HISTORICAL_MODEL,
+            "model": model_name or (FORECAST_MODEL_LABEL if (target_date is None or target_date >= local_today()) else HISTORICAL_MODEL),
             "center": {"lat": center_lat, "lon": center_lon, "label": center_label},
             "grid": {
                 "half_box_km_lat": HALF_BOX_KM_LAT,
@@ -1118,4 +1244,9 @@ def build_latest_payload(
 ) -> dict:
     points = build_grid(center_lat=center_lat, center_lon=center_lon, zone_prefix=center_label)
     rows = fetch_model(points, target_date=target_date, mode=mode)
-    return group_for_output(rows, center_lat, center_lon, center_label, target_date=target_date)
+    model_name = "mock_random" if mode == "mock" else None
+    payload = group_for_output(rows, center_lat, center_lon, center_label, target_date=target_date, model_name=model_name)
+    if mode == "mock":
+        payload.setdefault("meta", {})["warning"] = "Mode mock aléatoire activé : données synthétiques, pas de source Open-Meteo."
+        payload["meta"]["analysis_type"] = "mock"
+    return payload
