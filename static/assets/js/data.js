@@ -12,10 +12,7 @@
         updateMetaLine();
         renderDayButtons();
         renderSlotButtons();
-        requestAnimationFrame(() => {
-          renderSlotButtons();
-          refreshMap();
-        });
+        refreshMap();
         return payload;
       }
 
@@ -40,30 +37,21 @@
           nextPayload = await response.json();
         }
         if (fetchToken != activeFetchToken || centerToken !== centerChangeToken) return payload;
-        const previousSignature = lastFetchSignature;
-        const previousSelectedSlotKey = selectedSlotKey;
         payload = nextPayload;
         lastFetchSignature = signature;
         shouldAnimateNextGrid = true;
         lastFetchAt = Date.now();
         const days = getDays();
-        const preferredDay = getPreferredDay(days, requestedDayKey);
-        selectedDayKey = preferredDay?.day_key || null;
-        const renderableSlots = getRenderableSlots(preferredDay);
-        const canPreserveSlot = previousSignature === signature && !!previousSelectedSlotKey;
-        selectedSlotKey = canPreserveSlot && renderableSlots.some(s => s.slot_key === previousSelectedSlotKey)
-          ? previousSelectedSlotKey
-          : (renderableSlots[0]?.slot_key || null);
+        selectedDayKey = days.find(d => d.day_key === requestedDayKey)?.day_key || days.find(d => d.day_key === selectedDayKey)?.day_key || days[0]?.day_key || null;
+        const currentDay = getCurrentDay();
+        selectedSlotKey = currentDay?.slots?.find(s => s.slot_key === selectedSlotKey)?.slot_key || currentDay?.slots?.[0]?.slot_key || null;
         cityInput.value = payload?.meta?.center?.label || currentCenter.label;
         currentCenter = sanitizeCenter(payload?.meta?.center || currentCenter);
         saveCurrentCenter();
         updateMetaLine();
         renderDayButtons();
         renderSlotButtons();
-        requestAnimationFrame(() => {
-          renderSlotButtons();
-          refreshMap();
-        });
+        refreshMap();
         return payload;
       } catch (err) {
         if (err.name == 'AbortError') return payload;

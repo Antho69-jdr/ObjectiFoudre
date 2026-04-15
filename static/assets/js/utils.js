@@ -85,28 +85,12 @@
       return (payload?.days || []).slice().sort((a, b) => a.day_index - b.day_index);
     }
 
-    function getRenderableSlots(day) {
-      const slots = Array.isArray(day?.slots) ? day.slots : [];
-      return slots.filter(slot => Array.isArray(slot?.cells) && slot.cells.length > 0);
-    }
-
-    function getPreferredDay(days = getDays(), requestedDayKey = selectedDayKey) {
-      const list = Array.isArray(days) ? days : [];
-      const requested = list.find(day => day?.day_key === requestedDayKey && getRenderableSlots(day).length > 0);
-      if (requested) return requested;
-      const current = list.find(day => day?.day_key === selectedDayKey && getRenderableSlots(day).length > 0);
-      if (current) return current;
-      return list.find(day => getRenderableSlots(day).length > 0) || list[0] || null;
-    }
-
     function getCurrentDay() {
-      return getPreferredDay(getDays(), selectedDayKey);
+      return getDays().find(d => d.day_key === selectedDayKey) || null;
     }
 
     function getCurrentSlot() {
-      const day = getCurrentDay();
-      const slots = getRenderableSlots(day);
-      return slots.find(s => s.slot_key === selectedSlotKey) || slots[0] || null;
+      return getCurrentDay()?.slots?.find(s => s.slot_key === selectedSlotKey) || null;
     }
 
     function sanitizeCenter(center) {
@@ -188,14 +172,12 @@
       selectedFeature = null;
       selectedDayKey = null;
       selectedSlotKey = null;
-      payload = null;
       lastFetchSignature = '';
-      lastGridTemplate = null;
       shouldAnimateNextGrid = true;
       closeSelection();
       closeDetails();
-      renderDayButtons();
-      renderSlotButtons();
+      if (dayButtons) dayButtons.innerHTML = '';
+      if (slotButtons) slotButtons.innerHTML = '';
       if (map?.isStyleLoaded?.()) {
         removeLayers();
       }

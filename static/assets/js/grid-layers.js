@@ -62,7 +62,8 @@ function ensureSource(id, data) {
       const lons = cells.map(cell => Number(cell.lon)).filter(Number.isFinite);
       if (!lats.length || !lons.length) return { type: 'FeatureCollection', features: [] };
       const halfH = template.cellHeightDeg / 2;
-      const halfW = template.cellWidthDeg / 2;
+      const firstRowWidth = Number(template.rowTemplates?.[0]?.cellWidthDeg) || 0;
+      const halfW = firstRowWidth / 2;
       const north = Math.max(...lats) + halfH;
       const south = Math.min(...lats) - halfH;
       const east = Math.max(...lons) + halfW;
@@ -125,7 +126,7 @@ function ensureSource(id, data) {
     function removeLayers(keepLoader = false) {
       clearGridRevealFailsafe();
       gridAnimationToken += 1;
-      removeLoaderLayers();
+      if (!keepLoader) removeLoaderLayers();
       if (map.getLayer('grid-highlight')) map.removeLayer('grid-highlight');
       if (map.getLayer('grid-outline')) map.removeLayer('grid-outline');
       if (map.getSource('grid-outline')) map.removeSource('grid-outline');
