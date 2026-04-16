@@ -198,6 +198,7 @@ def frange(start: float, stop: float, step: float) -> Iterable[float]:
 
 def build_grid(center_lat: float = DEFAULT_CENTER_LAT, center_lon: float = DEFAULT_CENTER_LON, zone_prefix: str = DEFAULT_CENTER_LABEL) -> list[Point]:
     step_lat = km_to_deg_lat(CELL_SIZE_KM)
+    step_lon = km_to_deg_lon(CELL_SIZE_KM, center_lat)
     safe_prefix = "".join(ch for ch in zone_prefix if ch.isalnum())[:14] or "Zone"
 
     row_count = max(3, int(round((HALF_BOX_KM_LAT * 2) / CELL_SIZE_KM)))
@@ -214,16 +215,15 @@ def build_grid(center_lat: float = DEFAULT_CENTER_LAT, center_lon: float = DEFAU
     idx = 1
     for row in range(-row_half, row_half + 1):
         lat = round(center_lat + row * step_lat, 5)
-        width_deg = km_to_deg_lon(CELL_SIZE_KM, lat)
         for col in range(-col_half, col_half + 1):
-            lon = round(center_lon + col * width_deg, 5)
+            lon = round(center_lon + col * step_lon, 5)
             points.append(
                 Point(
                     zone=f"{safe_prefix}-{idx}",
                     lat=lat,
                     lon=lon,
                     cell_height_deg=step_lat,
-                    cell_width_deg=width_deg,
+                    cell_width_deg=step_lon,
                 )
             )
             idx += 1
@@ -374,11 +374,13 @@ def score_shear(shear_ms: float) -> int:
 def score_dewpoint(dewpoint_c: float) -> int:
     return piecewise_score(dewpoint_c, [
         (0, 0),
-        (8, 0),
-        (10, 20),
-        (12, 40),
-        (14, 60),
-        (17, 80),
+        (6, 0),
+        (8, 10),
+        (10, 25),
+        (12, 45),
+        (14, 65),
+        (16, 80),
+        (18, 90),
         (20, 100),
     ])
 
@@ -386,19 +388,22 @@ def score_dewpoint(dewpoint_c: float) -> int:
 def score_humidity(rh2m: float) -> int:
     return piecewise_score(rh2m, [
         (20, 0),
-        (40, 10),
-        (60, 50),
+        (35, 0),
+        (45, 20),
+        (55, 40),
+        (65, 60),
         (80, 80),
-        (95, 100),
+        (95, 90),
     ])
 
 
 def score_vpd(vpd: float) -> int:
     return piecewise_score(vpd, [
         (3.5, 0),
-        (3.0, 0),
-        (2.0, 30),
-        (1.0, 70),
+        (2.5, 20),
+        (1.8, 40),
+        (1.2, 65),
+        (0.8, 85),
         (0.0, 100),
     ], inverse=True)
 
@@ -447,6 +452,25 @@ def score_timing(dt: datetime) -> int:
     return 20
 
 
+def score_cin_proxy(temp_c: float, dewpoint_c: float, vpd: float) -> tuple[float, int]:
+    proxy = max(0.0, (temp_c - dewpoint_c) + (vpd * 2.0))
+    score = piecewise_score(proxy, [
+        (24, 0),
+        (18, 8),
+        (14, 25),
+        (10, 50),
+        (7, 72),
+        (4, 88),
+        (0, 100),
+    ], inverse=True)
+    return round(proxy, 2), score
+
+
+def score_li_proxy(cape_score: int, dewpoint_score: int, vpd_score: int, timing_score: int) -> int:
+    raw = cape_score * 0.65 + dewpoint_score * 0.20 + vpd_score * 0.10 + timing_score * 0.05
+    return clamp(raw)
+
+
 def compute_initiation(cape: float, dewpoint_c: float, rh2m: float, vpd: float, temp_c: float, wetbulb_c: float, dt: datetime) -> tuple[int, dict[str, int]]:
     cape_s = score_cape(cape)
     dew_s = score_dewpoint(dewpoint_c)
@@ -454,8 +478,11 @@ def compute_initiation(cape: float, dewpoint_c: float, rh2m: float, vpd: float, 
     vpd_s = score_vpd(vpd)
     wet_s = score_wetbulb(wetbulb_c)
     timing_s = score_timing(dt)
+    cin_proxy_raw, cin_proxy_s = score_cin_proxy(temp_c, dewpoint_c, vpd)
+    li_proxy_s = score_li_proxy(cape_s, dew_s, vpd_s, timing_s)
 
-    moisture = clamp(dew_s * 0.55 + rh_s * 0.15 + vpd_s * 0.20 + wet_s * 0.10)
+    humidity_block = clamp(dew_s * 0.60 + rh_s * 0.20 + vpd_s * 0.20)
+    moisture = humidity_block
     instability = cape_s
 
     if cape < 50:
@@ -469,36 +496,46 @@ def compute_initiation(cape: float, dewpoint_c: float, rh2m: float, vpd: float, 
             'humidity_component': rh_s,
             'vpd_component': vpd_s,
             'wetbulb_component': wet_s,
+            'cin_proxy_component': cin_proxy_s,
+            'li_proxy_component': li_proxy_s,
+            'cin_proxy_raw': cin_proxy_raw,
         }
 
     score = (
-        0.40 * cape_s +
-        0.30 * dew_s +
-        0.10 * rh_s +
-        0.10 * vpd_s +
+        0.50 * cape_s +
+        0.40 * humidity_block +
         0.10 * timing_s
     )
 
     inhibition_penalty = 0.0
     if cape_s < 40:
         score *= 0.60
-    if 300 <= cape < 800 and dew_s > 70:
+        inhibition_penalty += 10
+    if 300 < cape < 1000 and dew_s > 70:
         score += 10
-    if cape_s > 70 and dew_s < 40:
-        score *= 0.60
+    if cape_s > 60 and dew_s < 40:
+        score *= 0.50
         inhibition_penalty += 18
+    if dew_s < 30:
+        score *= 0.30
+        inhibition_penalty += 24
     if vpd_s < 30:
         score *= 0.50
+        inhibition_penalty += 18
+    if dew_s < 30 and vpd_s < 30:
+        score *= 0.20
         inhibition_penalty += 20
-    if dew_s < 30:
-        score *= 0.40
-        inhibition_penalty += 22
-    if rh_s < 25:
+    if cin_proxy_s < 25:
+        score *= 0.55
+        inhibition_penalty += 16
+    elif cin_proxy_s < 40:
         score *= 0.75
         inhibition_penalty += 8
-    if temp_c >= 31 and dewpoint_c < 12:
-        score *= 0.85
+    if li_proxy_s < 35:
+        score *= 0.80
         inhibition_penalty += 6
+    elif li_proxy_s > 70 and cape_s >= 45 and dew_s >= 45:
+        score += 5
 
     if cape < 100:
         score = min(score, 10)
@@ -515,6 +552,9 @@ def compute_initiation(cape: float, dewpoint_c: float, rh2m: float, vpd: float, 
         'humidity_component': rh_s,
         'vpd_component': vpd_s,
         'wetbulb_component': wet_s,
+        'cin_proxy_component': cin_proxy_s,
+        'li_proxy_component': li_proxy_s,
+        'cin_proxy_raw': cin_proxy_raw,
     }
 
 
@@ -631,7 +671,7 @@ def compute_storm_probability(initiation_score: int, reliability_score: int, bus
         score = min(score, 35)
     return clamp(score)
 def score_global(trigger_score: int, structure_score: int, chase_quality_score: int, stability_score: int, confidence_score: int | None = None) -> int:
-    score = trigger_score * 0.45 + structure_score * 0.30 + chase_quality_score * 0.25
+    score = trigger_score * 0.50 + structure_score * 0.28 + chase_quality_score * 0.22
     if trigger_score < 10:
         score = min(score, 10)
     elif trigger_score < 20:
@@ -647,9 +687,9 @@ def build_cell_diagnostics(metric: dict, reliability_diag: dict[str, int], globa
     diagnostics: list[str] = []
 
     if metric['trigger'] >= 75:
-        diagnostics.append("Probabilité orage élevée : CAPE, humidité basse couche et timing convergent bien.")
+        diagnostics.append("Probabilité orage élevée : CAPE, humidité basse couche et timing convergent bien, sans signal sec bloquant.")
     elif metric['trigger'] >= 45:
-        diagnostics.append("Probabilité orage jouable : environnement convectif présent mais encore sensible au déclenchement.")
+        diagnostics.append("Probabilité orage jouable : environnement convectif présent mais encore sensible au déclenchement et aux inhibitions.")
     else:
         diagnostics.append("Probabilité orage faible : l'un des ingrédients convectifs majeurs manque encore.")
 
@@ -676,6 +716,8 @@ def build_cell_diagnostics(metric: dict, reliability_diag: dict[str, int], globa
         diagnostics.append("Humidité basse couche trop limitée : le déclenchement reste fragile malgré d'autres signaux favorables.")
     if metric['vpd_component'] < 30:
         diagnostics.append("Air trop sec près du sol : le risque de bust augmente nettement.")
+    if metric.get('cin_proxy_component', 100) < 35:
+        diagnostics.append("Inhibition convective proxy marquée : l'environnement peut rester coiffé malgré d'autres paramètres favorables.")
     if reliability_diag['consistency'] < 40:
         diagnostics.append("Signal encore contradictoire : certains ingrédients restent mal alignés.")
     if global_score >= 75:
@@ -862,6 +904,8 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
                     "vpd_score": metric["vpd_component"],
                     "wetbulb_score": metric["wetbulb_component"],
                     "timing_score": metric["timing"],
+                    "cin_proxy_score": metric.get("cin_proxy_component", 0),
+                    "li_proxy_score": metric.get("li_proxy_component", 0),
                     "shear_score": metric["shear_component"],
                     "gust_score": metric["gust_component"],
                     "cloud_score": metric["cloud_score"],
@@ -873,6 +917,7 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
                     "relative_humidity_2m": round(metric["rh2m"], 1),
                     "vapour_pressure_deficit": round(metric["vpd"], 2),
                     "wet_bulb_temperature_2m": round(metric["wetbulb"], 1),
+                    "cin_proxy_raw": round(metric.get("cin_proxy_raw", 0), 2),
                     "cloud_cover_low": round(metric["cloud_low"], 1),
                     "cloud_cover_mid": round(metric["cloud_mid"], 1),
                     "cloud_cover_high": round(metric["cloud_high"], 1),
@@ -889,6 +934,8 @@ def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
                         "moisture": metric["moisture"],
                         "timing": metric["timing"],
                         "inhibition_penalty": metric["inhibition_penalty"],
+                        "cin_proxy": metric.get("cin_proxy_component", 0),
+                        "li_proxy": metric.get("li_proxy_component", 0),
                     },
                     "severity": {
                         "score": metric["structure"],
@@ -1116,7 +1163,7 @@ def build_historical_analysis_payload(rows: list[OutputRow], center_lat: float, 
             "slots": slots,
             "methodology": {
                 "goal": "Comparer probabilité orage, sévérité et qualité de chasse à des observations orageuses réelles sur une base historique.",
-                "global_score": "Score de synthèse interne : Probabilité orage 45%, Sévérité 30%, Qualité de chasse 25%. La probabilité orage reste d’abord pilotée par CAPE, humidité basse couche, VPD et timing.",
+                "global_score": "Score de synthèse interne : Probabilité orage 50%, Sévérité 28%, Qualité de chasse 22%. La probabilité orage reste d’abord pilotée par CAPE, humidité basse couche, VPD, timing et un proxy d'inhibition.",
                 "recommended_join_key": "selected_time_iso + lat/lon ou zone pour recroiser avec éclairs, radar ou observations terrain.",
             },
         },
@@ -1188,7 +1235,7 @@ def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float
             "requested_date": target_date.isoformat() if target_date is not None else None,
             "legend": {
                 "global_score": "0-100, score de synthèse interne. La lecture prioritaire reste Probabilité orage, Sévérité puis Qualité de chasse.",
-                "trigger": "Probabilité orage : CAPE, dew point, humidité basse couche, VPD et timing. Sans CAPE exploitable, la probabilité reste nulle ou très faible.",
+                "trigger": "Probabilité orage : CAPE, dew point, humidité basse couche, VPD, timing et proxy d'inhibition. Sans CAPE exploitable, la probabilité reste nulle ou très faible.",
                 "structure": "Sévérité : potentiel d’intensité et d’organisation via CAPE et shear. Le shear seul ne doit pas créer de faux signal orageux.",
                 "chase_quality": "Qualité de chasse : lisibilité terrain, nébulosité, timing et confort lié au vent.",
                 "stability": "Support convectif : cohérence locale et stabilité du signal. Sert de diagnostic secondaire plutôt que de couche principale.",
