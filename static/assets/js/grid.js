@@ -59,6 +59,29 @@
       return selection;
     }
 
+
+    function retryRefreshWhenStyleReady(reason = 'style-not-ready') {
+      debugLog('retryRefreshWhenStyleReady:schedule', {
+        reason,
+        hasMap: !!map,
+        styleLoaded: !!(map && map.isStyleLoaded && map.isStyleLoaded()),
+      });
+      if (!map) return;
+      const rerender = () => {
+        debugLog('retryRefreshWhenStyleReady:run', {
+          reason,
+          styleLoaded: !!(map && map.isStyleLoaded && map.isStyleLoaded()),
+        });
+        refreshMap();
+      };
+      if (map.isStyleLoaded && map.isStyleLoaded()) {
+        requestAnimationFrame(rerender);
+        return;
+      }
+      map.once('idle', rerender);
+      map.once('styledata', rerender);
+    }
+
     function refreshMap() {
       if (!map.isStyleLoaded()) return;
       const selection = resolveRenderableSelection();
@@ -94,7 +117,14 @@
       const gridRendered = addLayers(gridGeoJSON, cells);
       if (!gridRendered) {
         console.error('Grid render aborted: scaffolding unavailable');
-        debugLog('refreshMap:render-aborted', { reason: 'scaffolding unavailable' });
+        debugLog('refreshMap:render-aborted', {
+          reason: 'scaffolding unavailable',
+          styleLoaded: !!(map && map.isStyleLoaded && map.isStyleLoaded()),
+          hasGridSource: !!(map && map.getSource && map.getSource('grid')),
+          hasOutlineSource: !!(map && map.getSource && map.getSource('grid-outline')),
+          hasGridFillLayer: !!(map && map.getLayer && map.getLayer('grid-fill')),
+        });
+        retryRefreshWhenStyleReady('addLayers-false');
         return;
       }
 

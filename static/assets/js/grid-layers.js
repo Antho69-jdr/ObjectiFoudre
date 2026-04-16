@@ -2,10 +2,16 @@ const EMPTY_FEATURE_COLLECTION = { type: 'FeatureCollection', features: [] };
 let gridHandlersBound = false;
 
 function ensureSource(id, data = EMPTY_FEATURE_COLLECTION) {
-  if (!map || !map.isStyleLoaded()) return null;
+  if (!map) return null;
   const existing = map.getSource(id);
   if (existing) return existing;
-  map.addSource(id, { type: 'geojson', data });
+  if (!map.isStyleLoaded || !map.isStyleLoaded()) return null;
+  try {
+    map.addSource(id, { type: 'geojson', data });
+  } catch (error) {
+    console.warn(`ensureSource:${id}:add-failed`, error);
+    return map.getSource(id) || null;
+  }
   return map.getSource(id);
 }
 
@@ -51,10 +57,14 @@ function bindGridHandlersOnce() {
 }
 
 function ensureGridScaffolding() {
-  debugLog('ensureGridScaffolding:start', { styleLoaded: !!(map && map.isStyleLoaded && map.isStyleLoaded()) });
-  if (!map || !map.isStyleLoaded()) return false;
-  const gridSource = ensureSource('grid');
-  const outlineSource = ensureSource('grid-outline');
+  const styleLoaded = !!(map && map.isStyleLoaded && map.isStyleLoaded());
+  const existingGridSource = !!(map && map.getSource && map.getSource('grid'));
+  const existingOutlineSource = !!(map && map.getSource && map.getSource('grid-outline'));
+  const existingFillLayer = !!(map && map.getLayer && map.getLayer('grid-fill'));
+  debugLog('ensureGridScaffolding:start', { styleLoaded, existingGridSource, existingOutlineSource, existingFillLayer });
+  if (!map) return false;
+  const gridSource = map.getSource('grid') || ensureSource('grid');
+  const outlineSource = map.getSource('grid-outline') || ensureSource('grid-outline');
   if (!gridSource || !outlineSource) return false;
 
   if (!map.getLayer('grid-fill')) {
@@ -116,9 +126,11 @@ function ensureGridScaffolding() {
 }
 
 function ensureLoaderScaffolding() {
-  debugLog('ensureLoaderScaffolding:start', { styleLoaded: !!(map && map.isStyleLoaded && map.isStyleLoaded()) });
-  if (!map || !map.isStyleLoaded()) return false;
-  const loaderSource = ensureSource('grid-loader');
+  const styleLoaded = !!(map && map.isStyleLoaded && map.isStyleLoaded());
+  const existingLoaderSource = !!(map && map.getSource && map.getSource('grid-loader'));
+  debugLog('ensureLoaderScaffolding:start', { styleLoaded, existingLoaderSource });
+  if (!map) return false;
+  const loaderSource = map.getSource('grid-loader') || ensureSource('grid-loader');
   if (!loaderSource) return false;
   if (!map.getLayer('grid-loader-fill')) {
     map.addLayer({
