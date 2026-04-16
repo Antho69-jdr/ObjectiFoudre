@@ -93,6 +93,32 @@
       return getCurrentDay()?.slots?.find(s => s.slot_key === selectedSlotKey) || null;
     }
 
+
+    function getRenderableSlots(day) {
+      const slots = Array.isArray(day?.slots) ? day.slots : [];
+      return slots.filter((slot) => Array.isArray(slot?.cells) && slot.cells.length > 0);
+    }
+
+    function findFirstRenderableSelection(days, preferredDayKey = null, preferredSlotKey = null) {
+      const orderedDays = Array.isArray(days) ? days : [];
+      const candidateDays = preferredDayKey
+        ? [
+            ...orderedDays.filter((day) => day?.day_key === preferredDayKey),
+            ...orderedDays.filter((day) => day?.day_key !== preferredDayKey),
+          ]
+        : orderedDays;
+      for (const day of candidateDays) {
+        const renderableSlots = getRenderableSlots(day);
+        if (!renderableSlots.length) continue;
+        const preferredSlot = preferredSlotKey
+          ? renderableSlots.find((slot) => slot?.slot_key === preferredSlotKey)
+          : null;
+        const slot = preferredSlot || renderableSlots[0];
+        return { dayKey: day.day_key, slotKey: slot.slot_key };
+      }
+      return { dayKey: orderedDays[0]?.day_key || null, slotKey: null };
+    }
+
     function sanitizeCenter(center) {
       const lat = Number(center?.lat);
       const lon = Number(center?.lon);

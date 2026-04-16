@@ -52,17 +52,33 @@ function updateGridLinesButton() {
     }
 
     function refreshMap() {
-      const slot = getCurrentSlot();
-      const cells = slot?.cells || [];
-      lastGridTemplate = deriveGridTemplate(cells) || lastGridTemplate;
-      refreshStats(cells, slot);
       if (!map.isStyleLoaded()) return;
-      clearGridRevealFailsafe();
-      removeLayers(true);
-      if (!cells.length) {
+      const currentDay = getCurrentDay();
+      const renderableSlots = getRenderableSlots(currentDay);
+      if (!renderableSlots.length) {
+        clearGridRevealFailsafe();
+        removeLayers(true);
         removeLoaderLayers();
+        hideGridCornerMask();
         return;
       }
+      if (!selectedSlotKey || !renderableSlots.some((slot) => slot.slot_key === selectedSlotKey)) {
+        selectedSlotKey = renderableSlots[0].slot_key;
+        renderSlotButtons();
+      }
+      const slot = getCurrentSlot();
+      const cells = slot?.cells || [];
+      if (!cells.length) {
+        clearGridRevealFailsafe();
+        removeLayers(true);
+        removeLoaderLayers();
+        hideGridCornerMask();
+        return;
+      }
+      lastGridTemplate = deriveGridTemplate(cells) || lastGridTemplate;
+      refreshStats(cells, slot);
+      clearGridRevealFailsafe();
+      removeLayers(true);
       stopLoaderPulse();
       addLayers(buildGeoJSON(cells), cells);
       if (shouldAnimateNextGrid) {

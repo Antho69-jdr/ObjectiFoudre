@@ -1,8 +1,8 @@
     function payloadHasUsableSlots(nextPayload, requestedDayKey) {
       const days = Array.isArray(nextPayload?.days) ? nextPayload.days : [];
       const requestedDay = days.find(day => day?.day_key === requestedDayKey);
-      if (requestedDay) return Array.isArray(requestedDay.slots) && requestedDay.slots.length > 0;
-      return days.some(day => Array.isArray(day?.slots) && day.slots.length > 0);
+      if (requestedDay) return getRenderableSlots(requestedDay).length > 0;
+      return days.some(day => getRenderableSlots(day).length > 0);
     }
 
     async function loadData(force = false, centerToken = centerChangeToken) {
@@ -41,17 +41,22 @@
         lastFetchSignature = signature;
         shouldAnimateNextGrid = true;
         lastFetchAt = Date.now();
-        const days = getDays();
-        selectedDayKey = days.find(d => d.day_key === requestedDayKey)?.day_key || days.find(d => d.day_key === selectedDayKey)?.day_key || days[0]?.day_key || null;
-        const currentDay = getCurrentDay();
-        selectedSlotKey = currentDay?.slots?.find(s => s.slot_key === selectedSlotKey)?.slot_key || currentDay?.slots?.[0]?.slot_key || null;
         cityInput.value = payload?.meta?.center?.label || currentCenter.label;
         currentCenter = sanitizeCenter(payload?.meta?.center || currentCenter);
         saveCurrentCenter();
+
+        const days = getDays();
+        const selection = findFirstRenderableSelection(days, requestedDayKey || selectedDayKey, selectedSlotKey);
+        selectedDayKey = selection.dayKey;
+        selectedSlotKey = selection.slotKey;
+        selectedFeature = null;
+
         updateMetaLine();
         renderDayButtons();
         renderSlotButtons();
-        refreshMap();
+        requestAnimationFrame(() => {
+          refreshMap();
+        });
         return payload;
       } catch (err) {
         if (err.name == 'AbortError') return payload;
