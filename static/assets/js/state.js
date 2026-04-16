@@ -48,6 +48,6 @@ const map = new maplibregl.Map({
   zoom: 9.4,
   maxZoom: 12.5,
 });
-applyResponsiveMode();
-window.addEventListener('resize', applyResponsiveMode);
-window.addEventListener('orientationchange', applyResponsiveMode);
+if (typeof applyResponsiveMode === 'function') applyResponsiveMode();
+window.addEventListener('resize', () => { if (typeof applyResponsiveMode === 'function') applyResponsiveMode(); });
+window.addEventListener('orientationchange', () => { if (typeof applyResponsiveMode === 'function') applyResponsiveMode(); });

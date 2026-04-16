@@ -23,7 +23,7 @@
       updateBestCellsButton();
 
       map.on('click', (e) => {
-        const features = map.queryRenderedFeatures(e.point, { layers: ['grid-fill'] });
+        const features = map.getLayer('grid-fill') ? map.queryRenderedFeatures(e.point, { layers: ['grid-fill'] }) : [];
         if (!features.length && !detailsModal.classList.contains('visible')) closeSelection();
         if (!features.length) {
           closeTopPanels();
@@ -39,6 +39,8 @@
       });
 
       map.on('load', () => {
+        ensureGridScaffolding();
+        ensureLoaderScaffolding();
         cityInput.value = currentCenter.label;
         topbar.classList.add('show-search');
         requestAnimationFrame(alignTopPanels);

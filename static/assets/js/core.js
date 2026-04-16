@@ -19,7 +19,7 @@
     function forceGridVisible(cells = getCurrentSlot()?.cells || []) {
       clearGridRevealFailsafe();
       if (!map.isStyleLoaded()) return;
-      if (Array.isArray(cells) && cells.length && map.getSource('grid')) {
+      if (Array.isArray(cells) && cells.length && ensureGridScaffolding() && map.getSource('grid')) {
         map.getSource('grid').setData(buildGeoJSON(cells));
         setGridFillFactor(1);
         applyGridLinesVisibility();

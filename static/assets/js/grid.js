@@ -26,7 +26,7 @@
     function applyBestCellsModeToCurrentMap() {
       const slot = getCurrentSlot();
       const cells = slot?.cells || [];
-      if (!map.isStyleLoaded() || !map.getSource('grid') || !cells.length) {
+      if (!map.isStyleLoaded() || !ensureGridScaffolding() || !map.getSource('grid') || !cells.length) {
         updateBestCellsButton();
         updateGridLinesButton();
         return;
@@ -86,7 +86,11 @@
       refreshStats(cells, slot);
       clearGridRevealFailsafe();
       stopLoaderPulse();
-      addLayers(buildGeoJSON(cells), cells);
+      const gridRendered = addLayers(buildGeoJSON(cells), cells);
+      if (!gridRendered) {
+        console.error('Grid render aborted: scaffolding unavailable');
+        return;
+      }
 
       if (shouldAnimateNextGrid) {
         scheduleGridRevealFailsafe(cells);
