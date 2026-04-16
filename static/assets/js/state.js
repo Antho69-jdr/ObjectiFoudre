@@ -51,3 +51,5 @@ const map = new maplibregl.Map({
 if (typeof applyResponsiveMode === 'function') applyResponsiveMode();
 window.addEventListener('resize', () => { if (typeof applyResponsiveMode === 'function') applyResponsiveMode(); });
 window.addEventListener('orientationchange', () => { if (typeof applyResponsiveMode === 'function') applyResponsiveMode(); });
+
+debugLog('state:init', { currentCenter, selectedBaseDate, selectedColorMetric, style: STYLE });

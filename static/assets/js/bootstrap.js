@@ -39,6 +39,7 @@
       });
 
       map.on('load', () => {
+        debugLog('map:load', { center: currentCenter, selectedBaseDate, styleLoaded: map.isStyleLoaded() });
         ensureGridScaffolding();
         ensureLoaderScaffolding();
         cityInput.value = currentCenter.label;

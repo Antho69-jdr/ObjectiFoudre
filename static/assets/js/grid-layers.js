@@ -51,6 +51,7 @@ function bindGridHandlersOnce() {
 }
 
 function ensureGridScaffolding() {
+  debugLog('ensureGridScaffolding:start', { styleLoaded: !!(map && map.isStyleLoaded && map.isStyleLoaded()) });
   if (!map || !map.isStyleLoaded()) return false;
   const gridSource = ensureSource('grid');
   const outlineSource = ensureSource('grid-outline');
@@ -109,10 +110,13 @@ function ensureGridScaffolding() {
     });
   }
   bindGridHandlersOnce();
-  return Boolean(map.getSource('grid') && map.getSource('grid-outline') && map.getLayer('grid-fill'));
+  const ok = Boolean(map.getSource('grid') && map.getSource('grid-outline') && map.getLayer('grid-fill'));
+  debugLog('ensureGridScaffolding:done', { ok, hasGridSource: !!map.getSource('grid'), hasOutlineSource: !!map.getSource('grid-outline'), hasFillLayer: !!map.getLayer('grid-fill') });
+  return ok;
 }
 
 function ensureLoaderScaffolding() {
+  debugLog('ensureLoaderScaffolding:start', { styleLoaded: !!(map && map.isStyleLoaded && map.isStyleLoaded()) });
   if (!map || !map.isStyleLoaded()) return false;
   const loaderSource = ensureSource('grid-loader');
   if (!loaderSource) return false;
@@ -143,7 +147,9 @@ function ensureLoaderScaffolding() {
       },
     });
   }
-  return Boolean(map.getSource('grid-loader'));
+  const ok = Boolean(map.getSource('grid-loader'));
+  debugLog('ensureLoaderScaffolding:done', { ok, hasLoaderSource: !!map.getSource('grid-loader'), hasLoaderFill: !!map.getLayer('grid-loader-fill') });
+  return ok;
 }
 
 function removeLoaderLayers() {
@@ -155,12 +161,15 @@ function removeLoaderLayers() {
 }
 
 function showLoadingGrid(center) {
+  debugLog('showLoadingGrid:start', center);
   if (!map || !map.isStyleLoaded()) return;
   if (!ensureLoaderScaffolding()) return;
   const cells = buildLoaderCells(center);
   const loaderSource = map.getSource('grid-loader');
   if (!loaderSource) return;
-  loaderSource.setData(buildLoaderGeoJSON(cells, 0));
+  const loaderGeoJSON = buildLoaderGeoJSON(cells, 0);
+  debugLog('showLoadingGrid:data', { cellCount: Array.isArray(cells) ? cells.length : 0, featureCount: Array.isArray(loaderGeoJSON?.features) ? loaderGeoJSON.features.length : 0 });
+  loaderSource.setData(loaderGeoJSON);
   startLoaderPulse();
 }
 
@@ -182,13 +191,16 @@ function removeLayers(keepLoader = false) {
 }
 
 function addLayers(data, cells = []) {
+  debugLog('addLayers:start', { incomingFeatureCount: Array.isArray(data?.features) ? data.features.length : 0, cellCount: Array.isArray(cells) ? cells.length : 0 });
   if (!ensureGridScaffolding()) return false;
   const gridSource = map.getSource('grid');
   const outlineSource = map.getSource('grid-outline');
   if (!gridSource || !outlineSource) {
+    debugLog('addLayers:missing-source', { hasGridSource: !!gridSource, hasOutlineSource: !!outlineSource });
     console.error('Grid source missing during addLayers');
     return false;
   }
+  debugLog('addLayers:setData-before', { hasGridSource: !!map.getSource('grid'), hasOutlineSource: !!map.getSource('grid-outline'), hasFillLayer: !!map.getLayer('grid-fill') });
   gridSource.setData(data || EMPTY_FEATURE_COLLECTION);
   outlineSource.setData(buildGridOutlineGeoJSON(cells));
   applyGridLinesVisibility();
@@ -197,6 +209,18 @@ function addLayers(data, cells = []) {
     applyGridLinesVisibility();
     updateHighlight();
   });
+  setTimeout(() => {
+    try {
+      if (!map.getLayer('grid-fill')) {
+        debugLog('addLayers:post-render-no-layer');
+        return;
+      }
+      const rendered = map.queryRenderedFeatures({ layers: ['grid-fill'] });
+      debugLog('addLayers:post-render', { renderedFeatures: Array.isArray(rendered) ? rendered.length : 0 });
+    } catch (error) {
+      console.warn('addLayers:post-render:error', error);
+    }
+  }, 500);
   return true;
 }
 

@@ -1,3 +1,25 @@
+
+    window.STORM_DEBUG = true;
+
+    function debugLog(scope, payload = null) {
+      if (!window.STORM_DEBUG) return;
+      const ts = new Date().toISOString().slice(11, 23);
+      if (payload === null || typeof payload === 'undefined') console.log(`[storm ${ts}] ${scope}`);
+      else console.log(`[storm ${ts}] ${scope}`, payload);
+    }
+
+    function debugGroup(scope, payload = null) {
+      if (!window.STORM_DEBUG) return;
+      const ts = new Date().toISOString().slice(11, 23);
+      if (typeof console.groupCollapsed === 'function') {
+        console.groupCollapsed(`[storm ${ts}] ${scope}`);
+        if (payload !== null && typeof payload !== 'undefined') console.log(payload);
+        console.groupEnd();
+      } else {
+        debugLog(scope, payload);
+      }
+    }
+
     function getTodayIsoDate() {
       const now = new Date();
       const year = now.getFullYear();

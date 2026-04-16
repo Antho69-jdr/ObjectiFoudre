@@ -7,6 +7,7 @@
 
     async function loadData(force = false, centerToken = centerChangeToken) {
       const signature = `${currentCenter.lat}|${currentCenter.lon}|${currentCenter.label}|${selectedBaseDate}`;
+      debugLog('loadData:start', { force, centerToken, activeCenterToken: centerChangeToken, signature, currentCenter, selectedBaseDate, hasPayload: Boolean(payload) });
       if (!force && payload && signature === lastFetchSignature) {
         shouldAnimateNextGrid = false;
         updateMetaLine();
@@ -30,11 +31,14 @@
         let response = await fetch(`/api/latest?${buildParams('auto').toString()}`, { cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         let nextPayload = await response.json();
+        debugLog('loadData:auto-response', { ok: response.ok, status: response.status, dayCount: Array.isArray(nextPayload?.days) ? nextPayload.days.length : 0, meta: nextPayload?.meta || null });
         const requestedDayKey = normalizeDateIso(selectedBaseDate);
+        debugLog('loadData:requested-day', { requestedDayKey });
         if (requestedDayKey === getTodayIsoDate() && !payloadHasUsableSlots(nextPayload, requestedDayKey)) {
           response = await fetch(`/api/latest?${buildParams('historical').toString()}`, { cache: 'no-store', signal: controller.signal });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           nextPayload = await response.json();
+          debugLog('loadData:historical-fallback-response', { ok: response.ok, status: response.status, dayCount: Array.isArray(nextPayload?.days) ? nextPayload.days.length : 0, meta: nextPayload?.meta || null });
         }
         if (fetchToken != activeFetchToken || centerToken !== centerChangeToken) return payload;
         payload = nextPayload;
@@ -46,7 +50,9 @@
         saveCurrentCenter();
 
         const days = getDays();
+        debugLog('loadData:days-built', days.map(day => ({ dayKey: day?.day_key, slotCount: Array.isArray(day?.slots) ? day.slots.length : 0, renderableSlots: getRenderableSlots(day).length })));
         const selection = findFirstRenderableSelection(days, requestedDayKey || selectedDayKey, selectedSlotKey);
+        debugLog('loadData:selection', selection);
         selectedDayKey = selection.dayKey;
         selectedSlotKey = selection.slotKey;
         selectedFeature = null;
@@ -55,11 +61,13 @@
         renderDayButtons();
         renderSlotButtons();
         requestAnimationFrame(() => {
+          debugLog('loadData:raf-refreshMap', { selectedDayKey, selectedSlotKey });
           refreshMap();
         });
         return payload;
       } catch (err) {
-        if (err.name == 'AbortError') return payload;
+        if (err.name == 'AbortError') { debugLog('loadData:abort'); return payload; }
+        console.error('loadData:error', err);
         throw err;
       } finally {
         if (dataFetchController === controller) dataFetchController = null;

@@ -62,12 +62,14 @@
     function refreshMap() {
       if (!map.isStyleLoaded()) return;
       const selection = resolveRenderableSelection();
+      debugLog('refreshMap:selection', selection);
       const currentDay = getCurrentDay();
       const renderableSlots = getRenderableSlots(currentDay);
 
       renderDayButtons();
       renderSlotButtons();
 
+      debugLog('refreshMap:renderable-slots', renderableSlots.map(slot => ({ slotKey: slot?.slot_key, cells: Array.isArray(slot?.cells) ? slot.cells.length : 0 })));
       if (!selection.dayKey || !selection.slotKey || !renderableSlots.length) {
         clearGridRevealFailsafe();
         removeLayers(true);
@@ -76,6 +78,7 @@
 
       const slot = getCurrentSlot();
       const cells = Array.isArray(slot?.cells) ? slot.cells : [];
+      debugLog('refreshMap:slot', { slotKey: slot?.slot_key || null, slotLabel: slot?.slot_label || null, cellCount: cells.length, selectedDayKey, selectedSlotKey });
       if (!cells.length) {
         clearGridRevealFailsafe();
         removeLayers(true);
@@ -86,9 +89,12 @@
       refreshStats(cells, slot);
       clearGridRevealFailsafe();
       stopLoaderPulse();
-      const gridRendered = addLayers(buildGeoJSON(cells), cells);
+      const gridGeoJSON = buildGeoJSON(cells);
+      debugLog('refreshMap:geojson', { featureCount: Array.isArray(gridGeoJSON?.features) ? gridGeoJSON.features.length : 0 });
+      const gridRendered = addLayers(gridGeoJSON, cells);
       if (!gridRendered) {
         console.error('Grid render aborted: scaffolding unavailable');
+        debugLog('refreshMap:render-aborted', { reason: 'scaffolding unavailable' });
         return;
       }
 
@@ -109,4 +115,19 @@
       }
 
       requestAnimationFrame(positionSelectionCard);
+    }
+
+
+    function debugRenderedGridFeatures() {
+      if (!map || !map.isStyleLoaded()) return;
+      if (!map.getLayer('grid-fill')) {
+        debugLog('debugRenderedGridFeatures:no-layer');
+        return;
+      }
+      try {
+        const features = map.queryRenderedFeatures({ layers: ['grid-fill'] });
+        debugLog('debugRenderedGridFeatures', { renderedFeatures: Array.isArray(features) ? features.length : 0 });
+      } catch (error) {
+        console.warn('debugRenderedGridFeatures:error', error);
+      }
     }
