@@ -1,3 +1,17 @@
+
+    function dataModeLabel(mode) {
+      return mode === 'mock' ? 'Mock' : 'Réel';
+    }
+
+    function updateDataModeUi() {
+      if (typeof mockModeBtn === 'undefined' || !mockModeBtn) return;
+      const isMock = selectedDataMode === 'mock';
+      mockModeBtn.classList.toggle('active', isMock);
+      mockModeBtn.setAttribute('aria-pressed', isMock ? 'true' : 'false');
+      if (typeof mockModeLabel !== 'undefined' && mockModeLabel) mockModeLabel.textContent = isMock ? 'Mock' : 'Réel';
+      mockModeBtn.title = isMock ? 'Mode mock activé' : 'Mode réel activé';
+    }
+
     function formatCacheIndicator(cacheMeta) {
       if (!cacheMeta || typeof cacheMeta !== 'object') return 'Source : données fraîches';
       const isHit = cacheMeta.hit === true;
@@ -15,7 +29,8 @@
       const generated = formatFrenchRun(payload?.meta?.generated_at || '');
       metaCenter.textContent = `Zone : ${centerLabel}`;
       const sourceIndicator = formatCacheIndicator(payload?.meta?.cache);
-      metaRun.textContent = `Modèle arome-france : ${generated} · ${sourceIndicator}`;
+      const payloadMode = payload?.meta?.mode === 'mock' ? 'Mock' : (selectedDataMode === 'mock' ? 'Mock' : 'Réel');
+      metaRun.textContent = `Modèle arome-france : ${generated} · ${sourceIndicator} · Mode : ${payloadMode}`;
     }
 
     function setMetaMessage(message) {

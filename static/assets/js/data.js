@@ -23,7 +23,8 @@
       const fetchToken = ++activeFetchToken;
       isFetchingData = true;
       const buildParams = (mode = 'auto') => {
-        const params = new URLSearchParams({ lat: String(currentCenter.lat), lon: String(currentCenter.lon), label: currentCenter.label, date: selectedBaseDate, mode });
+        const effectiveMode = selectedDataMode === 'mock' ? 'mock' : mode;
+        const params = new URLSearchParams({ lat: String(currentCenter.lat), lon: String(currentCenter.lon), label: currentCenter.label, date: selectedBaseDate, mode: effectiveMode });
         if (force) params.set('force', 'true');
         return params;
       };
@@ -31,14 +32,23 @@
         let response = await fetch(`/api/latest?${buildParams('auto').toString()}`, { cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         let nextPayload = await response.json();
-        debugLog('loadData:auto-response', { ok: response.ok, status: response.status, dayCount: Array.isArray(nextPayload?.days) ? nextPayload.days.length : 0, meta: nextPayload?.meta || null });
+        debugLog('loadData:auto-response', { ok: response.ok, status: response.status, dayCount: Array.isArray(nextPayload?.days) ? nextPayload.days.length : 0, meta: nextPayload?.meta || null, selectedDataMode });
         const requestedDayKey = normalizeDateIso(selectedBaseDate);
         debugLog('loadData:requested-day', { requestedDayKey });
-        if (requestedDayKey === getTodayIsoDate() && !payloadHasUsableSlots(nextPayload, requestedDayKey)) {
+        if (selectedDataMode !== 'mock' && requestedDayKey === getTodayIsoDate() && !payloadHasUsableSlots(nextPayload, requestedDayKey)) {
           response = await fetch(`/api/latest?${buildParams('historical').toString()}`, { cache: 'no-store', signal: controller.signal });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           nextPayload = await response.json();
           debugLog('loadData:historical-fallback-response', { ok: response.ok, status: response.status, dayCount: Array.isArray(nextPayload?.days) ? nextPayload.days.length : 0, meta: nextPayload?.meta || null });
+        }
+        if (selectedDataMode !== 'mock') {
+          const warning = String(nextPayload?.meta?.warning || '').toLowerCase();
+          if (warning.includes('mode mock') || warning.includes('mock aléatoire')) {
+            selectedDataMode = 'mock';
+            saveStoredDataMode(selectedDataMode);
+            updateDataModeUi();
+            debugLog('loadData:auto-mock-fallback', { warning: nextPayload?.meta?.warning || null });
+          }
         }
         if (fetchToken != activeFetchToken || centerToken !== centerChangeToken) return payload;
         payload = nextPayload;

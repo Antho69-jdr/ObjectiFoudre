@@ -28,7 +28,23 @@ let userLocationMarker = null;
 let shouldAnimateNextGrid = true;
 let hasCompletedInitialLoad = false;
 const DEFAULT_CENTER = { lat: 45.7640, lon: 4.8357, label: 'Lyon' };
+
+function loadStoredDataMode() {
+  try {
+    const raw = localStorage.getItem('storm_data_mode');
+    return raw === 'mock' ? 'mock' : 'real';
+  } catch (_) {
+    return 'real';
+  }
+}
+
+function saveStoredDataMode(mode) {
+  try {
+    localStorage.setItem('storm_data_mode', mode === 'mock' ? 'mock' : 'real');
+  } catch (_) {}
+}
 let currentCenter = loadStoredCenter();
+let selectedDataMode = loadStoredDataMode();
 const appLoaderStartedAt = performance.now();
 
 let payload = null;
@@ -52,4 +68,4 @@ if (typeof applyResponsiveMode === 'function') applyResponsiveMode();
 window.addEventListener('resize', () => { if (typeof applyResponsiveMode === 'function') applyResponsiveMode(); });
 window.addEventListener('orientationchange', () => { if (typeof applyResponsiveMode === 'function') applyResponsiveMode(); });
 
-debugLog('state:init', { currentCenter, selectedBaseDate, selectedColorMetric, style: STYLE });
+debugLog('state:init', { currentCenter, selectedBaseDate, selectedColorMetric, selectedDataMode, style: STYLE });

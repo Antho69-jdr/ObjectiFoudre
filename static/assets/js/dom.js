@@ -14,6 +14,8 @@ const rightRailScroll = document.getElementById('rightRailScroll');
 const toggleSearchBtn = document.getElementById('toggleSearchBtn');
 const cityInput = document.getElementById('cityInput');
 const searchCityBtn = document.getElementById('searchCityBtn');
+const mockModeBtn = document.getElementById('mockModeBtn');
+const mockModeLabel = document.getElementById('mockModeLabel');
 
 const selectionCard = document.getElementById('selectionCard');
 const selectionTitle = document.getElementById('selectionTitle');

@@ -941,7 +941,7 @@
 
 /* v0.4.79 UI refinement */
 .search-panel .location-bar {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .selection-card {
@@ -1195,4 +1195,34 @@
 
 .action-row-export button {
   font-size: 12px;
+}
+
+
+.mode-toggle-btn {
+  min-width: 64px;
+  height: 44px;
+  padding: 0 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.86);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.mode-toggle-btn:hover {
+  background: rgba(255,255,255,0.11);
+}
+.mode-toggle-btn.active {
+  background: rgba(96,165,250,0.18);
+  border-color: rgba(96,165,250,0.48);
+  color: #dbeafe;
+}
+.mode-toggle-label {
+  pointer-events: none;
 }
