@@ -1728,3 +1728,52 @@
     max-width: min(100%, 780px);
   }
 }
+
+
+
+/* ===== v0.6.16 RESPONSIVE FIX ===== */
+
+/* TABLET PORTRAIT: stop full height */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
+  #selectionCard {
+    top: auto !important;
+    bottom: 120px !important;
+    transform: translateX(-50%) !important;
+    left: 50% !important;
+    right: auto !important;
+    max-height: 50vh;
+  }
+}
+
+/* MOBILE LANDSCAPE FIX */
+@media (max-width: 768px) and (orientation: landscape) {
+  #selectionCard {
+    top: auto !important;
+    bottom: 90px !important;
+    transform: translateX(-50%) !important;
+    left: 50% !important;
+    right: auto !important;
+  }
+
+  #meta-stack {
+    bottom: 10px !important;
+    left: 10px !important;
+    right: 10px !important;
+  }
+}
+
+/* MOBILE PORTRAIT FIX */
+@media (max-width: 768px) and (orientation: portrait) {
+  #timelineDock {
+    width: 100% !important;
+    left: 0 !important;
+    transform: none !important;
+  }
+
+  #meta-stack {
+    width: 100%;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+}

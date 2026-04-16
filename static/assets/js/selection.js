@@ -121,9 +121,8 @@
 
     function positionSelectionCard() {
       if (!selectionCard.classList.contains('visible')) return;
-      const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-      const followGrid = viewportWidth >= 768;
-      if (!followGrid) {
+      const mobile = isMobileLayout() || window.innerWidth < 1100;
+      if (mobile) {
         selectionCard.classList.remove('desktop-outside-grid');
         selectionCard.style.left = '';
         selectionCard.style.right = '';
