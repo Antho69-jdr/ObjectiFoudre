@@ -1,5 +1,7 @@
 const EMPTY_FEATURE_COLLECTION = { type: 'FeatureCollection', features: [] };
 let gridHandlersBound = false;
+let pendingGridPayload = null;
+let pendingGridRetryTimer = null;
 
 function ensureSource(id, data = EMPTY_FEATURE_COLLECTION) {
   if (!map) return null;
@@ -54,6 +56,40 @@ function bindGridHandlersOnce() {
   }
 }
 
+
+function scheduleDeferredGridApply(reason = 'deferred') {
+  if (pendingGridRetryTimer) return false;
+  pendingGridRetryTimer = setTimeout(() => {
+    pendingGridRetryTimer = null;
+    if (!pendingGridPayload || !map) return;
+    const styleLoaded = !!(map && map.isStyleLoaded && map.isStyleLoaded());
+    debugLog('scheduleDeferredGridApply:run', { reason, styleLoaded, hasPending: !!pendingGridPayload });
+    if (!styleLoaded) {
+      scheduleDeferredGridApply('style-not-ready');
+      return;
+    }
+    if (!ensureGridScaffolding()) {
+      scheduleDeferredGridApply('scaffolding-still-missing');
+      return;
+    }
+    const gridSource = map.getSource('grid');
+    const outlineSource = map.getSource('grid-outline');
+    if (!gridSource || !outlineSource || !map.getLayer('grid-fill')) {
+      scheduleDeferredGridApply('source-or-layer-missing');
+      return;
+    }
+    const { data, cells } = pendingGridPayload;
+    gridSource.setData(data || EMPTY_FEATURE_COLLECTION);
+    outlineSource.setData(buildGridOutlineGeoJSON(cells || []));
+    applyGridLinesVisibility();
+    updateHighlight();
+    removeLoaderLayers();
+    debugLog('scheduleDeferredGridApply:applied', { featureCount: Array.isArray(data?.features) ? data.features.length : 0, cellCount: Array.isArray(cells) ? cells.length : 0 });
+    pendingGridPayload = null;
+  }, 120);
+  return true;
+}
+
 function ensureGridScaffolding() {
   const styleLoaded = !!(map && map.isStyleLoaded && map.isStyleLoaded());
   const existingGridSource = !!(map && map.getSource && map.getSource('grid'));
@@ -71,6 +107,7 @@ function ensureGridScaffolding() {
       map.addLayer(spec);
     } catch (error) {
       console.warn(`ensureGridScaffolding:${id}:add-failed`, error);
+      debugLog('ensureGridScaffolding:add-failed', { id, message: String(error?.message || error) });
     }
     return !!map.getLayer(id);
   };
@@ -209,12 +246,14 @@ function removeLayers(keepLoader = false) {
 
 function addLayers(data, cells = []) {
   debugLog('addLayers:start', { incomingFeatureCount: Array.isArray(data?.features) ? data.features.length : 0, cellCount: Array.isArray(cells) ? cells.length : 0 });
-  if (!ensureGridScaffolding()) return false;
+  const scaffoldingOk = ensureGridScaffolding();
   const gridSource = map.getSource('grid');
   const outlineSource = map.getSource('grid-outline');
-  if (!gridSource || !outlineSource) {
-    debugLog('addLayers:missing-source', { hasGridSource: !!gridSource, hasOutlineSource: !!outlineSource });
-    console.error('Grid source missing during addLayers');
+  const hasFillLayer = !!map.getLayer('grid-fill');
+  if (!scaffoldingOk || !gridSource || !outlineSource || !hasFillLayer) {
+    pendingGridPayload = { data, cells };
+    debugLog('addLayers:deferred', { scaffoldingOk, hasGridSource: !!gridSource, hasOutlineSource: !!outlineSource, hasFillLayer });
+    scheduleDeferredGridApply('addLayers-false');
     return false;
   }
   debugLog('addLayers:setData-before', { hasGridSource: !!map.getSource('grid'), hasOutlineSource: !!map.getSource('grid-outline'), hasFillLayer: !!map.getLayer('grid-fill') });
