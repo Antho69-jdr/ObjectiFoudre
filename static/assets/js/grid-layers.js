@@ -74,7 +74,7 @@ function ensureGridScaffolding() {
       source: 'grid',
       paint: {
         'fill-color': ['get', 'fill_color'],
-        'fill-opacity': ['*', ['get', 'fill_opacity'], 0],
+        'fill-opacity': ['get', 'fill_opacity'],
         'fill-antialias': false,
       },
     });

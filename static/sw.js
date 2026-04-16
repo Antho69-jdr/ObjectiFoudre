@@ -1,11 +1,11 @@
-const CACHE_NAME = 'storm-chase-v0.6.8';
+const CACHE_NAME = 'storm-chase-v0.6.9';
 const ASSETS = [
   '/',
   '/static/storm-chase.webmanifest',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
   '/static/logo-objectif-foudre.svg',
-  '/static/storm-chase.webmanifest?v=0.6.8'
+  '/static/storm-chase.webmanifest?v=0.6.9'
 ];
 
 self.addEventListener('install', (event) => {
