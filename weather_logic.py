@@ -350,50 +350,45 @@ def piecewise_score(value: float, points: list[tuple[float, float]], inverse: bo
 def score_cape(cape: float) -> int:
     return piecewise_score(cape, [
         (0, 0),
-        (100, 8),
-        (300, 20),
-        (700, 40),
-        (1200, 62),
-        (1800, 82),
-        (2500, 96),
-        (3200, 100),
+        (50, 0),
+        (150, 10),
+        (300, 25),
+        (600, 45),
+        (1000, 65),
+        (1800, 80),
+        (2500, 100),
     ])
 
 
 def score_shear(shear_ms: float) -> int:
     return piecewise_score(shear_ms, [
         (0, 0),
-        (6, 10),
-        (10, 28),
-        (14, 46),
-        (18, 66),
-        (22, 84),
-        (28, 96),
-        (35, 100),
+        (8, 10),
+        (12, 30),
+        (18, 60),
+        (25, 85),
+        (32, 100),
     ])
 
 
 def score_dewpoint(dewpoint_c: float) -> int:
     return piecewise_score(dewpoint_c, [
         (0, 0),
-        (8, 8),
-        (10, 24),
-        (12, 42),
-        (14, 62),
-        (17, 84),
-        (20, 96),
-        (23, 100),
+        (8, 0),
+        (10, 20),
+        (12, 40),
+        (14, 60),
+        (17, 80),
+        (20, 100),
     ])
 
 
 def score_humidity(rh2m: float) -> int:
     return piecewise_score(rh2m, [
         (20, 0),
-        (35, 8),
-        (45, 22),
-        (55, 42),
-        (65, 66),
-        (80, 88),
+        (40, 10),
+        (60, 50),
+        (80, 80),
         (95, 100),
     ])
 
@@ -401,12 +396,9 @@ def score_humidity(rh2m: float) -> int:
 def score_vpd(vpd: float) -> int:
     return piecewise_score(vpd, [
         (3.5, 0),
-        (3.0, 8),
-        (2.4, 20),
-        (1.8, 42),
-        (1.2, 68),
-        (0.8, 86),
-        (0.4, 96),
+        (3.0, 0),
+        (2.0, 30),
+        (1.0, 70),
         (0.0, 100),
     ], inverse=True)
 
@@ -414,10 +406,10 @@ def score_vpd(vpd: float) -> int:
 def score_wetbulb(wetbulb_c: float) -> int:
     return piecewise_score(wetbulb_c, [
         (4, 0),
-        (8, 8),
-        (11, 24),
-        (14, 46),
-        (17, 72),
+        (8, 15),
+        (11, 35),
+        (14, 55),
+        (17, 75),
         (20, 92),
         (23, 100),
     ])
@@ -425,15 +417,14 @@ def score_wetbulb(wetbulb_c: float) -> int:
 
 def score_gusts(gusts: float) -> int:
     return piecewise_score(gusts, [
-        (0, 10),
-        (8, 18),
-        (12, 28),
-        (16, 44),
-        (20, 62),
-        (24, 78),
-        (30, 92),
-        (36, 100),
-    ])
+        (40, 8),
+        (32, 24),
+        (26, 48),
+        (20, 68),
+        (14, 86),
+        (8, 96),
+        (0, 100),
+    ], inverse=True)
 
 
 def score_cloud_penalty(cloud_low: float, cloud_mid: float, cloud_high: float) -> int:
@@ -446,20 +437,14 @@ def score_cloud_penalty(cloud_low: float, cloud_mid: float, cloud_high: float) -
 def score_timing(dt: datetime) -> int:
     hour = dt.hour + dt.minute / 60.0
     if hour < 8:
-        return 8
-    if hour < 10:
-        return 20
+        return 10
     if hour < 12:
-        return 42
-    if hour < 14:
-        return 62
-    if hour < 17:
-        return 86
-    if hour < 20:
+        return 30
+    if hour < 18:
         return 100
     if hour < 22:
-        return 70
-    return 30
+        return 60
+    return 20
 
 
 def compute_initiation(cape: float, dewpoint_c: float, rh2m: float, vpd: float, temp_c: float, wetbulb_c: float, dt: datetime) -> tuple[int, dict[str, int]]:
@@ -469,20 +454,56 @@ def compute_initiation(cape: float, dewpoint_c: float, rh2m: float, vpd: float, 
     vpd_s = score_vpd(vpd)
     wet_s = score_wetbulb(wetbulb_c)
     timing_s = score_timing(dt)
-    moisture = clamp(dew_s * 0.34 + rh_s * 0.24 + vpd_s * 0.26 + wet_s * 0.16)
+
+    moisture = clamp(dew_s * 0.55 + rh_s * 0.15 + vpd_s * 0.20 + wet_s * 0.10)
     instability = cape_s
-    score = instability * 0.35 + moisture * 0.35 + timing_s * 0.20
+
+    if cape < 50:
+        return 0, {
+            'instability': 0,
+            'moisture': moisture,
+            'timing': timing_s,
+            'inhibition_penalty': 100,
+            'cape_component': cape_s,
+            'dew_component': dew_s,
+            'humidity_component': rh_s,
+            'vpd_component': vpd_s,
+            'wetbulb_component': wet_s,
+        }
+
+    score = (
+        0.40 * cape_s +
+        0.30 * dew_s +
+        0.10 * rh_s +
+        0.10 * vpd_s +
+        0.10 * timing_s
+    )
 
     inhibition_penalty = 0.0
-    if cape >= 1200 and dewpoint_c < 11:
-        inhibition_penalty += 10
-    if temp_c >= 31 and dewpoint_c < 13:
+    if cape_s < 40:
+        score *= 0.60
+    if 300 <= cape < 800 and dew_s > 70:
+        score += 10
+    if cape_s > 70 and dew_s < 40:
+        score *= 0.60
+        inhibition_penalty += 18
+    if vpd_s < 30:
+        score *= 0.50
+        inhibition_penalty += 20
+    if dew_s < 30:
+        score *= 0.40
+        inhibition_penalty += 22
+    if rh_s < 25:
+        score *= 0.75
         inhibition_penalty += 8
-    if cape >= 900 and vpd >= 2.0:
-        inhibition_penalty += 8
-    if rh2m < 40:
-        inhibition_penalty += 8
-    score -= inhibition_penalty
+    if temp_c >= 31 and dewpoint_c < 12:
+        score *= 0.85
+        inhibition_penalty += 6
+
+    if cape < 100:
+        score = min(score, 10)
+    elif cape < 150:
+        score = min(score, 15)
 
     return clamp(score), {
         'instability': instability,
@@ -500,31 +521,35 @@ def compute_initiation(cape: float, dewpoint_c: float, rh2m: float, vpd: float, 
 def compute_severity(shear_ms: float, gusts: float, cape: float, initiation_score: int) -> tuple[int, dict[str, int]]:
     shear_s = score_shear(shear_ms)
     cape_s = score_cape(cape)
-    gust_s = score_gusts(gusts)
-    updraft = clamp(cape_s * 0.75 + max(0, shear_s - 15) * 0.25)
-    organization = clamp(shear_s * 0.82 + gust_s * 0.18)
-    maintenance = clamp(shear_s * 0.55 + cape_s * 0.30 + gust_s * 0.15)
-    score = updraft * 0.40 + organization * 0.40 + maintenance * 0.20
+    gust_s = clamp(100 - score_gusts(gusts))
+    updraft = cape_s
+    organization = shear_s
+    maintenance = clamp(cape_s * 0.35 + shear_s * 0.45 + gust_s * 0.20)
+    score = 0.50 * cape_s + 0.50 * shear_s
 
-    if initiation_score < 25:
-        score -= 22
-    elif initiation_score < 40:
-        score -= 12
+    if cape_s < 40:
+        score *= 0.50
+    if initiation_score < 20:
+        score = 0
+    elif initiation_score < 35:
+        score *= 0.55
+    elif initiation_score < 50:
+        score *= 0.75
 
-    if shear_ms >= 16 and cape < 200:
-        score -= 16
-    elif shear_ms >= 12 and cape < 350:
-        score -= 8
+    if cape_s > 70 and shear_s > 60:
+        score += 15
+    elif cape_s > 55 and shear_s > 45:
+        score += 8
 
-    if cape >= 1500 and shear_ms >= 18:
-        score += 6
-    elif cape >= 900 and shear_ms >= 14:
-        score += 3
+    if shear_ms >= 18 and cape < 150:
+        score *= 0.35
+    elif shear_ms >= 14 and cape < 300:
+        score *= 0.60
 
     return clamp(score), {
-        'updraft': updraft,
-        'organization': organization,
-        'maintenance': maintenance,
+        'updraft': clamp(updraft),
+        'organization': clamp(organization),
+        'maintenance': clamp(maintenance),
         'shear_component': shear_s,
         'gust_component': gust_s,
     }
@@ -534,101 +559,86 @@ def compute_chaseability(cloud_low: float, cloud_mid: float, cloud_high: float, 
     cloud_score = score_cloud_penalty(cloud_low, cloud_mid, cloud_high)
     visibility = cloud_score
     timing_s = score_timing(dt)
-    photogenicity = clamp(visibility * 0.72 + timing_s * 0.28)
-    comfort = clamp(100 - max(0, gusts - 18) * 3.2)
-    score = visibility * 0.50 + photogenicity * 0.30 + comfort * 0.20
+    photogenicity = clamp(visibility * 0.70 + timing_s * 0.30)
+    comfort = score_gusts(gusts)
+    score = visibility * 0.50 + timing_s * 0.30 + comfort * 0.20
     return clamp(score), {
-        'visibility': visibility,
-        'photogenicity': photogenicity,
-        'comfort': comfort,
-        'cloud_score': cloud_score,
+        'visibility': clamp(visibility),
+        'photogenicity': clamp(photogenicity),
+        'comfort': clamp(comfort),
+        'cloud_score': clamp(cloud_score),
     }
 
 
 def compute_reliability(reference: dict, neighbours: list[dict]) -> tuple[int, dict[str, int]]:
     if not neighbours:
-        return 36, {'consistency': 32, 'stability': 34, 'confidence_margin': 44}
+        base = clamp(reference['trigger'] * 0.45 + reference['moisture'] * 0.35 + reference['timing'] * 0.20)
+        return base, {'consistency': base, 'stability': base, 'confidence_margin': base}
 
-    ref_global = reference['pre_global']
     ref_initiation = reference['trigger']
     ref_severity = reference['structure']
-    ref_chaseability = reference['quality']
-    gap = abs(ref_initiation - ref_severity)
-    consistency = 90 - gap * 1.1
-    if ref_initiation >= 60 and reference['moisture'] < 40:
+    consistency = 88.0
+    if ref_initiation >= 55 and reference['moisture'] < 40:
+        consistency -= 18
+    if ref_initiation >= 45 and reference['cape_component'] < 25:
+        consistency -= 18
+    if ref_severity >= 70 and ref_initiation < 35:
         consistency -= 12
-    if ref_severity >= 65 and ref_initiation < 35:
-        consistency -= 14
-    if ref_chaseability < 20 and ref_global >= 60:
-        consistency -= 8
 
-    global_diffs = [abs(ref_global - n['pre_global']) for n in neighbours]
     initiation_diffs = [abs(ref_initiation - n['trigger']) for n in neighbours]
     severity_diffs = [abs(ref_severity - n['structure']) for n in neighbours]
-    stability = 84 - (sum(global_diffs) / len(global_diffs)) * 1.15 - (sum(initiation_diffs) / len(initiation_diffs)) * 0.30 - (sum(severity_diffs) / len(severity_diffs)) * 0.25
+    stability = 86 - (sum(initiation_diffs) / len(initiation_diffs)) * 0.55 - (sum(severity_diffs) / len(severity_diffs)) * 0.25
 
-    comps = [
-        reference['cape_component'],
-        reference['dew_component'],
-        reference['humidity_component'],
-        reference['vpd_component'],
-        reference['wetbulb_component'],
-        reference['shear_component'],
-    ]
-    sorted_comps = sorted(comps)
-    margin = (sorted_comps[-1] - sorted_comps[0]) * 0.15
-    confidence_margin = max(0, min(sorted_comps[-2], sorted_comps[-1]) - margin)
+    low_support = min(reference['cape_component'], reference['dew_component'], reference['vpd_component'])
+    confidence_margin = clamp(low_support * 0.85 + reference['humidity_component'] * 0.15)
 
-    score = consistency * 0.40 + stability * 0.35 + confidence_margin * 0.25
+    score = consistency * 0.45 + stability * 0.25 + confidence_margin * 0.30
     return clamp(score), {
         'consistency': clamp(consistency),
         'stability': clamp(stability),
         'confidence_margin': clamp(confidence_margin),
     }
-
-
 def compute_bust_risk(initiation_score: int, severity_score: int, chaseability_score: int, reliability_score: int, moisture_component: int, timing_component: int) -> int:
     risk = 100.0
-    risk -= initiation_score * 0.42
-    risk -= severity_score * 0.18
-    risk -= reliability_score * 0.20
-    risk -= moisture_component * 0.10
-    risk -= timing_component * 0.07
-    risk -= chaseability_score * 0.03
+    risk -= initiation_score * 0.55
+    risk -= moisture_component * 0.15
+    risk -= reliability_score * 0.15
+    risk -= timing_component * 0.10
+    risk -= severity_score * 0.05
 
-    if initiation_score < 25:
-        risk += 18
-    elif initiation_score < 40:
-        risk += 10
-    if reliability_score < 35:
+    if initiation_score < 10:
+        risk += 20
+    elif initiation_score < 25:
         risk += 12
     if moisture_component < 30:
+        risk += 16
+    if reliability_score < 35:
         risk += 10
     if severity_score >= 70 and initiation_score < 35:
         risk += 10
 
     return clamp(risk)
-
-
 def compute_storm_probability(initiation_score: int, reliability_score: int, bust_risk: int) -> int:
-    """Fuse initiation, reliability and bust risk into a single storm probability axis."""
-    safe_signal = clamp(100 - bust_risk)
-    return clamp(initiation_score * 0.58 + reliability_score * 0.27 + safe_signal * 0.15)
-
-
-def score_global(trigger_score: int, structure_score: int, chase_quality_score: int, stability_score: int, confidence_score: int | None = None) -> int:
-    score = trigger_score * 0.40 + structure_score * 0.30 + chase_quality_score * 0.30
-    if trigger_score < 25:
-        score = min(score, 48)
-    elif trigger_score < 40:
-        score = min(score, 58)
-
-    if chase_quality_score < 20:
-        score = min(score, 62)
-
+    """Storm probability is driven by convective ingredients first, then trimmed by support and bust risk."""
+    if initiation_score <= 0:
+        return 0
+    score = initiation_score * 0.82 + reliability_score * 0.12 + (100 - bust_risk) * 0.06
+    if initiation_score < 10:
+        score = min(score, 10)
+    elif initiation_score < 20:
+        score = min(score, 20)
+    elif initiation_score < 35:
+        score = min(score, 35)
     return clamp(score)
-
-
+def score_global(trigger_score: int, structure_score: int, chase_quality_score: int, stability_score: int, confidence_score: int | None = None) -> int:
+    score = trigger_score * 0.45 + structure_score * 0.30 + chase_quality_score * 0.25
+    if trigger_score < 10:
+        score = min(score, 10)
+    elif trigger_score < 20:
+        score = min(score, 25)
+    elif trigger_score < 35:
+        score = min(score, 42)
+    return clamp(score)
 def score_confidence(trigger_score: int, structure_score: int, chase_quality_score: int, stability_score: int, global_score_value: int) -> int:
     return compute_bust_risk(trigger_score, structure_score, chase_quality_score, stability_score, global_score_value, global_score_value)
 
@@ -636,47 +646,42 @@ def score_confidence(trigger_score: int, structure_score: int, chase_quality_sco
 def build_cell_diagnostics(metric: dict, reliability_diag: dict[str, int], global_score: int, bust_risk: int) -> list[str]:
     diagnostics: list[str] = []
 
-    if metric['trigger'] >= 70:
-        diagnostics.append("Initiation solide : instabilité et humidité basses couches bien alignées.")
+    if metric['trigger'] >= 75:
+        diagnostics.append("Probabilité orage élevée : CAPE, humidité basse couche et timing convergent bien.")
     elif metric['trigger'] >= 45:
-        diagnostics.append("Initiation jouable : déclenchement plausible mais encore sensible au timing local.")
+        diagnostics.append("Probabilité orage jouable : environnement convectif présent mais encore sensible au déclenchement.")
     else:
-        diagnostics.append("Initiation fragile : risque de blocage ou de convection trop dispersée.")
+        diagnostics.append("Probabilité orage faible : l'un des ingrédients convectifs majeurs manque encore.")
+
+    if metric['cape_component'] == 0:
+        diagnostics.append("CAPE nul ou quasi nul : sans instabilité exploitable, le scénario orageux reste fermé.")
+    elif metric['cape_component'] < 25:
+        diagnostics.append("CAPE marginal : convection possible seulement avec un forçage ou un environnement très favorable.")
 
     if metric['structure'] >= 70:
-        diagnostics.append("Severity crédible : combinaison CAPE / shear favorable à une convection organisée.")
+        diagnostics.append("Sévérité crédible : couple CAPE / shear favorable à une organisation marquée.")
     elif metric['structure'] >= 45:
-        diagnostics.append("Severity modérée : intensité possible mais organisation encore limitée.")
+        diagnostics.append("Sévérité modérée : intensité possible mais organisation encore moyenne.")
     else:
-        diagnostics.append("Severity faible : structure orageuse probablement brève ou peu marquée.")
+        diagnostics.append("Sévérité limitée : manque d'énergie et/ou de cisaillement pour structurer durablement la convection.")
 
     if metric['quality'] >= 70:
-        diagnostics.append("Chaseability élevée : visibilité et lecture terrain favorables.")
+        diagnostics.append("Qualité de chasse élevée : lisibilité et confort terrain bien orientés.")
     elif metric['quality'] >= 45:
-        diagnostics.append("Chaseability moyenne : potentiel exploitable avec compromis visuels.")
+        diagnostics.append("Qualité de chasse moyenne : sortie exploitable avec compromis visuels.")
     else:
-        diagnostics.append("Chaseability pénalisée : nébulosité ou confort terrain peu favorables.")
+        diagnostics.append("Qualité de chasse faible : nébulosité ou vent peu favorables à la lecture terrain.")
 
+    if metric['dew_component'] < 30 or metric['humidity_component'] < 25:
+        diagnostics.append("Humidité basse couche trop limitée : le déclenchement reste fragile malgré d'autres signaux favorables.")
+    if metric['vpd_component'] < 30:
+        diagnostics.append("Air trop sec près du sol : le risque de bust augmente nettement.")
     if reliability_diag['consistency'] < 40:
-        diagnostics.append("Fiabilité pénalisée par des signaux internes contradictoires.")
-    if reliability_diag['stability'] < 40:
-        diagnostics.append("Fiabilité pénalisée par une forte variabilité horaire locale.")
-    if metric['moisture'] < 35:
-        diagnostics.append("Humidité basse couche trop limitée pour soutenir durablement l’initiation.")
-    if metric['vpd_component'] < 35:
-        diagnostics.append("VPD élevé : l’air proche du sol reste trop sec pour limiter le risque de bust.")
-    if metric['cloud_score'] < 35:
-        diagnostics.append("Nébulosité défavorable à la lecture terrain et à la photogénie.")
-    if bust_risk >= 70:
-        diagnostics.append("Bust Risk élevé : scénario séduisant sur le papier mais encore fragile sur le terrain.")
-    elif bust_risk <= 35:
-        diagnostics.append("Bust Risk contenu : signaux suffisamment robustes pour une analyse historical comparative.")
+        diagnostics.append("Signal encore contradictoire : certains ingrédients restent mal alignés.")
     if global_score >= 75:
-        diagnostics.append("Cellule prioritaire en historical analysis : signal global franchement au-dessus du bruit de fond.")
+        diagnostics.append("Cellule prioritaire : signal global franchement au-dessus du bruit de fond sur cette maille.")
 
     return diagnostics[:8]
-
-
 def potentiel(score_global: int) -> str:
     if score_global < 20:
         return "Très faible"
@@ -711,44 +716,42 @@ def build_summary(
     stability_score: int,
     confidence_score: int,
 ) -> str:
-    initiation_text = (
-        "initiation solide"
+    probability_text = (
+        "probabilité orage élevée"
         if trigger_score >= 70
-        else "initiation jouable"
+        else "probabilité orage jouable"
         if trigger_score >= 45
-        else "initiation fragile"
+        else "probabilité orage faible"
     )
     severity_text = (
-        "potentiel sévère crédible"
+        "sévérité crédible"
         if structure_score >= 70
-        else "potentiel structuré correct"
+        else "sévérité modérée"
         if structure_score >= 45
-        else "structure limitée"
+        else "sévérité limitée"
     )
     chase_text = (
-        "bonne chaseability"
+        "bonne qualité de chasse"
         if chase_quality_score >= 70
-        else "lecture terrain moyenne"
+        else "qualité de chasse moyenne"
         if chase_quality_score >= 45
-        else "lecture terrain pénalisée"
+        else "qualité de chasse pénalisée"
     )
-    reliability_text = (
-        "signal robuste"
+    support_text = (
+        "signal convectif robuste"
         if stability_score >= 70
-        else "signal exploitable"
+        else "signal convectif exploitable"
         if stability_score >= 45
-        else "signal encore fragile"
+        else "signal convectif fragile"
     )
-    bust_text = (
+    risk_text = (
         "risque de bust élevé"
         if confidence_score >= 70
         else "risque de bust modéré"
         if confidence_score >= 40
         else "risque de bust contenu"
     )
-    return f"{day_label} {slot_label} ({selected_hour}) : {initiation_text}, {severity_text}, {chase_text}. Appui : {reliability_text}, avec {bust_text}."
-
-
+    return f"{day_label} {slot_label} ({selected_hour}) : {probability_text}, {severity_text}, {chase_text}. Support : {support_text}, avec {risk_text}."
 def rows_for_location(point: Point, loc: dict) -> list[OutputRow]:
     hourly = loc.get("hourly", {})
     times = hourly.get("time", [])
@@ -1112,8 +1115,8 @@ def build_historical_analysis_payload(rows: list[OutputRow], center_lat: float, 
             "days": days,
             "slots": slots,
             "methodology": {
-                "goal": "Comparer les sous-scores v2 et le score global à des observations orageuses réelles sur une base historique.",
-                "global_score": "Probabilité orage 40%, Sévérité 30%, Qualité de chasse 30%. La probabilité orage fusionne initiation brute, fiabilité locale et pénalité de Bust Risk.",
+                "goal": "Comparer probabilité orage, sévérité et qualité de chasse à des observations orageuses réelles sur une base historique.",
+                "global_score": "Score de synthèse interne : Probabilité orage 45%, Sévérité 30%, Qualité de chasse 25%. La probabilité orage reste d’abord pilotée par CAPE, humidité basse couche, VPD et timing.",
                 "recommended_join_key": "selected_time_iso + lat/lon ou zone pour recroiser avec éclairs, radar ou observations terrain.",
             },
         },
@@ -1184,12 +1187,12 @@ def group_for_output(rows: list[OutputRow], center_lat: float, center_lon: float
             },
             "requested_date": target_date.isoformat() if target_date is not None else None,
             "legend": {
-                "global_score": "0-100, combine Probabilité orage 40%, Sévérité 30% et Qualité de chasse 30%. La Probabilité orage intègre aussi la fiabilité et le Bust Risk.",
-                "trigger": "Initiation : instabilité utilisable + humidité basse couche + fenêtre horaire, pénalisée si la couche basse est trop sèche.",
-                "structure": "Severity : potentiel d’intensité et d’organisation via CAPE, shear et dynamique de surface.",
-                "chase_quality": "Chaseability : visibilité terrain, photogénie et confort relatif via nébulosité, timing et vent.",
-                "stability": "Reliability : cohérence interne + stabilité temporelle locale + marge vis-à-vis des seuils.",
-                "confidence": "Bust Risk : risque qu’une cellule paraisse prometteuse mais produise peu ou rien sur le terrain.",
+                "global_score": "0-100, score de synthèse interne. La lecture prioritaire reste Probabilité orage, Sévérité puis Qualité de chasse.",
+                "trigger": "Probabilité orage : CAPE, dew point, humidité basse couche, VPD et timing. Sans CAPE exploitable, la probabilité reste nulle ou très faible.",
+                "structure": "Sévérité : potentiel d’intensité et d’organisation via CAPE et shear. Le shear seul ne doit pas créer de faux signal orageux.",
+                "chase_quality": "Qualité de chasse : lisibilité terrain, nébulosité, timing et confort lié au vent.",
+                "stability": "Support convectif : cohérence locale et stabilité du signal. Sert de diagnostic secondaire plutôt que de couche principale.",
+                "confidence": "Risque de bust : diagnostic secondaire quand l’environnement paraît séduisant mais reste sec, marginal ou contradictoire.",
             },
         },
         "days": days,
