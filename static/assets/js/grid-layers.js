@@ -5,14 +5,12 @@ function ensureSource(id, data = EMPTY_FEATURE_COLLECTION) {
   if (!map) return null;
   const existing = map.getSource(id);
   if (existing) return existing;
-  if (!map.isStyleLoaded || !map.isStyleLoaded()) return null;
   try {
     map.addSource(id, { type: 'geojson', data });
   } catch (error) {
     console.warn(`ensureSource:${id}:add-failed`, error);
-    return map.getSource(id) || null;
   }
-  return map.getSource(id);
+  return map.getSource(id) || null;
 }
 
 function buildGridOutlineGeoJSON(cells) {
@@ -67,61 +65,63 @@ function ensureGridScaffolding() {
   const outlineSource = map.getSource('grid-outline') || ensureSource('grid-outline');
   if (!gridSource || !outlineSource) return false;
 
-  if (!map.getLayer('grid-fill')) {
-    map.addLayer({
-      id: 'grid-fill',
-      type: 'fill',
-      source: 'grid',
-      paint: {
-        'fill-color': ['get', 'fill_color'],
-        'fill-opacity': ['get', 'fill_opacity'],
-        'fill-antialias': false,
-      },
-    });
-  }
-  if (!map.getLayer('grid-borders')) {
-    map.addLayer({
-      id: 'grid-borders',
-      type: 'line',
-      source: 'grid',
-      paint: {
-        'line-color': '#ffffff',
-        'line-width': isCoarsePointerDevice() ? 0.75 : 1,
-        'line-opacity': 0,
-      },
-    });
-  }
-  if (!map.getLayer('grid-outline')) {
-    map.addLayer({
-      id: 'grid-outline',
-      type: 'line',
-      source: 'grid-outline',
-      paint: {
-        'line-color': '#ffffff',
-        'line-width': isCoarsePointerDevice() ? 1.6 : 1.85,
-        'line-opacity': 0,
-      },
-      layout: {
-        'line-join': 'round',
-        'line-cap': 'round',
-      },
-    });
-  }
-  if (!map.getLayer('grid-highlight')) {
-    map.addLayer({
-      id: 'grid-highlight',
-      type: 'line',
-      source: 'grid',
-      paint: {
-        'line-color': '#ffffff',
-        'line-width': 2.2,
-        'line-opacity': 0,
-      },
-    });
-  }
+  const tryAddLayer = (id, spec) => {
+    if (map.getLayer(id)) return true;
+    try {
+      map.addLayer(spec);
+    } catch (error) {
+      console.warn(`ensureGridScaffolding:${id}:add-failed`, error);
+    }
+    return !!map.getLayer(id);
+  };
+
+  tryAddLayer('grid-fill', {
+    id: 'grid-fill',
+    type: 'fill',
+    source: 'grid',
+    paint: {
+      'fill-color': ['get', 'fill_color'],
+      'fill-opacity': ['get', 'fill_opacity'],
+      'fill-antialias': false,
+    },
+  });
+  tryAddLayer('grid-borders', {
+    id: 'grid-borders',
+    type: 'line',
+    source: 'grid',
+    paint: {
+      'line-color': '#ffffff',
+      'line-width': isCoarsePointerDevice() ? 0.75 : 1,
+      'line-opacity': 0,
+    },
+  });
+  tryAddLayer('grid-outline', {
+    id: 'grid-outline',
+    type: 'line',
+    source: 'grid-outline',
+    paint: {
+      'line-color': '#ffffff',
+      'line-width': isCoarsePointerDevice() ? 1.6 : 1.85,
+      'line-opacity': 0,
+    },
+    layout: {
+      'line-join': 'round',
+      'line-cap': 'round',
+    },
+  });
+  tryAddLayer('grid-highlight', {
+    id: 'grid-highlight',
+    type: 'line',
+    source: 'grid',
+    paint: {
+      'line-color': '#ffffff',
+      'line-width': 2.2,
+      'line-opacity': 0,
+    },
+  });
   bindGridHandlersOnce();
-  const ok = Boolean(map.getSource('grid') && map.getSource('grid-outline') && map.getLayer('grid-fill'));
-  debugLog('ensureGridScaffolding:done', { ok, hasGridSource: !!map.getSource('grid'), hasOutlineSource: !!map.getSource('grid-outline'), hasFillLayer: !!map.getLayer('grid-fill') });
+  const ok = Boolean(map.getSource('grid') && map.getSource('grid-outline') && map.getLayer('grid-fill') && map.getLayer('grid-outline'));
+  debugLog('ensureGridScaffolding:done', { ok, hasGridSource: !!map.getSource('grid'), hasOutlineSource: !!map.getSource('grid-outline'), hasFillLayer: !!map.getLayer('grid-fill'), hasOutlineLayer: !!map.getLayer('grid-outline') });
   return ok;
 }
 
@@ -132,34 +132,39 @@ function ensureLoaderScaffolding() {
   if (!map) return false;
   const loaderSource = map.getSource('grid-loader') || ensureSource('grid-loader');
   if (!loaderSource) return false;
-  if (!map.getLayer('grid-loader-fill')) {
-    map.addLayer({
-      id: 'grid-loader-fill',
-      type: 'fill',
-      source: 'grid-loader',
-      paint: {
-        'fill-color': '#7dd3fc',
-        'fill-opacity': ['get', 'fill_opacity'],
-      },
-    });
-  }
-  if (!map.getLayer('grid-loader-outline')) {
-    map.addLayer({
-      id: 'grid-loader-outline',
-      type: 'line',
-      source: 'grid-loader',
-      paint: {
-        'line-color': 'rgba(255,255,255,0.22)',
-        'line-width': 1.1,
-        'line-opacity': 0.4,
-      },
-      layout: {
-        'line-join': 'round',
-        'line-cap': 'round',
-      },
-    });
-  }
-  const ok = Boolean(map.getSource('grid-loader'));
+  const tryAddLayer = (id, spec) => {
+    if (map.getLayer(id)) return true;
+    try {
+      map.addLayer(spec);
+    } catch (error) {
+      console.warn(`ensureLoaderScaffolding:${id}:add-failed`, error);
+    }
+    return !!map.getLayer(id);
+  };
+  tryAddLayer('grid-loader-fill', {
+    id: 'grid-loader-fill',
+    type: 'fill',
+    source: 'grid-loader',
+    paint: {
+      'fill-color': '#7dd3fc',
+      'fill-opacity': ['get', 'fill_opacity'],
+    },
+  });
+  tryAddLayer('grid-loader-outline', {
+    id: 'grid-loader-outline',
+    type: 'line',
+    source: 'grid-loader',
+    paint: {
+      'line-color': 'rgba(255,255,255,0.22)',
+      'line-width': 1.1,
+      'line-opacity': 0.4,
+    },
+    layout: {
+      'line-join': 'round',
+      'line-cap': 'round',
+    },
+  });
+  const ok = Boolean(map.getSource('grid-loader') && map.getLayer('grid-loader-fill'));
   debugLog('ensureLoaderScaffolding:done', { ok, hasLoaderSource: !!map.getSource('grid-loader'), hasLoaderFill: !!map.getLayer('grid-loader-fill') });
   return ok;
 }
