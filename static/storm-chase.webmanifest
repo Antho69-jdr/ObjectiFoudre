@@ -1,7 +1,7 @@
 {
   "name": "Storm Chase",
   "short_name": "Storm Chase",
-  "start_url": "/?v=0.6.11",
+  "start_url": "/?v=0.6.12",
   "scope": "/",
   "display": "standalone",
   "background_color": "#07111f",

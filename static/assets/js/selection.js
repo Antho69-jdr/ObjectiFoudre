@@ -162,7 +162,11 @@
         selectionCard.style.transform = '';
         return;
       }
-      const top = Math.max(12, Math.min(bounds.top + ((bounds.height - cardHeight) / 2), window.innerHeight - cardHeight - 12));
+      const timelineRect = timelineDock?.getBoundingClientRect?.() || null;
+      const maxBottomEdge = timelineRect ? (timelineRect.top - 12) : (window.innerHeight - 12);
+      const maxTop = Math.max(12, maxBottomEdge - cardHeight);
+      const centeredTop = bounds.top + ((bounds.height - cardHeight) / 2);
+      const top = Math.max(12, Math.min(centeredTop, maxTop));
       selectionCard.classList.add('desktop-outside-grid');
       selectionCard.style.left = `${Math.round(left)}px`;
       selectionCard.style.top = `${Math.round(top)}px`;
