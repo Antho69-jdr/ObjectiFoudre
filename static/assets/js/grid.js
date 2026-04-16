@@ -1,4 +1,4 @@
-function updateGridLinesButton() {
+    function updateGridLinesButton() {
       if (!gridLinesBtn) return;
       gridLinesBtn.classList.toggle('active', showGridLines);
     }
@@ -28,7 +28,7 @@ function updateGridLinesButton() {
       const cells = slot?.cells || [];
       if (!map.isStyleLoaded() || !map.getSource('grid') || !cells.length) {
         updateBestCellsButton();
-    updateGridLinesButton();
+        updateGridLinesButton();
         return;
       }
       map.getSource('grid').setData(buildGeoJSON(cells));
@@ -51,36 +51,43 @@ function updateGridLinesButton() {
       return { cells, slot };
     }
 
+    function resolveRenderableSelection() {
+      const days = getDays();
+      const selection = findFirstRenderableSelection(days, selectedDayKey, selectedSlotKey);
+      selectedDayKey = selection.dayKey;
+      selectedSlotKey = selection.slotKey;
+      return selection;
+    }
+
     function refreshMap() {
       if (!map.isStyleLoaded()) return;
+      const selection = resolveRenderableSelection();
       const currentDay = getCurrentDay();
       const renderableSlots = getRenderableSlots(currentDay);
-      if (!renderableSlots.length) {
+
+      renderDayButtons();
+      renderSlotButtons();
+
+      if (!selection.dayKey || !selection.slotKey || !renderableSlots.length) {
         clearGridRevealFailsafe();
         removeLayers(true);
-        removeLoaderLayers();
-        hideGridCornerMask();
         return;
       }
-      if (!selectedSlotKey || !renderableSlots.some((slot) => slot.slot_key === selectedSlotKey)) {
-        selectedSlotKey = renderableSlots[0].slot_key;
-        renderSlotButtons();
-      }
+
       const slot = getCurrentSlot();
-      const cells = slot?.cells || [];
+      const cells = Array.isArray(slot?.cells) ? slot.cells : [];
       if (!cells.length) {
         clearGridRevealFailsafe();
         removeLayers(true);
-        removeLoaderLayers();
-        hideGridCornerMask();
         return;
       }
+
       lastGridTemplate = deriveGridTemplate(cells) || lastGridTemplate;
       refreshStats(cells, slot);
       clearGridRevealFailsafe();
-      removeLayers(true);
       stopLoaderPulse();
       addLayers(buildGeoJSON(cells), cells);
+
       if (shouldAnimateNextGrid) {
         scheduleGridRevealFailsafe(cells);
         animateGridReveal(cells, () => {
@@ -96,5 +103,6 @@ function updateGridLinesButton() {
         removeLoaderLayers();
         updateHighlight();
       }
+
       requestAnimationFrame(positionSelectionCard);
     }

@@ -16,7 +16,6 @@
         requestAnimationFrame(() => {
           alignTopPanels();
           positionSelectionCard();
-          if (activeGridMaskCells.length) updateGridCornerMask();
         });
       });
 
@@ -37,7 +36,6 @@
 
       map.on('move', () => {
         if (selectionCard.classList.contains('visible')) requestAnimationFrame(positionSelectionCard);
-        if (activeGridMaskCells.length) requestAnimationFrame(() => updateGridCornerMask());
       });
 
       map.on('load', () => {

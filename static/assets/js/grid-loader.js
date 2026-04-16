@@ -2,32 +2,21 @@
       return km / 111;
     }
 
-    function kmToDegLon(km, lat) {
-      return km / (111 * Math.cos((lat * Math.PI) / 180));
+    function kmToDegLon(km, referenceLat) {
+      const cosLat = Math.max(0.2, Math.cos((Number(referenceLat || 0) * Math.PI) / 180));
+      return km / (111 * cosLat);
     }
 
     function deriveGridTemplate(cells) {
       if (!Array.isArray(cells) || !cells.length) return null;
-      const rowsByLat = new Map();
-      for (const cell of cells) {
-        const key = Number(cell.lat).toFixed(6);
-        if (!rowsByLat.has(key)) rowsByLat.set(key, []);
-        rowsByLat.get(key).push(cell);
-      }
-      const sortedRows = [...rowsByLat.entries()].sort((a, b) => Number(b[0]) - Number(a[0]));
-      const rowTemplates = sortedRows.map(([latKey, rowCells]) => {
-        const sorted = [...rowCells].sort((a, b) => Number(a.lon) - Number(b.lon));
-        return {
-          lat: Number(latKey),
-          cols: sorted.length,
-          cellWidthDeg: Number(sorted[0]?.cell_width_deg) || kmToDegLon(LOADER_CELL_SIZE_KM, Number(latKey)),
-        };
-      });
+      const cellHeightDeg = Number(cells[0]?.cell_height_deg) || kmToDegLat(LOADER_CELL_SIZE_KM);
+      const meanLat = cells.reduce((sum, cell) => sum + Number(cell.lat || 0), 0) / cells.length;
+      const cellWidthDeg = Number(cells[0]?.cell_width_deg) || kmToDegLon(LOADER_CELL_SIZE_KM, meanLat);
       return {
-        rows: rowTemplates.length,
-        cols: Math.max(...rowTemplates.map(row => row.cols), LOADER_GRID_SIZE),
-        cellHeightDeg: Number(cells[0]?.cell_height_deg) || kmToDegLat(LOADER_CELL_SIZE_KM),
-        rowTemplates,
+        rows: LOADER_GRID_SIZE,
+        cols: LOADER_GRID_SIZE,
+        cellHeightDeg,
+        cellWidthDeg,
       };
     }
 
@@ -39,17 +28,13 @@
         return derived;
       }
       if (lastGridTemplate) return lastGridTemplate;
-      const rows = Math.max(3, Math.round(GRID_SIDE_KM / LOADER_CELL_SIZE_KM) | 1);
-      const cols = rows;
-      const cellHeightDeg = kmToDegLat(LOADER_CELL_SIZE_KM);
-      const rowOffset = (rows - 1) / 2;
-      const rowTemplates = [];
-      for (let row = 0; row < rows; row += 1) {
-        const rowFromCenter = rowOffset - row;
-        const lat = center.lat + rowFromCenter * cellHeightDeg;
-        rowTemplates.push({ lat, cols, cellWidthDeg: kmToDegLon(LOADER_CELL_SIZE_KM, lat) });
-      }
-      return { rows, cols, cellHeightDeg, rowTemplates };
+      const referenceLat = Number(center?.lat) || currentCenter.lat;
+      return {
+        rows: LOADER_GRID_SIZE,
+        cols: LOADER_GRID_SIZE,
+        cellHeightDeg: kmToDegLat(LOADER_CELL_SIZE_KM),
+        cellWidthDeg: kmToDegLon(LOADER_CELL_SIZE_KM, referenceLat),
+      };
     }
 
     function buildLoaderCells(center) {
@@ -57,27 +42,26 @@
       if (!center || !Number.isFinite(Number(center.lat)) || !Number.isFinite(Number(center.lon))) return cells;
       const template = getLoaderTemplate(center);
       const rowOffset = (template.rows - 1) / 2;
+      const colOffset = (template.cols - 1) / 2;
       let idx = 0;
-      template.rowTemplates.forEach((rowTemplate, row) => {
-        const rowFromCenter = rowOffset - row;
-        const lat = Number.isFinite(rowTemplate.lat) ? rowTemplate.lat : center.lat + rowFromCenter * template.cellHeightDeg;
-        const cellWidthDeg = Number(rowTemplate.cellWidthDeg) || kmToDegLon(LOADER_CELL_SIZE_KM, lat);
-        const colOffset = (rowTemplate.cols - 1) / 2;
-        for (let col = 0; col < rowTemplate.cols; col += 1) {
-          const colFromCenter = col - colOffset;
+      for (let row = 0; row < template.rows; row += 1) {
+        const lat = Number(center.lat) + (rowOffset - row) * template.cellHeightDeg;
+        for (let col = 0; col < template.cols; col += 1) {
+          const lon = Number(center.lon) + (col - colOffset) * template.cellWidthDeg;
           cells.push({
             zone: `loader-${idx++}`,
             lat,
-            lon: center.lon + colFromCenter * cellWidthDeg,
+            lon,
             cell_height_deg: template.cellHeightDeg,
-            cell_width_deg: cellWidthDeg,
-            score_global: 18 + ((row + col) % 5) * 5,
+            cell_width_deg: template.cellWidthDeg,
+            trigger_score: 18 + ((row + col) % 5) * 5,
+            structure_score: 28 + ((row * 3 + col) % 4) * 6,
+            chase_quality_score: 44 + ((row + col) % 3) * 4,
             confidence_score: 42,
-            chase_quality_score: 55,
             is_loader: true,
           });
         }
-      });
+      }
       return cells;
     }
 
@@ -87,29 +71,16 @@
       }
       const centerLat = cells.reduce((sum, cell) => sum + Number(cell.lat || 0), 0) / cells.length;
       const centerLon = cells.reduce((sum, cell) => sum + Number(cell.lon || 0), 0) / cells.length;
-      const distances = cells.map(cell => {
-        const dLat = Number(cell.lat || 0) - centerLat;
-        const dLon = Number(cell.lon || 0) - centerLon;
-        return Math.hypot(dLat, dLon);
-      });
+      const distances = cells.map((cell) => Math.hypot(Number(cell.lat || 0) - centerLat, Number(cell.lon || 0) - centerLon));
       const maxDist = Math.max(...distances, 1e-9);
-      const seconds = elapsedMs / 1000;
-      const period = 2.85;
-      const phase = (seconds / period) * Math.PI * 2;
-      const waveWidth = 0.15;
+      const phase = ((elapsedMs / 1000) / 2.8) * Math.PI * 2;
       const features = cells.map((cell, idx) => {
         const dist = distances[idx] / maxDist;
-        const wave = 0.5 + 0.5 * Math.sin((1 - dist) * Math.PI * 1.08 - phase);
-        const crest = Math.pow(wave, 2.35);
-        const secondary = Math.pow(0.5 + 0.5 * Math.sin((1 - dist) * Math.PI * 1.08 - phase - Math.PI * 0.62), 3.2);
-        const envelope = 0.72 + 0.28 * Math.cos(dist * Math.PI * 0.92);
-        const rimLift = Math.exp(-Math.pow((dist - 0.58) / waveWidth, 2)) * 0.018;
-        const opacity = 0.03 + crest * 0.072 * envelope + secondary * 0.028 + rimLift;
+        const wave = 0.5 + 0.5 * Math.sin((1 - dist) * Math.PI * 1.1 - phase);
+        const opacity = 0.035 + Math.pow(wave, 2.2) * 0.08;
         const feature = cellToFeature(cell, new Set(), { opacity, latOffset: 0, lonOffset: 0 });
         feature.properties.fill_opacity = opacity;
-        feature.properties.loader_dist = dist;
         return feature;
       });
       return { type: 'FeatureCollection', features };
     }
-
