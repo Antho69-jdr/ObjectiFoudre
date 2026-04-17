@@ -2404,3 +2404,76 @@
     max-height: calc(100vh - 140px) !important;
   }
 }
+
+
+/* ===== v0.6.29 mobile landscape: smaller active buttons + timeline pushed fully down ===== */
+
+@media (max-width: 767px) and (orientation: landscape) {
+
+  /* active pills/buttons should not visually bloat compared to inactive ones */
+  .slot-pill.active,
+  .day-pill.active,
+  .metric-btn.active,
+  .metric-button.active,
+  .selection-chip.active,
+  .toggle-chip.active {
+    padding: 4px 8px !important;
+    font-size: 0.76em !important;
+    border-radius: 8px !important;
+    line-height: 1.05 !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  /* keep active labels compact too */
+  .slot-pill.active .label,
+  .day-pill.active .label,
+  .metric-btn.active .label,
+  .metric-button.active .label {
+    font-size: 0.7em !important;
+  }
+
+  /* timeline fully collapsed toward bottom edge */
+  body.mobile-ui .timeline-dock,
+  .timeline-dock,
+  #timelineDock {
+    bottom: calc(var(--mobile-meta-h, 42px) + env(safe-area-inset-bottom) - 2px) !important;
+    padding-top: 4px !important;
+    padding-bottom: 6px !important;
+    min-height: 78px !important;
+    max-height: 88px !important;
+    gap: 4px !important;
+  }
+
+  body.mobile-ui .timeline-content,
+  #timelineDock .timeline-content {
+    margin-top: 0 !important;
+    gap: 4px !important;
+  }
+
+  body.mobile-ui .timeline-bar,
+  #timelineDock .timeline-bar {
+    gap: 4px !important;
+    align-items: center !important;
+  }
+
+  body.mobile-ui #dayButtons.button-row,
+  body.mobile-ui .button-row,
+  #dayButtons {
+    gap: 4px !important;
+    padding-bottom: 0 !important;
+  }
+
+  body.mobile-ui #slotButtons.timeline-slot-strip,
+  body.mobile-ui .timeline-slot-strip,
+  #slotButtons {
+    gap: 4px !important;
+    padding-bottom: 0 !important;
+  }
+
+  /* keep selection card just above the tighter timeline */
+  #selectionCard,
+  .selection-card {
+    bottom: calc(var(--mobile-meta-h, 42px) + env(safe-area-inset-bottom) + 84px) !important;
+  }
+}
