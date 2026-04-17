@@ -121,7 +121,7 @@
 
     function positionSelectionCard() {
       if (!selectionCard.classList.contains('visible')) return;
-      const mobile = isMobileLayout() || window.innerWidth < 1100;
+      const mobile = window.innerWidth < 768;
       if (mobile) {
         selectionCard.classList.remove('desktop-outside-grid');
         selectionCard.style.left = '';

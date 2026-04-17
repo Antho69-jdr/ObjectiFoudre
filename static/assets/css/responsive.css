@@ -1777,3 +1777,50 @@
     bottom: 0;
   }
 }
+
+
+
+/* ===== v0.6.17 selectionCard follow + timeline spacing fix ===== */
+
+/* Tablet portrait should behave like tablet landscape/desktop follow logic.
+   Remove the forced bottom-centered layout from v0.6.16. */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
+  #selectionCard {
+    max-height: min(58vh, 520px) !important;
+  }
+  #selectionCard:not(.desktop-outside-grid) {
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+  }
+}
+
+/* Keep the card safely above the timeline on phones when follow mode is disabled */
+@media (max-width: 767px) and (orientation: landscape) {
+  body.mobile-ui .selection-card,
+  #selectionCard {
+    bottom: calc(var(--mobile-meta-h, 34px) + env(safe-area-inset-bottom) + 168px) !important;
+    top: auto !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+    max-height: min(48vh, 360px) !important;
+  }
+}
+
+@media (max-width: 767px) and (orientation: portrait) {
+  body.mobile-ui .selection-card,
+  #selectionCard {
+    bottom: calc(var(--mobile-meta-h, 34px) + env(safe-area-inset-bottom) + 168px) !important;
+    max-height: min(46vh, 420px) !important;
+  }
+}
+
+/* When the card follows the grid outside the center stack, prevent timeline overlap */
+.selection-card.desktop-outside-grid,
+#selectionCard.desktop-outside-grid {
+  bottom: auto !important;
+}
+
