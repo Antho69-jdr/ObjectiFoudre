@@ -2312,3 +2312,37 @@
     bottom: auto !important;
   }
 }
+
+
+/* ===== v0.6.25 versionBadge compact like desktop ===== */
+
+@media (max-width: 767px) and (orientation: landscape) {
+  #versionBadge,
+  .version-badge,
+  .versionBadge {
+    position: static !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+    max-width: max-content !important;
+    min-width: 0 !important;
+    padding: 6px 10px !important;
+    margin: 0 !important;
+    border-radius: 10px !important;
+    white-space: nowrap !important;
+    align-self: center !important;
+  }
+
+  body.mobile-ui .meta-stack .meta-version,
+  .meta-stack .meta-version {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: max-content !important;
+  }
+
+  body.mobile-ui .meta-stack .meta-corner,
+  .meta-stack .meta-corner {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+  }
+}
