@@ -2173,3 +2173,142 @@
     bottom: 154px !important;
   }
 }
+
+
+/* ===== v0.6.24 mobile landscape true desktop-like bottom bars ===== */
+
+@media (max-width: 767px) and (orientation: landscape) {
+  body.mobile-ui {
+    --mobile-meta-h: 42px !important;
+  }
+
+  /* Meta stack: real bottom bar, same visual logic as desktop/tablet */
+  body.mobile-ui .meta-stack,
+  .meta-stack {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    max-width: none !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 8px !important;
+    flex-wrap: nowrap !important;
+    overflow: hidden !important;
+    padding: 6px 10px !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-sizing: border-box !important;
+    background: rgba(6, 14, 28, 0.84) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    z-index: 24 !important;
+    touch-action: none !important;
+  }
+
+  body.mobile-ui .meta-stack .meta-corner,
+  .meta-stack .meta-corner {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    border-radius: 10px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  body.mobile-ui .meta-stack .meta-version,
+  .meta-stack .meta-version {
+    flex: 0 0 auto !important;
+  }
+
+  /* Timeline directly above meta stack, full width, no rounded outer shell */
+  body.mobile-ui .timeline-dock,
+  .timeline-dock {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom)) !important;
+    width: 100vw !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 8px 10px !important;
+    border-radius: 0 !important;
+    box-sizing: border-box !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    z-index: 23 !important;
+  }
+
+  body.mobile-ui .timeline-content {
+    margin-top: 0 !important;
+  }
+
+  body.mobile-ui .timeline-bar {
+    grid-template-columns: 40px minmax(0, 1fr) 40px auto !important;
+    grid-template-areas: none !important;
+    gap: 6px !important;
+    align-items: center !important;
+  }
+
+  body.mobile-ui #todayBtn {
+    width: auto !important;
+    min-width: 0 !important;
+    height: 34px !important;
+  }
+
+  /* Day buttons row optional but horizontal */
+  body.mobile-ui #dayButtons.button-row,
+  body.mobile-ui .button-row {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+    padding-bottom: 2px !important;
+  }
+
+  /* Slot strip must be horizontal in landscape */
+  body.mobile-ui #slotButtons.timeline-slot-strip,
+  body.mobile-ui .timeline-slot-strip {
+    grid-area: auto !important;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    white-space: nowrap !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    gap: 6px !important;
+    padding: 0 0 2px 0 !important;
+    scroll-snap-type: x proximity !important;
+  }
+
+  body.mobile-ui .timeline-slot-strip .slot-pill {
+    width: auto !important;
+    min-width: 92px !important;
+    min-height: 34px !important;
+    flex: 0 0 auto !important;
+  }
+
+  /* Selection card must sit above the timeline, not overlap it */
+  body.mobile-ui .selection-card,
+  #selectionCard,
+  .selection-card {
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 96px) !important;
+    left: 12px !important;
+    right: calc(var(--right-rail-width) + var(--rail-right) + 12px) !important;
+    width: auto !important;
+    transform: none !important;
+    max-height: calc(100vh - 170px) !important;
+    overflow-y: auto !important;
+  }
+
+  /* Version chip should visually be part of the bottom bar, not floating elsewhere */
+  #versionBadge {
+    bottom: auto !important;
+  }
+}
