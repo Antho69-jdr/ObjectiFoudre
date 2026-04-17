@@ -1935,3 +1935,88 @@
     bottom: 140px !important;
   }
 }
+
+
+/* ===== v0.6.20 MOBILE LANDSCAPE FIX ===== */
+
+@media (max-width: 767px) and (orientation: landscape) {
+
+  #timelineDock {
+    height: auto !important;
+    padding: 6px 8px !important;
+    gap: 4px !important;
+  }
+
+  .slotButtons {
+    gap: 4px !important;
+  }
+
+  .dayButtons {
+    gap: 4px !important;
+  }
+
+  #metaStack {
+    position: fixed !important;
+    bottom: 64px !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    border-radius: 0 !important;
+    padding: 4px 8px !important;
+  }
+
+  #selectionCard {
+    bottom: 120px !important;
+    max-height: 55vh !important;
+    left: 12px !important;
+    right: 72px !important;
+    transform: none !important;
+  }
+}
+
+
+/* ===== v0.6.21 MOBILE LANDSCAPE STACKING FIX ===== */
+
+@media (max-width: 767px) and (orientation: landscape) {
+
+  /* Keep the timeline at the bottom and compact */
+  #timelineDock {
+    bottom: 0 !important;
+    padding: 6px 8px 8px !important;
+    min-height: 92px !important;
+    max-height: 110px !important;
+  }
+
+  /* Meta stack sits just above the timeline */
+  #metaStack {
+    bottom: 108px !important;
+    min-height: 28px !important;
+    max-height: 34px !important;
+    padding: 3px 8px !important;
+  }
+
+  /* Selection card sits above meta + timeline with a hard cap */
+  #selectionCard,
+  .selection-card {
+    left: 12px !important;
+    right: 78px !important;
+    top: auto !important;
+    bottom: 146px !important;
+    transform: none !important;
+    max-height: calc(100vh - 170px) !important;
+    overflow-y: auto !important;
+  }
+
+  /* Make the card slightly tighter vertically on small-height screens */
+  #selectionCard .selection-card-inner,
+  .selection-card .selection-card-inner,
+  #selectionCard .card-body,
+  .selection-card .card-body {
+    padding: 10px !important;
+  }
+
+  #selectionCard .score-grid,
+  .selection-card .score-grid {
+    gap: 8px !important;
+  }
+}
