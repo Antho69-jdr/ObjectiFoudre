@@ -2362,3 +2362,20 @@
     font-size: 0.92em;
   }
 }
+
+
+/* ===== v0.6.27 smaller metric buttons on mobile landscape ===== */
+
+@media (max-width: 767px) and (orientation: landscape) {
+  .metric-btn,
+  .metric-button {
+    padding: 6px 10px !important;
+    font-size: 0.85em !important;
+    border-radius: 10px !important;
+  }
+
+  .metric-btn .label,
+  .metric-button .label {
+    font-size: 0.8em !important;
+  }
+}
