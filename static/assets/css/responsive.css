@@ -2379,3 +2379,28 @@
     font-size: 0.8em !important;
   }
 }
+
+
+/* ===== v0.6.28 refine metric-btn + taller selectionCard ===== */
+
+@media (max-width: 767px) and (orientation: landscape) {
+
+  /* smaller metric buttons */
+  .metric-btn,
+  .metric-button {
+    padding: 4px 8px !important;
+    font-size: 0.78em !important;
+    border-radius: 8px !important;
+  }
+
+  .metric-btn .label,
+  .metric-button .label {
+    font-size: 0.72em !important;
+  }
+
+  /* increase selectionCard height usage */
+  #selectionCard,
+  .selection-card {
+    max-height: calc(100vh - 140px) !important;
+  }
+}
