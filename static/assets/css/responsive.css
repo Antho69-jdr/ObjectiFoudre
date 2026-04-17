@@ -2106,3 +2106,70 @@
     margin: 0 !important;
   }
 }
+
+
+/* ===== v0.6.23 mobile landscape: desktop-like meta stack at very bottom ===== */
+
+@media (max-width: 767px) and (orientation: landscape) {
+  #metaStack,
+  .meta-stack,
+  #meta-stack {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    margin: 0 !important;
+    padding: 6px 10px !important;
+    border-radius: 0 !important;
+    overflow: hidden !important;
+    overflow-x: hidden !important;
+    overflow-y: hidden !important;
+    max-height: none !important;
+    height: auto !important;
+    box-sizing: border-box !important;
+    background: rgba(6, 14, 28, 0.84) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    touch-action: none !important;
+  }
+
+  #metaStack .meta-band,
+  .meta-stack .meta-band,
+  #meta-stack .meta-band,
+  #metaBand,
+  .meta-band {
+    width: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    overflow: hidden !important;
+    max-height: none !important;
+  }
+
+  #timelineDock,
+  .timeline-dock {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 44px !important;
+    width: 100vw !important;
+    margin: 0 !important;
+    padding: 8px 10px 10px !important;
+    border-radius: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  #timelineDock .timeline-shell,
+  .timeline-dock .timeline-shell,
+  #timelineDock .timeline-card,
+  .timeline-dock .timeline-card {
+    width: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  #selectionCard,
+  .selection-card {
+    bottom: 154px !important;
+  }
+}
