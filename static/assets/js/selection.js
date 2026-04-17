@@ -122,6 +122,7 @@
     function positionSelectionCard() {
       if (!selectionCard.classList.contains('visible')) return;
       const mobile = window.innerWidth < 768;
+const tabletPortrait = window.innerWidth >= 768 && window.innerWidth <= 1024 && window.innerHeight > window.innerWidth;
       if (mobile) {
         selectionCard.classList.remove('desktop-outside-grid');
         selectionCard.style.left = '';

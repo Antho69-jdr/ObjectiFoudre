@@ -1824,3 +1824,57 @@
   bottom: auto !important;
 }
 
+
+
+/* ===== v0.6.18 GLOBAL FIXES ===== */
+
+@media (max-width: 767px) {
+  #timelineDock {
+    height: auto !important;
+    padding: 8px 10px !important;
+  }
+  .slotButtons {
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  #metaStack {
+    bottom: 6px !important;
+    left: 8px !important;
+    right: 8px !important;
+    width: auto !important;
+  }
+}
+
+#selectionCard {
+  z-index: 50 !important;
+}
+
+.selection-card,
+#selectionCard {
+  bottom: calc(140px + env(safe-area-inset-bottom)) !important;
+}
+
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
+  #selectionCard {
+    bottom: auto !important;
+    top: 80px !important;
+    max-height: 60vh !important;
+  }
+}
+
+@media (max-width: 767px) and (orientation: portrait) {
+  #selectionCard {
+    bottom: 180px !important;
+    max-height: 45vh !important;
+  }
+}
+
+@media (max-width: 767px) and (orientation: landscape) {
+  #selectionCard {
+    bottom: 120px !important;
+    max-height: 50vh !important;
+  }
+}
