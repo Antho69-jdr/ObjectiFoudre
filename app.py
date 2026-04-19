@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import mimetypes
 import time
 from datetime import date as Date
 from pathlib import Path
@@ -16,10 +17,18 @@ from weather_logic import DEFAULT_CENTER_LABEL, build_historical_analysis_payloa
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
+ASSETS_DIR = STATIC_DIR / "assets"
+JS_DIR = ASSETS_DIR / "js"
+CSS_DIR = ASSETS_DIR / "css"
+
+mimetypes.add_type("application/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 CACHE_TTL_SECONDS = 60 * 60
 STALE_TTL_SECONDS = 2 * 60 * 60
 
-app = FastAPI(title="ObjectiFoudre", version="1.0.1")
+app = FastAPI(title="ObjectiFoudre", version="1.0.2")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -223,6 +232,34 @@ def _analysis_csv(rows: list[dict[str, Any]]) -> str:
         output.append(_csv_escape(' | '.join(row.get('diagnostics', []))))
         lines.append(','.join(output))
     return '\n'.join(lines)
+
+
+@app.get("/assets/js/{filename:path}")
+def asset_js(filename: str) -> FileResponse:
+    target = (JS_DIR / filename).resolve()
+    if not target.is_file() or JS_DIR.resolve() not in target.parents:
+        raise HTTPException(status_code=404, detail="JavaScript asset not found")
+    return FileResponse(target, media_type="application/javascript", headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/assets/css/{filename:path}")
+def asset_css(filename: str) -> FileResponse:
+    target = (CSS_DIR / filename).resolve()
+    if not target.is_file() or CSS_DIR.resolve() not in target.parents:
+        raise HTTPException(status_code=404, detail="Stylesheet not found")
+    return FileResponse(target, media_type="text/css", headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/logo-objectif-foudre.svg")
+def logo_svg() -> FileResponse:
+    target = STATIC_DIR / "logo-objectif-foudre.svg"
+    return FileResponse(target, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/manifest.webmanifest")
+def manifest() -> FileResponse:
+    target = STATIC_DIR / "storm-chase.webmanifest"
+    return FileResponse(target, media_type="application/manifest+json", headers={"Cache-Control": "no-store, max-age=0"})
 
 
 @app.get("/api/health")
