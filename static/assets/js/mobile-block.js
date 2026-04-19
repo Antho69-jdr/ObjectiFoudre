@@ -1,21 +1,20 @@
 (function () {
-  function isSmartphone() {
-    const ua = navigator.userAgent || '';
-    const platform = navigator.platform || '';
-    const maxTouchPoints = Number(navigator.maxTouchPoints || 0);
+  function isSmartphoneByScreenSize() {
+    const sw = window.screen && Number(window.screen.width || 0);
+    const sh = window.screen && Number(window.screen.height || 0);
+    const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+    const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
 
-    const isIPhoneLike = /iPhone|iPod|Windows Phone/i.test(ua);
-    const isIPad = /iPad/i.test(ua) || (platform === 'MacIntel' && maxTouchPoints > 1);
-    const isAndroid = /Android/i.test(ua);
-    const isAndroidTablet = isAndroid && (/Tablet/i.test(ua) || !/Mobile/i.test(ua));
-    const isAndroidPhone = isAndroid && /Mobile/i.test(ua) && !/Tablet/i.test(ua);
+    const shortScreen = Math.min(sw || vw, sh || vh);
+    const longScreen = Math.max(sw || vw, sh || vh);
+    const shortViewport = Math.min(vw, vh);
+    const longViewport = Math.max(vw, vh);
 
-    if (isIPad || isAndroidTablet) return false;
-    return isIPhoneLike || isAndroidPhone;
+    return (shortScreen <= 430 && longScreen <= 950) || (shortViewport <= 430 && longViewport <= 950);
   }
 
   function applySmartphoneBlock() {
-    const blocked = isSmartphone();
+    const blocked = isSmartphoneByScreenSize();
     document.body.classList.toggle('smartphone-blocked', blocked);
     const gate = document.getElementById('smartphoneGate');
     if (gate) {
