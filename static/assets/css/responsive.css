@@ -2581,27 +2581,28 @@
 }
 
 
-/* ===== v0.6.32 tablet portrait: timeline glued to meta stack + stronger collapsed state ===== */
+/* ===== v0.6.32 tablet portrait: timeline behaves like tablet landscape ===== */
 
 @media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
   body.mobile-ui .timeline-dock,
   .timeline-dock,
   #timelineDock {
     bottom: calc(var(--meta-height-px, 48px) - 1px) !important;
-    padding-top: 8px !important;
-    padding-bottom: 8px !important;
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
     min-height: 0 !important;
+    overflow: visible !important;
     z-index: 23 !important;
   }
 
   body.mobile-ui .timeline-dock.collapsed,
   .timeline-dock.collapsed,
   #timelineDock.collapsed {
-    transform: translateY(calc(100% + 18px)) !important;
+    transform: translateY(calc(100% + 6px)) !important;
     min-height: 0 !important;
-    max-height: 0 !important;
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
+    max-height: none !important;
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
     overflow: visible !important;
   }
 
@@ -2612,7 +2613,6 @@
     pointer-events: none !important;
   }
 
-  /* keep the toggle visible but everything else hidden */
   body.mobile-ui .timeline-dock.collapsed .timeline-toggle-btn,
   .timeline-dock.collapsed .timeline-toggle-btn,
   #timelineDock.collapsed .timeline-toggle-btn,
