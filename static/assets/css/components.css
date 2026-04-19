@@ -189,6 +189,18 @@
       opacity: 0.45;
       pointer-events: none;
     }
+    .timeline-slot-strip .slot-pill.is-historical {
+      background: rgba(220, 38, 38, 0.18);
+      border-color: rgba(248, 113, 113, 0.34);
+      color: #fecaca;
+      box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.10);
+    }
+    .timeline-slot-strip .slot-pill.is-historical.active {
+      background: linear-gradient(180deg, rgba(239, 68, 68, 0.92), rgba(185, 28, 28, 0.92));
+      border-color: rgba(254, 202, 202, 0.62);
+      color: #fff5f5;
+      box-shadow: 0 10px 22px rgba(127, 29, 29, 0.28);
+    }
     .layer-panel {
       display: none;
       gap: 8px;
@@ -1301,6 +1313,10 @@
 
 .search-panel .location-bar {
   position: relative;
+}
+
+.search-autocomplete[hidden] {
+  display: none !important;
 }
 
 .search-autocomplete {

@@ -544,6 +544,16 @@
       }
     }
 
+    function isHistoricalSlot(day, slot) {
+      const dayKey = normalizeDateIso(day?.day_key);
+      const todayKey = getTodayIsoDate();
+      if (dayKey && dayKey < todayKey) return true;
+      const selectedIso = slot?.cells?.[0]?.selected_time_iso;
+      if (!selectedIso) return false;
+      const ts = Date.parse(selectedIso);
+      return Number.isFinite(ts) && ts < Date.now();
+    }
+
     function renderSlotButtons() {
       const day = getCurrentDay();
       slotButtons.innerHTML = '';
@@ -578,7 +588,8 @@
         const startHour = Number(String(slot.slot_key || '').split('-')[0]);
         const isPastForecastSlot = isToday && Number.isFinite(startHour) && startHour < todayHour;
         btn.textContent = slot.slot_label;
-        btn.className = `slot-pill ${slot.slot_key === selectedSlotKey ? 'active' : ''} ${isPastForecastSlot ? 'is-disabled' : ''}`.trim();
+        const historicalClass = isHistoricalSlot(day, slot) ? 'is-historical' : '';
+        btn.className = `slot-pill ${slot.slot_key === selectedSlotKey ? 'active' : ''} ${historicalClass} ${isPastForecastSlot ? 'is-disabled' : ''}`.trim();
         if (isPastForecastSlot) btn.disabled = true;
         btn.onclick = () => {
           if (isPastForecastSlot) return;

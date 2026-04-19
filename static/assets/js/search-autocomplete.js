@@ -10,6 +10,10 @@ function getAutocompleteContainer() {
 function closeSearchAutocomplete() {
   const container = getAutocompleteContainer();
   if (!container) return;
+  if (autocompleteDebounceTimer) {
+    clearTimeout(autocompleteDebounceTimer);
+    autocompleteDebounceTimer = null;
+  }
   container.hidden = true;
   container.innerHTML = '';
   autocompleteItems = [];
@@ -96,6 +100,7 @@ function setupSearchAutocomplete() {
 
   cityInput.addEventListener('input', () => {
     const query = cityInput.value.trim();
+    container.hidden = query.length < 2;
     if (autocompleteDebounceTimer) clearTimeout(autocompleteDebounceTimer);
     if (autocompleteController) autocompleteController.abort();
     if (query.length < 2) {
@@ -142,6 +147,10 @@ function setupSearchAutocomplete() {
       closeSearchAutocomplete();
       await applyCenter({ lat: item.lat, lon: item.lon, label: item.label }, { force: true, zoom: 9.8, showMarker: true });
     }
+  });
+
+  cityInput.addEventListener('focus', () => {
+    if (cityInput.value.trim().length < 2) closeSearchAutocomplete();
   });
 
   document.addEventListener('click', (event) => {

@@ -1,3 +1,13 @@
+    function isHistoricalSlot(day, slot) {
+      const dayKey = normalizeDateIso(day?.day_key);
+      const todayKey = getTodayIsoDate();
+      if (dayKey && dayKey < todayKey) return true;
+      const selectedIso = slot?.cells?.[0]?.selected_time_iso;
+      if (!selectedIso) return false;
+      const ts = Date.parse(selectedIso);
+      return Number.isFinite(ts) && ts < Date.now();
+    }
+
     function renderDayButtons() {
       const allDays = getDays();
       const days = allDays.filter((day) => getRenderableSlots(day).length > 0);
@@ -36,7 +46,8 @@
       for (const slot of slots) {
         const btn = document.createElement('button');
         btn.textContent = slot.slot_label;
-        btn.className = `slot-pill ${slot.slot_key === selectedSlotKey ? 'active' : ''}`.trim();
+        const historicalClass = isHistoricalSlot(day, slot) ? 'is-historical' : '';
+        btn.className = `slot-pill ${slot.slot_key === selectedSlotKey ? 'active' : ''} ${historicalClass}`.trim();
         btn.onclick = () => {
           selectedSlotKey = slot.slot_key;
           closeSelection();
