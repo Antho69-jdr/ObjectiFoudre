@@ -1,4 +1,4 @@
-# Storm Chase WebApp hébergée
+# ObjectiFoudre
 
 ## Contenu
 - `app.py` : backend FastAPI

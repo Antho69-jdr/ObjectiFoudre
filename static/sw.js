@@ -1,11 +1,11 @@
-const CACHE_NAME = 'storm-chase-v1.0.0';
+const CACHE_NAME = 'objectifoudre-v1.0.1';
 const ASSETS = [
   '/',
   '/static/storm-chase.webmanifest',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
   '/static/logo-objectif-foudre.svg',
-  '/static/storm-chase.webmanifest?v=0.6.46'
+  '/static/storm-chase.webmanifest?v=1.0.1'
 ];
 
 self.addEventListener('install', (event) => {

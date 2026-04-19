@@ -1,13 +1,13 @@
 {
-  "name": "Storm Chase",
-  "short_name": "Storm Chase",
-  "start_url": "/?v=1.0.0",
+  "name": "ObjectiFoudre",
+  "short_name": "ObjectiFoudre",
+  "start_url": "/?v=1.0.1",
   "scope": "/",
   "display": "standalone",
   "background_color": "#07111f",
   "theme_color": "#07111f",
   "lang": "fr",
-  "description": "Carte tactile de potentiel orageux pour PC et tablette, avec frise horaire et autocomplétion.",
+  "description": "WebApp tactile de potentiel orageux pour PC et tablette, avec frise horaire et autocomplétion.",
   "icons": [
     {"src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
     {"src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png"}

@@ -19,7 +19,7 @@ STATIC_DIR = BASE_DIR / "static"
 CACHE_TTL_SECONDS = 60 * 60
 STALE_TTL_SECONDS = 2 * 60 * 60
 
-app = FastAPI(title="Storm Chase", version="1.5.17")
+app = FastAPI(title="ObjectiFoudre", version="1.0.1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -361,7 +361,7 @@ async def historical_analysis_csv(
         suffix += f"-{zone}"
     if slot:
         suffix += f"-{slot}"
-    filename = f"storm-chase-historical-{date.isoformat()}{suffix}.csv"
+    filename = f"objectifoudre-historical-{date.isoformat()}{suffix}.csv"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return PlainTextResponse(csv_text, media_type="text/csv; charset=utf-8", headers=headers)
 

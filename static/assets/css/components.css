@@ -1421,3 +1421,62 @@
   font-size: 17px;
   line-height: 1;
 }
+
+
+/* v1.0.1 mobile blocking + ObjectiFoudre branding */
+.mobile-block-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)) 20px;
+  background:
+    radial-gradient(circle at top, rgba(93, 188, 255, 0.18), transparent 42%),
+    linear-gradient(180deg, rgba(4, 10, 20, 0.98), rgba(7, 17, 31, 0.995));
+}
+.mobile-block-screen[hidden] {
+  display: none !important;
+}
+.mobile-block-card {
+  width: min(100%, 420px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 24px 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(9, 20, 35, 0.94);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+  text-align: center;
+}
+.mobile-block-logo {
+  width: 76px;
+  height: 76px;
+  object-fit: contain;
+}
+.mobile-block-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #f5f7fb;
+}
+.mobile-block-text {
+  margin: 0;
+  color: #f5f7fb;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+.mobile-block-text-secondary {
+  color: rgba(230,236,245,0.78);
+  font-size: 0.95rem;
+}
+body.mobile-blocked {
+  overflow: hidden;
+}
+body.mobile-blocked #app {
+  pointer-events: none;
+  user-select: none;
+}

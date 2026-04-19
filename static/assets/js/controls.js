@@ -327,7 +327,7 @@
         label: currentCenter.label,
         date: selectedBaseDate,
         slot: slotKey,
-      }, `storm-chase-${selectedBaseDate}-${slotKey}.csv`);
+      }, `objectifoudre-${selectedBaseDate}-${slotKey}.csv`);
       setMetaMessage(`Export CSV du créneau ${slotKey} lancé.`);
     }
 
@@ -342,7 +342,7 @@
         label: currentCenter.label,
         date: selectedBaseDate,
         zone: selectedFeature.zone,
-      }, `storm-chase-${selectedBaseDate}-${selectedFeature.zone}.csv`);
+      }, `objectifoudre-${selectedBaseDate}-${selectedFeature.zone}.csv`);
       setMetaMessage(`Export CSV de la cellule ${selectedFeature.zone} lancé.`);
     }
 
