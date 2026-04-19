@@ -2636,3 +2636,16 @@
     scroll-padding-inline-start: 0 !important;
   }
 }
+
+/* ===== v0.6.36 ensure detailsModal and infoDrawer always overlay selectionCard ===== */
+#modalBackdrop,
+#drawerBackdrop {
+  z-index: 190 !important;
+}
+
+#detailsModal,
+#infoDrawer,
+.details-modal,
+.info-drawer {
+  z-index: 200 !important;
+}
