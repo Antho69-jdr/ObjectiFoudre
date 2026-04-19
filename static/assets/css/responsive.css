@@ -2623,3 +2623,16 @@
     pointer-events: auto !important;
   }
 }
+
+/* ===== v0.6.35 tablet portrait: keep first timeline slots fully reachable ===== */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
+  body.mobile-ui #slotButtons.timeline-slot-strip,
+  body.mobile-ui .timeline-slot-strip,
+  #slotButtons.timeline-slot-strip {
+    justify-content: flex-start !important;
+    margin: 0 !important;
+    padding-left: 0 !important;
+    scroll-padding-left: 0 !important;
+    scroll-padding-inline-start: 0 !important;
+  }
+}
