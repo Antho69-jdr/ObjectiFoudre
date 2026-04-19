@@ -113,7 +113,7 @@
     .timeline-dock .button-row[hidden] { display: none !important; }
     .timeline-bar {
       display: grid;
-      grid-template-columns: auto auto minmax(180px, 220px) auto auto;
+      grid-template-columns: auto auto minmax(180px, 220px) auto auto auto;
       gap: 8px;
       align-items: center;
       justify-content: center;
@@ -138,6 +138,22 @@
       white-space: nowrap;
       font-weight: 800;
       font-size: 13px;
+    }
+    .timeline-play-btn {
+      min-height: 40px;
+      border-radius: 12px;
+      padding: 0 12px;
+      white-space: nowrap;
+      font-weight: 800;
+      font-size: 13px;
+      min-width: 104px;
+    }
+    .timeline-play-btn.active {
+      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.24);
+    }
+    .timeline-play-btn:disabled {
+      opacity: 0.46;
+      cursor: not-allowed;
     }
 
     .timeline-date-input {

@@ -5,6 +5,7 @@ const dayButtons = document.getElementById('dayButtons');
 const slotButtons = document.getElementById('slotButtons');
 const dateInput = document.getElementById('dateInput');
 const todayBtn = document.getElementById('todayBtn');
+const playTimelineBtn = document.getElementById('playTimelineBtn');
 const timelineDock = document.getElementById('timelineDock');
 const timelineToggleBtn = document.getElementById('timelineToggleBtn');
 const prevDayBtn = document.getElementById('prevDayBtn');

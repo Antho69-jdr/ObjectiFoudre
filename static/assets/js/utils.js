@@ -55,6 +55,7 @@
     function applySelectedDate(nextDate, { force = true, loadingMessage = 'Chargement de la date…' } = {}) {
       const normalized = normalizeDateIso(nextDate);
       if (normalized === selectedBaseDate && !force) return;
+      if (typeof stopTimelinePlayback === 'function') stopTimelinePlayback({ resetToStart: false });
       selectedBaseDate = normalized;
       syncDateControls();
       selectedDayKey = null;

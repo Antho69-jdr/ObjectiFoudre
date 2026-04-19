@@ -86,6 +86,7 @@
     }
 
     async function refreshCurrentData(force = true, loadingMessage = 'Actualisation…') {
+      if (typeof stopTimelinePlayback === 'function') stopTimelinePlayback({ resetToStart: false });
       setLoadingState(true, loadingMessage);
       try {
         await loadData(force);

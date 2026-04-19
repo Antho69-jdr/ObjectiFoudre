@@ -7,14 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Storm Chase" />
-  <link rel="manifest" href="/static/storm-chase.webmanifest?v=0.6.44" />
+  <link rel="manifest" href="/static/storm-chase.webmanifest?v=0.6.46" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <title>Storm Chase MVP — Tactile</title>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/assets/css/main.css?v=0.6.44" />
-<link rel="stylesheet" href="/static/assets/css/components.css?v=0.6.44" />
-<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.6.44" />
+  <link rel="stylesheet" href="/static/assets/css/main.css?v=0.6.46" />
+<link rel="stylesheet" href="/static/assets/css/components.css?v=0.6.46" />
+<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.6.46" />
 </head>
 <body>
   <div id="app">
@@ -116,6 +116,7 @@
           <input id="dateInput" class="date-input timeline-date-input" type="date" min="2022-01-01" />
           <button id="nextDayBtn" class="timeline-nav-btn" type="button" aria-label="Jour suivant" title="Jour suivant">→</button>
           <button id="todayBtn" class="timeline-today-btn" type="button">Aujourd’hui</button>
+          <button id="playTimelineBtn" class="timeline-play-btn" type="button" aria-pressed="false" title="Lire les horaires du jour">▶ Lecture</button>
         </div>
         <div id="dayButtons" class="button-row" hidden></div>
         <div id="slotButtons" class="timeline-slot-strip"></div>
@@ -192,7 +193,7 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge">Version : v0.6.45</div><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge">Version : v0.6.46</div><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
@@ -299,24 +300,24 @@
       <p id="infoExplanation">—</p>
     </div>
   </div>
-  <script src="/static/assets/js/dom.js?v=0.6.44"></script>
-  <script src="/static/assets/js/utils.js?v=0.6.44"></script>
-  <script src="/static/assets/js/panels.js?v=0.6.44"></script>
-  <script src="/static/assets/js/state.js?v=0.6.44"></script>
-  <script src="/static/assets/js/core.js?v=0.6.44"></script>
-  <script src="/static/assets/js/map-ui.js?v=0.6.44"></script>
-  <script src="/static/assets/js/timeline.js?v=0.6.44"></script>
-  <script src="/static/assets/js/grid-loader.js?v=0.6.44"></script>
-  <script src="/static/assets/js/grid-core.js?v=0.6.44"></script>
-  <script src="/static/assets/js/grid-layers.js?v=0.6.44"></script>
-  <script src="/static/assets/js/grid.js?v=0.6.44"></script>
-  <script src="/static/assets/js/metric-data.js?v=0.6.44"></script>
-  <script src="/static/assets/js/metric-ui.js?v=0.6.44"></script>
-  <script src="/static/assets/js/selection.js?v=0.6.44"></script>
-  <script src="/static/assets/js/data.js?v=0.6.44"></script>
-  <script src="/static/assets/js/services.js?v=0.6.44"></script>
-  <script src="/static/assets/js/search-autocomplete.js?v=0.6.44"></script>
-  <script src="/static/assets/js/controls.js?v=0.6.44"></script>
-  <script src="/static/assets/js/bootstrap.js?v=0.6.44"></script>
+  <script src="/static/assets/js/dom.js?v=0.6.46"></script>
+  <script src="/static/assets/js/utils.js?v=0.6.46"></script>
+  <script src="/static/assets/js/panels.js?v=0.6.46"></script>
+  <script src="/static/assets/js/state.js?v=0.6.46"></script>
+  <script src="/static/assets/js/core.js?v=0.6.46"></script>
+  <script src="/static/assets/js/map-ui.js?v=0.6.46"></script>
+  <script src="/static/assets/js/timeline.js?v=0.6.46"></script>
+  <script src="/static/assets/js/grid-loader.js?v=0.6.46"></script>
+  <script src="/static/assets/js/grid-core.js?v=0.6.46"></script>
+  <script src="/static/assets/js/grid-layers.js?v=0.6.46"></script>
+  <script src="/static/assets/js/grid.js?v=0.6.46"></script>
+  <script src="/static/assets/js/metric-data.js?v=0.6.46"></script>
+  <script src="/static/assets/js/metric-ui.js?v=0.6.46"></script>
+  <script src="/static/assets/js/selection.js?v=0.6.46"></script>
+  <script src="/static/assets/js/data.js?v=0.6.46"></script>
+  <script src="/static/assets/js/services.js?v=0.6.46"></script>
+  <script src="/static/assets/js/search-autocomplete.js?v=0.6.46"></script>
+  <script src="/static/assets/js/controls.js?v=0.6.46"></script>
+  <script src="/static/assets/js/bootstrap.js?v=0.6.46"></script>
 </body>
 </html>

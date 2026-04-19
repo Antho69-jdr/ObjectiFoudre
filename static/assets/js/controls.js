@@ -401,6 +401,11 @@
       if (todayBtn) {
         todayBtn.addEventListener('click', () => applySelectedDate(getTodayIsoDate(), { force: true, loadingMessage: 'Chargement de la date du jour…' }));
       }
+      playTimelineBtn?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof toggleTimelinePlayback === 'function') toggleTimelinePlayback();
+      });
       if (dateInput) {
         dateInput.addEventListener('change', (event) => {
           const nextDate = normalizeDateIso(event.target?.value);

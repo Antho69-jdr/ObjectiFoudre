@@ -54,6 +54,9 @@ let selectedFeature = null;
 let selectedBaseDate = getTodayIsoDate();
 let selectedColorMetric = 'trigger_score';
 let lastGridTemplate = null;
+let timelinePlaybackTimer = null;
+let timelinePlaybackRunning = false;
+const TIMELINE_PLAYBACK_STEP_MS = 900;
 
 syncDateControls();
 
