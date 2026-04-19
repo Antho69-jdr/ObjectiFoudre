@@ -14,7 +14,7 @@
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <link rel="stylesheet" href="/static/assets/css/main.css?v=0.6.12" />
 <link rel="stylesheet" href="/static/assets/css/components.css?v=0.6.12" />
-<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.6.12" />
+<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.6.38" />
 </head>
 <body>
   <div id="app">
@@ -25,6 +25,15 @@
         <div class="app-loader-subtitle">Chargement de la situation convective…</div>
       </div>
     </div>
+    <div class="smartphone-gate" id="smartphoneGate" hidden aria-hidden="true">
+      <div class="smartphone-gate-card">
+        <img class="smartphone-gate-logo" src="/static/logo-objectif-foudre.svg" alt="Objectif Foudre" />
+        <div class="smartphone-gate-title">Smartphone non pris en charge</div>
+        <p class="smartphone-gate-text">Cette webapp est actuellement disponible uniquement sur PC et tablette. L'interface mobile n'est pas activée pour le moment.</p>
+        <p class="smartphone-gate-text small">Ouvre le site sur une tablette ou un ordinateur pour accéder à la carte, aux scores et aux outils de positionnement.</p>
+      </div>
+    </div>
+
     <div id="map"></div>
 
     <div class="right-rail-scroll" id="rightRailScroll">
@@ -316,5 +325,6 @@
   <script src="/static/assets/js/services.js?v=0.6.12"></script>
   <script src="/static/assets/js/controls.js?v=0.6.37"></script>
   <script src="/static/assets/js/bootstrap.js?v=0.6.12"></script>
+  <script src="/static/assets/js/mobile-block.js?v=0.6.38"></script>
 </body>
 </html>
