@@ -384,6 +384,14 @@
       if (typeof aroundMeBtn !== 'undefined' && aroundMeBtn) aroundMeBtn.addEventListener('click', locateUser);
       searchCityBtn?.addEventListener('click', handleCitySearch);
       cityInput?.addEventListener('keydown', (event) => { if (event.key === 'Enter') handleCitySearch(); });
+      mockModeBtn?.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        selectedDataMode = selectedDataMode === 'mock' ? 'real' : 'mock';
+        saveStoredDataMode(selectedDataMode);
+        updateDataModeUi();
+        await refreshCurrentData(true, selectedDataMode === 'mock' ? 'Chargement du mode mock…' : 'Chargement des données réelles…');
+      });
 
       document.addEventListener('click', (event) => {
         if (!topbar.contains(event.target)) closeTopPanels();
