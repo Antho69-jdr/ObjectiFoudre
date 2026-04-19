@@ -1383,3 +1383,41 @@
   color: rgba(230,236,245,0.72);
   line-height: 1.2;
 }
+
+
+/* v1.0.0 layering + timeline play button */
+.selection-card,
+#selectionCard {
+  z-index: 60 !important;
+}
+.modal-backdrop#modalBackdrop {
+  z-index: 73 !important;
+}
+.details-modal,
+#detailsModal {
+  z-index: 74 !important;
+}
+.modal-backdrop#drawerBackdrop {
+  z-index: 83 !important;
+}
+.info-drawer,
+#infoDrawer {
+  z-index: 84 !important;
+}
+.modal-backdrop#infoBackdrop {
+  z-index: 85 !important;
+}
+.info-modal,
+#infoModal {
+  z-index: 86 !important;
+}
+.timeline-play-btn,
+#playTimelineBtn {
+  min-height: 40px;
+  height: 40px;
+  min-width: 40px;
+  width: 40px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+}

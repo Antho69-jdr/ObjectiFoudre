@@ -13,7 +13,8 @@
       const isRunning = !!timelinePlaybackRunning;
       playTimelineBtn.classList.toggle('active', isRunning);
       playTimelineBtn.setAttribute('aria-pressed', isRunning ? 'true' : 'false');
-      playTimelineBtn.textContent = isRunning ? '❚❚ Pause' : '▶ Lecture';
+      playTimelineBtn.textContent = isRunning ? '❚❚' : '▶';
+      playTimelineBtn.setAttribute('aria-label', isRunning ? 'Mettre en pause la lecture des horaires' : 'Lire les horaires du jour');
       playTimelineBtn.title = isRunning ? 'Mettre en pause la lecture des horaires' : 'Lire les horaires du jour';
       const hasPlayableSlots = getRenderableSlots(getCurrentDay()).length > 1;
       playTimelineBtn.disabled = !hasPlayableSlots;
