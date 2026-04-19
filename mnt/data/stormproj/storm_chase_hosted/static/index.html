@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#07111f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Storm Chase" />
+  <link rel="manifest" href="/static/storm-chase.webmanifest?v=0.6.12" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+  <title>Storm Chase MVP — Tactile</title>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/assets/css/main.css?v=0.6.12" />
+<link rel="stylesheet" href="/static/assets/css/components.css?v=0.6.12" />
+<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.6.12" />
+</head>
+<body>
+  <div id="app">
+    <div class="app-loader hidden" id="appLoader" aria-hidden="true">
+      <div class="app-loader-card">
+        <img class="app-loader-logo" src="/static/logo-objectif-foudre.svg" alt="Objectif Foudre" />
+        <div class="app-loader-title">Objectif Foudre</div>
+        <div class="app-loader-subtitle">Chargement de la situation convective…</div>
+      </div>
+    </div>
+    <div id="map"></div>
+
+    <div class="right-rail-scroll" id="rightRailScroll">
+    <div class="search-dock" id="topbar">
+      <div class="mobile-toggle-bar">
+        <button id="toggleSearchBtn" class="mobile-toggle-btn" type="button" aria-label="Afficher la recherche de zone" title="Zone et recherche">
+          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10Z"></path>
+            <circle cx="12" cy="11" r="2.5"></circle>
+          </svg>
+        </button>
+      </div>
+
+      <div class="panel-card search-panel">
+        <div class="location-bar">
+          <input id="cityInput" class="location-input" type="text" placeholder="Tape une ville, un secteur ou un point de départ…" autocomplete="off" spellcheck="false" />
+          <button id="mockModeBtn" class="mode-toggle-btn" type="button" aria-pressed="false" title="Basculer entre données réelles et mock">
+            <span class="mode-toggle-label" id="mockModeLabel">Réel</span>
+          </button>
+          <button id="searchCityBtn" class="icon-only-btn" aria-label="Rechercher une ville" title="Rechercher">
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="6.5"></circle>
+              <line x1="16" y1="16" x2="21" y2="21"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="right-rail-stack">
+      <button class="fab" id="locateBtn" aria-label="Me localiser" title="Autour de moi">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3.2"></circle>
+          <path d="M12 2.5v3"></path>
+          <path d="M12 18.5v3"></path>
+          <path d="M2.5 12h3"></path>
+          <path d="M18.5 12h3"></path>
+        </svg>
+      </button>
+      <button id="gridLinesBtn" class="grid-focus-btn active" type="button" aria-label="Afficher ou masquer les lignes de grille" title="Lignes de grille">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 8h16"></path>
+          <path d="M4 16h16"></path>
+          <path d="M8 4v16"></path>
+          <path d="M16 4v16"></path>
+        </svg>
+      </button>
+      <button id="layerModeBtn" class="grid-focus-btn" type="button" aria-label="Choisir la couche de couleur" title="Couche de couleur">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3 4 8l8 5 8-5-8-5Z"></path>
+          <path d="m4 12 8 5 8-5"></path>
+          <path d="m4 16 8 5 8-5"></path>
+        </svg>
+      </button>
+      <button id="bestCellsBtn" class="grid-focus-btn" type="button" aria-label="Mettre en valeur les meilleures cellules" title="Mettre en valeur les meilleures cellules">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3.5 14.6 8.8 20.5 9.7 16.2 13.8 17.2 19.6 12 16.9 6.8 19.6 7.8 13.8 3.5 9.7 9.4 8.8Z"></path>
+        </svg>
+      </button>
+      <button class="fab" id="refreshBtn" aria-label="Actualiser les données" title="Actualiser">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+          <path d="M21 3v6h-6"></path>
+        </svg>
+      </button>
+      <button id="infoDrawerBtn" class="grid-focus-btn" type="button" aria-label="Informations" title="Informations">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"></circle>
+          <path d="M12 10v6"></path>
+          <path d="M12 7.5h.01"></path>
+        </svg>
+      </button>
+      <div id="layerPanel" class="layer-panel" aria-hidden="true">
+        <button class="layer-option active" type="button" data-layer-metric="trigger_score">Probabilité orage</button>
+        <button class="layer-option" type="button" data-layer-metric="chase_quality_score">Qualité de chasse</button>
+        <button class="layer-option" type="button" data-layer-metric="structure_score">Sévérité</button>
+      </div>
+    </div>
+    </div>
+
+    <div class="timeline-dock" id="timelineDock">
+      <button id="timelineToggleBtn" class="timeline-toggle-btn" type="button" aria-label="Masquer la frise" title="Masquer la frise">
+        <span class="timeline-toggle-icon" aria-hidden="true">↓</span>
+      </button>
+      <div class="timeline-content">
+        <div class="timeline-bar">
+          <button id="prevDayBtn" class="timeline-nav-btn" type="button" aria-label="Jour précédent" title="Jour précédent">←</button>
+          <input id="dateInput" class="date-input timeline-date-input" type="date" min="2022-01-01" />
+          <button id="nextDayBtn" class="timeline-nav-btn" type="button" aria-label="Jour suivant" title="Jour suivant">→</button>
+          <button id="todayBtn" class="timeline-today-btn" type="button">Aujourd’hui</button>
+        </div>
+        <div id="dayButtons" class="button-row" hidden></div>
+        <div id="slotButtons" class="timeline-slot-strip"></div>
+      </div>
+    </div>
+
+    <div class="floating-chip" id="installChip">App installable</div>
+
+    <div class="selection-card" id="selectionCard" aria-live="polite">
+      <div class="selection-top">
+        <div>
+          <h2 class="selection-title" id="selectionTitle">Zone</h2>
+          <div class="selection-subtitle" id="selectionSubtitle">Jour · créneau · heure</div>
+        </div>
+        <button class="icon-btn" id="closeSelectionBtn" aria-label="Fermer">×</button>
+      </div>
+
+      <div class="quick-grid quick-grid-triple">
+        <button class="metric-btn" data-metric="trigger_score"><span class="label">Probabilité orage</span><span class="value" id="selectionTrigger">-</span><span class="hint" id="selectionTriggerHint">Instabilité, humidité et inhibition</span></button>
+        <button class="metric-btn" data-metric="structure_score"><span class="label">Sévérité</span><span class="value" id="selectionStructure">-</span><span class="hint" id="selectionStructureHint">Énergie convective et organisation</span></button>
+        <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Qualité de chasse</span><span class="value" id="selectionQuality">-</span><span class="hint" id="selectionQualityHint">Lisibilité terrain et potentiel photo</span></button>
+      </div>
+
+      <div class="action-row">
+        <button class="primary-btn" id="openDetailsBtn">Détails</button>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="modalBackdrop"></div>
+    <div class="details-modal" id="detailsModal" role="dialog" aria-modal="true" aria-labelledby="detailsTitle">
+      <div class="details-header">
+        <div>
+          <div class="title" id="detailsTitle">Détails cellule</div>
+          <div class="small muted" id="detailsSubtitle">Zone</div>
+        </div>
+        <button class="icon-btn" id="closeDetailsBtn" aria-label="Fermer">×</button>
+      </div>
+
+      <div class="details-content">
+        <div class="summary-box" id="detailsSummary">Aucune cellule sélectionnée.</div>
+
+        <div class="details-group">
+          <div class="details-group-title">Probabilité orage · Instabilité, humidité, inhibition</div>
+          <div class="details-grid">
+            <button class="metric-btn" data-metric="trigger_score"><span class="label">Probabilité orage</span><span class="value" id="dTrigger">-</span><span class="hint" id="dTriggerHint">Lecture synthétique de l’instabilité réellement exploitable</span></button>
+            <button class="metric-btn" data-metric="mucape"><span class="label">CAPE</span><span class="value" id="dCape">-</span><span class="hint">Verrou principal de l’instabilité convective</span></button>
+            <button class="metric-btn" data-metric="relative_humidity_2m"><span class="label">Humidité 2m</span><span class="value" id="dRh">-</span><span class="hint">Humidité disponible en basse couche</span></button>
+            <button class="metric-btn" data-metric="dewpoint_c"><span class="label">Point de rosée</span><span class="value" id="dDewpoint">-</span><span class="hint">Réservoir d’humidité réellement exploitable</span></button>
+            <button class="metric-btn" data-metric="wet_bulb_temperature_2m"><span class="label">Bulbe humide</span><span class="value" id="dWetbulb">-</span><span class="hint">Repère thermodynamique de basse couche</span></button>
+            <button class="metric-btn" data-metric="vapour_pressure_deficit"><span class="label">VPD</span><span class="value" id="dVpd">-</span><span class="hint">Proxy de sécheresse et d’inhibition</span></button>
+            <button class="metric-btn" data-metric="temp_c"><span class="label">Température</span><span class="value" id="dTemp">-</span><span class="hint">Contexte de surface</span></button>
+          </div>
+        </div>
+
+        <div class="details-group details-group-compact">
+          <div class="details-group-title">Sévérité · Énergie et organisation</div>
+          <div class="details-grid details-grid-compact">
+            <button class="metric-btn" data-metric="structure_score"><span class="label">Sévérité</span><span class="value" id="dStructure">-</span><span class="hint" id="dStructureHint">Capacité à produire des orages organisés ou forts</span></button>
+            <button class="metric-btn" data-metric="shear_ms"><span class="label">Shear</span><span class="value" id="dShear">-</span><span class="hint">Organisation et longévité possibles</span></button>
+            <button class="metric-btn" data-metric="wind_gusts_10m"><span class="label">Rafales 10m</span><span class="value" id="dGusts">-</span><span class="hint">Contexte de vent en surface</span></button>
+          </div>
+        </div>
+
+        <div class="details-group">
+          <div class="details-group-title">Qualité de chasse · Lisibilité et potentiel photo</div>
+          <div class="details-grid">
+            <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Qualité de chasse</span><span class="value" id="dQuality">-</span><span class="hint" id="dQualityHint">Lisibilité du ciel, visibilité et intérêt photographique</span></button>
+            <button class="metric-btn" data-metric="cloud_cover_low"><span class="label">Nuages bas</span><span class="value" id="dCloudLow">-</span><span class="hint">Peut gêner l’insolation</span></button>
+            <button class="metric-btn" data-metric="cloud_cover_mid"><span class="label">Nuages moyens</span><span class="value" id="dCloudMid">-</span><span class="hint">Crasse intermédiaire</span></button>
+            <button class="metric-btn" data-metric="cloud_cover_high"><span class="label">Nuages hauts</span><span class="value" id="dCloudHigh">-</span><span class="hint">Voile d’altitude</span></button>
+            <button class="metric-btn" data-metric="selected_hour"><span class="label">Heure retenue</span><span class="value" id="dHour">-</span><span class="hint">Créneau utilisé par la cellule</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge">Version : v0.6.12</div><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
+
+    <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
+    <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
+      <div class="details-header info-drawer-header">
+        <div>
+          <div class="title" id="infoDrawerTitle">Guide de lecture</div>
+          <div class="small muted">Méthodologie v2, catégories fusionnées et repères terrain</div>
+        </div>
+        <button class="icon-btn" id="closeDrawerBtn" aria-label="Fermer">×</button>
+      </div>
+
+      <section class="drawer-section drawer-intro">
+        <p>Cette carte classe chaque maille selon son intérêt réel pour une chasse. Le modèle v2 répond maintenant avec trois grands axes : Probabilité orage, Sévérité et Qualité de chasse. La Probabilité orage fusionne l’initiation brute, la fiabilité locale et une pénalité de Bust Risk.</p>
+      </section>
+
+      <section class="drawer-section">
+        <div class="small drawer-section-title">Échelle de lecture du score global</div>
+        <div class="legend-wrap" aria-label="Légende couleurs score global">
+          <div class="legend-gradient"></div>
+          <div class="legend-scale"><span>0</span><span>35</span><span>65</span><span>85</span><span>100</span></div>
+        </div>
+        <div class="drawer-scale-grid">
+          <div class="drawer-scale-card"><strong>0–34</strong><span>Faible : environnement peu réactif ou peu exploitable.</span></div>
+          <div class="drawer-scale-card"><strong>35–64</strong><span>Modéré : fenêtre surveillable, intérêt tactique possible.</span></div>
+          <div class="drawer-scale-card"><strong>65–84</strong><span>Élevé : zone prioritaire si le contexte réel confirme.</span></div>
+          <div class="drawer-scale-card"><strong>85–100</strong><span>Très élevé : combinaison solide entre initiation, sévérité, chaseability et fiabilité.</span></div>
+        </div>
+      </section>
+
+      <section class="drawer-section">
+        <div class="small drawer-section-title">Comment est calculé le score global</div>
+        <p>Le score global est une synthèse de quatre catégories notées sur 100. Chaque catégorie décrit une partie différente du risque utile pour la chasse. Le score final privilégie les mailles qui combinent un déclenchement crédible, une structure orageuse exploitable, une lecture terrain correcte et une fenêtre horaire qui ne s’effondre pas immédiatement.</p>
+        <div class="drawer-formula-card">
+          <div class="drawer-formula-line"><strong>Score global</strong> = Initiation 30% + Severity 30% + Chaseability 25% + Fiabilité 15%</div>
+          <div class="drawer-formula-note">Le modèle applique aussi des plafonds anti faux-positifs : un bon shear sans initiation crédible, ou une belle instabilité dans une basse couche trop sèche, ne doit pas produire un score global artificiellement haut. Le Bust Risk est lu à part pour estimer le risque de déplacement inutile.</div>
+        </div>
+      </section>
+
+      <section class="drawer-section">
+        <div class="small drawer-section-title">Les 4 catégories v2</div>
+        <div class="drawer-category-list">
+          <article class="drawer-category-card">
+            <h3>1. Initiation</h3>
+            <p>Mesure la probabilité qu’un orage démarre réellement. Le score croise CAPE, point de rosée, humidité 2 m, VPD, bulbe humide et fenêtre horaire. Une belle instabilité seule ne suffit pas : une basse couche trop sèche ou un timing médiocre font chuter l’initiation.</p>
+            <ul>
+              <li>Monte si l’instabilité et l’humidité utile augmentent.</li>
+              <li>Baisse si l’air est trop sec ou si l’énergie disponible reste limitée.</li>
+            </ul>
+          </article>
+          <article class="drawer-category-card">
+            <h3>2. Severity</h3>
+            <p>Évalue le potentiel d’intensité et d’organisation si l’orage part. Le score repose surtout sur CAPE, shear et rafales. Il monte avec les combinaisons instabilité + cisaillement cohérentes, et baisse si le contexte est dynamique mais trop pauvre en énergie.</p>
+            <ul>
+              <li>Monte avec un cisaillement exploitable et une dynamique plus favorable.</li>
+              <li>Baisse si les cellules risquent de rester peu structurées ou très brèves.</li>
+            </ul>
+          </article>
+          <article class="drawer-category-card">
+            <h3>3. Chaseability</h3>
+            <p>Indique si la zone est agréable et utile à chasser. Le score combine visibilité, photogénie et confort relatif via la nébulosité, le timing et un proxy de vent. Une zone peut être météo-intéressante mais peu chassable visuellement.</p>
+            <ul>
+              <li>Monte quand le ciel reste plus propre et plus lisible.</li>
+              <li>Baisse en cas d’enclume diffuse, crasse ou masquage nuageux bas/moyen.</li>
+            </ul>
+          </article>
+          <article class="drawer-category-card">
+            <h3>4. Fiabilité</h3>
+            <p>Mesure la robustesse du signal. Le score combine cohérence interne des paramètres, stabilité temporelle autour du créneau retenu et marge vis-à-vis des seuils. Il sert à distinguer un vrai signal d’un optimum plus fragile.</p>
+            <ul>
+              <li>Monte si le signal reste cohérent avant et après le créneau retenu.</li>
+              <li>Baisse si la fenêtre paraît fragile ou rapidement dégradée.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="drawer-section">
+        <div class="small drawer-section-title">Repères pratiques v2</div>
+        <ul class="drawer-bullet-list">
+          <li><strong>Score global élevé + Bust Risk faible</strong> : zone prioritaire pour le positionnement.</li>
+          <li><strong>Initiation élevée mais Severity faible</strong> : convection possible, mais structures moins propres.</li>
+          <li><strong>Sévérité élevée mais Probabilité orage faible</strong> : beau potentiel théorique, mais zone encore fragile malgré le shear ou la CAPE.</li>
+          <li><strong>Chaseability faible</strong> : potentiel météo parfois correct, mais lecture terrain plus compliquée.</li>
+          <li><strong>Fiabilité faible</strong> : créneau intéressant mais fragile, intérêt surtout tactique et court.</li>
+        </ul>
+      </section>
+
+      <section class="drawer-section">
+        <div class="small drawer-section-title">Mode “meilleures cellules”</div>
+        <p>Ce mode accentue visuellement les mailles les plus prometteuses et atténue les autres pour accélérer la lecture de la situation. Il sert à hiérarchiser rapidement les zones, pas à remplacer l’analyse synoptique, radar ou terrain.</p>
+      </section>
+    </aside>
+
+    <div class="modal-backdrop" id="infoBackdrop"></div>
+    <div class="info-modal" id="infoModal" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
+      <div class="details-header">
+        <div>
+          <div class="title" id="infoTitle">Information métrique</div>
+          <div class="small muted" id="infoMetricLabel">—</div>
+        </div>
+        <button class="icon-btn" id="closeInfoBtn" aria-label="Fermer">×</button>
+      </div>
+      <div class="summary-box" id="infoMetricValue">—</div>
+      <p id="infoExplanation">—</p>
+    </div>
+  </div>
+  <script src="/static/assets/js/dom.js?v=0.6.12"></script>
+  <script src="/static/assets/js/utils.js?v=0.6.12"></script>
+  <script src="/static/assets/js/panels.js?v=0.6.12"></script>
+  <script src="/static/assets/js/state.js?v=0.6.12"></script>
+  <script src="/static/assets/js/core.js?v=0.6.12"></script>
+  <script src="/static/assets/js/map-ui.js?v=0.6.12"></script>
+  <script src="/static/assets/js/timeline.js?v=0.6.12"></script>
+  <script src="/static/assets/js/grid-loader.js?v=0.6.12"></script>
+  <script src="/static/assets/js/grid-core.js?v=0.6.12"></script>
+  <script src="/static/assets/js/grid-layers.js?v=0.6.12"></script>
+  <script src="/static/assets/js/grid.js?v=0.6.12"></script>
+  <script src="/static/assets/js/metric-data.js?v=0.6.12"></script>
+  <script src="/static/assets/js/metric-ui.js?v=0.6.12"></script>
+  <script src="/static/assets/js/selection.js?v=0.6.12"></script>
+  <script src="/static/assets/js/data.js?v=0.6.12"></script>
+  <script src="/static/assets/js/services.js?v=0.6.12"></script>
+  <script src="/static/assets/js/controls.js?v=0.6.12"></script>
+  <script src="/static/assets/js/bootstrap.js?v=0.6.12"></script>
+</body>
+</html>
