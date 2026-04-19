@@ -5,23 +5,13 @@
     const maxTouchPoints = Number(navigator.maxTouchPoints || 0);
 
     const isIPhoneLike = /iPhone|iPod|Windows Phone/i.test(ua);
-    const isAndroidPhone = /Android/i.test(ua) && /Mobile/i.test(ua);
     const isIPad = /iPad/i.test(ua) || (platform === 'MacIntel' && maxTouchPoints > 1);
-    const isAndroidTablet = /Android/i.test(ua) && !/Mobile/i.test(ua);
-
-    let coarsePointer = false;
-    try {
-      coarsePointer = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
-    } catch (_) {}
-
-    const width = window.innerWidth || 0;
-    const height = window.innerHeight || 0;
-    const smallestSide = Math.min(width, height);
-    const fallbackPhoneViewport = coarsePointer && smallestSide > 0 && smallestSide <= 600;
+    const isAndroid = /Android/i.test(ua);
+    const isAndroidTablet = isAndroid && (/Tablet/i.test(ua) || !/Mobile/i.test(ua));
+    const isAndroidPhone = isAndroid && /Mobile/i.test(ua) && !/Tablet/i.test(ua);
 
     if (isIPad || isAndroidTablet) return false;
-    if (isIPhoneLike || isAndroidPhone) return true;
-    return fallbackPhoneViewport;
+    return isIPhoneLike || isAndroidPhone;
   }
 
   function applySmartphoneBlock() {
