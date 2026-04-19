@@ -7,14 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Storm Chase" />
-  <link rel="manifest" href="/static/storm-chase.webmanifest?v=0.6.12" />
+  <link rel="manifest" href="/static/storm-chase.webmanifest?v=0.6.43" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <title>Storm Chase MVP — Tactile</title>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/assets/css/main.css?v=0.6.12" />
-<link rel="stylesheet" href="/static/assets/css/components.css?v=0.6.12" />
-<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.6.42" />
+  <link rel="stylesheet" href="/static/assets/css/main.css?v=0.6.43" />
+<link rel="stylesheet" href="/static/assets/css/components.css?v=0.6.43" />
+<link rel="stylesheet" href="/static/assets/css/responsive.css?v=0.6.43" />
 </head>
 <body>
   <div id="app">
@@ -25,15 +25,6 @@
         <div class="app-loader-subtitle">Chargement de la situation convective…</div>
       </div>
     </div>
-    <div class="smartphone-gate" id="smartphoneGate" hidden aria-hidden="true">
-      <div class="smartphone-gate-card">
-        <img class="smartphone-gate-logo" src="/static/logo-objectif-foudre.svg" alt="Objectif Foudre" />
-        <div class="smartphone-gate-title">Smartphone non pris en charge</div>
-        <p class="smartphone-gate-text">Cette webapp est actuellement disponible uniquement sur PC et tablette. L'interface mobile n'est pas activée pour le moment.</p>
-        <p class="smartphone-gate-text small">Ouvre le site sur une tablette ou un ordinateur pour accéder à la carte, aux scores et aux outils de positionnement.</p>
-      </div>
-    </div>
-
     <div id="map"></div>
 
     <div class="right-rail-scroll" id="rightRailScroll">
@@ -50,6 +41,7 @@
       <div class="panel-card search-panel">
         <div class="location-bar">
           <input id="cityInput" class="location-input" type="text" placeholder="Tape une ville, un secteur ou un point de départ…" autocomplete="off" spellcheck="false" />
+          <div id="searchAutocomplete" class="search-autocomplete" hidden></div>
           <button id="mockModeBtn" class="mode-toggle-btn" type="button" aria-pressed="false" title="Basculer entre données réelles et mock">
             <span class="mode-toggle-label" id="mockModeLabel">Réel</span>
           </button>
@@ -200,7 +192,7 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge">Version : v0.6.12</div><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge">Version : v0.6.43</div><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
@@ -307,24 +299,24 @@
       <p id="infoExplanation">—</p>
     </div>
   </div>
-  <script src="/static/assets/js/dom.js?v=0.6.12"></script>
-  <script src="/static/assets/js/utils.js?v=0.6.12"></script>
-  <script src="/static/assets/js/panels.js?v=0.6.12"></script>
-  <script src="/static/assets/js/state.js?v=0.6.12"></script>
-  <script src="/static/assets/js/core.js?v=0.6.12"></script>
-  <script src="/static/assets/js/map-ui.js?v=0.6.12"></script>
-  <script src="/static/assets/js/timeline.js?v=0.6.12"></script>
-  <script src="/static/assets/js/grid-loader.js?v=0.6.12"></script>
-  <script src="/static/assets/js/grid-core.js?v=0.6.12"></script>
-  <script src="/static/assets/js/grid-layers.js?v=0.6.12"></script>
-  <script src="/static/assets/js/grid.js?v=0.6.12"></script>
-  <script src="/static/assets/js/metric-data.js?v=0.6.12"></script>
-  <script src="/static/assets/js/metric-ui.js?v=0.6.12"></script>
-  <script src="/static/assets/js/selection.js?v=0.6.12"></script>
-  <script src="/static/assets/js/data.js?v=0.6.12"></script>
-  <script src="/static/assets/js/services.js?v=0.6.12"></script>
-  <script src="/static/assets/js/controls.js?v=0.6.37"></script>
-  <script src="/static/assets/js/bootstrap.js?v=0.6.12"></script>
-  <script src="/static/assets/js/mobile-block.js?v=0.6.42"></script>
+  <script src="/static/assets/js/dom.js?v=0.6.43"></script>
+  <script src="/static/assets/js/utils.js?v=0.6.43"></script>
+  <script src="/static/assets/js/panels.js?v=0.6.43"></script>
+  <script src="/static/assets/js/state.js?v=0.6.43"></script>
+  <script src="/static/assets/js/core.js?v=0.6.43"></script>
+  <script src="/static/assets/js/map-ui.js?v=0.6.43"></script>
+  <script src="/static/assets/js/timeline.js?v=0.6.43"></script>
+  <script src="/static/assets/js/grid-loader.js?v=0.6.43"></script>
+  <script src="/static/assets/js/grid-core.js?v=0.6.43"></script>
+  <script src="/static/assets/js/grid-layers.js?v=0.6.43"></script>
+  <script src="/static/assets/js/grid.js?v=0.6.43"></script>
+  <script src="/static/assets/js/metric-data.js?v=0.6.43"></script>
+  <script src="/static/assets/js/metric-ui.js?v=0.6.43"></script>
+  <script src="/static/assets/js/selection.js?v=0.6.43"></script>
+  <script src="/static/assets/js/data.js?v=0.6.43"></script>
+  <script src="/static/assets/js/services.js?v=0.6.43"></script>
+  <script src="/static/assets/js/search-autocomplete.js?v=0.6.43"></script>
+  <script src="/static/assets/js/controls.js?v=0.6.43"></script>
+  <script src="/static/assets/js/bootstrap.js?v=0.6.43"></script>
 </body>
 </html>

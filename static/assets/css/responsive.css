@@ -2581,28 +2581,27 @@
 }
 
 
-/* ===== v0.6.32 tablet portrait: timeline behaves like tablet landscape ===== */
+/* ===== v0.6.32 tablet portrait: timeline glued to meta stack + stronger collapsed state ===== */
 
 @media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
   body.mobile-ui .timeline-dock,
   .timeline-dock,
   #timelineDock {
     bottom: calc(var(--meta-height-px, 48px) - 1px) !important;
-    padding-top: 6px !important;
-    padding-bottom: 6px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
     min-height: 0 !important;
-    overflow: visible !important;
     z-index: 23 !important;
   }
 
   body.mobile-ui .timeline-dock.collapsed,
   .timeline-dock.collapsed,
   #timelineDock.collapsed {
-    transform: translateY(calc(100% + 6px)) !important;
+    transform: translateY(calc(100% + 18px)) !important;
     min-height: 0 !important;
-    max-height: none !important;
-    padding-top: 6px !important;
-    padding-bottom: 6px !important;
+    max-height: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
     overflow: visible !important;
   }
 
@@ -2613,6 +2612,7 @@
     pointer-events: none !important;
   }
 
+  /* keep the toggle visible but everything else hidden */
   body.mobile-ui .timeline-dock.collapsed .timeline-toggle-btn,
   .timeline-dock.collapsed .timeline-toggle-btn,
   #timelineDock.collapsed .timeline-toggle-btn,
@@ -2622,109 +2622,4 @@
     opacity: 1 !important;
     pointer-events: auto !important;
   }
-}
-
-/* ===== v0.6.35 tablet portrait: keep first timeline slots fully reachable ===== */
-@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
-  body.mobile-ui #slotButtons.timeline-slot-strip,
-  body.mobile-ui .timeline-slot-strip,
-  #slotButtons.timeline-slot-strip {
-    justify-content: flex-start !important;
-    margin: 0 !important;
-    padding-left: 0 !important;
-    scroll-padding-left: 0 !important;
-    scroll-padding-inline-start: 0 !important;
-  }
-}
-
-/* ===== v0.6.36 ensure detailsModal and infoDrawer always overlay selectionCard ===== */
-#modalBackdrop,
-#drawerBackdrop {
-  z-index: 190 !important;
-}
-
-#detailsModal,
-#infoDrawer,
-.details-modal,
-.info-drawer {
-  z-index: 200 !important;
-}
-
-
-/* v0.6.38 smartphone support gate */
-.smartphone-gate {
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background:
-    radial-gradient(circle at top, rgba(34, 211, 238, 0.10), transparent 38%),
-    linear-gradient(180deg, rgba(3, 7, 18, 0.98), rgba(7, 17, 31, 0.995));
-  backdrop-filter: blur(10px);
-}
-
-.smartphone-gate-card {
-  width: min(100%, 420px);
-  padding: 24px 20px;
-  border-radius: 24px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(10, 15, 26, 0.92);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
-  text-align: center;
-  color: #e5eefc;
-}
-
-.smartphone-gate-logo {
-  width: 72px;
-  height: 72px;
-  display: block;
-  margin: 0 auto 14px;
-}
-
-.smartphone-gate-title {
-  font-size: 1.35rem;
-  font-weight: 800;
-  line-height: 1.2;
-  margin-bottom: 12px;
-}
-
-.smartphone-gate-text {
-  margin: 0 0 10px;
-  line-height: 1.5;
-  color: rgba(226, 232, 240, 0.92);
-}
-
-.smartphone-gate-text.small {
-  font-size: 0.94rem;
-  color: rgba(191, 219, 254, 0.84);
-}
-
-body.smartphone-blocked {
-  overflow: hidden;
-}
-
-body.smartphone-blocked .smartphone-gate {
-  display: flex;
-}
-
-body.smartphone-blocked #app > :not(.smartphone-gate) {
-  pointer-events: none !important;
-  user-select: none !important;
-}
-
-body.smartphone-blocked #map,
-body.smartphone-blocked .selection-card,
-body.smartphone-blocked .timeline-dock,
-body.smartphone-blocked .right-rail-scroll,
-body.smartphone-blocked .meta-stack,
-body.smartphone-blocked .details-modal,
-body.smartphone-blocked .info-drawer,
-body.smartphone-blocked .info-modal,
-body.smartphone-blocked .modal-backdrop,
-body.smartphone-blocked .cell-scale-chip,
-body.smartphone-blocked #installChip {
-  visibility: hidden !important;
 }

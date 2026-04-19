@@ -54,4 +54,5 @@
 
     updateDataModeUi();
     setupPrimaryControls();
+    if (typeof setupSearchAutocomplete === "function") setupSearchAutocomplete();
     setupAppLifecycle();
