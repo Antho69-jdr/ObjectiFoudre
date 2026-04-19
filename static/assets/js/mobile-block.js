@@ -1,14 +1,27 @@
 (function () {
   function isSmartphone() {
     const ua = navigator.userAgent || '';
-    const touchPhoneUA = /Android.+Mobile|iPhone|iPod|Windows Phone|Mobile/i.test(ua);
-    const smallViewport = Math.min(window.innerWidth || 0, window.innerHeight || 0) <= 767;
-    const narrowViewport = (window.innerWidth || 0) <= 767;
+    const platform = navigator.platform || '';
+    const maxTouchPoints = Number(navigator.maxTouchPoints || 0);
+
+    const isIPhoneLike = /iPhone|iPod|Windows Phone/i.test(ua);
+    const isAndroidPhone = /Android/i.test(ua) && /Mobile/i.test(ua);
+    const isIPad = /iPad/i.test(ua) || (platform === 'MacIntel' && maxTouchPoints > 1);
+    const isAndroidTablet = /Android/i.test(ua) && !/Mobile/i.test(ua);
+
     let coarsePointer = false;
     try {
-      coarsePointer = window.matchMedia('(hover: none), (pointer: coarse)').matches;
+      coarsePointer = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
     } catch (_) {}
-    return touchPhoneUA || (coarsePointer && (smallViewport || narrowViewport));
+
+    const width = window.innerWidth || 0;
+    const height = window.innerHeight || 0;
+    const smallestSide = Math.min(width, height);
+    const fallbackPhoneViewport = coarsePointer && smallestSide > 0 && smallestSide <= 600;
+
+    if (isIPad || isAndroidTablet) return false;
+    if (isIPhoneLike || isAndroidPhone) return true;
+    return fallbackPhoneViewport;
   }
 
   function applySmartphoneBlock() {
