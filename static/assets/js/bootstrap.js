@@ -20,7 +20,13 @@
       });
 
       document.addEventListener('visibilitychange', maybeRefreshOnReturn);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && typeof pollMeteoFranceServerAutomationStatus === 'function') {
+          pollMeteoFranceServerAutomationStatus({ immediate: true, quiet: true });
+        }
+      });
       updateBestCellsButton();
+      if (typeof startCurrentTimeBadge === 'function') startCurrentTimeBadge();
 
       map.on('click', (e) => {
         const features = map.getLayer('grid-fill') ? map.queryRenderedFeatures(e.point, { layers: ['grid-fill'] }) : [];
@@ -38,21 +44,35 @@
         if (selectionCard.classList.contains('visible')) requestAnimationFrame(positionSelectionCard);
       });
 
-      map.on('load', () => {
+      let mapReadyHandled = false;
+      const handleMapReady = () => {
+        if (mapReadyHandled) return;
+        mapReadyHandled = true;
         debugLog('map:load', { center: currentCenter, selectedBaseDate, styleLoaded: map.isStyleLoaded() });
+        improveBasemapReadability();
         ensureGridScaffolding();
         ensureLoaderScaffolding();
-        cityInput.value = currentCenter.label;
-        topbar.classList.add('show-search');
+        if (cityInput) cityInput.value = currentCenter.label;
         requestAnimationFrame(alignTopPanels);
         updateMetaLine();
-        metaRun.textContent = 'Modèle arome-france : en attente';
-        setMetaMessage('Choisis une zone pour lancer le chargement météo.');
+        if (typeof setupMetaRunScroller === 'function') setupMetaRunScroller();
+        if (typeof setMetaRunText === 'function') setMetaRunText('AROME France : en attente');
+        setMetaMessage('Chargement AROME France…');
+        window.setTimeout(() => {
+          refreshCurrentData(false, 'Chargement AROME France…');
+          if (typeof pollMeteoFranceServerAutomationStatus === 'function') {
+            pollMeteoFranceServerAutomationStatus({ immediate: true, quiet: true });
+          }
+        }, 0);
         hideAppLoader(true);
-      });
+      };
+
+      map.on('load', handleMapReady);
+      if ((typeof map.loaded === 'function' && map.loaded()) || map.isStyleLoaded()) {
+        requestAnimationFrame(handleMapReady);
+      }
     }
 
-    updateDataModeUi();
     setupPrimaryControls();
     if (typeof setupSearchAutocomplete === "function") setupSearchAutocomplete();
     setupAppLifecycle();

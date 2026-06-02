@@ -5,8 +5,8 @@
 
     const METRIC_INFO = {
       score_global: {
-        label: 'Score global',
-        explain: 'Synthèse du potentiel de la cellule. Il combine le déclenchement, l’organisation et la qualité de chasse. Plus la valeur est haute, plus la zone mérite de l’attention, sans garantir à elle seule un orage.'
+        label: 'Probabilité orage',
+        explain: 'Probabilité orageuse exploitable de la cellule. Plus la valeur est haute, plus la zone mérite de l’attention, sans garantir à elle seule un orage.'
       },
       confidence_score: {
         label: 'Confiance',
@@ -40,6 +40,14 @@
         label: 'Humidité 2 m',
         explain: 'Humidité relative près du sol. Une basse couche plus humide favorise généralement l’alimentation convective et limite le mélange trop sec.'
       },
+      precipitable_water: {
+        label: 'Vapeur colonne',
+        explain: 'Vapeur d’eau intégrée dans la colonne atmosphérique. Une valeur élevée signale une réserve hydrique plus profonde qu’un simple point de rosée de surface.'
+      },
+      shortwave_radiation: {
+        label: 'Rayonnement court',
+        explain: 'Flux net de rayonnement court prévu par AROME. Il sert de proxy de chauffage de surface et complète le timing horaire.'
+      },
       vapour_pressure_deficit: {
         label: 'VPD',
         explain: 'Vapour Pressure Deficit, un indicateur de sécheresse de l’air. Un VPD trop élevé traduit souvent une basse couche plus sèche et moins favorable au déclenchement.'
@@ -62,15 +70,15 @@
       },
       cloud_cover_low: {
         label: 'Nuages bas',
-        explain: 'Nébulosité basse couche. Trop de nuages bas peut freiner l’insolation et rendre la zone moins agréable ou moins lisible pour la chasse.'
+        explain: 'Nébulosité basse couche prévue par AROME. Elle sert surtout de contexte ou de signal matérialisé, pas de verrou au ciel clair pré-convectif.'
       },
       cloud_cover_mid: {
         label: 'Nuages moyens',
-        explain: 'Nébulosité de moyenne couche. Une couverture importante peut signaler une masse d’air moins propre ou un potentiel de chauffage diurne réduit.'
+        explain: 'Nébulosité de moyenne couche. Elle aide à lire un développement matérialisé ou un écran nuageux, sans pénaliser automatiquement un ciel clair.'
       },
       cloud_cover_high: {
         label: 'Nuages hauts',
-        explain: 'Voile d’altitude. Des nuages hauts étendus peuvent limiter le rayonnement solaire et rendre la lecture du ciel moins nette.'
+        explain: 'Voile d’altitude. À lire avec le rayonnement court : seul, ce champ reste un contexte visuel et non un frein direct au potentiel orageux.'
       },
       selected_hour: {
         label: 'Heure retenue',
@@ -96,7 +104,7 @@
       switch (metricKey) {
         case 'score_global':
           return [
-            scaleCard('Construction du score global', 'Le score global est une moyenne pondérée de quatre sous-scores sur 100 : déclenchement 35 %, organisation 30 %, lisibilité 20 % et stabilité 15 %.'),
+            scaleCard('Lecture de la probabilité orage', 'Le score principal estime maintenant uniquement la probabilité orageuse exploitable sur 100, sans sous-scores secondaires affichés.'),
             scaleCard('Lecture directe', '0–34 faible, 35–64 modéré, 65–84 élevé, 85–100 très élevé.')
           ].join('');
         case 'trigger_score':
@@ -121,7 +129,7 @@
           ].join('');
         case 'confidence_score':
           return [
-            scaleCard('Ce que mesure la confiance', 'Elle ne remplace pas le score global : elle indique à quel point les métriques vont dans le même sens.'),
+            scaleCard('Ce que mesure la confiance', 'Elle indique à quel point les ingrédients vont dans le même sens et si le signal reste cohérent autour de l’heure sélectionnée.'),
             scaleCard('Lecture du sous-score', '0–34 fragile, 35–64 moyenne, 65–84 bonne, 85–100 très bonne cohérence du signal.')
           ].join('');
         case 'mucape':

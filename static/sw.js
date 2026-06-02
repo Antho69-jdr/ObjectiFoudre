@@ -1,11 +1,14 @@
-const CACHE_NAME = 'objectifoudre-v1.0.1';
+const CACHE_NAME = 'objectifoudre-v1.1.111';
 const ASSETS = [
   '/',
   '/manifest.webmanifest',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
   '/logo-objectif-foudre.svg',
-  '/static/storm-chase.webmanifest?v=1.0.1'
+  '/assets/vendor/maplibre/maplibre-gl.js?v=1.1.111',
+  '/assets/vendor/maplibre/maplibre-gl.css?v=1.1.111',
+  '/assets/vendor/carto/dark-matter-style.json?v=1.1.111',
+  '/manifest.webmanifest?v=1.1.111'
 ];
 
 self.addEventListener('install', (event) => {
@@ -25,12 +28,13 @@ self.addEventListener('fetch', (event) => {
   const isSameOrigin = url.origin === self.location.origin;
 
   if (!isSameOrigin) {
-    event.respondWith(fetch(event.request).catch(() => caches.match('/')));
+    event.respondWith(fetch(event.request));
     return;
   }
 
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
+    const isNavigation = event.request.mode === 'navigate';
 
     try {
       const response = await fetch(event.request, { cache: 'no-store' });
@@ -41,7 +45,8 @@ self.addEventListener('fetch', (event) => {
     } catch (_) {
       const cached = await cache.match(event.request, { ignoreSearch: false });
       if (cached) return cached;
-      return caches.match('/');
+      if (isNavigation) return caches.match('/');
+      return new Response('', { status: 504, statusText: 'Offline' });
     }
   })());
 });

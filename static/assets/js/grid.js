@@ -1,21 +1,7 @@
-    function updateGridLinesButton() {
-      if (!gridLinesBtn) return;
-      gridLinesBtn.classList.toggle('active', showGridLines);
-    }
-
     function applyGridLinesVisibility() {
-      if (map.getLayer('grid-borders')) {
-        map.setPaintProperty('grid-borders', 'line-opacity', showGridLines ? (isCoarsePointerDevice() ? 0.32 : 0.5) : 0);
-      }
       if (map.getLayer('grid-outline')) {
-        map.setPaintProperty('grid-outline', 'line-opacity', showGridLines ? 0.7 : 0.42);
+        map.setPaintProperty('grid-outline', 'line-opacity', 0);
       }
-      updateGridLinesButton();
-    }
-
-    function toggleGridLines() {
-      showGridLines = !showGridLines;
-      applyGridLinesVisibility();
     }
 
     function updateBestCellsButton() {
@@ -28,10 +14,9 @@
       const cells = slot?.cells || [];
       if (!map.isStyleLoaded() || !ensureGridScaffolding() || !map.getSource('grid') || !cells.length) {
         updateBestCellsButton();
-        updateGridLinesButton();
         return;
       }
-      map.getSource('grid').setData(buildGeoJSON(cells));
+      addLayers(buildSlotGeoJSON(slot, cells), cells);
       applyGridLinesVisibility();
       updateHighlight();
       updateBestCellsButton();
@@ -65,14 +50,19 @@
         reason,
         hasMap: !!map,
         styleLoaded: !!(map && map.isStyleLoaded && map.isStyleLoaded()),
+        pending: refreshMapRetryPending,
       });
       if (!map) return;
+      if (refreshMapRetryPending) return;
+      refreshMapRetryPending = true;
       const rerender = () => {
+        if (!refreshMapRetryPending) return;
+        refreshMapRetryPending = false;
         debugLog('retryRefreshWhenStyleReady:run', {
           reason,
           styleLoaded: !!(map && map.isStyleLoaded && map.isStyleLoaded()),
         });
-        refreshMap();
+        requestAnimationFrame(refreshMap);
       };
       if (map.isStyleLoaded && map.isStyleLoaded()) {
         requestAnimationFrame(rerender);
@@ -80,10 +70,14 @@
       }
       map.once('idle', rerender);
       map.once('styledata', rerender);
+      window.setTimeout(rerender, 700);
     }
 
     function refreshMap() {
-      if (!map.isStyleLoaded()) return;
+      if (!map.isStyleLoaded()) {
+        retryRefreshWhenStyleReady('refreshMap-style-not-ready');
+        return;
+      }
       const selection = resolveRenderableSelection();
       debugLog('refreshMap:selection', selection);
       const currentDay = getCurrentDay();
@@ -96,6 +90,7 @@
       if (!selection.dayKey || !selection.slotKey || !renderableSlots.length) {
         clearGridRevealFailsafe();
         removeLayers(true);
+        if (typeof updateGridSourceBadge === 'function') updateGridSourceBadge();
         return;
       }
 
@@ -104,7 +99,13 @@
       debugLog('refreshMap:slot', { slotKey: slot?.slot_key || null, slotLabel: slot?.slot_label || null, cellCount: cells.length, selectedDayKey, selectedSlotKey });
       if (!cells.length) {
         clearGridRevealFailsafe();
-        removeLayers(true);
+        const shouldKeepPreviousAromeGrid = slot?.arome_placeholder
+          && slot?.source_provider === 'meteofrance_arome_grib'
+          && (map.getSource('grid') || map.getLayer('grid-fill'));
+        if (!shouldKeepPreviousAromeGrid) {
+          removeLayers(true);
+        }
+        if (typeof updateGridSourceBadge === 'function') updateGridSourceBadge();
         return;
       }
 
@@ -112,7 +113,7 @@
       refreshStats(cells, slot);
       clearGridRevealFailsafe();
       stopLoaderPulse();
-      const gridGeoJSON = buildGeoJSON(cells);
+      const gridGeoJSON = buildSlotGeoJSON(slot, cells);
       debugLog('refreshMap:geojson', { featureCount: Array.isArray(gridGeoJSON?.features) ? gridGeoJSON.features.length : 0 });
       const gridRendered = addLayers(gridGeoJSON, cells);
       if (!gridRendered) {
@@ -144,6 +145,9 @@
         updateHighlight();
       }
 
+      if (typeof updateMetaLine === 'function') updateMetaLine();
+      else if (typeof updateGridSourceBadge === 'function') updateGridSourceBadge();
+      if (typeof maybePrecomputePredictionPageImage === 'function') maybePrecomputePredictionPageImage();
       requestAnimationFrame(positionSelectionCard);
     }
 

@@ -2,6 +2,9 @@ const EMPTY_FEATURE_COLLECTION = { type: 'FeatureCollection', features: [] };
 let gridHandlersBound = false;
 let pendingGridPayload = null;
 let pendingGridRetryTimer = null;
+let currentGridGeometrySignature = '';
+let currentGridFeatureState = new Map();
+let currentGridStateApplyToken = 0;
 
 function ensureSource(id, data = EMPTY_FEATURE_COLLECTION) {
   if (!map) return null;
@@ -13,6 +16,75 @@ function ensureSource(id, data = EMPTY_FEATURE_COLLECTION) {
     console.warn(`ensureSource:${id}:add-failed`, error);
   }
   return map.getSource(id) || null;
+}
+
+
+function gridGeometrySignature(cells) {
+  if (!Array.isArray(cells) || !cells.length) return '';
+  return cells.map((cell) => [
+    cell?.zone || '',
+    Number(cell?.lat || 0).toFixed(5),
+    Number(cell?.lon || 0).toFixed(5),
+    Number(cell?.cell_height_deg || 0).toFixed(5),
+    Number(cell?.cell_width_deg || 0).toFixed(5),
+  ].join(':')).join('|');
+}
+
+function resetGridStableState() {
+  currentGridGeometrySignature = '';
+  currentGridFeatureState = new Map();
+  currentGridStateApplyToken += 1;
+}
+
+function gridFeatureStateSignature(properties = {}) {
+  const fillMetric = Number(properties.fill_metric ?? getCellMetricValue(properties)).toFixed(4);
+  const fillOpacity = Number(properties.fill_opacity || 0).toFixed(5);
+  const fillColor = String(properties.fill_color || '');
+  const isBest = Number(properties.is_best || 0) ? 1 : 0;
+  return `${fillMetric}|${fillOpacity}|${fillColor}|${isBest}`;
+}
+
+function applyGridFeatureStates(data, token = currentGridStateApplyToken) {
+  if (token !== currentGridStateApplyToken) return 0;
+  if (!map || !map.getSource('grid') || !Array.isArray(data?.features)) return 0;
+  let applied = 0;
+  for (const feature of data.features) {
+    if (token !== currentGridStateApplyToken) return applied;
+    const id = feature?.id ?? feature?.properties?.zone;
+    if (id === undefined || id === null || String(id) === '') continue;
+    const properties = feature.properties || {};
+    const signature = gridFeatureStateSignature(properties);
+    const key = String(id);
+    if (currentGridFeatureState.get(key) === signature) continue;
+    try {
+      map.setFeatureState({ source: 'grid', id }, {
+        fill_metric: Number(properties.fill_metric ?? getCellMetricValue(properties)),
+        fill_color: String(properties.fill_color || ''),
+        fill_opacity: Number(properties.fill_opacity || 0),
+        is_best: Number(properties.is_best || 0) ? 1 : 0,
+      });
+      currentGridFeatureState.set(key, signature);
+      applied += 1;
+    } catch (error) {
+      debugLog('applyGridFeatureStates:error', { id: key, message: String(error?.message || error) });
+    }
+  }
+  try { map.triggerRepaint(); } catch (_) {}
+  return applied;
+}
+
+function noteGridGeometryApplied(cells, data = null) {
+  currentGridGeometrySignature = gridGeometrySignature(cells);
+  currentGridFeatureState = new Map();
+  currentGridStateApplyToken += 1;
+}
+
+function currentCellForRenderedFeature(properties = null) {
+  if (!properties) return null;
+  const zone = properties?.zone;
+  if (!zone) return properties;
+  const cells = getCurrentSlot()?.cells || [];
+  return cells.find((cell) => String(cell?.zone) === String(zone)) || properties;
 }
 
 function buildGridOutlineGeoJSON(cells) {
@@ -79,8 +151,12 @@ function scheduleDeferredGridApply(reason = 'deferred') {
       return;
     }
     const { data, cells } = pendingGridPayload;
-    gridSource.setData(data || EMPTY_FEATURE_COLLECTION);
+    const safeData = data || EMPTY_FEATURE_COLLECTION;
+    gridSource.setData(safeData);
     outlineSource.setData(buildGridOutlineGeoJSON(cells || []));
+    currentGridGeometrySignature = gridGeometrySignature(cells || []);
+    currentGridFeatureState = new Map();
+    currentGridStateApplyToken += 1;
     applyGridLinesVisibility();
     updateHighlight();
     removeLoaderLayers();
@@ -117,19 +193,9 @@ function ensureGridScaffolding() {
     type: 'fill',
     source: 'grid',
     paint: {
-      'fill-color': ['get', 'fill_color'],
-      'fill-opacity': ['get', 'fill_opacity'],
+      'fill-color': gridFillColorExpression(),
+      'fill-opacity': gridFillOpacityExpression(1),
       'fill-antialias': false,
-    },
-  });
-  tryAddLayer('grid-borders', {
-    id: 'grid-borders',
-    type: 'line',
-    source: 'grid',
-    paint: {
-      'line-color': '#ffffff',
-      'line-width': isCoarsePointerDevice() ? 0.75 : 1,
-      'line-opacity': 0,
     },
   });
   tryAddLayer('grid-outline', {
@@ -138,7 +204,7 @@ function ensureGridScaffolding() {
     source: 'grid-outline',
     paint: {
       'line-color': '#ffffff',
-      'line-width': isCoarsePointerDevice() ? 1.6 : 1.85,
+      'line-width': 0,
       'line-opacity': 0,
     },
     layout: {
@@ -229,10 +295,13 @@ function showLoadingGrid(center) {
 
 function clearGridLayers() {
   if (!ensureGridScaffolding()) return;
+  gridFillPaintAnimationToken += 1;
   const gridSource = map.getSource('grid');
   const outlineSource = map.getSource('grid-outline');
   if (gridSource) gridSource.setData(EMPTY_FEATURE_COLLECTION);
   if (outlineSource) outlineSource.setData(EMPTY_FEATURE_COLLECTION);
+  resetGridStableState();
+  setGridFillFactor(1);
   updateHighlight();
 }
 
@@ -257,10 +326,29 @@ function addLayers(data, cells = []) {
     return false;
   }
   debugLog('addLayers:setData-before', { hasGridSource: !!map.getSource('grid'), hasOutlineSource: !!map.getSource('grid-outline'), hasFillLayer: !!map.getLayer('grid-fill') });
-  gridSource.setData(data || EMPTY_FEATURE_COLLECTION);
-  outlineSource.setData(buildGridOutlineGeoJSON(cells));
+  const safeData = data || EMPTY_FEATURE_COLLECTION;
+  const nextGeometrySignature = gridGeometrySignature(cells);
+  const sameGeometry = Boolean(nextGeometrySignature && nextGeometrySignature === currentGridGeometrySignature);
+  gridSource.setData(safeData);
+  if (!sameGeometry) {
+    outlineSource.setData(buildGridOutlineGeoJSON(cells));
+  }
+  currentGridGeometrySignature = nextGeometrySignature;
+  currentGridFeatureState = new Map();
+  currentGridStateApplyToken += 1;
   applyGridLinesVisibility();
   updateHighlight();
+
+  if (sameGeometry) {
+    gridAnimationToken += 1;
+    gridFillPaintAnimationToken += 1;
+    shouldAnimateNextGrid = false;
+    setGridFillFactor(1);
+    removeLoaderLayers();
+    debugLog('addLayers:setData-same-geometry-safe', { featureCount: Array.isArray(safeData?.features) ? safeData.features.length : 0 });
+    return true;
+  }
+
   animateGridFillFactor(0, 1, 220, () => {
     applyGridLinesVisibility();
     updateHighlight();
@@ -289,7 +377,8 @@ function onGridLeave() {
 }
 
 function onGridClick(e) {
-  const p = e.features?.[0]?.properties;
+  if (shouldUseFranceGridClip() && e?.lngLat && !pointInFranceGridMask(Number(e.lngLat.lng), Number(e.lngLat.lat))) return;
+  const p = currentCellForRenderedFeature(e.features?.[0]?.properties);
   if (!p) return;
   selectedFeature = p;
   showSelection(p);

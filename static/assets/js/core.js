@@ -20,7 +20,10 @@
       clearGridRevealFailsafe();
       if (!map.isStyleLoaded()) return;
       if (Array.isArray(cells) && cells.length && ensureGridScaffolding() && map.getSource('grid')) {
-        map.getSource('grid').setData(buildGeoJSON(cells));
+        const slot = typeof getCurrentSlot === 'function' ? getCurrentSlot() : null;
+        const gridGeoJSON = typeof buildSlotGeoJSON === 'function' ? buildSlotGeoJSON(slot, cells) : buildGeoJSON(cells);
+        map.getSource('grid').setData(gridGeoJSON);
+        if (typeof noteGridGeometryApplied === 'function') noteGridGeometryApplied(cells, gridGeoJSON);
         setGridFillFactor(1);
         applyGridLinesVisibility();
         updateHighlight();
@@ -76,12 +79,21 @@
       requestAnimationFrame(tick);
     }
 
+    function gridFillColorExpression() {
+      return ['get', 'fill_color'];
+    }
+
+    function gridFillOpacityExpression(factor = 1) {
+      return ['*', ['get', 'fill_opacity'], factor];
+    }
+
     function setGridFillFactor(factor) {
       if (!map.getLayer('grid-fill')) return;
-      map.setPaintProperty('grid-fill', 'fill-opacity', ['*', ['get', 'fill_opacity'], factor]);
+      map.setPaintProperty('grid-fill', 'fill-opacity', gridFillOpacityExpression(factor));
     }
 
     function animateGridFillFactor(from, to, duration, done = null) {
+      const token = ++gridFillPaintAnimationToken;
       if (prefersReducedGridMotion(getCurrentSlot()?.cells || [])) {
         setGridFillFactor(to);
         if (typeof done === 'function') done();
@@ -89,6 +101,7 @@
       }
       const start = performance.now();
       const tick = (now) => {
+        if (token !== gridFillPaintAnimationToken) return;
         if (!map.getLayer('grid-fill')) return;
         const t = Math.min(1, (now - start) / duration);
         const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;

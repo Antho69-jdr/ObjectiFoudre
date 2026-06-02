@@ -1,16 +1,4 @@
 
-    function dataModeLabel(mode) {
-      return mode === 'mock' ? 'Mock' : 'Réel';
-    }
-
-    function updateDataModeUi() {
-      if (typeof mockModeBtn === 'undefined' || !mockModeBtn) return;
-      const isMock = selectedDataMode === 'mock';
-      mockModeBtn.classList.toggle('active', isMock);
-      mockModeBtn.setAttribute('aria-pressed', isMock ? 'true' : 'false');
-      if (typeof mockModeLabel !== 'undefined' && mockModeLabel) mockModeLabel.textContent = isMock ? 'Mock' : 'Réel';
-      mockModeBtn.title = isMock ? 'Mode mock activé' : 'Mode réel activé';
-    }
 
     function formatCacheIndicator(cacheMeta) {
       if (!cacheMeta || typeof cacheMeta !== 'object') return 'Source : données fraîches';
@@ -24,24 +12,218 @@
       return 'Source : données fraîches';
     }
 
+    function sourceProviderUi(provider) {
+      if (provider === 'meteofrance_arome_grib') {
+        return {
+          badge: 'Source : AROME GRIB',
+          lineLabel: 'Créneau actif : Météo-France AROME GRIB',
+          title: 'Source du créneau actif : Météo-France AROME GRIB cache',
+          className: 'source-grib',
+        };
+      }
+      if (provider === 'meteofrance_arome_wcs') {
+        return {
+          badge: 'Source : AROME GRIB',
+          lineLabel: 'Créneau actif : Météo-France AROME GRIB',
+          title: 'Source du créneau actif : Météo-France AROME GRIB France',
+          className: 'source-grib',
+        };
+      }
+      if (
+        provider === 'meteofrance_arome_mixed'
+      ) {
+        return {
+          badge: 'Source : AROME GRIB',
+          lineLabel: 'Créneau actif : Météo-France AROME GRIB',
+          title: 'Source du créneau actif : Météo-France AROME GRIB France',
+          className: 'source-grib',
+        };
+      }
+      return {
+        badge: 'Source : AROME',
+        lineLabel: 'Créneau actif : Météo-France AROME',
+        title: 'Source du créneau actif : Météo-France AROME France',
+        className: 'source-grib',
+      };
+    }
+
+
+    function formatCurrentClockTime(date = new Date()) {
+      const h = String(date.getHours()).padStart(2, '0');
+      const m = String(date.getMinutes()).padStart(2, '0');
+      const s = String(date.getSeconds()).padStart(2, '0');
+      return `${h}:${m}:${s}`;
+    }
+
+    let currentTimeBadgeTimer = null;
+
+    function updateCurrentTimeBadge() {
+      if (typeof gridSourceBadge === 'undefined' || !gridSourceBadge) return;
+      gridSourceBadge.hidden = false;
+      gridSourceBadge.className = 'grid-source-badge current-time-badge';
+      gridSourceBadge.textContent = formatCurrentClockTime();
+      gridSourceBadge.title = 'Heure actuelle';
+    }
+
+    function startCurrentTimeBadge() {
+      updateCurrentTimeBadge();
+      if (currentTimeBadgeTimer !== null) return;
+      currentTimeBadgeTimer = window.setInterval(updateCurrentTimeBadge, 1000);
+    }
+
+    function currentSlotSourceInfo() {
+      const slot = typeof getCurrentSlot === 'function' ? getCurrentSlot() : null;
+      const cells = Array.isArray(slot?.cells) ? slot.cells : [];
+      if (cells.length) {
+        const providers = Array.from(new Set(cells.map((cell) => cell?.source_provider).filter(Boolean)));
+        if (providers.length === 1) return sourceProviderUi(providers[0]);
+        if (providers.length > 1) return sourceProviderUi('meteofrance_arome_grib');
+        return sourceProviderUi('meteofrance_arome_grib');
+      }
+      const provider = payload?.meta?.provider || payload?.meta?.source_provider || 'meteofrance_arome_grib';
+      return sourceProviderUi(provider);
+    }
+
+    function updateGridSourceBadge() {
+      updateCurrentTimeBadge();
+    }
+
+    function currentGridAreaLabel() {
+      const isAromeFrance = (
+        payload?.meta?.france_grid === true
+        || payload?.meta?.arome_shell === true
+        || payload?.meta?.grid_scope === 'france'
+        || payload?.meta?.source_provider === 'meteofrance_arome_grib'
+        || payload?.meta?.provider === 'meteofrance_arome_grib'
+      );
+      if (isAromeFrance) return 'France entière';
+      return payload?.meta?.center?.label || currentCenter.label || 'Zone';
+    }
+
+    function updateMetaRunOverflow() {
+      if (!metaRun) return;
+      const content = metaRun.querySelector('.meta-run-content');
+      if (!content) return;
+      const travel = Math.max(0, content.scrollWidth - metaRun.clientWidth);
+      metaRun.classList.toggle('meta-run-overflow', travel > 8);
+      metaRun.style.setProperty('--meta-run-travel', travel > 8 ? `-${travel}px` : '0px');
+      metaRun.style.setProperty('--meta-run-duration', `${Math.max(7, Math.min(22, travel / 22))}s`);
+    }
+
+    function setMetaRunText(message) {
+      if (!metaRun) return;
+      const text = String(message ?? '');
+      metaRun.dataset.fullText = text;
+      metaRun.title = text;
+      metaRun.textContent = '';
+      const content = document.createElement('span');
+      content.className = 'meta-run-content';
+      content.textContent = text;
+      metaRun.appendChild(content);
+      metaRun.scrollLeft = 0;
+      requestAnimationFrame(updateMetaRunOverflow);
+    }
+
+    function setupMetaRunScroller() {
+      if (!metaRun || metaRun.dataset.scrollerReady === '1') return;
+      metaRun.dataset.scrollerReady = '1';
+      metaRun.addEventListener('wheel', (event) => {
+        if (!metaRun.classList.contains('meta-run-overflow')) return;
+        const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+        if (!delta) return;
+        metaRun.scrollLeft += delta;
+        event.preventDefault();
+      }, { passive: false });
+      window.addEventListener('resize', () => requestAnimationFrame(updateMetaRunOverflow));
+    }
+
+    function collectAromeApiReferenceTimes(meta = payload?.meta || {}) {
+      const refs = new Set();
+      const addRef = (value) => {
+        const ref = String(value || '').trim();
+        if (!ref) return;
+        const parsed = new Date(ref);
+        if (!Number.isFinite(parsed.getTime())) return;
+        refs.add(parsed.toISOString());
+      };
+      const collectFromTargets = (targets) => {
+        if (!targets || typeof targets !== 'object') return;
+        Object.values(targets).forEach((target) => addRef(target?.reference_time));
+      };
+      [
+        meta?.arome_run_latest_reference_time,
+        meta?.arome_run_api_updated_at,
+        meta?.meteofrance_grib?.arome_run_latest_reference_time,
+        meta?.meteofrance_grib?.arome_run_api_updated_at,
+      ].forEach(addRef);
+      (Array.isArray(meta?.arome_run_reference_times) ? meta.arome_run_reference_times : []).forEach(addRef);
+      (Array.isArray(meta?.meteofrance_grib?.arome_run_reference_times) ? meta.meteofrance_grib.arome_run_reference_times : []).forEach(addRef);
+      collectFromTargets(meta?.time_targets);
+      collectFromTargets(meta?.meteofrance_grib?.time_targets);
+      return Array.from(refs).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    }
+
+    function formatAromeRunZulu(referenceIso) {
+      const date = new Date(referenceIso);
+      if (!Number.isFinite(date.getTime())) return '';
+      const h = String(date.getUTCHours()).padStart(2, '0');
+      const m = date.getUTCMinutes();
+      if (m) return `${h}:${String(m).padStart(2, '0')}Z`;
+      return `${h}Z`;
+    }
+
+    function formatAromeApiLocalTime(referenceIso) {
+      const date = new Date(referenceIso);
+      if (!Number.isFinite(date.getTime())) return '';
+      try {
+        return new Intl.DateTimeFormat('fr-FR', {
+          timeZone: 'Europe/Paris',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        }).format(date);
+      } catch (_) {
+        return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+      }
+    }
+
+    function formatAromeApiRunInfo(meta = payload?.meta || {}) {
+      const refs = collectAromeApiReferenceTimes(meta);
+      if (!refs.length) return '';
+      const latest = refs[refs.length - 1];
+      const runLabels = Array.from(new Set(refs.map(formatAromeRunZulu).filter(Boolean)));
+      const runText = runLabels.length > 1
+        ? `Runs AROME ${runLabels.join('/')}`
+        : `Run AROME ${runLabels[0] || formatAromeRunZulu(latest)}`;
+      const updateTime = formatAromeApiLocalTime(latest);
+      return `${runText} · MAJ API ${updateTime}`;
+    }
+
     function updateMetaLine() {
-      const centerLabel = payload?.meta?.center?.label || currentCenter.label || 'Zone';
-      const generated = formatFrenchRun(payload?.meta?.generated_at || '');
-      metaCenter.textContent = `Zone : ${centerLabel}`;
+      const runInfo = formatAromeApiRunInfo(payload?.meta || {});
       const sourceIndicator = formatCacheIndicator(payload?.meta?.cache);
-      const payloadMode = payload?.meta?.mode === 'mock' ? 'Mock' : (selectedDataMode === 'mock' ? 'Mock' : 'Réel');
-      metaRun.textContent = `Modèle arome-france : ${generated} · ${sourceIndicator} · Mode : ${payloadMode}`;
+      const slotSource = currentSlotSourceInfo();
+      const wcsSlots = 0;
+      const gribSlots = Array.isArray(payload?.meta?.meteofrance_grib?.slots) ? payload.meta.meteofrance_grib.slots.length : 0;
+      const wcsText = '';
+      const gribText = gribSlots ? ' · ' + gribSlots + ' créneau' + (gribSlots > 1 ? 'x' : '') + ' GRIB' : '';
+      const runText = runInfo || 'run AROME API en attente';
+      if (metaRun) setMetaRunText(slotSource.lineLabel + ' : ' + runText + ' · ' + sourceIndicator + gribText + wcsText);
+      updateGridSourceBadge();
     }
 
     function setMetaMessage(message) {
-      metaCenter.textContent = message;
+      if (metaCenter) {
+        metaCenter.textContent = message;
+        return;
+      }
+      setMetaRunText(message);
     }
 
     function setLoadingState(isLoading, message) {
-      searchCityBtn.disabled = isLoading;
+      if (typeof searchCityBtn !== 'undefined' && searchCityBtn) searchCityBtn.disabled = isLoading;
       if (typeof aroundMeBtn !== 'undefined' && aroundMeBtn) aroundMeBtn.disabled = isLoading;
-      locateBtn.disabled = isLoading;
-      refreshBtn.disabled = isLoading;
+      if (typeof locateBtn !== 'undefined' && locateBtn) locateBtn.disabled = isLoading;
       if (message) setMetaMessage(message);
     }
 
@@ -111,6 +293,7 @@
 
     function fadeOutCurrentGridForReload() {
       if (!map.isStyleLoaded()) return;
+      gridFillPaintAnimationToken += 1;
       if (prefersReducedGridMotion(getCurrentSlot()?.cells || [])) {
         removeLayers(true);
         return;
@@ -122,9 +305,4 @@
       if (map.getLayer('grid-highlight')) {
         animateLayerPaintNumber('grid-highlight', 'line-opacity', 1, 0, 160);
       }
-      if (map.getLayer('grid-borders')) {
-        const currentOpacity = showGridLines ? 0.5 : 0;
-        animateLayerPaintNumber('grid-borders', 'line-opacity', currentOpacity, 0, 160);
-      }
     }
-

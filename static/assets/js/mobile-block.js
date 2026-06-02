@@ -15,7 +15,7 @@
 
   function isBlockedSmartphone() {
     const { shortSide, longSide } = getDimensions();
-    return shortSide <= 600 && longSide <= 1100;
+    return false;
   }
 
   function applyBlockState() {

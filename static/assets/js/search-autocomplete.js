@@ -30,19 +30,27 @@ function renderSearchAutocomplete(items) {
     return;
   }
 
-  container.innerHTML = autocompleteItems.map((item, index) => {
+  container.innerHTML = '';
+  autocompleteItems.forEach((item, index) => {
     const secondary = [item.city, item.postcode, item.context].filter(Boolean).join(' · ');
-    return `
-      <button class="search-autocomplete-item" type="button" data-index="${index}" aria-label="${item.label}">
-        <span class="search-autocomplete-primary">${item.label}</span>
-        ${secondary ? `<span class="search-autocomplete-secondary">${secondary}</span>` : ''}
-      </button>
-    `;
-  }).join('');
+    const button = document.createElement('button');
+    button.className = 'search-autocomplete-item';
+    button.type = 'button';
+    button.dataset.index = String(index);
+    button.setAttribute('aria-label', item.label);
 
-  container.hidden = false;
+    const primary = document.createElement('span');
+    primary.className = 'search-autocomplete-primary';
+    primary.textContent = item.label;
+    button.appendChild(primary);
 
-  container.querySelectorAll('.search-autocomplete-item').forEach((button) => {
+    if (secondary) {
+      const secondaryEl = document.createElement('span');
+      secondaryEl.className = 'search-autocomplete-secondary';
+      secondaryEl.textContent = secondary;
+      button.appendChild(secondaryEl);
+    }
+
     button.addEventListener('click', async () => {
       const index = Number(button.dataset.index);
       const item = autocompleteItems[index];
@@ -59,7 +67,10 @@ function renderSearchAutocomplete(items) {
         showMarker: true,
       });
     });
+    container.appendChild(button);
   });
+
+  container.hidden = false;
 }
 
 function syncSearchAutocompleteActiveItem() {

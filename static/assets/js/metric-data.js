@@ -4,41 +4,29 @@
     }
 
     const METRIC_INFO = {
-      score_global: {
-        label: 'Score global',
-        explain: 'Synthèse v2 de l’intérêt réel de la cellule pour une chasse. Il combine Probabilité orage, Sévérité et Qualité de chasse. La Probabilité orage fusionne déjà initiation brute, fiabilité locale et pénalité de Bust Risk.'
-      },
       confidence_score: {
-        label: 'Bust Risk',
-        explain: 'Risque qu’une cellule paraisse prometteuse mais produise peu ou rien sur le terrain. Ici, plus la valeur est haute, plus le risque de déplacement inutile augmente.'
+        label: 'Confiance',
+        explain: 'Indice de cohérence du signal. Plus la valeur est haute, plus les ingrédients convectifs sont alignés et stables autour de l’heure sélectionnée.'
       },
       trigger_score: {
         label: 'Probabilité orage',
-        explain: 'Estime la probabilité réelle d’obtenir une convection exploitable. Le score fusionne l’initiation brute, la fiabilité locale du signal et une pénalité de Bust Risk pour éviter les faux positifs flatteurs.'
-      },
-      structure_score: {
-        label: 'Sévérité',
-        explain: 'Mesure le potentiel d’intensité et d’organisation si la convection part. Le score repose surtout sur le shear, la CAPE et la dynamique de surface.'
-      },
-      chase_quality_score: {
-        label: 'Qualité de chasse',
-        explain: 'Mesure l’intérêt terrain pour la chasse. Il combine visibilité, photogénie et confort relatif à partir de la nébulosité, du timing et d’un proxy de vent.'
-      },
-      stability_score: {
-        label: 'Fiabilité',
-        explain: 'Toujours calculée en interne, mais désormais réinjectée dans la Probabilité orage. Elle mesure la robustesse du signal via cohérence interne, stabilité locale et marge vis-à-vis des seuils.'
+        explain: 'Estime la probabilité réelle d’obtenir une convection exploitable à partir de la CAPE, de l’humidité basse couche, du VPD, du bulbe humide, du timing et du contexte AROME disponible.'
       },
       mucape: {
         label: 'CAPE',
         explain: 'Convective Available Potential Energy. C’est l’énergie disponible pour les ascendances. Plus elle est élevée, plus l’environnement peut soutenir des développements convectifs intenses si un déclenchement se produit.'
       },
-      shear_ms: {
-        label: 'Shear',
-        explain: 'Cisaillement vertical du vent, ici approché entre 10 m et 100 m. Il aide à l’organisation des cellules et peut favoriser des structures plus durables ou mieux organisées.'
-      },
       relative_humidity_2m: {
         label: 'Humidité 2 m',
         explain: 'Humidité relative près du sol. Une basse couche plus humide favorise généralement l’alimentation convective et limite le mélange trop sec.'
+      },
+      precipitable_water: {
+        label: 'Vapeur colonne',
+        explain: 'Vapeur d’eau intégrée dans la colonne atmosphérique. Une valeur élevée signale une réserve hydrique plus profonde qu’un simple point de rosée de surface.'
+      },
+      shortwave_radiation: {
+        label: 'Rayonnement court',
+        explain: 'Flux net de rayonnement court prévu par AROME. Il sert de proxy de chauffage de surface et complète le timing horaire.'
       },
       vapour_pressure_deficit: {
         label: 'VPD',
@@ -62,19 +50,19 @@
       },
       cloud_cover_low: {
         label: 'Nuages bas',
-        explain: 'Nébulosité basse couche. Trop de nuages bas peut freiner l’insolation et rendre la zone moins agréable ou moins lisible pour la chasse.'
+        explain: 'Nébulosité basse couche prévue par AROME. Elle sert surtout de contexte ou de signal matérialisé, pas de verrou au ciel clair pré-convectif.'
       },
       cloud_cover_mid: {
         label: 'Nuages moyens',
-        explain: 'Nébulosité de moyenne couche. Une couverture importante peut signaler une masse d’air moins propre ou un potentiel de chauffage diurne réduit.'
+        explain: 'Nébulosité de moyenne couche. Elle aide à lire un développement matérialisé ou un écran nuageux, sans pénaliser automatiquement un ciel clair.'
       },
       cloud_cover_high: {
         label: 'Nuages hauts',
-        explain: 'Voile d’altitude. Des nuages hauts étendus peuvent limiter le rayonnement solaire et rendre la lecture du ciel moins nette.'
+        explain: 'Voile d’altitude. À lire avec le rayonnement court : seul, ce champ reste un contexte visuel et non un frein direct au potentiel orageux.'
       },
       selected_hour: {
         label: 'Heure retenue',
-        explain: 'Heure jugée la plus favorable dans le créneau sélectionné pour cette cellule, selon le score calculé par le script.'
+        explain: 'Heure représentée par le bouton sélectionné et utilisée pour les paramètres affichés dans cette cellule.'
       }
     };
 
@@ -91,9 +79,9 @@
       const value = toNumber(rawValue);
       if (metricKey === 'selected_hour') {
         return {
-          state: 'Lecture',
-          guide: [
-            rangeLine('Usage', 'ce n’est pas un score, mais l’heure jugée la plus favorable dans le créneau affiché.'),
+            state: 'Lecture',
+            guide: [
+            rangeLine('Usage', 'ce n’est pas un score, mais l’heure affichée par le bouton actif.'),
             rangeLine('Terrain', 'à confronter au radar, aux observations visuelles et à l’évolution réelle de la convection.')
           ].join('')
         };
@@ -103,11 +91,7 @@
       }
 
       switch (metricKey) {
-        case 'score_global':
-        case 'trigger_score':
-        case 'structure_score':
-        case 'chase_quality_score':
-        case 'stability_score': {
+        case 'trigger_score': {
           const state = value < 35 ? 'Faible' : value < 65 ? 'Modéré' : value < 85 ? 'Élevé' : 'Très élevé';
           return {
             state,
@@ -124,11 +108,11 @@
           return {
             state,
             guide: [
-              rangeLine('Très faible', '0–19 : risque de bust contenu.'),
-              rangeLine('Faible', '20–39 : déplacement assez défendable.'),
-              rangeLine('Modéré', '40–59 : prudence, le signal peut décevoir.'),
-              rangeLine('Élevé', '60–79 : risque de faux positif marqué.'),
-              rangeLine('Très élevé', '80–100 : forte probabilité de déplacement peu rentable.')
+              rangeLine('Très faible', '0–19 : signal très fragile ou contradictoire.'),
+              rangeLine('Faible', '20–39 : faible cohérence entre les ingrédients.'),
+              rangeLine('Modéré', '40–59 : signal surveillable mais encore sensible.'),
+              rangeLine('Élevé', '60–79 : ingrédients plutôt alignés.'),
+              rangeLine('Très élevé', '80–100 : signal robuste et peu marginal.')
             ].join('')
           };
         }
@@ -142,18 +126,6 @@
               rangeLine('Correcte', '800–1499 J/kg : base exploitable.'),
               rangeLine('Forte', '1500–2499 J/kg : bon carburant convectif.'),
               rangeLine('Très forte', '≥ 2500 J/kg : environnement potentiellement explosif si déclenchement.')
-            ].join('')
-          };
-        }
-        case 'shear_ms': {
-          const state = value < 10 ? 'Faible' : value < 15 ? 'Correct' : value <= 25 ? 'Favorable' : 'Très dynamique';
-          return {
-            state,
-            guide: [
-              rangeLine('Faible', '< 10 m/s : organisation limitée.'),
-              rangeLine('Correct', '10–14.9 m/s : amélioration possible.'),
-              rangeLine('Favorable', '15–25 m/s : bon créneau pour des structures mieux organisées.'),
-              rangeLine('Très dynamique', '> 25 m/s : environnement très cisaillé, à interpréter avec le reste.')
             ].join('')
           };
         }

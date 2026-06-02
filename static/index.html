@@ -7,14 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="ObjectiFoudre" />
-  <link rel="manifest" href="/manifest.webmanifest?v=1.0.2" />
+  <link rel="manifest" href="/manifest.webmanifest?v=1.1.111" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <title>ObjectiFoudre — Tactile</title>
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/css/main.css?v=1.0.2" />
-<link rel="stylesheet" href="/assets/css/components.css?v=1.0.2" />
-<link rel="stylesheet" href="/assets/css/responsive.css?v=1.0.2" />
+  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.1.111"></script>
+  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.1.111" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/main.css?v=1.1.111" />
+<link rel="stylesheet" href="/assets/css/components.css?v=1.1.111" />
+<link rel="stylesheet" href="/assets/css/responsive.css?v=1.1.111" />
 </head>
 <body>
   <div id="mobileBlockScreen" class="mobile-block-screen" hidden>
@@ -34,11 +34,14 @@
       </div>
     </div>
     <div id="map"></div>
+    <div id="gridSourceBadge" class="grid-source-badge current-time-badge" role="timer" aria-live="off">--:--:--</div>
+    <div id="timelineDateLabel" class="grid-source-badge timeline-date-label timeline-map-date-badge" aria-live="polite">--</div>
+    <div id="mfQuotaCooldownBadge" class="grid-source-badge quota-cooldown-badge" role="status" aria-live="polite" hidden>Quota AROME</div>
 
     <div class="right-rail-scroll" id="rightRailScroll">
-    <div class="search-dock" id="topbar">
+    <div class="search-dock" id="topbar" aria-hidden="false">
       <div class="mobile-toggle-bar">
-        <button id="toggleSearchBtn" class="mobile-toggle-btn" type="button" aria-label="Afficher la recherche de zone" title="Zone et recherche">
+        <button id="toggleSearchBtn" class="mobile-toggle-btn" type="button" aria-label="Rechercher un lieu" title="Rechercher un lieu">
           <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10Z"></path>
             <circle cx="12" cy="11" r="2.5"></circle>
@@ -47,12 +50,9 @@
       </div>
 
       <div class="panel-card search-panel">
-        <div class="location-bar">
+        <div class="location-bar arome-search-only">
           <input id="cityInput" class="location-input" type="text" placeholder="Tape une ville, un secteur ou un point de départ…" autocomplete="off" spellcheck="false" />
           <div id="searchAutocomplete" class="search-autocomplete" hidden></div>
-          <button id="mockModeBtn" class="mode-toggle-btn" type="button" aria-pressed="false" title="Basculer entre données réelles et mock">
-            <span class="mode-toggle-label" id="mockModeLabel">Réel</span>
-          </button>
           <button id="searchCityBtn" class="icon-only-btn" aria-label="Rechercher une ville" title="Rechercher">
             <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="6.5"></circle>
@@ -64,7 +64,7 @@
     </div>
 
     <div class="right-rail-stack">
-      <button class="fab" id="locateBtn" aria-label="Me localiser" title="Autour de moi">
+      <button class="fab arome-retired-ui" id="locateBtn" aria-label="Me localiser" title="Autour de moi" hidden aria-hidden="true">
         <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3.2"></circle>
           <path d="M12 2.5v3"></path>
@@ -73,30 +73,14 @@
           <path d="M18.5 12h3"></path>
         </svg>
       </button>
-      <button id="gridLinesBtn" class="grid-focus-btn active" type="button" aria-label="Afficher ou masquer les lignes de grille" title="Lignes de grille">
-        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 8h16"></path>
-          <path d="M4 16h16"></path>
-          <path d="M8 4v16"></path>
-          <path d="M16 4v16"></path>
-        </svg>
-      </button>
-      <button id="layerModeBtn" class="grid-focus-btn" type="button" aria-label="Choisir la couche de couleur" title="Couche de couleur">
-        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3 4 8l8 5 8-5-8-5Z"></path>
-          <path d="m4 12 8 5 8-5"></path>
-          <path d="m4 16 8 5 8-5"></path>
-        </svg>
-      </button>
       <button id="bestCellsBtn" class="grid-focus-btn" type="button" aria-label="Mettre en valeur les meilleures cellules" title="Mettre en valeur les meilleures cellules">
         <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 3.5 14.6 8.8 20.5 9.7 16.2 13.8 17.2 19.6 12 16.9 6.8 19.6 7.8 13.8 3.5 9.7 9.4 8.8Z"></path>
         </svg>
       </button>
-      <button class="fab" id="refreshBtn" aria-label="Actualiser les données" title="Actualiser">
-        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
-          <path d="M21 3v6h-6"></path>
+      <button id="predictionPageBtn" class="grid-focus-btn" type="button" aria-label="Ouvrir les prévisions orageuses" title="Prévisions orageuses">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13 3 5 14h6l-1 7 8-11h-6l1-7Z"></path>
         </svg>
       </button>
       <button id="infoDrawerBtn" class="grid-focus-btn" type="button" aria-label="Informations" title="Informations">
@@ -106,10 +90,6 @@
           <path d="M12 7.5h.01"></path>
         </svg>
       </button>
-      <div id="layerPanel" class="layer-panel" aria-hidden="true">
-        <button class="layer-option active" type="button" data-layer-metric="trigger_score">Probabilité orage</button>
-        <button class="layer-option" type="button" data-layer-metric="chase_quality_score">Qualité de chasse</button>
-        <button class="layer-option" type="button" data-layer-metric="structure_score">Sévérité</button>
       </div>
     </div>
     </div>
@@ -119,15 +99,34 @@
         <span class="timeline-toggle-icon" aria-hidden="true">↓</span>
       </button>
       <div class="timeline-content">
-        <div class="timeline-bar">
-          <button id="prevDayBtn" class="timeline-nav-btn" type="button" aria-label="Jour précédent" title="Jour précédent">←</button>
-          <input id="dateInput" class="date-input timeline-date-input" type="date" min="2022-01-01" />
-          <button id="nextDayBtn" class="timeline-nav-btn" type="button" aria-label="Jour suivant" title="Jour suivant">→</button>
-          <button id="todayBtn" class="timeline-today-btn" type="button">Aujourd’hui</button>
-          <button id="playTimelineBtn" class="timeline-play-btn" type="button" aria-pressed="false" title="Lire les horaires du jour">▶</button>
+        <div class="timeline-bar timeline-bar-frise">
+          <button id="prevDayBtn" class="timeline-icon-btn timeline-nav-btn" type="button" aria-label="Jour précédent" title="Jour précédent">
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15.5 5 8.5 12l7 7"></path>
+            </svg>
+          </button>
+          <div id="slotButtons" class="timeline-slot-strip"></div>
+          <button id="nextDayBtn" class="timeline-icon-btn timeline-nav-btn" type="button" aria-label="Jour suivant" title="Jour suivant">
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m8.5 5 7 7-7 7"></path>
+            </svg>
+          </button>
+          <button id="playTimelineBtn" class="timeline-icon-btn timeline-play-btn" type="button" aria-pressed="false" title="Lire les horaires du jour">
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+              <path d="M8 5.5v13l10-6.5-10-6.5Z"></path>
+            </svg>
+          </button>
+          <button id="exportGifBtn" class="timeline-icon-btn timeline-gif-btn" type="button" aria-label="Exporter l’animation de grille" title="Exporter animation" aria-haspopup="menu" aria-expanded="false">
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="4" width="16" height="13" rx="2"></rect>
+              <path d="M8 4v13"></path>
+              <path d="M16 4v13"></path>
+              <path d="M12 17v4"></path>
+              <path d="m9 19 3 3 3-3"></path>
+            </svg>
+          </button>
         </div>
         <div id="dayButtons" class="button-row" hidden></div>
-        <div id="slotButtons" class="timeline-slot-strip"></div>
       </div>
     </div>
 
@@ -135,18 +134,17 @@
 
     <div class="selection-card" id="selectionCard" aria-live="polite">
       <div class="selection-top">
-        <div>
+        <div class="selection-heading">
           <h2 class="selection-title" id="selectionTitle">Zone</h2>
-          <div class="selection-subtitle" id="selectionSubtitle">Jour · créneau · heure</div>
         </div>
         <button class="icon-btn" id="closeSelectionBtn" aria-label="Fermer">×</button>
       </div>
 
-      <div class="quick-grid quick-grid-triple">
-        <button class="metric-btn" data-metric="trigger_score"><span class="label">Probabilité orage</span><span class="value" id="selectionTrigger">-</span><span class="hint" id="selectionTriggerHint">Instabilité, humidité et inhibition</span></button>
-        <button class="metric-btn" data-metric="structure_score"><span class="label">Sévérité</span><span class="value" id="selectionStructure">-</span><span class="hint" id="selectionStructureHint">Énergie convective et organisation</span></button>
-        <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Qualité de chasse</span><span class="value" id="selectionQuality">-</span><span class="hint" id="selectionQualityHint">Lisibilité terrain et potentiel photo</span></button>
+      <div class="selection-kpi-row">
+        <div class="selection-kpi"><span>Probabilité orage</span><strong id="selectionTrigger">-</strong></div>
+        <div class="selection-kpi"><span>Confiance</span><strong id="selectionConfidence">-</strong></div>
       </div>
+      <div class="selection-context" id="selectionContext"></div>
 
       <div class="action-row">
         <button class="primary-btn" id="openDetailsBtn">Détails</button>
@@ -156,187 +154,231 @@
     <div class="modal-backdrop" id="modalBackdrop"></div>
     <div class="details-modal" id="detailsModal" role="dialog" aria-modal="true" aria-labelledby="detailsTitle">
       <div class="details-header">
-        <div>
+        <div class="details-heading">
           <div class="title" id="detailsTitle">Détails cellule</div>
-          <div class="small muted" id="detailsSubtitle">Zone · scores et paramètres du créneau actif</div>
+          <div class="small muted" id="detailsSubtitle">Zone · scores et paramètres de l’heure active</div>
         </div>
         <button class="icon-btn" id="closeDetailsBtn" aria-label="Fermer">×</button>
       </div>
 
+      <div class="details-calc-inspector is-empty" id="detailsCalcInspector">
+        <button class="details-calc-inspector-close" id="detailsCalcInspectorClose" type="button" aria-label="Vider le détail du calcul">×</button>
+        <div class="details-calc-inspector-eyebrow" id="detailsCalcInspectorCategory">Détail du calcul</div>
+        <div class="details-calc-inspector-title" id="detailsCalcInspectorTitle">Sélectionne un sous-score</div>
+        <div class="details-calc-inspector-value" id="detailsCalcInspectorValue">—</div>
+        <div class="details-calc-inspector-formula" id="detailsCalcInspectorFormula">Le détail du calcul s’affichera ici.</div>
+        <div class="details-calc-inspector-text" id="detailsCalcInspectorText"></div>
+      </div>
+
       <div class="details-content">
-        <div class="summary-box" id="detailsSummary">Aucune cellule sélectionnée.</div>
-
-        <div class="details-group">
-          <div class="details-group-title">Probabilité orage · Instabilité, humidité, inhibition</div>
-          <div class="details-grid">
-            <button class="metric-btn" data-metric="trigger_score"><span class="label">Probabilité orage</span><span class="value" id="dTrigger">-</span><span class="hint" id="dTriggerHint">Lecture synthétique de l’instabilité réellement exploitable</span></button>
-            <button class="metric-btn" data-metric="mucape"><span class="label">CAPE</span><span class="value" id="dCape">-</span><span class="hint">Verrou principal de l’instabilité convective</span></button>
-            <button class="metric-btn" data-metric="relative_humidity_2m"><span class="label">Humidité 2m</span><span class="value" id="dRh">-</span><span class="hint">Humidité disponible en basse couche</span></button>
-            <button class="metric-btn" data-metric="dewpoint_c"><span class="label">Point de rosée</span><span class="value" id="dDewpoint">-</span><span class="hint">Réservoir d’humidité réellement exploitable</span></button>
-            <button class="metric-btn" data-metric="wet_bulb_temperature_2m"><span class="label">Bulbe humide</span><span class="value" id="dWetbulb">-</span><span class="hint">Repère thermodynamique de basse couche</span></button>
-            <button class="metric-btn" data-metric="vapour_pressure_deficit"><span class="label">VPD</span><span class="value" id="dVpd">-</span><span class="hint">Proxy de sécheresse et d’inhibition</span></button>
-            <button class="metric-btn" data-metric="temp_c"><span class="label">Température</span><span class="value" id="dTemp">-</span><span class="hint">Contexte de surface</span></button>
+        <div class="details-group details-score-category details-score-category-probability">
+          <div class="details-group-title">Probabilité orage</div>
+          <div class="details-score-layout">
+            <div class="metric-btn metric-card metric-card-score"><span class="label">Score final</span><span class="value" id="dTrigger">-</span><span class="hint" id="dTriggerHint">Déclenchement convectif exploitable</span></div>
+            <div class="details-calculation-grid" id="dProbabilityBreakdown"></div>
           </div>
         </div>
 
-        <div class="details-group details-group-compact">
-          <div class="details-group-title">Sévérité · Énergie et organisation</div>
-          <div class="details-grid details-grid-compact">
-            <button class="metric-btn" data-metric="structure_score"><span class="label">Sévérité</span><span class="value" id="dStructure">-</span><span class="hint" id="dStructureHint">Capacité à produire des orages organisés ou forts</span></button>
-            <button class="metric-btn" data-metric="shear_ms"><span class="label">Shear</span><span class="value" id="dShear">-</span><span class="hint">Organisation et longévité possibles</span></button>
-            <button class="metric-btn" data-metric="wind_gusts_10m"><span class="label">Rafales 10m</span><span class="value" id="dGusts">-</span><span class="hint">Contexte de vent en surface</span></button>
+        <div class="details-group details-score-category details-score-category-confidence">
+          <div class="details-group-title">Confiance</div>
+          <div class="details-score-layout">
+            <div class="metric-btn metric-card metric-card-score"><span class="label">Score final</span><span class="value" id="dConfidence">-</span><span class="hint" id="dConfidenceHint">Cohérence et stabilité du signal</span></div>
+            <div class="details-calculation-grid" id="dConfidenceBreakdown"></div>
           </div>
         </div>
 
-        <div class="details-group">
-          <div class="details-group-title">Qualité de chasse · Lisibilité et potentiel photo</div>
-          <div class="details-grid">
-            <button class="metric-btn" data-metric="chase_quality_score"><span class="label">Qualité de chasse</span><span class="value" id="dQuality">-</span><span class="hint" id="dQualityHint">Lisibilité du ciel, visibilité et intérêt photographique</span></button>
-            <button class="metric-btn" data-metric="cloud_cover_low"><span class="label">Nuages bas</span><span class="value" id="dCloudLow">-</span><span class="hint">Peut gêner l’insolation</span></button>
-            <button class="metric-btn" data-metric="cloud_cover_mid"><span class="label">Nuages moyens</span><span class="value" id="dCloudMid">-</span><span class="hint">Crasse intermédiaire</span></button>
-            <button class="metric-btn" data-metric="cloud_cover_high"><span class="label">Nuages hauts</span><span class="value" id="dCloudHigh">-</span><span class="hint">Voile d’altitude</span></button>
-            <button class="metric-btn" data-metric="selected_hour"><span class="label">Heure retenue</span><span class="value" id="dHour">-</span><span class="hint">Créneau utilisé par la cellule</span></button>
+        <div class="details-group details-value-category">
+          <div class="details-group-title">Valeurs météo utilisées</div>
+          <div class="details-grid details-grid-values">
+            <div class="metric-btn metric-card"><span class="label">CAPE</span><span class="value" id="dCape">-</span><span class="hint">Énergie disponible</span></div>
+            <div class="metric-btn metric-card"><span class="label">Humidité 2m</span><span class="value" id="dRh">-</span><span class="hint">Basse couche</span></div>
+            <div class="metric-btn metric-card"><span class="label">Vapeur colonne</span><span class="value" id="dPrecipitableWater">-</span><span class="hint">kg/m²</span></div>
+            <div class="metric-btn metric-card"><span class="label">Rayonnement</span><span class="value" id="dShortwave">-</span><span class="hint">W/m²</span></div>
+            <div class="metric-btn metric-card"><span class="label">Précipitation</span><span class="value" id="dPrecipRate">-</span><span class="hint">mm/h</span></div>
+            <div class="metric-btn metric-card"><span class="label">Point de rosée</span><span class="value" id="dDewpoint">-</span><span class="hint">Réserve d’humidité</span></div>
+            <div class="metric-btn metric-card"><span class="label">Bulbe humide</span><span class="value" id="dWetbulb">-</span><span class="hint">Thermo-hygrométrie</span></div>
+            <div class="metric-btn metric-card"><span class="label">VPD</span><span class="value" id="dVpd">-</span><span class="hint">Sécheresse de l’air</span></div>
+            <div class="metric-btn metric-card"><span class="label">Température</span><span class="value" id="dTemp">-</span><span class="hint">Surface</span></div>
+            <div class="metric-btn metric-card"><span class="label">Rafales</span><span class="value" id="dGusts">-</span><span class="hint">10 m</span></div>
+            <div class="metric-btn metric-card"><span class="label">Vent 10 m</span><span class="value" id="dWindSpeed">-</span><span class="hint">m/s</span></div>
+            <div class="metric-btn metric-card"><span class="label">Direction</span><span class="value" id="dWindDirection">-</span><span class="hint">vent 10 m</span></div>
+            <div class="metric-btn metric-card"><span class="label">Convergence</span><span class="value" id="dSurfaceConvergence">-</span><span class="hint">surface</span></div>
+            <div class="metric-btn metric-card"><span class="label">Nuages bas</span><span class="value" id="dCloudLow">-</span><span class="hint">Ciel bas</span></div>
+            <div class="metric-btn metric-card"><span class="label">Nuages moyens</span><span class="value" id="dCloudMid">-</span><span class="hint">Développement</span></div>
+            <div class="metric-btn metric-card"><span class="label">Nuages hauts</span><span class="value" id="dCloudHigh">-</span><span class="hint">Voile altitude</span></div>
           </div>
         </div>
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge">Version : v1.0.2</div><div class="meta-corner" id="metaCenter">Zone : chargement…</div><div class="meta-corner" id="metaRun">Modèle arome-france : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.1.111">Version : v1.1.111 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
       <div class="details-header info-drawer-header">
         <div>
           <div class="title" id="infoDrawerTitle">Guide de lecture</div>
-          <div class="small muted">Méthodologie v2, lecture horaire, autocomplétion et repères terrain</div>
+          <div class="small muted">Score horaire, AROME France, autocomplétion et repères terrain</div>
         </div>
         <button class="icon-btn" id="closeDrawerBtn" aria-label="Fermer">×</button>
       </div>
 
       <section class="drawer-section drawer-intro">
-        <p>Cette carte classe chaque maille selon son intérêt réel pour une chasse. Le modèle v2 répond avec trois grands axes visibles dans la carte et la sélection : Probabilité orage, Sévérité et Qualité de chasse. La frise horaire permet maintenant une lecture séquentielle du jour, les créneaux historical sont teintés en rouge et la barre de recherche propose une autocomplétion de communes pour accélérer le positionnement.</p>
+        <p>Cette carte affiche une probabilité orageuse horaire sur la grille France AROME. La lecture est volontairement réduite à deux scores : probabilité orage et confiance.</p>
       </section>
 
       <section class="drawer-section">
-        <div class="small drawer-section-title">Échelle de lecture du score global</div>
-        <div class="legend-wrap" aria-label="Légende couleurs score global">
+        <div class="small drawer-section-title">Échelle de probabilité orage</div>
+        <div class="legend-wrap" aria-label="Légende couleurs probabilité orage">
           <div class="legend-gradient"></div>
-          <div class="legend-scale"><span>0</span><span>35</span><span>65</span><span>85</span><span>100</span></div>
+          <div class="legend-scale"><span>0</span><span>65</span><span>75</span><span>85</span><span>90</span><span>95</span><span>100</span></div>
         </div>
         <div class="drawer-scale-grid">
-          <div class="drawer-scale-card"><strong>0–34</strong><span>Faible : environnement peu réactif ou peu exploitable.</span></div>
-          <div class="drawer-scale-card"><strong>35–64</strong><span>Modéré : fenêtre surveillable, intérêt tactique possible.</span></div>
-          <div class="drawer-scale-card"><strong>65–84</strong><span>Élevé : zone prioritaire si le contexte réel confirme.</span></div>
-          <div class="drawer-scale-card"><strong>85–100</strong><span>Très élevé : combinaison solide entre initiation, sévérité, chaseability et fiabilité.</span></div>
+          <div class="drawer-scale-card"><strong>65–74</strong><span>Faible : signal présent mais encore discret.</span></div>
+          <div class="drawer-scale-card"><strong>75–84</strong><span>Moyen : ingrédients surveillables.</span></div>
+          <div class="drawer-scale-card"><strong>85–89</strong><span>Élevé : environnement favorable.</span></div>
+          <div class="drawer-scale-card"><strong>90–94</strong><span>Très élevé : signal franchement marqué.</span></div>
+          <div class="drawer-scale-card"><strong>95–100</strong><span>Certain : signal maximal ou quasi maximal.</span></div>
         </div>
       </section>
 
       <section class="drawer-section">
-        <div class="small drawer-section-title">Comment est calculé le score global</div>
-        <p>Le score global est une synthèse de quatre catégories notées sur 100. Chaque catégorie décrit une partie différente du risque utile pour la chasse. Le score final privilégie les mailles qui combinent un déclenchement crédible, une structure orageuse exploitable, une lecture terrain correcte et une fenêtre horaire qui ne s’effondre pas immédiatement.</p>
+        <div class="small drawer-section-title">Calcul simplifié</div>
+        <p>Le score principal croise CAPE, point de rosée, vapeur d’eau intégrée, rayonnement court, précipitation, nébulosité, rafales, humidité basse couche recalculée, VPD, bulbe humide et timing. Chaque champ demandé est obligatoire et réellement utilisé.</p>
         <div class="drawer-formula-card">
-          <div class="drawer-formula-line"><strong>Score global</strong> = Initiation 30% + Severity 30% + Chaseability 25% + Fiabilité 15%</div>
-          <div class="drawer-formula-note">Le modèle applique aussi des plafonds anti faux-positifs : un bon shear sans initiation crédible, ou une belle instabilité dans une basse couche trop sèche, ne doit pas produire un score global artificiellement haut. Le Bust Risk est lu à part pour estimer le risque de déplacement inutile.</div>
+          <div class="drawer-formula-line"><strong>Probabilité orage</strong> = déclenchement convectif exploitable sur 0–100</div>
+          <div class="drawer-formula-note"><strong>Confiance</strong> mesure la cohérence des ingrédients et leur stabilité autour de l’heure sélectionnée. Elle n’ajoute pas de requête API dédiée.</div>
         </div>
       </section>
 
       <section class="drawer-section">
-        <div class="small drawer-section-title">Les 4 catégories v2</div>
+        <div class="small drawer-section-title">Champs AROME requis</div>
         <div class="drawer-category-list">
           <article class="drawer-category-card">
-            <h3>1. Initiation</h3>
-            <p>Mesure la probabilité qu’un orage démarre réellement. Le score croise CAPE, point de rosée, humidité 2 m, VPD, bulbe humide et fenêtre horaire. Une belle instabilité seule ne suffit pas : une basse couche trop sèche ou un timing médiocre font chuter l’initiation.</p>
-            <ul>
-              <li>Monte si l’instabilité et l’humidité utile augmentent.</li>
-              <li>Baisse si l’air est trop sec ou si l’énergie disponible reste limitée.</li>
-            </ul>
+            <h3>CAPE</h3>
+            <p>Quantifie l’énergie disponible pour les ascendances. Sans CAPE exploitable, le score reste bas.</p>
           </article>
           <article class="drawer-category-card">
-            <h3>2. Severity</h3>
-            <p>Évalue le potentiel d’intensité et d’organisation si l’orage part. Le score repose surtout sur CAPE, shear et rafales. Il monte avec les combinaisons instabilité + cisaillement cohérentes, et baisse si le contexte est dynamique mais trop pauvre en énergie.</p>
-            <ul>
-              <li>Monte avec un cisaillement exploitable et une dynamique plus favorable.</li>
-              <li>Baisse si les cellules risquent de rester peu structurées ou très brèves.</li>
-            </ul>
+            <h3>Température 2 m</h3>
+            <p>Utilisée avec le point de rosée pour reconstruire humidité, VPD et bulbe humide.</p>
           </article>
           <article class="drawer-category-card">
-            <h3>3. Chaseability</h3>
-            <p>Indique si la zone est agréable et utile à chasser. Le score combine visibilité, photogénie et confort relatif via la nébulosité, le timing et un proxy de vent. Une zone peut être météo-intéressante mais peu chassable visuellement.</p>
-            <ul>
-              <li>Monte quand le ciel reste plus propre et plus lisible.</li>
-              <li>Baisse en cas d’enclume diffuse, crasse ou masquage nuageux bas/moyen.</li>
-            </ul>
+            <h3>Point de rosée 2 m</h3>
+            <p>Lit l’humidité réellement exploitable en basse couche et les risques de dessèchement.</p>
           </article>
           <article class="drawer-category-card">
-            <h3>4. Fiabilité</h3>
-            <p>Mesure la robustesse du signal. Le score combine cohérence interne des paramètres, stabilité temporelle autour du créneau retenu et marge vis-à-vis des seuils. Il sert à distinguer un vrai signal d’un optimum plus fragile.</p>
-            <ul>
-              <li>Monte si le signal reste cohérent avant et après le créneau retenu.</li>
-              <li>Baisse si la fenêtre paraît fragile ou rapidement dégradée.</li>
-            </ul>
+            <h3>Vapeur d’eau intégrée</h3>
+            <p>Complète l’humidité 2 m avec une lecture de profondeur humide dans la colonne.</p>
+          </article>
+          <article class="drawer-category-card">
+            <h3>Rayonnement, pluie, nuages, rafales</h3>
+            <p>Ces champs matérialisent le chauffage diurne, l’activité convective prévue et la dynamique de surface.</p>
           </article>
         </div>
       </section>
 
       <section class="drawer-section">
-        <div class="small drawer-section-title">Repères pratiques v2</div>
+        <div class="small drawer-section-title">Repères pratiques</div>
         <ul class="drawer-bullet-list">
-          <li><strong>Score global élevé + Bust Risk faible</strong> : zone prioritaire pour le positionnement.</li>
-          <li><strong>Initiation élevée mais Severity faible</strong> : convection possible, mais structures moins propres.</li>
-          <li><strong>Sévérité élevée mais Probabilité orage faible</strong> : beau potentiel théorique, mais zone encore fragile malgré le shear ou la CAPE.</li>
-          <li><strong>Chaseability faible</strong> : potentiel météo parfois correct, mais lecture terrain plus compliquée.</li>
-          <li><strong>Fiabilité faible</strong> : créneau intéressant mais fragile, intérêt surtout tactique et court.</li>
+          <li><strong>Probabilité élevée + confiance élevée</strong> : zone prioritaire à surveiller.</li>
+          <li><strong>Probabilité élevée + confiance faible</strong> : signal intéressant mais fragile.</li>
+          <li><strong>Probabilité faible + confiance élevée</strong> : absence d’ingrédient probablement robuste.</li>
         </ul>
       </section>
 
       <section class="drawer-section">
-        <div class="small drawer-section-title">Mode “meilleures cellules”</div>
-        <p>Ce mode accentue visuellement les mailles les plus prometteuses et atténue les autres pour accélérer la lecture de la situation. Il sert à hiérarchiser rapidement les zones, pas à remplacer l’analyse synoptique, radar ou terrain.</p>
+        <div class="small drawer-section-title">Météo-France AROME GRIB</div>
+        <p>ObjectiFoudre utilise les champs AROME préparés côté serveur, conserve la journée France en cache, puis affiche les heures disponibles depuis ce cache.</p>
+        <div id="mfTestStatus" class="mf-test-status mf-public-status" role="status" aria-live="polite">Cache France en attente.</div>
+        <details class="mf-admin-panel">
+          <summary>Admin / debug AROME</summary>
+          <div class="mf-token-form">
+            <label class="mf-token-label" for="mfTokenInput">Clé API Météo-France</label>
+            <div class="mf-token-row">
+              <input id="mfTokenInput" class="mf-token-input" type="password" autocomplete="off" spellcheck="false" placeholder="Colle ta clé API" />
+              <div class="mf-token-actions">
+                <button id="mfGribFullPackageProbeBtn" class="primary-btn mf-secondary-btn" type="button">Tester paquet 6h</button>
+              </div>
+            </div>
+            <div id="mfPreloadProgress" class="mf-preload-progress" hidden>
+              <div class="mf-preload-progress-head">
+                <span id="mfPreloadProgressLabel">Préchargement France</span>
+                <span id="mfPreloadProgressValue">0%</span>
+              </div>
+              <div class="mf-preload-progress-track" aria-hidden="true">
+                <div id="mfPreloadProgressBar" class="mf-preload-progress-bar"></div>
+              </div>
+              <div id="mfPreloadProgressDetail" class="mf-preload-progress-detail">En attente…</div>
+            </div>
+          </div>
+        </details>
       </section>
 
       <section class="drawer-section">
         <div class="small drawer-section-title">Aides d’interface récentes</div>
         <ul class="drawer-bullet-list">
-          <li><strong>Recherche</strong> : l’autocomplétion apparaît pendant la saisie pour proposer rapidement des communes et secteurs proches.</li>
-          <li><strong>Frise</strong> : le bouton lecture joue les créneaux d’un jour un par un ; il fonctionne comme un play/pause rapide.</li>
-          <li><strong>Créneaux historical</strong> : ils sont teintés en rouge pour distinguer d’un coup d’œil les horaires déjà passés.</li>
-          <li><strong>Mock / Réel</strong> : le bouton de mode bascule les données utilisées sans quitter la vue en cours.</li>
+          <li><strong>AROME France</strong> : la grille nationale devient la source principale ; il n’y a plus de zone locale à choisir.</li>
+          <li><strong>Frise</strong> : le bouton lecture joue les 24 heures du jour une par une ; il fonctionne comme un play/pause rapide.</li>
+          <li><strong>Heures passées</strong> : elles sont teintées en rouge pour distinguer d’un coup d’œil ce qui appartient déjà au passé.</li>
+          <li><strong>Cache</strong> : les heures déjà préchargées sont relues depuis le cache France pour garder une navigation fluide.</li>
         </ul>
       </section>
     </aside>
 
-    <div class="modal-backdrop" id="infoBackdrop"></div>
-    <div class="info-modal" id="infoModal" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
-      <div class="details-header">
-        <div>
-          <div class="title" id="infoTitle">Information métrique</div>
-          <div class="small muted" id="infoMetricLabel">—</div>
+    <section class="prediction-page" id="predictionPage" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="predictionPageTitle">
+      <div class="prediction-page-shell">
+        <header class="prediction-page-header">
+          <div>
+            <div class="prediction-eyebrow">Prévisions orageuses</div>
+            <h2 id="predictionPageTitle">Carte de risque journalier</h2>
+            <p id="predictionPageSubtitle">Image générée depuis la fenêtre AROME France 08h-08h en cache.</p>
+            <div class="prediction-period-tabs" id="predictionPeriodTabs" role="tablist" aria-label="Période de prévision">
+              <button class="prediction-period-tab active" type="button" role="tab" aria-selected="true" data-prediction-period="day">Journée 08-08</button>
+              <button class="prediction-period-tab" type="button" role="tab" aria-selected="false" data-prediction-period="morning">Matinée</button>
+              <button class="prediction-period-tab" type="button" role="tab" aria-selected="false" data-prediction-period="afternoon">Après-midi</button>
+              <button class="prediction-period-tab" type="button" role="tab" aria-selected="false" data-prediction-period="evening">Soirée / nuit</button>
+            </div>
+          </div>
+          <div class="prediction-page-actions">
+            <button class="prediction-download-btn" id="predictionDownloadBtn" type="button" disabled>Exporter PNG</button>
+            <button class="icon-btn prediction-close-btn" id="predictionPageCloseBtn" aria-label="Fermer">×</button>
+          </div>
+        </header>
+        <div class="prediction-page-body">
+          <div class="prediction-map-panel">
+            <img id="predictionImage" class="prediction-image" alt="Carte de prévision orageuse journalière" hidden />
+            <div id="predictionHighlight" class="prediction-highlight" hidden></div>
+            <div id="predictionHover" class="prediction-hover" hidden></div>
+          </div>
+          <aside class="prediction-analysis-panel">
+            <div class="prediction-analysis-title">Situation attendue</div>
+            <div id="predictionAnalysisText" class="prediction-analysis-text">La synthèse sera disponible quand la fenêtre 08h-08h sera chargée.</div>
+          </aside>
         </div>
-        <button class="icon-btn" id="closeInfoBtn" aria-label="Fermer">×</button>
       </div>
-      <div class="summary-box" id="infoMetricValue">—</div>
-      <p id="infoExplanation">—</p>
-    </div>
+    </section>
   </div>
-  <script src="/assets/js/dom.js?v=1.0.2"></script>
-  <script src="/assets/js/utils.js?v=1.0.2"></script>
-  <script src="/assets/js/panels.js?v=1.0.2"></script>
-  <script src="/assets/js/state.js?v=1.0.2"></script>
-  <script src="/assets/js/core.js?v=1.0.2"></script>
-  <script src="/assets/js/map-ui.js?v=1.0.2"></script>
-  <script src="/assets/js/timeline.js?v=1.0.2"></script>
-  <script src="/assets/js/grid-loader.js?v=1.0.2"></script>
-  <script src="/assets/js/grid-core.js?v=1.0.2"></script>
-  <script src="/assets/js/grid-layers.js?v=1.0.2"></script>
-  <script src="/assets/js/grid.js?v=1.0.2"></script>
-  <script src="/assets/js/metric-data.js?v=1.0.2"></script>
-  <script src="/assets/js/metric-ui.js?v=1.0.2"></script>
-  <script src="/assets/js/selection.js?v=1.0.2"></script>
-  <script src="/assets/js/data.js?v=1.0.2"></script>
-  <script src="/assets/js/services.js?v=1.0.2"></script>
-  <script src="/assets/js/search-autocomplete.js?v=1.0.2"></script>
-  <script src="/assets/js/controls.js?v=1.0.2"></script>
-  <script src="/assets/js/bootstrap.js?v=1.0.2"></script>
-  <script src="/assets/js/mobile-block.js?v=1.0.2"></script>
+  <script src="/assets/js/dom.js?v=1.1.111"></script>
+  <script src="/assets/js/utils.js?v=1.1.111"></script>
+  <script src="/assets/js/panels.js?v=1.1.111"></script>
+  <script src="/assets/js/state.js?v=1.1.111"></script>
+  <script src="/assets/js/core.js?v=1.1.111"></script>
+  <script src="/assets/js/map-ui.js?v=1.1.111"></script>
+  <script src="/assets/js/timeline.js?v=1.1.111"></script>
+  <script src="/assets/js/grid-loader.js?v=1.1.111"></script>
+  <script src="/assets/js/grid-core.js?v=1.1.111"></script>
+  <script src="/assets/js/france-admin-lines.js?v=1.1.111"></script>
+  <script src="/assets/js/storm-forecast-image.js?v=1.1.111"></script>
+  <script src="/assets/js/grid-layers.js?v=1.1.111"></script>
+  <script src="/assets/js/grid.js?v=1.1.111"></script>
+  <script src="/assets/js/metric-data.js?v=1.1.111"></script>
+  <script src="/assets/js/metric-ui.js?v=1.1.111"></script>
+  <script src="/assets/js/selection.js?v=1.1.111"></script>
+  <script src="/assets/js/data.js?v=1.1.111"></script>
+  <script src="/assets/js/services.js?v=1.1.111"></script>
+  <script src="/assets/js/search-autocomplete.js?v=1.1.111"></script>
+  <script src="/assets/js/controls.js?v=1.1.111"></script>
+  <script src="/assets/js/bootstrap.js?v=1.1.111"></script>
+  <script src="/assets/js/mobile-block.js?v=1.1.111"></script>
 </body>
 </html>

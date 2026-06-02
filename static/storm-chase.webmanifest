@@ -1,7 +1,7 @@
 {
   "name": "ObjectiFoudre",
   "short_name": "ObjectiFoudre",
-  "start_url": "/?v=1.0.1",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#07111f",

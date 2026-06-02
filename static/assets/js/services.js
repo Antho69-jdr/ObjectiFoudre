@@ -23,7 +23,7 @@
             await applyCenter({ lat: coords.latitude, lon: coords.longitude, label: 'Autour de moi' }, { showMarker: true, zoom: 8.8, force: true });
           } catch (error) {
             console.warn(error);
-            setMetaMessage('Impossible de recalculer la zone autour de vous.');
+            setMetaMessage('Impossible de centrer la carte sur votre position.');
           } finally {
             setLoadingState(false);
           }
@@ -38,7 +38,7 @@
 
     function registerPWA() {
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js?v=0.6.1').catch(() => {});
+        navigator.serviceWorker.register('/sw.js?v=1.1.111').catch(() => {});
       }
       window.addEventListener('beforeinstallprompt', (event) => {
         event.preventDefault();

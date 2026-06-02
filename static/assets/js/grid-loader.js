@@ -55,8 +55,6 @@
             cell_height_deg: template.cellHeightDeg,
             cell_width_deg: template.cellWidthDeg,
             trigger_score: 18 + ((row + col) % 5) * 5,
-            structure_score: 28 + ((row * 3 + col) % 4) * 6,
-            chase_quality_score: 44 + ((row + col) % 3) * 4,
             confidence_score: 42,
             is_loader: true,
           });
