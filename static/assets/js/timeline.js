@@ -426,7 +426,7 @@
       wheelActiveSlotKey = slotKey;
     }
 
-    // Snap vers un slot — délégué au browser (GPU, hors main thread)
+    // Snap vers un slot — easeOutQuart (aimant : décélération rapide vers la cible)
     function wheelScrollTo(scroller, slotKey, animated) {
       if (!scroller.isConnected) return;
       const item = scroller.querySelector(`[data-slot-key="${slotKey}"]`);
@@ -440,17 +440,21 @@
         return;
       }
 
-      wheelProgrammatic = true;
-      scroller.scrollTo({ left: target, behavior: 'smooth' });
+      const startLeft = scroller.scrollLeft;
+      const distance = target - startLeft;
+      const duration = 220;
+      const startTime = performance.now();
 
-      // Réinitialise wheelProgrammatic quand le scroll lisse se termine
-      const onDone = () => {
-        scroller.removeEventListener('scrollend', onDone);
-        wheelProgrammatic = false;
-      };
-      scroller.addEventListener('scrollend', onDone, { passive: true, once: true });
-      // Filet de sécurité si scrollend ne se déclenche pas
-      setTimeout(() => { wheelProgrammatic = false; }, 600);
+      wheelProgrammatic = true;
+      function step(now) {
+        if (!scroller.isConnected) { wheelProgrammatic = false; return; }
+        const t = Math.min((now - startTime) / duration, 1);
+        const ease = 1 - Math.pow(1 - t, 4); // easeOutQuart
+        scroller.scrollLeft = startLeft + distance * ease;
+        if (t < 1) { requestAnimationFrame(step); }
+        else { scroller.scrollLeft = target; wheelProgrammatic = false; }
+      }
+      requestAnimationFrame(step);
     }
 
     function wheelCommit(scroller) {
