@@ -426,7 +426,7 @@
       wheelActiveSlotKey = slotKey;
     }
 
-    // Animation custom easeOutBack — rebond léger, fluide
+    // Snap vers un slot — délégué au browser (GPU, hors main thread)
     function wheelScrollTo(scroller, slotKey, animated) {
       if (!scroller.isConnected) return;
       const item = scroller.querySelector(`[data-slot-key="${slotKey}"]`);
@@ -440,25 +440,17 @@
         return;
       }
 
-      const startLeft = scroller.scrollLeft;
-      const distance = target - startLeft;
-      const duration = 320;
-      const startTime = performance.now();
-
-      function easeOutBack(t) {
-        const c1 = 1.40, c3 = c1 + 1;
-        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-      }
-
       wheelProgrammatic = true;
-      function step(now) {
-        if (!scroller.isConnected) { wheelProgrammatic = false; return; }
-        const t = Math.min((now - startTime) / duration, 1);
-        scroller.scrollLeft = startLeft + distance * easeOutBack(t);
-        if (t < 1) { requestAnimationFrame(step); }
-        else { scroller.scrollLeft = target; wheelProgrammatic = false; }
-      }
-      requestAnimationFrame(step);
+      scroller.scrollTo({ left: target, behavior: 'smooth' });
+
+      // Réinitialise wheelProgrammatic quand le scroll lisse se termine
+      const onDone = () => {
+        scroller.removeEventListener('scrollend', onDone);
+        wheelProgrammatic = false;
+      };
+      scroller.addEventListener('scrollend', onDone, { passive: true, once: true });
+      // Filet de sécurité si scrollend ne se déclenche pas
+      setTimeout(() => { wheelProgrammatic = false; }, 600);
     }
 
     function wheelCommit(scroller) {
