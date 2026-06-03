@@ -393,8 +393,16 @@
     // ── Wheel scroll state ──────────────────────────────────────────────────
     let wheelSnapTimer = null;
     let wheelProgrammatic = false;
+    let wheelActiveSlotKey = null;
 
+    // O(1) : trouve l'index de l'item centré via scrollLeft arithmétique
+    function wheelCenteredIndex(scroller, itemWidth) {
+      return Math.round(scroller.scrollLeft / itemWidth);
+    }
+
+    // Utilisé uniquement au commit (après scroll terminé), getBoundingClientRect fiable
     function wheelCenteredItem(scroller) {
+      if (!scroller.isConnected) return null;
       const rect = scroller.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
       let best = null, bestDist = Infinity;
@@ -406,26 +414,55 @@
       return best;
     }
 
+    // Met à jour uniquement les deux items concernés (ancien actif → nouveau)
     function wheelSetActive(scroller, slotKey) {
-      scroller.querySelectorAll('.timeline-wheel-item').forEach((item) => {
-        const on = item.dataset.slotKey === slotKey;
-        item.classList.toggle('active', on);
-        item.setAttribute('aria-selected', on ? 'true' : 'false');
-      });
+      if (slotKey === wheelActiveSlotKey) return;
+      if (wheelActiveSlotKey) {
+        const prev = scroller.querySelector(`[data-slot-key="${wheelActiveSlotKey}"]`);
+        if (prev) { prev.classList.remove('active'); prev.setAttribute('aria-selected', 'false'); }
+      }
+      const next = scroller.querySelector(`[data-slot-key="${slotKey}"]`);
+      if (next) { next.classList.add('active'); next.setAttribute('aria-selected', 'true'); }
+      wheelActiveSlotKey = slotKey;
     }
 
-    function wheelScrollTo(scroller, slotKey, smooth) {
+    // Animation custom easeOutBack — rebond léger, fluide
+    function wheelScrollTo(scroller, slotKey, animated) {
+      if (!scroller.isConnected) return;
       const item = scroller.querySelector(`[data-slot-key="${slotKey}"]`);
       if (!item) return;
       const sr = scroller.getBoundingClientRect();
       const ir = item.getBoundingClientRect();
-      const target = scroller.scrollLeft + ir.left - sr.left - sr.width / 2 + ir.width / 2;
+      const target = Math.max(0, scroller.scrollLeft + ir.left - sr.left - sr.width / 2 + ir.width / 2);
+
+      if (!animated || Math.abs(target - scroller.scrollLeft) < 1) {
+        scroller.scrollLeft = target;
+        return;
+      }
+
+      const startLeft = scroller.scrollLeft;
+      const distance = target - startLeft;
+      const duration = 320;
+      const startTime = performance.now();
+
+      function easeOutBack(t) {
+        const c1 = 1.40, c3 = c1 + 1;
+        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+      }
+
       wheelProgrammatic = true;
-      scroller.scrollTo({ left: Math.max(0, target), behavior: smooth ? 'smooth' : 'auto' });
-      setTimeout(() => { wheelProgrammatic = false; }, smooth ? 400 : 50);
+      function step(now) {
+        if (!scroller.isConnected) { wheelProgrammatic = false; return; }
+        const t = Math.min((now - startTime) / duration, 1);
+        scroller.scrollLeft = startLeft + distance * easeOutBack(t);
+        if (t < 1) { requestAnimationFrame(step); }
+        else { scroller.scrollLeft = target; wheelProgrammatic = false; }
+      }
+      requestAnimationFrame(step);
     }
 
     function wheelCommit(scroller) {
+      if (!scroller.isConnected) return;
       const item = wheelCenteredItem(scroller);
       if (!item) return;
       const slotKey = item.dataset.slotKey;
@@ -451,6 +488,8 @@
     }
 
     function buildTimelineWheel(slots, day) {
+      wheelActiveSlotKey = selectedSlotKey || null;
+
       const wheel = document.createElement('div');
       wheel.className = 'timeline-wheel';
       wheel.setAttribute('aria-hidden', 'false');
@@ -504,30 +543,45 @@
           event.preventDefault();
           event.stopPropagation();
           if (isUnavailable) return;
+          // Annule le snap en attente (évite snap sur ancien scroller après re-render)
+          if (wheelSnapTimer) { clearTimeout(wheelSnapTimer); wheelSnapTimer = null; }
           if (typeof selectTimelineSlot === 'function') selectTimelineSlot(slot.slot_key, { stopPlayback: true });
         });
         scroller.appendChild(item);
       }
 
-      // Live visual update while scrolling
+      // Mise à jour visuelle pendant le scroll — throttlée rAF, O(1) par index
+      const visibleHours = 8;
+      let scrollRafId = null;
       scroller.addEventListener('scroll', () => {
         if (wheelProgrammatic) return;
-        const item = wheelCenteredItem(scroller);
-        if (item) wheelSetActive(scroller, item.dataset.slotKey);
+        if (scrollRafId) return;
+        scrollRafId = requestAnimationFrame(() => {
+          scrollRafId = null;
+          if (!scroller.isConnected) return;
+          const itemWidth = scroller.clientWidth / visibleHours;
+          if (!itemWidth) return;
+          const idx = Math.max(0, Math.min(
+            Math.round(scroller.scrollLeft / itemWidth),
+            scroller.querySelectorAll('.timeline-wheel-item').length - 1
+          ));
+          const items = scroller.querySelectorAll('.timeline-wheel-item');
+          if (items[idx]) wheelSetActive(scroller, items[idx].dataset.slotKey);
+        });
       }, { passive: true });
 
-      // Primary: commit after momentum stops
+      // Primary: scrollend fire après que l'inertie soit terminée
       scroller.addEventListener('scrollend', () => {
         if (wheelProgrammatic) return;
         if (wheelSnapTimer) { clearTimeout(wheelSnapTimer); wheelSnapTimer = null; }
         wheelCommit(scroller);
       }, { passive: true });
 
-      // Fallback for browsers without scrollend
+      // Fallback long (inertie mobile ~300-500ms) pour navigateurs sans scrollend
       scroller.addEventListener('touchend', () => { wheelScheduleSnap(scroller, 600); }, { passive: true });
       scroller.addEventListener('pointercancel', () => { wheelScheduleSnap(scroller, 600); });
 
-      // Mouse wheel
+      // Molette souris
       scroller.addEventListener('wheel', (event) => {
         event.preventDefault();
         const delta = Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
