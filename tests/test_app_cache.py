@@ -1271,7 +1271,8 @@ class MeteoFranceKeyTests(unittest.TestCase):
         self.assertEqual(choice["product"]["time"], "07H12H")
         self.assertEqual(choice["time_target"]["forecast_hour"], 8)
         self.assertTrue(choice["time_target"]["exact_forecast_hour"])
-        self.assertEqual(len(statuses), 2)
+        self.assertEqual(len(statuses), 1)
+        self.assertEqual(statuses[0]["step"], "run:2026-05-10T00:00:00Z")
 
     def test_grib_local_hours_for_time_group_translates_forecast_bounds(self):
         hours = api_app._meteofrance_grib_local_hours_for_time_group(

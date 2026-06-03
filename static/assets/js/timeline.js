@@ -368,11 +368,6 @@
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     }
 
-    let timelineWheelScrollTimer = null;
-    let timelineWheelProgrammaticScroll = false;
-    let timelineWheelSnapTimer = null;
-    let timelineWheelLastSelectionAt = 0;
-
     function timelineSlotHourLabel(slot) {
       return String(slot?.slot_label || slot?.slot_key || '').replace(/^h/, '').replace('h', '').padStart(2, '0');
     }
@@ -395,92 +390,64 @@
       return map;
     }
 
-    function findCenteredTimelineWheelSlot(scroller) {
-      if (!scroller) return null;
+    // ── Wheel scroll state ──────────────────────────────────────────────────
+    let wheelSnapTimer = null;
+    let wheelProgrammatic = false;
+
+    function wheelCenteredItem(scroller) {
       const rect = scroller.getBoundingClientRect();
-      const centerX = rect.left + (rect.width / 2);
-      const items = Array.from(scroller.querySelectorAll('.timeline-wheel-item:not(.is-arome-unavailable)'));
-      let best = null;
-      let bestDistance = Infinity;
-      for (const item of items) {
-        const itemRect = item.getBoundingClientRect();
-        const itemCenter = itemRect.left + (itemRect.width / 2);
-        const distance = Math.abs(itemCenter - centerX);
-        if (distance < bestDistance) {
-          best = item;
-          bestDistance = distance;
-        }
+      const cx = rect.left + rect.width / 2;
+      let best = null, bestDist = Infinity;
+      for (const item of scroller.querySelectorAll('.timeline-wheel-item:not(:disabled)')) {
+        const ir = item.getBoundingClientRect();
+        const dist = Math.abs(ir.left + ir.width / 2 - cx);
+        if (dist < bestDist) { best = item; bestDist = dist; }
       }
       return best;
     }
 
-    function updateTimelineWheelActiveVisual(scroller, slotKey) {
-      if (!scroller || !slotKey) return;
-      scroller.dataset.selectedSlotKey = slotKey;
+    function wheelSetActive(scroller, slotKey) {
       scroller.querySelectorAll('.timeline-wheel-item').forEach((item) => {
-        const active = item.dataset.slotKey === slotKey;
-        item.classList.toggle('active', active);
-        item.setAttribute('aria-selected', active ? 'true' : 'false');
+        const on = item.dataset.slotKey === slotKey;
+        item.classList.toggle('active', on);
+        item.setAttribute('aria-selected', on ? 'true' : 'false');
       });
     }
 
-    function selectCenteredTimelineWheelSlot(scroller, { final = false } = {}) {
-      if (timelineWheelProgrammaticScroll && !final) return;
-      const item = findCenteredTimelineWheelSlot(scroller);
-      const slotKey = item?.dataset?.slotKey;
-      if (!slotKey) return;
-      updateTimelineWheelActiveVisual(scroller, slotKey);
-      if (slotKey === selectedSlotKey) {
-        if (final) {
-          syncTimelineWheelScrollToSelected({ smooth: true });
-          if (typeof maybeLoadCachedMeteoFranceGribForSelectedSlot === 'function') maybeLoadCachedMeteoFranceGribForSelectedSlot({ quiet: true });
-        }
-        return;
-      }
-      if (typeof selectTimelineSlot === 'function') {
-        selectTimelineSlot(slotKey, { render: false, stopPlayback: true, loadCached: final });
-        updateTimelineWheelActiveVisual(scroller, slotKey);
-      }
-      if (final) syncTimelineWheelScrollToSelected({ smooth: true });
+    function wheelScrollTo(scroller, slotKey, smooth) {
+      const item = scroller.querySelector(`[data-slot-key="${slotKey}"]`);
+      if (!item) return;
+      const sr = scroller.getBoundingClientRect();
+      const ir = item.getBoundingClientRect();
+      const target = scroller.scrollLeft + ir.left - sr.left - sr.width / 2 + ir.width / 2;
+      wheelProgrammatic = true;
+      scroller.scrollTo({ left: Math.max(0, target), behavior: smooth ? 'smooth' : 'auto' });
+      setTimeout(() => { wheelProgrammatic = false; }, smooth ? 400 : 50);
     }
 
-    function scheduleTimelineWheelCenterSelection(scroller) {
-      if (!scroller || timelineWheelProgrammaticScroll) return;
-      const now = performance.now();
-      if (now - timelineWheelLastSelectionAt < 80) {
-        if (!timelineWheelScrollTimer) {
-          timelineWheelScrollTimer = window.setTimeout(() => {
-            timelineWheelScrollTimer = null;
-            timelineWheelLastSelectionAt = performance.now();
-            selectCenteredTimelineWheelSlot(scroller, { final: false });
-          }, 80);
-        }
-        return;
+    function wheelCommit(scroller) {
+      const item = wheelCenteredItem(scroller);
+      if (!item) return;
+      const slotKey = item.dataset.slotKey;
+      wheelSetActive(scroller, slotKey);
+      wheelScrollTo(scroller, slotKey, true);
+      if (slotKey !== selectedSlotKey && typeof selectTimelineSlot === 'function') {
+        selectTimelineSlot(slotKey, { render: false, stopPlayback: true, loadCached: true });
       }
-      timelineWheelLastSelectionAt = now;
-      requestAnimationFrame(() => selectCenteredTimelineWheelSlot(scroller, { final: false }));
+      if (typeof maybeLoadCachedMeteoFranceGribForSelectedSlot === 'function') {
+        maybeLoadCachedMeteoFranceGribForSelectedSlot({ quiet: true });
+      }
     }
 
-    function snapTimelineWheelAfterRelease(scroller) {
-      if (!scroller) return;
-      if (timelineWheelSnapTimer) window.clearTimeout(timelineWheelSnapTimer);
-      timelineWheelSnapTimer = window.setTimeout(() => {
-        timelineWheelSnapTimer = null;
-        selectCenteredTimelineWheelSlot(scroller, { final: true });
-      }, 110);
+    function wheelScheduleSnap(scroller, delay = 150) {
+      if (wheelSnapTimer) clearTimeout(wheelSnapTimer);
+      wheelSnapTimer = setTimeout(() => { wheelSnapTimer = null; wheelCommit(scroller); }, delay);
     }
 
     function syncTimelineWheelScrollToSelected({ smooth = false } = {}) {
       const scroller = slotButtons?.querySelector?.('.timeline-wheel-scroller');
       if (!scroller) return;
-      const active = scroller.querySelector('.timeline-wheel-item.active') || scroller.querySelector(`[data-slot-key="${selectedSlotKey}"]`);
-      if (!active) return;
-      const left = active.offsetLeft + (active.offsetWidth / 2) - (scroller.clientWidth / 2);
-      timelineWheelProgrammaticScroll = true;
-      scroller.scrollTo({ left: Math.max(0, left), behavior: smooth ? 'smooth' : 'auto' });
-      window.setTimeout(() => {
-        timelineWheelProgrammaticScroll = false;
-      }, smooth ? 260 : 80);
+      wheelScrollTo(scroller, selectedSlotKey, smooth);
     }
 
     function buildTimelineWheel(slots, day) {
@@ -492,7 +459,6 @@
       scroller.className = 'timeline-wheel-scroller';
       scroller.setAttribute('role', 'listbox');
       scroller.setAttribute('aria-label', 'Heure affichée');
-      scroller.dataset.selectedSlotKey = selectedSlotKey || '';
 
       const phases = timelinePhaseMapForSlots(day?.day_key || selectedBaseDate, slots, day);
       for (const slot of slots) {
@@ -543,24 +509,34 @@
         scroller.appendChild(item);
       }
 
-      scroller.addEventListener('scroll', () => scheduleTimelineWheelCenterSelection(scroller), { passive: true });
-      scroller.addEventListener('pointerup', () => snapTimelineWheelAfterRelease(scroller));
-      scroller.addEventListener('pointercancel', () => snapTimelineWheelAfterRelease(scroller));
-      scroller.addEventListener('touchend', () => snapTimelineWheelAfterRelease(scroller), { passive: true });
-      scroller.addEventListener('scrollend', () => snapTimelineWheelAfterRelease(scroller), { passive: true });
+      // Live visual update while scrolling
+      scroller.addEventListener('scroll', () => {
+        if (wheelProgrammatic) return;
+        const item = wheelCenteredItem(scroller);
+        if (item) wheelSetActive(scroller, item.dataset.slotKey);
+      }, { passive: true });
+
+      // Primary: commit after momentum stops
+      scroller.addEventListener('scrollend', () => {
+        if (wheelProgrammatic) return;
+        if (wheelSnapTimer) { clearTimeout(wheelSnapTimer); wheelSnapTimer = null; }
+        wheelCommit(scroller);
+      }, { passive: true });
+
+      // Fallback for browsers without scrollend
+      scroller.addEventListener('touchend', () => { wheelScheduleSnap(scroller, 600); }, { passive: true });
+      scroller.addEventListener('pointercancel', () => { wheelScheduleSnap(scroller, 600); });
+
+      // Mouse wheel
       scroller.addEventListener('wheel', (event) => {
-        const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
-        if (!delta) return;
         event.preventDefault();
+        const delta = Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+        if (!delta) return;
         scroller.scrollBy({ left: delta, behavior: 'auto' });
-        scheduleTimelineWheelCenterSelection(scroller);
-        snapTimelineWheelAfterRelease(scroller);
+        wheelScheduleSnap(scroller, 150);
       }, { passive: false });
 
-      const center = document.createElement('div');
-      center.className = 'timeline-wheel-center';
       wheel.appendChild(scroller);
-      wheel.appendChild(center);
       return wheel;
     }
 

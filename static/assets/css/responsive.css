@@ -24,11 +24,7 @@
       bottom: max(16px, env(safe-area-inset-bottom));
     }
 
-    @media (max-width: 900px) {
-      .statusbar { width: min(420px, calc(100vw - 24px)); }
-    }
 
-    
     body.mobile-ui .search-dock {
       top: max(var(--rail-top-topbar), env(safe-area-inset-top));
       right: var(--rail-right);
@@ -91,11 +87,6 @@
       left: 8px;
       max-width: calc(100vw - 92px);
       bottom: max(16px, env(safe-area-inset-bottom));
-    }
-    @media (max-width: 900px) {
-      body.mobile-ui .meta-stack {
-        bottom: calc(72px + env(safe-area-inset-bottom));
-      }
     }
     body.mobile-ui .selection-card {
       left: 50%;
@@ -165,727 +156,12 @@
       top: calc(var(--rail-top-focus) + env(safe-area-inset-top));
       right: var(--rail-right);
     }
-    @media (max-width: 900px) {
-      body.mobile-ui .timeline-dock {
-        left: 8px;
-        right: calc(var(--right-rail-width) + var(--rail-right) + 8px);
-        width: auto;
-        max-width: none;
-        transform: none;
-        bottom: max(8px, env(safe-area-inset-bottom));
-        gap: 8px;
-        padding: 8px;
-        border-radius: 18px;
-      }
-      body.mobile-ui .timeline-bar {
-        grid-template-columns: 40px minmax(0, 1fr) 40px auto;
-        gap: 6px;
-        align-items: center;
-      }
-      body.mobile-ui .timeline-bar .timeline-date-input {
-        min-width: 0;
-      }
-      body.mobile-ui .timeline-bar .timeline-today-btn {
-        grid-column: auto;
-        min-width: 0;
-        padding: 0 10px;
-      }
-      body.mobile-ui .timeline-slot-strip .slot-pill {
-        flex: 0 0 auto;
-        min-width: 78px;
-      }
-    }
-
-    @media (max-width: 640px) {
-      body.mobile-ui .timeline-dock {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 86px;
-        grid-template-areas: "bar slots";
-        align-items: stretch;
-        gap: 8px;
-        left: 8px;
-        right: calc(var(--right-rail-width) + var(--rail-right) + 8px);
-        width: auto;
-        max-width: none;
-        bottom: max(8px, env(safe-area-inset-bottom));
-        padding: 8px;
-        border-radius: 18px;
-      }
-      body.mobile-ui .timeline-bar {
-        grid-area: bar;
-        grid-template-columns: 40px minmax(0, 1fr) 40px;
-        grid-template-areas:
-          "prev date next"
-          ". today .";
-        gap: 6px;
-        align-content: start;
-      }
-      body.mobile-ui #prevDayBtn { grid-area: prev; }
-      body.mobile-ui #dateInput { grid-area: date; }
-      body.mobile-ui #nextDayBtn { grid-area: next; }
-      body.mobile-ui #todayBtn {
-        grid-area: today;
-        justify-self: center;
-        width: auto;
-        min-width: 108px;
-        max-width: 132px;
-        min-height: 34px;
-        height: 34px;
-        font-size: 12px;
-        border-radius: 10px;
-        padding: 0 10px;
-      }
-      body.mobile-ui .timeline-nav-btn {
-        min-width: 40px;
-        width: 40px;
-        height: 40px;
-        min-height: 40px;
-      }
-      body.mobile-ui .timeline-slot-strip {
-        grid-area: slots;
-        overflow-x: hidden;
-        overflow-y: auto;
-        flex-direction: column;
-        flex-wrap: nowrap;
-        align-items: stretch;
-        max-height: 132px;
-        min-height: 132px;
-        gap: 6px;
-        padding: 0 0 2px 0;
-        scroll-snap-type: y proximity;
-      }
-      body.mobile-ui .timeline-slot-strip.dragging {
-        cursor: default;
-      }
-      body.mobile-ui .timeline-slot-strip::-webkit-scrollbar {
-        width: 6px;
-        height: auto;
-      }
-      body.mobile-ui .timeline-slot-strip .slot-pill {
-        flex: 0 0 auto;
-        width: 100%;
-        min-width: 0;
-        min-height: 34px;
-        padding: 6px 8px;
-        font-size: 11px;
-      }
-      body.mobile-ui .cell-scale-chip {
-        right: calc(var(--right-rail-width) + var(--rail-right) + 8px);
-        bottom: calc(150px + env(safe-area-inset-bottom));
-        max-width: 120px;
-        white-space: normal;
-        line-height: 1.25;
-      }
-      body.mobile-ui .selection-card {
-        bottom: calc(150px + env(safe-area-inset-bottom));
-      }
-    }
-
-
-    @media (max-width: 900px) {
-      body.mobile-ui {
-        --mobile-meta-h: 28px;
-      }
-      body.mobile-ui .meta-stack {
-        position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        z-index: 24;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        max-width: none;
-        padding: 4px 6px calc(4px + env(safe-area-inset-bottom));
-        background: rgba(8, 17, 30, 0.68);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        overflow-x: auto;
-        scrollbar-width: none;
-      }
-      body.mobile-ui .meta-stack::-webkit-scrollbar { display: none; }
-      body.mobile-ui .meta-corner {
-        flex: 0 0 auto;
-        padding: 4px 8px;
-        font-size: 10px;
-        line-height: 1.1;
-        border-radius: 10px;
-        white-space: nowrap;
-        background: rgba(9, 18, 31, 0.52);
-      }
-      body.mobile-ui .right-rail-scroll {
-        position: fixed;
-        top: max(10px, env(safe-area-inset-top));
-        right: var(--rail-right);
-        bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 8px);
-        z-index: 22;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        align-items: stretch;
-        width: var(--right-rail-width);
-        overflow-y: auto;
-        overflow-x: visible;
-        padding-right: 0;
-        scrollbar-width: none;
-        pointer-events: auto;
-        touch-action: pan-y;
-      }
-      body.mobile-ui .right-rail-scroll::-webkit-scrollbar { display: none; }
-      body.mobile-ui .right-rail-scroll > * {
-        position: relative !important;
-        top: auto !important;
-        right: auto !important;
-        left: auto !important;
-        bottom: auto !important;
-        margin: 0;
-      }
-      body.mobile-ui .search-dock,
-      body.mobile-ui .grid-focus-corner,
-      body.mobile-ui .fab-stack {
-        width: var(--right-rail-width);
-      }
-      body.mobile-ui .grid-focus-corner,
-      body.mobile-ui .fab-stack,
-      body.mobile-ui .mobile-toggle-bar {
-        display: grid;
-        gap: 10px;
-        width: 100%;
-        pointer-events: auto;
-      }
-      body.mobile-ui .timeline-dock {
-        left: 0;
-        right: 0;
-        width: auto;
-        max-width: none;
-        bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 8px);
-        transform: none;
-        margin: 0 8px;
-        padding: 10px 10px 8px;
-        border-radius: 18px;
-      }
-      body.mobile-ui .timeline-toggle-btn {
-        display: inline-grid;
-      }
-      body.mobile-ui .timeline-content {
-        margin-top: 16px;
-      }
-      body.mobile-ui .timeline-dock.collapsed {
-        transform: translateY(calc(100% - 24px));
-      }
-      body.mobile-ui .timeline-dock.collapsed .timeline-content {
-        opacity: 0;
-        pointer-events: none;
-      }
-      body.mobile-ui .selection-card {
-        bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 124px);
-      }
-      body.mobile-ui .cell-scale-chip {
-        bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 110px);
-      }
-    }
-
-    @media (max-width: 640px) {
-      body.mobile-ui .timeline-dock {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 82px;
-        grid-template-areas: "bar slots";
-        gap: 8px;
-        margin: 0 8px;
-      }
-      body.mobile-ui .timeline-bar {
-        grid-area: bar;
-        grid-template-columns: 40px minmax(0, 1fr) 40px;
-        grid-template-areas:
-          "prev date next"
-          "today today today";
-        gap: 6px;
-      }
-      body.mobile-ui #todayBtn {
-        grid-area: today;
-        justify-self: stretch;
-        width: 100%;
-        min-width: 0;
-        min-height: 32px;
-        height: 32px;
-        font-size: 12px;
-        padding: 0 8px;
-      }
-      body.mobile-ui .timeline-slot-strip {
-        grid-area: slots;
-        overflow-x: hidden;
-        overflow-y: auto;
-        flex-direction: column;
-        align-items: stretch;
-        max-height: 118px;
-        min-height: 118px;
-        gap: 6px;
-        padding: 0 0 2px 0;
-      }
-      body.mobile-ui .timeline-slot-strip .slot-pill {
-        width: 100%;
-        min-height: 32px;
-        font-size: 11px;
-        padding: 6px 6px;
-      }
-    }
-
-    @media (max-width: 900px) and (orientation: landscape) {
-      body.mobile-ui .timeline-dock {
-        margin-right: 8px;
-        margin-left: 8px;
-      }
-      body.mobile-ui .timeline-bar {
-        grid-template-columns: 40px minmax(150px, 220px) 40px minmax(88px, 120px);
-        align-items: center;
-      }
-      body.mobile-ui #todayBtn {
-        min-width: 96px;
-        padding: 0 10px;
-      }
-      body.mobile-ui .timeline-slot-strip {
-        overflow-x: auto;
-        overflow-y: hidden;
-        flex-direction: row;
-        max-height: none;
-        min-height: 0;
-      }
-      body.mobile-ui .timeline-slot-strip .slot-pill {
-        width: auto;
-        min-width: 92px;
-      }
-    }
 
 
 /* V0.4.4 clean mobile layout overrides */
-@media (max-width: 900px) {
-  body.mobile-ui {
-    --mobile-meta-h: 34px;
-  }
-
-  body.mobile-ui .meta-stack {
-    position: fixed !important;
-    left: 6px !important;
-    right: 6px !important;
-    bottom: 4px !important;
-    z-index: 30 !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 6px !important;
-    max-width: none !important;
-    padding: 4px 6px calc(4px + env(safe-area-inset-bottom)) !important;
-    background: rgba(7, 17, 31, 0.82) !important;
-    border: 1px solid rgba(255,255,255,0.08) !important;
-    border-radius: 12px !important;
-    backdrop-filter: blur(14px) saturate(1.05) !important;
-    -webkit-backdrop-filter: blur(14px) saturate(1.05) !important;
-    overflow-x: auto !important;
-    white-space: nowrap !important;
-  }
-
-  body.mobile-ui .meta-corner {
-    padding: 4px 8px !important;
-    font-size: 10px !important;
-    line-height: 1.15 !important;
-    border-radius: 9px !important;
-    background: rgba(11, 20, 34, 0.78) !important;
-    white-space: nowrap !important;
-  }
-
-  body.mobile-ui .right-rail-scroll {
-    position: fixed !important;
-    top: calc(8px + env(safe-area-inset-top)) !important;
-    right: 10px !important;
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 112px) !important;
-    z-index: 26 !important;
-    width: 52px !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: flex-end !important;
-    justify-content: flex-start !important;
-    gap: 8px !important;
-    overflow-y: auto !important;
-    overflow-x: visible !important;
-    pointer-events: none !important;
-    scrollbar-width: none !important;
-  }
-
-  body.mobile-ui .right-rail-scroll > * {
-    position: static !important;
-    width: 46px !important;
-    margin: 0 !important;
-    flex: 0 0 auto !important;
-  }
-
-  body.mobile-ui .search-dock,
-  body.mobile-ui .grid-focus-corner,
-  body.mobile-ui .fab-stack {
-    position: static !important;
-    inset: auto !important;
-    width: 46px !important;
-    display: grid !important;
-    gap: 8px !important;
-    justify-items: stretch !important;
-    align-items: start !important;
-    pointer-events: auto !important;
-  }
-
-  body.mobile-ui .mobile-toggle-bar {
-    display: block !important;
-    width: 46px !important;
-  }
-
-  body.mobile-ui .search-dock .panel-card {
-    position: fixed !important;
-    top: calc(8px + env(safe-area-inset-top)) !important;
-    right: 64px !important;
-    margin-top: 0 !important;
-    width: min(320px, calc(100vw - 86px)) !important;
-  }
-
-  body.mobile-ui .timeline-dock {
-    left: 6px !important;
-    right: 6px !important;
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 8px) !important;
-    width: auto !important;
-    max-width: none !important;
-    margin: 0 !important;
-    padding: 12px 10px 10px !important;
-    border-radius: 18px !important;
-    z-index: 25 !important;
-    transform: none !important;
-    display: grid !important;
-    gap: 8px !important;
-  }
-
-  body.mobile-ui .timeline-content {
-    margin-top: 10px !important;
-    gap: 8px !important;
-    opacity: 1;
-    transition: opacity .2s ease;
-  }
-
-  body.mobile-ui .timeline-toggle-btn {
-    display: inline-grid !important;
-    top: 6px !important;
-  }
-
-  body.mobile-ui .timeline-dock.collapsed {
-    transform: translateY(calc(100% - 30px)) !important;
-  }
-
-  body.mobile-ui .timeline-dock.collapsed .timeline-content {
-    opacity: 0 !important;
-    pointer-events: none !important;
-  }
-
-  body.mobile-ui .timeline-bar {
-    display: grid !important;
-    grid-template-columns: 40px minmax(0, 1fr) 40px auto !important;
-    align-items: center !important;
-    gap: 8px !important;
-  }
-
-  body.mobile-ui #todayBtn {
-    min-width: 92px !important;
-    min-height: 38px !important;
-    height: 38px !important;
-    padding: 0 12px !important;
-    border-radius: 12px !important;
-    font-size: 12px !important;
-  }
-
-  body.mobile-ui .timeline-slot-strip {
-    display: flex !important;
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    align-items: stretch !important;
-    gap: 8px !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    min-height: 0 !important;
-    max-height: none !important;
-    padding: 2px 0 4px !important;
-    scroll-snap-type: x proximity !important;
-  }
-
-  body.mobile-ui .timeline-slot-strip .slot-pill {
-    width: auto !important;
-    min-width: 82px !important;
-    min-height: 38px !important;
-    padding: 8px 10px !important;
-    font-size: 12px !important;
-  }
-
-  body.mobile-ui .selection-card {
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 132px) !important;
-  }
-
-  body.mobile-ui .cell-scale-chip {
-    right: 8px !important;
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 132px) !important;
-    max-width: 120px !important;
-    font-size: 11px !important;
-    padding: 8px 10px !important;
-  }
-}
-
-@media (max-width: 640px) and (orientation: portrait) {
-  body.mobile-ui .right-rail-scroll {
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 136px) !important;
-  }
-
-  body.mobile-ui .timeline-bar {
-    grid-template-columns: 36px minmax(0, 1fr) 36px auto !important;
-    gap: 6px !important;
-  }
-
-  body.mobile-ui .timeline-nav-btn {
-    min-width: 36px !important;
-    width: 36px !important;
-    height: 36px !important;
-    min-height: 36px !important;
-  }
-
-  body.mobile-ui #todayBtn {
-    min-width: 82px !important;
-    padding: 0 10px !important;
-  }
-}
-
-@media (max-width: 900px) and (orientation: landscape) {
-  body.mobile-ui .right-rail-scroll {
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 96px) !important;
-  }
-
-  body.mobile-ui .timeline-dock {
-    padding-left: 12px !important;
-    padding-right: 12px !important;
-  }
-
-  body.mobile-ui .timeline-bar {
-    grid-template-columns: 40px minmax(148px, 220px) 40px auto !important;
-  }
-}
 
 
 /* v0.4.5 decisive mobile layout overrides */
-@media (max-width: 900px) {
-  :root {
-    --mobile-meta-h: 34px;
-  }
-
-  .meta-stack {
-    position: fixed !important;
-    left: 6px !important;
-    right: 6px !important;
-    bottom: 4px !important;
-    z-index: 40 !important;
-    display: grid !important;
-    grid-template-columns: minmax(70px,auto) minmax(0,1fr) minmax(0,1.2fr) !important;
-    gap: 6px !important;
-    align-items: center !important;
-    max-width: none !important;
-    padding: 4px 6px calc(4px + env(safe-area-inset-bottom)) !important;
-    background: rgba(7, 17, 31, 0.82) !important;
-    border: 1px solid rgba(255,255,255,0.08) !important;
-    border-radius: 12px !important;
-    backdrop-filter: blur(14px) saturate(1.05) !important;
-    -webkit-backdrop-filter: blur(14px) saturate(1.05) !important;
-    overflow: hidden !important;
-    white-space: nowrap !important;
-  }
-
-  .meta-corner {
-    min-width: 0 !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    padding: 4px 8px !important;
-    font-size: 10px !important;
-    line-height: 1.15 !important;
-    border-radius: 9px !important;
-    background: rgba(11, 20, 34, 0.78) !important;
-    white-space: nowrap !important;
-  }
-
-  .right-rail-scroll {
-    position: fixed !important;
-    top: calc(8px + env(safe-area-inset-top)) !important;
-    right: 10px !important;
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 124px) !important;
-    z-index: 36 !important;
-    width: 52px !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: stretch !important;
-    justify-content: flex-start !important;
-    gap: 8px !important;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    pointer-events: none !important;
-    scrollbar-width: none !important;
-  }
-  .right-rail-scroll::-webkit-scrollbar { display: none !important; }
-  .right-rail-scroll > * {
-    position: static !important;
-    inset: auto !important;
-    width: 46px !important;
-    margin: 0 !important;
-    flex: 0 0 auto !important;
-    pointer-events: auto !important;
-  }
-
-  .search-dock {
-    order: -3 !important;
-    position: static !important;
-    inset: auto !important;
-    width: 46px !important;
-    display: block !important;
-    pointer-events: auto !important;
-  }
-  .mobile-toggle-bar {
-    display: block !important;
-    width: 46px !important;
-    margin: 0 !important;
-  }
-  .search-dock .panel-card {
-    position: fixed !important;
-    top: calc(8px + env(safe-area-inset-top)) !important;
-    right: 64px !important;
-    width: min(320px, calc(100vw - 86px)) !important;
-    margin: 0 !important;
-  }
-
-  .grid-focus-corner {
-    order: -2 !important;
-    position: static !important;
-    inset: auto !important;
-    width: 46px !important;
-    display: grid !important;
-    gap: 8px !important;
-    justify-items: stretch !important;
-    pointer-events: auto !important;
-  }
-
-  .fab-stack {
-    order: -1 !important;
-    position: static !important;
-    inset: auto !important;
-    width: 46px !important;
-    display: grid !important;
-    gap: 8px !important;
-    justify-items: stretch !important;
-    pointer-events: auto !important;
-  }
-
-  .timeline-dock {
-    position: fixed !important;
-    left: 6px !important;
-    right: 6px !important;
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 8px) !important;
-    width: auto !important;
-    max-width: none !important;
-    margin: 0 !important;
-    z-index: 35 !important;
-    padding: 12px 10px 10px !important;
-    border-radius: 18px !important;
-    display: grid !important;
-    gap: 8px !important;
-    transform: none !important;
-  }
-
-  .timeline-content {
-    display: grid !important;
-    gap: 8px !important;
-    margin-top: 8px !important;
-  }
-
-  .timeline-bar {
-    display: grid !important;
-    grid-template-columns: 40px minmax(0,1fr) 40px auto !important;
-    align-items: center !important;
-    gap: 8px !important;
-  }
-
-  #todayBtn {
-    min-width: 90px !important;
-    min-height: 38px !important;
-    height: 38px !important;
-    padding: 0 12px !important;
-    border-radius: 12px !important;
-    font-size: 12px !important;
-  }
-
-  .timeline-slot-strip {
-    display: flex !important;
-    flex-direction: row !important;
-    gap: 8px !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    padding: 2px 0 4px !important;
-    min-height: 0 !important;
-    max-height: none !important;
-  }
-
-  .timeline-slot-strip .slot-pill {
-    min-width: 82px !important;
-    min-height: 38px !important;
-    padding: 8px 10px !important;
-    font-size: 12px !important;
-  }
-
-  .selection-card {
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 132px) !important;
-  }
-
-  .cell-scale-chip {
-    right: 8px !important;
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 132px) !important;
-    max-width: 120px !important;
-    font-size: 11px !important;
-    padding: 8px 10px !important;
-  }
-}
-
-@media (max-width: 640px) and (orientation: portrait) {
-  .right-rail-scroll {
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 136px) !important;
-  }
-
-  .timeline-bar {
-    grid-template-columns: 36px minmax(0,1fr) 36px auto !important;
-    gap: 6px !important;
-  }
-
-  .timeline-nav-btn {
-    min-width: 36px !important;
-    width: 36px !important;
-    height: 36px !important;
-    min-height: 36px !important;
-  }
-
-  #todayBtn {
-    min-width: 82px !important;
-    padding: 0 10px !important;
-  }
-}
-
-@media (max-width: 900px) and (orientation: landscape) {
-  .right-rail-scroll {
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 96px) !important;
-  }
-
-  .timeline-dock {
-    left: 6px !important;
-    right: 68px !important;
-  }
-
-  .timeline-bar {
-    grid-template-columns: 40px minmax(148px, 220px) 40px auto !important;
-  }
-}
-
-
 
 
 /* v0.4.55 bottom strips and right rail */
@@ -1003,29 +279,6 @@
 .fab-stack { order: 2 !important; }
 .cell-scale-chip { display: none !important; }
 
-@media (max-width: 900px) {
-  :root {
-    --meta-strip-h: 32px;
-    --timeline-strip-bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom));
-    --timeline-strip-h: 118px;
-  }
-  .meta-stack {
-    grid-template-columns: auto minmax(0,1fr) minmax(0,1.1fr) auto !important;
-  }
-  .meta-stack .meta-corner { padding: 6px 8px !important; font-size: 10px !important; }
-  .timeline-dock { padding-left: 8px !important; padding-right: 8px !important; }
-}
-
-@media (max-width: 900px) and (orientation: landscape) {
-  :root { --timeline-strip-h: 94px; }
-  .right-rail-scroll { bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom) + var(--timeline-strip-h) + 24px) !important; }
-}
-
-@media (max-width: 640px) {
-  .meta-stack {
-    grid-template-columns: auto minmax(0,1fr) minmax(0,1.05fr) auto !important;
-  }
-}
 
 /* v0.4.56 rail cleanup and search panel fix */
 .timeline-dock {
@@ -1122,12 +375,6 @@
   width: var(--right-rail-width) !important;
 }
 
-@media (max-width: 900px) and (orientation: landscape) {
-  .right-rail-scroll {
-    bottom: calc(var(--meta-height-px) + var(--timeline-height-px)) !important;
-  }
-}
-
 
 /* v0.4.58 bottom stack seal + visible timeline toggle */
 .timeline-dock {
@@ -1204,64 +451,6 @@
   padding: 5px 9px !important;
   font-size: 11px !important;
   border-radius: 10px !important;
-}
-
-@media (max-width: 900px) {
-  .timeline-dock {
-    padding-top: 5px !important;
-    padding-bottom: 5px !important;
-  }
-
-  .timeline-dock .timeline-content {
-    gap: 5px !important;
-  }
-
-  .timeline-bar {
-    gap: 5px !important;
-  }
-
-  .timeline-slot-strip .slot-pill {
-    min-height: 30px !important;
-    padding: 4px 8px !important;
-    font-size: 10px !important;
-  }
-}
-
-@media (max-width: 640px) and (orientation: portrait) {
-  .timeline-dock {
-    padding-left: 6px !important;
-    padding-right: 6px !important;
-  }
-
-  .timeline-bar {
-    grid-template-columns: 34px minmax(0,1fr) 34px auto !important;
-  }
-
-  .timeline-nav-btn {
-    min-width: 34px !important;
-    width: 34px !important;
-    height: 34px !important;
-    min-height: 34px !important;
-  }
-
-  #todayBtn {
-    min-width: 74px !important;
-    height: 34px !important;
-    min-height: 34px !important;
-    padding: 0 8px !important;
-  }
-
-  .timeline-date-input {
-    height: 34px !important;
-    min-height: 34px !important;
-  }
-}
-
-@media (max-width: 900px) and (orientation: landscape) {
-  .timeline-dock {
-    padding-left: 8px !important;
-    padding-right: 8px !important;
-  }
 }
 
 
@@ -1705,7 +894,6 @@
 }
 
 
-
 /* ===== v0.6.16 RESPONSIVE FIX ===== */
 
 /* TABLET PORTRAIT: stop full height */
@@ -1721,38 +909,8 @@
 }
 
 /* MOBILE LANDSCAPE FIX */
-@media (max-width: 768px) and (orientation: landscape) {
-  #selectionCard {
-    top: auto !important;
-    bottom: 90px !important;
-    transform: translateX(-50%) !important;
-    left: 50% !important;
-    right: auto !important;
-  }
-
-  #meta-stack {
-    bottom: 10px !important;
-    left: 10px !important;
-    right: 10px !important;
-  }
-}
 
 /* MOBILE PORTRAIT FIX */
-@media (max-width: 768px) and (orientation: portrait) {
-  #timelineDock {
-    width: 100% !important;
-    left: 0 !important;
-    transform: none !important;
-  }
-
-  #meta-stack {
-    width: 100%;
-    left: 0;
-    right: 0;
-    bottom: 0;
-  }
-}
-
 
 
 /* ===== v0.6.17 selectionCard follow + timeline spacing fix ===== */
@@ -1773,25 +931,7 @@
 }
 
 /* Keep the card safely above the timeline on phones when follow mode is disabled */
-@media (max-width: 767px) and (orientation: landscape) {
-  body.mobile-ui .selection-card,
-  #selectionCard {
-    bottom: calc(var(--mobile-meta-h, 34px) + env(safe-area-inset-bottom) + 168px) !important;
-    top: auto !important;
-    left: 50% !important;
-    right: auto !important;
-    transform: translateX(-50%) !important;
-    max-height: min(48vh, 360px) !important;
-  }
-}
 
-@media (max-width: 767px) and (orientation: portrait) {
-  body.mobile-ui .selection-card,
-  #selectionCard {
-    bottom: calc(var(--mobile-meta-h, 34px) + env(safe-area-inset-bottom) + 168px) !important;
-    max-height: min(46vh, 420px) !important;
-  }
-}
 
 /* When the card follows the grid outside the center stack, prevent timeline overlap */
 .selection-card.desktop-outside-grid,
@@ -1800,28 +940,8 @@
 }
 
 
-
 /* ===== v0.6.18 GLOBAL FIXES ===== */
 
-@media (max-width: 767px) {
-  #timelineDock {
-    height: auto !important;
-    padding: 8px 10px !important;
-  }
-  .slotButtons {
-    overflow-x: auto !important;
-    white-space: nowrap !important;
-  }
-}
-
-@media (max-width: 1024px) {
-  #metaStack {
-    bottom: 6px !important;
-    left: 8px !important;
-    right: 8px !important;
-    width: auto !important;
-  }
-}
 
 #selectionCard {
   z-index: 50 !important;
@@ -1840,63 +960,12 @@
   }
 }
 
-@media (max-width: 767px) and (orientation: portrait) {
-  #selectionCard {
-    bottom: 180px !important;
-    max-height: 45vh !important;
-  }
-}
-
-@media (max-width: 767px) and (orientation: landscape) {
-  #selectionCard {
-    bottom: 120px !important;
-    max-height: 50vh !important;
-  }
-}
-
 
 /* ===== v0.6.19 MOBILE PORTRAIT FIXES ===== */
 
 /* Fix timeline completely broken */
-@media (max-width: 767px) and (orientation: portrait) {
-  #timelineDock {
-    position: fixed !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    height: auto !important;
-    padding: 10px 8px !important;
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 6px !important;
-  }
-
-  .slotButtons {
-    display: flex !important;
-    overflow-x: auto !important;
-    gap: 6px !important;
-    padding-bottom: 4px !important;
-  }
-
-  .dayButtons {
-    display: flex !important;
-    justify-content: center !important;
-    gap: 6px !important;
-  }
-}
 
 /* Fix metaStack (full width + no rounded weird block) */
-@media (max-width: 767px) {
-  #metaStack {
-    position: fixed !important;
-    bottom: 72px !important;
-    left: 0 !important;
-    right: 0 !important;
-    border-radius: 0 !important;
-    width: 100% !important;
-    padding: 6px 10px !important;
-  }
-}
 
 /* Ensure version bar is below everything cleanly */
 .versionBadge,
@@ -1905,553 +974,39 @@
 }
 
 /* Prevent selectionCard collision with meta + timeline */
-@media (max-width: 767px) {
-  #selectionCard {
-    bottom: 140px !important;
-  }
-}
 
 
 /* ===== v0.6.20 MOBILE LANDSCAPE FIX ===== */
 
-@media (max-width: 767px) and (orientation: landscape) {
-
-  #timelineDock {
-    height: auto !important;
-    padding: 6px 8px !important;
-    gap: 4px !important;
-  }
-
-  .slotButtons {
-    gap: 4px !important;
-  }
-
-  .dayButtons {
-    gap: 4px !important;
-  }
-
-  #metaStack {
-    position: fixed !important;
-    bottom: 64px !important;
-    left: 0 !important;
-    right: 0 !important;
-    width: 100% !important;
-    border-radius: 0 !important;
-    padding: 4px 8px !important;
-  }
-
-  #selectionCard {
-    bottom: 120px !important;
-    max-height: 55vh !important;
-    left: 12px !important;
-    right: 72px !important;
-    transform: none !important;
-  }
-}
-
 
 /* ===== v0.6.21 MOBILE LANDSCAPE STACKING FIX ===== */
-
-@media (max-width: 767px) and (orientation: landscape) {
-
-  /* Keep the timeline at the bottom and compact */
-  #timelineDock {
-    bottom: 0 !important;
-    padding: 6px 8px 8px !important;
-    min-height: 92px !important;
-    max-height: 110px !important;
-  }
-
-  /* Meta stack sits just above the timeline */
-  #metaStack {
-    bottom: 108px !important;
-    min-height: 28px !important;
-    max-height: 34px !important;
-    padding: 3px 8px !important;
-  }
-
-  /* Selection card sits above meta + timeline with a hard cap */
-  #selectionCard,
-  .selection-card {
-    left: 12px !important;
-    right: 78px !important;
-    top: auto !important;
-    bottom: 146px !important;
-    transform: none !important;
-    max-height: calc(100vh - 170px) !important;
-    overflow-y: auto !important;
-  }
-
-  /* Make the card slightly tighter vertically on small-height screens */
-  #selectionCard .selection-card-inner,
-  .selection-card .selection-card-inner,
-  #selectionCard .card-body,
-  .selection-card .card-body {
-    padding: 10px !important;
-  }
-
-  #selectionCard .score-grid,
-  .selection-card .score-grid {
-    gap: 8px !important;
-  }
-}
 
 
 /* ===== v0.6.22 meta-stack + timeline full-width mobile landscape ===== */
 
-@media (max-width: 767px) and (orientation: landscape) {
-
-  /* Meta stack like desktop/tablet: full-width bar, no rounded shell */
-  #metaStack,
-  .meta-stack {
-    position: fixed !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 108px !important;
-    width: 100vw !important;
-    border-radius: 0 !important;
-    padding: 6px 10px !important;
-    background: rgba(6, 14, 28, 0.84) !important;
-    backdrop-filter: blur(10px) !important;
-    -webkit-backdrop-filter: blur(10px) !important;
-    box-sizing: border-box !important;
-  }
-
-  #metaStack .meta-band,
-  .meta-stack .meta-band,
-  #metaBand,
-  .meta-band {
-    border-radius: 0 !important;
-    width: 100% !important;
-    margin: 0 !important;
-  }
-
-  /* Timeline full width, square edges */
-  #timelineDock,
-  .timeline-dock {
-    position: fixed !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100vw !important;
-    margin: 0 !important;
-    border-radius: 0 !important;
-    padding: 8px 10px 10px !important;
-    box-sizing: border-box !important;
-  }
-
-  #timelineDock .timeline-shell,
-  .timeline-dock .timeline-shell,
-  #timelineDock .timeline-card,
-  .timeline-dock .timeline-card {
-    border-radius: 0 !important;
-    width: 100% !important;
-    margin: 0 !important;
-  }
-
-  /* Keep selection card above the bars */
-  #selectionCard,
-  .selection-card {
-    bottom: 148px !important;
-  }
-}
 
 /* Apply same visual language on mobile portrait too */
-@media (max-width: 767px) and (orientation: portrait) {
-  #metaStack,
-  .meta-stack,
-  #timelineDock,
-  .timeline-dock {
-    left: 0 !important;
-    right: 0 !important;
-    width: 100vw !important;
-    border-radius: 0 !important;
-    margin: 0 !important;
-    box-sizing: border-box !important;
-  }
-
-  #metaStack .meta-band,
-  .meta-stack .meta-band,
-  #timelineDock .timeline-shell,
-  .timeline-dock .timeline-shell,
-  #timelineDock .timeline-card,
-  .timeline-dock .timeline-card {
-    border-radius: 0 !important;
-    width: 100% !important;
-    margin: 0 !important;
-  }
-}
 
 
 /* ===== v0.6.23 mobile landscape: desktop-like meta stack at very bottom ===== */
 
-@media (max-width: 767px) and (orientation: landscape) {
-  #metaStack,
-  .meta-stack,
-  #meta-stack {
-    position: fixed !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100vw !important;
-    margin: 0 !important;
-    padding: 6px 10px !important;
-    border-radius: 0 !important;
-    overflow: hidden !important;
-    overflow-x: hidden !important;
-    overflow-y: hidden !important;
-    max-height: none !important;
-    height: auto !important;
-    box-sizing: border-box !important;
-    background: rgba(6, 14, 28, 0.84) !important;
-    backdrop-filter: blur(10px) !important;
-    -webkit-backdrop-filter: blur(10px) !important;
-    touch-action: none !important;
-  }
-
-  #metaStack .meta-band,
-  .meta-stack .meta-band,
-  #meta-stack .meta-band,
-  #metaBand,
-  .meta-band {
-    width: 100% !important;
-    margin: 0 !important;
-    border-radius: 0 !important;
-    overflow: hidden !important;
-    max-height: none !important;
-  }
-
-  #timelineDock,
-  .timeline-dock {
-    position: fixed !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 44px !important;
-    width: 100vw !important;
-    margin: 0 !important;
-    padding: 8px 10px 10px !important;
-    border-radius: 0 !important;
-    box-sizing: border-box !important;
-  }
-
-  #timelineDock .timeline-shell,
-  .timeline-dock .timeline-shell,
-  #timelineDock .timeline-card,
-  .timeline-dock .timeline-card {
-    width: 100% !important;
-    margin: 0 !important;
-    border-radius: 0 !important;
-  }
-
-  #selectionCard,
-  .selection-card {
-    bottom: 154px !important;
-  }
-}
-
 
 /* ===== v0.6.24 mobile landscape true desktop-like bottom bars ===== */
-
-@media (max-width: 767px) and (orientation: landscape) {
-  body.mobile-ui {
-    --mobile-meta-h: 42px !important;
-  }
-
-  /* Meta stack: real bottom bar, same visual logic as desktop/tablet */
-  body.mobile-ui .meta-stack,
-  .meta-stack {
-    position: fixed !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100vw !important;
-    max-width: none !important;
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    gap: 8px !important;
-    flex-wrap: nowrap !important;
-    overflow: hidden !important;
-    padding: 6px 10px !important;
-    margin: 0 !important;
-    border-radius: 0 !important;
-    box-sizing: border-box !important;
-    background: rgba(6, 14, 28, 0.84) !important;
-    backdrop-filter: blur(10px) !important;
-    -webkit-backdrop-filter: blur(10px) !important;
-    z-index: 24 !important;
-    touch-action: none !important;
-  }
-
-  body.mobile-ui .meta-stack .meta-corner,
-  .meta-stack .meta-corner {
-    flex: 1 1 0 !important;
-    min-width: 0 !important;
-    border-radius: 10px !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-  }
-
-  body.mobile-ui .meta-stack .meta-version,
-  .meta-stack .meta-version {
-    flex: 0 0 auto !important;
-  }
-
-  /* Timeline directly above meta stack, full width, no rounded outer shell */
-  body.mobile-ui .timeline-dock,
-  .timeline-dock {
-    position: fixed !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom)) !important;
-    width: 100vw !important;
-    max-width: none !important;
-    margin: 0 !important;
-    padding: 8px 10px !important;
-    border-radius: 0 !important;
-    box-sizing: border-box !important;
-    display: grid !important;
-    grid-template-columns: 1fr !important;
-    gap: 8px !important;
-    z-index: 23 !important;
-  }
-
-  body.mobile-ui .timeline-content {
-    margin-top: 0 !important;
-  }
-
-  body.mobile-ui .timeline-bar {
-    grid-template-columns: 40px minmax(0, 1fr) 40px auto !important;
-    grid-template-areas: none !important;
-    gap: 6px !important;
-    align-items: center !important;
-  }
-
-  body.mobile-ui #todayBtn {
-    width: auto !important;
-    min-width: 0 !important;
-    height: 34px !important;
-  }
-
-  /* Day buttons row optional but horizontal */
-  body.mobile-ui #dayButtons.button-row,
-  body.mobile-ui .button-row {
-    display: flex !important;
-    flex-wrap: nowrap !important;
-    overflow-x: auto !important;
-    justify-content: flex-start !important;
-    gap: 6px !important;
-    padding-bottom: 2px !important;
-  }
-
-  /* Slot strip must be horizontal in landscape */
-  body.mobile-ui #slotButtons.timeline-slot-strip,
-  body.mobile-ui .timeline-slot-strip {
-    grid-area: auto !important;
-    display: flex !important;
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    align-items: center !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    white-space: nowrap !important;
-    max-height: none !important;
-    min-height: 0 !important;
-    gap: 6px !important;
-    padding: 0 0 2px 0 !important;
-    scroll-snap-type: x proximity !important;
-  }
-
-  body.mobile-ui .timeline-slot-strip .slot-pill {
-    width: auto !important;
-    min-width: 92px !important;
-    min-height: 34px !important;
-    flex: 0 0 auto !important;
-  }
-
-  /* Selection card must sit above the timeline, not overlap it */
-  body.mobile-ui .selection-card,
-  #selectionCard,
-  .selection-card {
-    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom) + 96px) !important;
-    left: 12px !important;
-    right: calc(var(--right-rail-width) + var(--rail-right) + 12px) !important;
-    width: auto !important;
-    transform: none !important;
-    max-height: calc(100vh - 170px) !important;
-    overflow-y: auto !important;
-  }
-
-  /* Version chip should visually be part of the bottom bar, not floating elsewhere */
-  #versionBadge {
-    bottom: auto !important;
-  }
-}
 
 
 /* ===== v0.6.25 versionBadge compact like desktop ===== */
 
-@media (max-width: 767px) and (orientation: landscape) {
-  #versionBadge,
-  .version-badge,
-  .versionBadge {
-    position: static !important;
-    flex: 0 0 auto !important;
-    width: auto !important;
-    max-width: max-content !important;
-    min-width: 0 !important;
-    padding: 6px 10px !important;
-    margin: 0 !important;
-    border-radius: 10px !important;
-    white-space: nowrap !important;
-    align-self: center !important;
-  }
-
-  body.mobile-ui .meta-stack .meta-version,
-  .meta-stack .meta-version {
-    flex: 0 0 auto !important;
-    width: auto !important;
-    min-width: 0 !important;
-    max-width: max-content !important;
-  }
-
-  body.mobile-ui .meta-stack .meta-corner,
-  .meta-stack .meta-corner {
-    flex: 1 1 0 !important;
-    min-width: 0 !important;
-  }
-}
-
 
 /* ===== v0.6.26 selectionCard smaller on mobile landscape ===== */
-
-@media (max-width: 767px) and (orientation: landscape) {
-  #selectionCard,
-  .selection-card {
-    transform: scale(0.82);
-    transform-origin: bottom left;
-    max-width: 320px !important;
-  }
-
-  #selectionCard * {
-    font-size: 0.92em;
-  }
-}
 
 
 /* ===== v0.6.27 smaller metric buttons on mobile landscape ===== */
 
-@media (max-width: 767px) and (orientation: landscape) {
-  .metric-btn,
-  .metric-button {
-    padding: 6px 10px !important;
-    font-size: 0.85em !important;
-    border-radius: 10px !important;
-  }
-
-  .metric-btn .label,
-  .metric-button .label {
-    font-size: 0.8em !important;
-  }
-}
-
 
 /* ===== v0.6.28 refine metric-btn + taller selectionCard ===== */
 
-@media (max-width: 767px) and (orientation: landscape) {
-
-  /* smaller metric buttons */
-  .metric-btn,
-  .metric-button {
-    padding: 4px 8px !important;
-    font-size: 0.78em !important;
-    border-radius: 8px !important;
-  }
-
-  .metric-btn .label,
-  .metric-button .label {
-    font-size: 0.72em !important;
-  }
-
-  /* increase selectionCard height usage */
-  #selectionCard,
-  .selection-card {
-    max-height: calc(100vh - 140px) !important;
-  }
-}
-
 
 /* ===== v0.6.29 mobile landscape: smaller active buttons + timeline pushed fully down ===== */
-
-@media (max-width: 767px) and (orientation: landscape) {
-
-  /* active pills/buttons should not visually bloat compared to inactive ones */
-  .slot-pill.active,
-  .day-pill.active,
-  .metric-btn.active,
-  .metric-button.active,
-  .selection-chip.active,
-  .toggle-chip.active {
-    padding: 4px 8px !important;
-    font-size: 0.76em !important;
-    border-radius: 8px !important;
-    line-height: 1.05 !important;
-    transform: none !important;
-    box-shadow: none !important;
-  }
-
-  /* keep active labels compact too */
-  .slot-pill.active .label,
-  .day-pill.active .label,
-  .metric-btn.active .label,
-  .metric-button.active .label {
-    font-size: 0.7em !important;
-  }
-
-  /* timeline fully collapsed toward bottom edge */
-  body.mobile-ui .timeline-dock,
-  .timeline-dock,
-  #timelineDock {
-    bottom: calc(var(--mobile-meta-h, 42px) + env(safe-area-inset-bottom) - 2px) !important;
-    padding-top: 4px !important;
-    padding-bottom: 6px !important;
-    min-height: 78px !important;
-    max-height: 88px !important;
-    gap: 4px !important;
-  }
-
-  body.mobile-ui .timeline-content,
-  #timelineDock .timeline-content {
-    margin-top: 0 !important;
-    gap: 4px !important;
-  }
-
-  body.mobile-ui .timeline-bar,
-  #timelineDock .timeline-bar {
-    gap: 4px !important;
-    align-items: center !important;
-  }
-
-  body.mobile-ui #dayButtons.button-row,
-  body.mobile-ui .button-row,
-  #dayButtons {
-    gap: 4px !important;
-    padding-bottom: 0 !important;
-  }
-
-  body.mobile-ui #slotButtons.timeline-slot-strip,
-  body.mobile-ui .timeline-slot-strip,
-  #slotButtons {
-    gap: 4px !important;
-    padding-bottom: 0 !important;
-  }
-
-  /* keep selection card just above the tighter timeline */
-  #selectionCard,
-  .selection-card {
-    bottom: calc(var(--mobile-meta-h, 42px) + env(safe-area-inset-bottom) + 84px) !important;
-  }
-}
 
 
 /* ===== v0.6.30 tablet portrait: meta stack same as tablet landscape ===== */
@@ -2636,51 +1191,6 @@
   transform: none !important;
 }
 
-@media (max-width: 1024px) {
-  body.mobile-ui #slotButtons.timeline-slot-strip .slot-pill,
-  body.mobile-ui .timeline-slot-strip .slot-pill,
-  #slotButtons.timeline-slot-strip .slot-pill,
-  .timeline-slot-strip .slot-pill {
-    flex-basis: 44px !important;
-    width: 44px !important;
-    min-width: 44px !important;
-    max-width: 44px !important;
-    height: 32px !important;
-    min-height: 32px !important;
-    font-size: 10.5px !important;
-  }
-}
-
-@media (max-width: 767px) and (orientation: landscape) {
-  body.mobile-ui #slotButtons.timeline-slot-strip,
-  body.mobile-ui .timeline-slot-strip,
-  #slotButtons.timeline-slot-strip,
-  .timeline-slot-strip {
-    gap: 3px !important;
-    padding: 0 6px 2px !important;
-    scroll-padding-inline: 6px !important;
-  }
-
-  body.mobile-ui #slotButtons.timeline-slot-strip .slot-pill,
-  body.mobile-ui .timeline-slot-strip .slot-pill,
-  #slotButtons.timeline-slot-strip .slot-pill,
-  .timeline-slot-strip .slot-pill,
-  body.mobile-ui #slotButtons.timeline-slot-strip .slot-pill.active,
-  body.mobile-ui .timeline-slot-strip .slot-pill.active,
-  #slotButtons.timeline-slot-strip .slot-pill.active,
-  .timeline-slot-strip .slot-pill.active {
-    flex-basis: 40px !important;
-    width: 40px !important;
-    min-width: 40px !important;
-    max-width: 40px !important;
-    height: 28px !important;
-    min-height: 28px !important;
-    padding: 0 3px !important;
-    border-radius: 8px !important;
-    font-size: 10px !important;
-    line-height: 1 !important;
-  }
-}
 
 @media (min-width: 901px) {
   body.mobile-ui .info-drawer,
@@ -2723,6 +1233,8 @@
   cursor: grab !important;
   scrollbar-width: none !important;
   touch-action: none !important;
+  mask-image: linear-gradient(90deg, transparent 0%, black 28px, black calc(100% - 28px), transparent 100%) !important;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 28px, black calc(100% - 28px), transparent 100%) !important;
 }
 
 #slotButtons.timeline-slot-strip.timeline-slider::-webkit-scrollbar,
@@ -2855,57 +1367,6 @@
   opacity: 1;
 }
 
-@media (max-width: 1024px) {
-  #slotButtons.timeline-slot-strip.timeline-slider,
-  .timeline-slot-strip.timeline-slider {
-    padding: 6px 12px 12px !important;
-  }
-
-  .timeline-rail {
-    height: 64px;
-  }
-
-  .timeline-rail-track {
-    height: 32px;
-  }
-
-  .timeline-rail-cursor {
-    width: 54px;
-    height: 40px;
-    font-size: 12px;
-  }
-
-  .timeline-hour-label {
-    top: 42px;
-    font-size: 10px;
-  }
-}
-
-@media (max-width: 767px) and (orientation: landscape) {
-  #slotButtons.timeline-slot-strip.timeline-slider,
-  .timeline-slot-strip.timeline-slider {
-    padding: 2px 10px 6px !important;
-  }
-
-  .timeline-rail {
-    height: 50px;
-  }
-
-  .timeline-rail-track {
-    top: 5px;
-    height: 26px;
-  }
-
-  .timeline-rail-cursor {
-    width: 46px;
-    height: 34px;
-  }
-
-  .timeline-hour-label {
-    top: 35px;
-    font-size: 9px;
-  }
-}
 
 /* v1.0.111 compact AROME timeline */
 .timeline-bar.timeline-bar-frise,
@@ -3117,54 +1578,6 @@
   white-space: nowrap;
 }
 
-@media (max-width: 900px) {
-  .timeline-bar.timeline-bar-frise,
-  #timelineDock .timeline-bar.timeline-bar-frise {
-    grid-template-columns: 40px minmax(180px, 1fr) 40px 40px 40px !important;
-    gap: 7px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn {
-    width: 40px !important;
-    min-width: 40px !important;
-    max-width: 40px !important;
-    height: 40px !important;
-    min-height: 40px !important;
-    max-height: 40px !important;
-    border-radius: 13px !important;
-  }
-}
-
-@media (max-width: 767px) and (orientation: landscape) {
-  .timeline-bar.timeline-bar-frise,
-  #timelineDock .timeline-bar.timeline-bar-frise {
-    grid-template-columns: 38px minmax(160px, 1fr) 38px 38px 38px !important;
-    gap: 6px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn {
-    width: 38px !important;
-    min-width: 38px !important;
-    max-width: 38px !important;
-    height: 38px !important;
-    min-height: 38px !important;
-    max-height: 38px !important;
-  }
-
-  .timeline-rail-cursor span {
-    top: 41px;
-  }
-}
 
 /* ===== v1.0.117 timeline rail equal-height alignment ===== */
 #slotButtons.timeline-slot-strip.timeline-slider,
@@ -3284,78 +1697,6 @@
   display: none !important;
 }
 
-@media (max-width: 900px) {
-  #slotButtons.timeline-slot-strip.timeline-slider,
-  .timeline-slot-strip.timeline-slider,
-  .timeline-rail,
-  .timeline-rail-track {
-    height: 40px !important;
-    min-height: 40px !important;
-    max-height: 40px !important;
-  }
-
-  .timeline-hour-mark {
-    height: 40px !important;
-    width: 26px !important;
-  }
-
-  .timeline-hour-line {
-    top: 5px !important;
-    height: 30px !important;
-  }
-
-  .timeline-hour-label {
-    font-size: 8.5px !important;
-  }
-
-  .timeline-rail-cursor {
-    height: 40px !important;
-  }
-
-  .timeline-rail-cursor::before {
-    top: 4px !important;
-    height: 32px !important;
-  }
-}
-
-@media (max-width: 767px) and (orientation: landscape) {
-  #slotButtons.timeline-slot-strip.timeline-slider,
-  .timeline-slot-strip.timeline-slider,
-  .timeline-rail,
-  .timeline-rail-track {
-    height: 38px !important;
-    min-height: 38px !important;
-    max-height: 38px !important;
-  }
-
-  .timeline-hour-mark {
-    height: 38px !important;
-    width: 24px !important;
-  }
-
-  .timeline-hour-line {
-    top: 5px !important;
-    height: 28px !important;
-  }
-
-  .timeline-hour-label {
-    font-size: 8px !important;
-  }
-
-  .timeline-rail-cursor {
-    height: 38px !important;
-  }
-
-  .timeline-rail-cursor::before {
-    top: 4px !important;
-    height: 30px !important;
-  }
-
-  .timeline-rail-cursor::after {
-    width: 17px !important;
-    height: 17px !important;
-  }
-}
 
 /* ===== v1.0.118 timeline visual balance + cursor dot ===== */
 :root {
@@ -3515,144 +1856,6 @@
   box-shadow: 0 0 0 2px rgba(8, 47, 73, 0.46), 0 0 16px rgba(34, 211, 238, 0.36) !important;
 }
 
-@media (max-width: 900px) {
-  :root {
-    --timeline-height-px: 76px;
-    --timeline-strip-h: 76px;
-  }
-
-  .timeline-dock,
-  #timelineDock {
-    padding-top: 6px !important;
-    padding-bottom: 6px !important;
-  }
-
-  .timeline-date-label {
-    min-height: 20px !important;
-    font-size: 10px !important;
-  }
-
-  .timeline-bar.timeline-bar-frise,
-  #timelineDock .timeline-bar.timeline-bar-frise {
-    grid-template-columns: 38px minmax(180px, 1fr) 38px 38px 38px !important;
-    gap: 6px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn,
-  #slotButtons.timeline-slot-strip.timeline-slider,
-  .timeline-slot-strip.timeline-slider,
-  .timeline-rail,
-  .timeline-rail-track {
-    height: 38px !important;
-    min-height: 38px !important;
-    max-height: 38px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn {
-    width: 38px !important;
-    min-width: 38px !important;
-    max-width: 38px !important;
-  }
-
-  .timeline-hour-mark {
-    height: 38px !important;
-    width: 24px !important;
-  }
-
-  .timeline-hour-line {
-    top: 5px !important;
-    height: 28px !important;
-  }
-
-  .timeline-hour-label {
-    font-size: 8px !important;
-  }
-
-  .timeline-hour-mark.active .timeline-hour-label {
-    font-size: 8.6px !important;
-  }
-
-  .timeline-rail-cursor {
-    height: 38px !important;
-  }
-
-  .timeline-rail-cursor::after {
-    width: 21px !important;
-    height: 21px !important;
-  }
-}
-
-@media (max-width: 767px) and (orientation: landscape) {
-  :root {
-    --timeline-height-px: 70px;
-    --timeline-strip-h: 70px;
-  }
-
-  .timeline-date-label {
-    min-height: 18px !important;
-    font-size: 9.5px !important;
-  }
-
-  .timeline-bar.timeline-bar-frise,
-  #timelineDock .timeline-bar.timeline-bar-frise {
-    grid-template-columns: 36px minmax(150px, 1fr) 36px 36px 36px !important;
-    gap: 5px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn,
-  #slotButtons.timeline-slot-strip.timeline-slider,
-  .timeline-slot-strip.timeline-slider,
-  .timeline-rail,
-  .timeline-rail-track {
-    height: 36px !important;
-    min-height: 36px !important;
-    max-height: 36px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn {
-    width: 36px !important;
-    min-width: 36px !important;
-    max-width: 36px !important;
-  }
-
-  .timeline-hour-mark {
-    height: 36px !important;
-    width: 22px !important;
-  }
-
-  .timeline-hour-label {
-    font-size: 7.6px !important;
-  }
-
-  .timeline-rail-cursor {
-    height: 36px !important;
-  }
-
-  .timeline-rail-cursor::after {
-    width: 19px !important;
-    height: 19px !important;
-  }
-}
 
 /* ===== v1.0.119 compact timeline + centered active hour ===== */
 :root {
@@ -3849,146 +2052,6 @@ body.mobile-ui .mobile-toggle-btn {
   box-shadow: 0 0 0 2px rgba(8, 47, 73, 0.45), 0 0 14px rgba(34, 211, 238, 0.34) !important;
 }
 
-@media (max-width: 900px) {
-  :root {
-    --rail-btn-size: 40px;
-    --right-rail-width: 40px;
-    --timeline-height-px: 64px;
-    --timeline-strip-h: 64px;
-  }
-
-  .timeline-bar.timeline-bar-frise,
-  #timelineDock .timeline-bar.timeline-bar-frise {
-    grid-template-columns: 34px minmax(176px, 1fr) 34px 34px 34px !important;
-    gap: 5px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn,
-  #slotButtons.timeline-slot-strip.timeline-slider,
-  .timeline-slot-strip.timeline-slider,
-  .timeline-rail,
-  .timeline-rail-track {
-    height: 34px !important;
-    min-height: 34px !important;
-    max-height: 34px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn {
-    width: 34px !important;
-    min-width: 34px !important;
-    max-width: 34px !important;
-  }
-
-  .timeline-hour-mark {
-    height: 34px !important;
-    width: 24px !important;
-  }
-
-  .timeline-hour-line {
-    top: 5px !important;
-    height: 24px !important;
-  }
-
-  .timeline-hour-label {
-    font-size: 9px !important;
-  }
-
-  .timeline-hour-mark.active .timeline-hour-label {
-    width: 22px !important;
-    min-width: 22px !important;
-    height: 22px !important;
-    font-size: 10px !important;
-  }
-
-  .timeline-rail-cursor {
-    height: 34px !important;
-  }
-
-  .timeline-rail-cursor::after {
-    width: 22px !important;
-    height: 22px !important;
-  }
-}
-
-@media (max-width: 767px) and (orientation: landscape) {
-  :root {
-    --rail-btn-size: 38px;
-    --right-rail-width: 38px;
-    --timeline-height-px: 58px;
-    --timeline-strip-h: 58px;
-  }
-
-  .timeline-dock,
-  #timelineDock {
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
-  }
-
-  .timeline-date-label {
-    height: 14px !important;
-    min-height: 14px !important;
-    line-height: 14px !important;
-    font-size: 9.5px !important;
-  }
-
-  .timeline-bar.timeline-bar-frise,
-  #timelineDock .timeline-bar.timeline-bar-frise {
-    grid-template-columns: 32px minmax(140px, 1fr) 32px 32px 32px !important;
-    gap: 4px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn,
-  #slotButtons.timeline-slot-strip.timeline-slider,
-  .timeline-slot-strip.timeline-slider,
-  .timeline-rail,
-  .timeline-rail-track {
-    height: 32px !important;
-    min-height: 32px !important;
-    max-height: 32px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn {
-    width: 32px !important;
-    min-width: 32px !important;
-    max-width: 32px !important;
-  }
-
-  .timeline-hour-label {
-    font-size: 8.4px !important;
-  }
-
-  .timeline-hour-mark.active .timeline-hour-label {
-    width: 21px !important;
-    min-width: 21px !important;
-    height: 21px !important;
-    font-size: 9.4px !important;
-  }
-
-  .timeline-rail-cursor::after {
-    width: 21px !important;
-    height: 21px !important;
-  }
-}
 
 /* ===== v1.1.4 timeline true vertical centering ===== */
 :root {
@@ -4165,138 +2228,6 @@ body.mobile-ui .mobile-toggle-btn {
   width: 24px !important;
   height: 24px !important;
   transform: translate(-50%, -50%) !important;
-}
-
-@media (max-width: 900px) {
-  :root {
-    --rail-btn-size: 38px;
-    --right-rail-width: 38px;
-    --timeline-height-px: 60px;
-    --timeline-strip-h: 60px;
-  }
-
-  .timeline-content,
-  #timelineDock .timeline-content {
-    width: 100% !important;
-  }
-
-  .timeline-date-label {
-    top: 2px !important;
-    height: 12px !important;
-    min-height: 12px !important;
-    line-height: 12px !important;
-    font-size: 9.5px !important;
-  }
-
-  .timeline-bar.timeline-bar-frise,
-  #timelineDock .timeline-bar.timeline-bar-frise {
-    grid-template-columns: 32px minmax(168px, 1fr) 32px 32px 32px !important;
-    gap: 5px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn,
-  #slotButtons.timeline-slot-strip.timeline-slider,
-  .timeline-slot-strip.timeline-slider,
-  .timeline-rail,
-  .timeline-rail-track {
-    height: 32px !important;
-    min-height: 32px !important;
-    max-height: 32px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn {
-    width: 32px !important;
-    min-width: 32px !important;
-    max-width: 32px !important;
-  }
-
-  .timeline-hour-label {
-    font-size: 9.3px !important;
-  }
-
-  .timeline-hour-mark.active .timeline-hour-label {
-    width: 22px !important;
-    min-width: 22px !important;
-    height: 22px !important;
-    font-size: 10.4px !important;
-  }
-
-  .timeline-rail-cursor::after {
-    width: 22px !important;
-    height: 22px !important;
-  }
-}
-
-@media (max-width: 767px) and (orientation: landscape) {
-  :root {
-    --rail-btn-size: 36px;
-    --right-rail-width: 36px;
-    --timeline-height-px: 54px;
-    --timeline-strip-h: 54px;
-  }
-
-  .timeline-date-label {
-    top: 1px !important;
-    font-size: 9px !important;
-  }
-
-  .timeline-bar.timeline-bar-frise,
-  #timelineDock .timeline-bar.timeline-bar-frise {
-    grid-template-columns: 30px minmax(138px, 1fr) 30px 30px 30px !important;
-    gap: 4px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn,
-  #slotButtons.timeline-slot-strip.timeline-slider,
-  .timeline-slot-strip.timeline-slider,
-  .timeline-rail,
-  .timeline-rail-track {
-    height: 30px !important;
-    min-height: 30px !important;
-    max-height: 30px !important;
-  }
-
-  .timeline-icon-btn,
-  #timelineDock .timeline-icon-btn,
-  #prevDayBtn,
-  #nextDayBtn,
-  #playTimelineBtn,
-  #exportGifBtn {
-    width: 30px !important;
-    min-width: 30px !important;
-    max-width: 30px !important;
-  }
-
-  .timeline-hour-label {
-    font-size: 8.6px !important;
-  }
-
-  .timeline-hour-mark.active .timeline-hour-label {
-    width: 20px !important;
-    min-width: 20px !important;
-    height: 20px !important;
-    font-size: 9.6px !important;
-  }
-
-  .timeline-rail-cursor::after {
-    width: 20px !important;
-    height: 20px !important;
-  }
 }
 
 
@@ -4677,7 +2608,6 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
-
 
 
 .export-format-menu {
@@ -5929,11 +3859,23 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     width: 100% !important;
     max-width: none !important;
     min-width: 0 !important;
-    grid-template-columns: 34px minmax(0, 1fr) 34px 34px 34px !important;
+    grid-template-columns: 34px 34px minmax(0, 1fr) 34px 34px !important;
+    grid-template-areas: "prev next slots play export" !important;
     gap: 6px !important;
     align-items: center !important;
     transform: none !important;
   }
+
+  #prevDayBtn,
+  body.mobile-ui #prevDayBtn { grid-area: prev !important; }
+  #slotButtons.timeline-slot-strip,
+  body.mobile-ui #slotButtons.timeline-slot-strip { grid-area: slots !important; }
+  #nextDayBtn,
+  body.mobile-ui #nextDayBtn { grid-area: next !important; }
+  #playTimelineBtn,
+  body.mobile-ui #playTimelineBtn { grid-area: play !important; }
+  #exportGifBtn,
+  body.mobile-ui #exportGifBtn { grid-area: export !important; }
 
   body.mobile-ui #timelineDock.collapsed,
   body.mobile-ui .timeline-dock.collapsed,
@@ -6131,7 +4073,7 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
 
 @media (max-width: 767px) {
   body.mobile-ui {
-    --touch-timeline-h: 122px;
+    --touch-timeline-h: 92px;
     --timeline-height-px: var(--touch-timeline-h) !important;
   }
 
@@ -6156,13 +4098,11 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
   body.mobile-ui .timeline-dock .timeline-bar.timeline-bar-frise,
   #timelineDock .timeline-bar.timeline-bar-frise,
   .timeline-dock .timeline-bar.timeline-bar-frise {
-    grid-template-columns: 38px minmax(0, 1fr) 38px 38px 38px !important;
-    grid-template-rows: minmax(0, 76px) 34px !important;
-    grid-template-areas:
-      "slots slots slots slots slots"
-      "prev . next play export" !important;
+    grid-template-columns: 38px 38px minmax(0, 1fr) 38px 38px !important;
+    grid-template-rows: 76px !important;
+    grid-template-areas: "prev next slots play export" !important;
     align-items: center !important;
-    gap: 4px 6px !important;
+    gap: 6px !important;
   }
 
 
@@ -6218,29 +4158,10 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     isolation: isolate;
   }
 
-  body.mobile-ui #slotButtons .timeline-wheel::before,
-  body.mobile-ui #slotButtons .timeline-wheel::after,
-  body.mobile-ui .timeline-wheel::before,
-  body.mobile-ui .timeline-wheel::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    z-index: 8;
-    width: 12%;
-    pointer-events: none;
-  }
-
-  body.mobile-ui #slotButtons .timeline-wheel::before,
-  body.mobile-ui .timeline-wheel::before {
-    left: 0;
-    background: linear-gradient(90deg, rgba(5, 10, 19, 0.98), rgba(5, 10, 19, 0));
-  }
-
-  body.mobile-ui #slotButtons .timeline-wheel::after,
-  body.mobile-ui .timeline-wheel::after {
-    right: 0;
-    background: linear-gradient(270deg, rgba(5, 10, 19, 0.98), rgba(5, 10, 19, 0));
+  body.mobile-ui #slotButtons .timeline-wheel,
+  body.mobile-ui .timeline-wheel {
+    mask-image: linear-gradient(90deg, transparent 0%, black 22px, black calc(100% - 22px), transparent 100%);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 22px, black calc(100% - 22px), transparent 100%);
   }
 
   body.mobile-ui #slotButtons .timeline-wheel-scroller,
@@ -6251,12 +4172,12 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     align-items: stretch;
     width: 100%;
     height: 76px;
-    padding: 6px calc(50% - (var(--timeline-wheel-item-width) / 2)) 6px;
+    padding: 6px 0;
     overflow-x: auto;
     overflow-y: hidden;
     overscroll-behavior-x: contain;
     scroll-snap-type: none;
-    scroll-padding-inline: calc(50% - (var(--timeline-wheel-item-width) / 2));
+    scroll-padding-inline: 0;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x;
@@ -6265,6 +4186,16 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
   body.mobile-ui #slotButtons .timeline-wheel-scroller::-webkit-scrollbar,
   body.mobile-ui .timeline-wheel-scroller::-webkit-scrollbar {
     display: none;
+  }
+
+  body.mobile-ui #slotButtons .timeline-wheel-item:first-child,
+  body.mobile-ui .timeline-wheel-item:first-child {
+    margin-left: calc(50% - var(--timeline-wheel-item-width) / 2);
+  }
+
+  body.mobile-ui #slotButtons .timeline-wheel-item:last-child,
+  body.mobile-ui .timeline-wheel-item:last-child {
+    margin-right: calc(50% - var(--timeline-wheel-item-width) / 2);
   }
 
   body.mobile-ui #slotButtons .timeline-wheel-item,
@@ -6280,8 +4211,11 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     border-radius: 0;
     display: grid;
     justify-items: center;
-    align-items: end;
-    grid-template-rows: 16px 17px 31px;
+    align-items: start;
+    align-content: center;
+    grid-template-rows: 14px 17px 24px;
+    gap: 0;
+    overflow: visible;
     background: transparent !important;
     box-shadow: none !important;
     color: rgba(226, 238, 252, 0.72);
@@ -6289,6 +4223,13 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     scroll-snap-align: none;
     opacity: 0.84;
   }
+
+  body.mobile-ui #slotButtons .timeline-wheel-light-icon,
+  body.mobile-ui .timeline-wheel-light-icon { grid-row: 1 !important; align-self: start !important; }
+  body.mobile-ui #slotButtons .timeline-wheel-line,
+  body.mobile-ui .timeline-wheel-line { grid-row: 2 !important; align-self: end !important; }
+  body.mobile-ui #slotButtons .timeline-wheel-label,
+  body.mobile-ui .timeline-wheel-label { grid-row: 3 !important; align-self: center !important; }
 
   body.mobile-ui #slotButtons .timeline-wheel-item:active,
   body.mobile-ui .timeline-wheel-item:active {
@@ -6445,19 +4386,25 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     box-shadow: 0 0 8px rgba(45, 212, 191, 0.44);
   }
 
-  body.mobile-ui #slotButtons .timeline-wheel-center,
-  body.mobile-ui .timeline-wheel-center {
-    position: absolute;
-    z-index: 7;
-    left: 50%;
-    bottom: 5px;
-    width: 46px;
-    height: 44px;
-    transform: translateX(-50%);
-    border-radius: 999px;
-    border: 1px solid rgba(224, 242, 254, 0.22);
-    background: rgba(8, 17, 30, 0.26);
-    box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.10), 0 0 18px rgba(34, 211, 238, 0.12);
-    pointer-events: none;
+}
+
+
+/* ===== v1.1.114 tablette portrait : fond frise + metastack = même style que paysage ===== */
+@media (min-width: 768px) and (max-width: 1024px) {
+  body.mobile-ui #timelineDock,
+  body.mobile-ui .timeline-dock,
+  #timelineDock,
+  .timeline-dock {
+    background: rgba(8, 17, 30, 0.88) !important;
+    box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.12) !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  }
+
+  body.mobile-ui .meta-stack,
+  .meta-stack {
+    background: rgba(7, 17, 31, 0.94) !important;
+    box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.18) !important;
+    border: 0 !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
   }
 }

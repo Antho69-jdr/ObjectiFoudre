@@ -1750,8 +1750,8 @@ body.mobile-blocked #app {
 .timeline-bar.timeline-bar-frise,
 #timelineDock .timeline-bar.timeline-bar-frise {
   display: grid !important;
-  grid-template-columns: 40px minmax(280px, 1fr) 40px 40px !important;
-  grid-template-areas: "prev slots next play" !important;
+  grid-template-columns: 40px minmax(0, 1fr) 40px 40px 40px !important;
+  grid-template-areas: "prev slots next play gif" !important;
   align-items: center !important;
   justify-content: center !important;
   width: min(100%, 1120px) !important;
@@ -1763,6 +1763,7 @@ body.mobile-blocked #app {
 #slotButtons.timeline-slot-strip { grid-area: slots !important; width: 100% !important; min-width: 0 !important; }
 #nextDayBtn { grid-area: next !important; }
 #playTimelineBtn { grid-area: play !important; }
+#exportGifBtn { grid-area: gif !important; }
 .timeline-bar-frise .timeline-slot-strip {
   padding: 0 !important;
 }
