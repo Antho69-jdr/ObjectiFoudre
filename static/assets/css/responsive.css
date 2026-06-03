@@ -4174,7 +4174,7 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     height: 76px;
     padding: 6px 0;
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: clip;
     overscroll-behavior-x: contain;
     scroll-snap-type: none;
     scroll-padding-inline: 0;
