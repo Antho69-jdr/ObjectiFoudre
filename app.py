@@ -1583,6 +1583,38 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# --- Gating des endpoints de diagnostic ---------------------------------------
+# Ces routes sont des sondes de développement (probe/test/sample/decoder et les
+# variantes de grille « brutes » non utilisées par le client). Elles restent
+# inaccessibles en production sauf si OBJECTIFOUDRE_ENABLE_DEBUG_ENDPOINTS est
+# activé. Le client de prod ne consomme aucune de ces routes ; on renvoie 404
+# (et non 403) pour ne pas révéler leur existence.
+DEBUG_ENDPOINTS_ENABLED = os.environ.get("OBJECTIFOUDRE_ENABLE_DEBUG_ENDPOINTS", "").strip().lower() in {"1", "true", "yes", "on"}
+_DEBUG_ONLY_PATHS = frozenset({
+    "/api/meteofrance/grib-decoder-status",
+    "/api/meteofrance/test-key",
+    "/api/meteofrance/sample-coverage",
+    "/api/meteofrance/probe-multitime-coverage",
+    "/api/meteofrance/probe-model-packages",
+    "/api/meteofrance/probe-grib-package",
+    "/api/meteofrance/probe-grib-full-package",
+    "/api/meteofrance/probe-grib-index",
+    "/api/meteofrance/probe-grib-profile",
+    "/api/meteofrance/probe-grib-target-message",
+    "/api/meteofrance/slot-grid",
+    "/api/meteofrance/grib-slot-grid",
+    "/api/meteofrance/grib-france-slot-grid",
+    "/api/meteofrance/grib-slot-grid-cache",
+    "/api/meteofrance/grib-cache-status",
+})
+
+
+@app.middleware("http")
+async def _gate_debug_endpoints(request, call_next):
+    if not DEBUG_ENDPOINTS_ENABLED and request.url.path in _DEBUG_ONLY_PATHS:
+        return PlainTextResponse("Not Found", status_code=404)
+    return await call_next(request)
+
 _cache: dict[str, dict[str, Any]] = {}
 _inflight: dict[str, asyncio.Task] = {}
 _lock = asyncio.Lock()
