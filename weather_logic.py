@@ -210,9 +210,9 @@ class OutputRow:
     precipitable_water: float | None
     shortwave_radiation: float | None
     precipitation_rate: float | None
-    cloud_cover_low: float
-    cloud_cover_mid: float
-    cloud_cover_high: float
+    cloud_cover_low: float | None
+    cloud_cover_mid: float | None
+    cloud_cover_high: float | None
     wind_gusts_10m: float
     wind_speed_10m: float
     wind_direction_10m: float
@@ -407,17 +407,6 @@ def score_cape(cape: float) -> int:
         (1000, 66),
         (1800, 82),
         (2500, 100),
-    ])
-
-
-def score_shear(shear_ms: float) -> int:
-    return piecewise_score(shear_ms, [
-        (0, 0),
-        (8, 10),
-        (12, 30),
-        (18, 60),
-        (25, 85),
-        (32, 100),
     ])
 
 
@@ -658,6 +647,114 @@ def score_surface_convergence(convergence_s1: float | None) -> int | None:
     ])
 
 
+def _apply_cape_moisture_gates(
+    score: float,
+    penalty: float,
+    *,
+    cape: float,
+    cape_s: int,
+    dew_s: int,
+    vpd_s: int,
+) -> tuple[float, float]:
+    """Atténuations liées à la CAPE et à la sécheresse de la basse couche.
+
+    Ordre conservé tel quel (les pénalités sont multiplicatives, donc l'ordre
+    compte) : déficit de CAPE → bonus "régime maritime" → pénalités sécheresse.
+    """
+    if cape <= 0 or cape_s <= 0:
+        score = min(score * 0.20, 8)
+        penalty += 20
+    elif cape_s < 12:
+        score *= 0.45
+        penalty += 12
+    elif cape_s < 25:
+        score *= 0.65
+        penalty += 8
+    elif cape_s < 40:
+        score *= 0.78
+        penalty += 5
+
+    # Bonus "régime maritime français" : sous nos latitudes la CAPE extrême est
+    # rare, mais une instabilité modérée (300–1000 J/kg) couplée à une basse couche
+    # très humide (point de rosée élevé) suffit à produire des orages — un profil
+    # que la pondération CAPE seule sous-estimerait.
+    if 300 < cape < 1000 and dew_s > 70:
+        score += 10
+
+    # Pénalités sécheresse — une seule branche s'applique (elif) pour éviter les
+    # multiplications cumulées qui faisaient crasher le score à ~0.003× sa valeur.
+    if dew_s < 30 and vpd_s < 30:
+        # Air extrêmement sec : les deux indicateurs convergent
+        score *= 0.15
+        penalty += 32
+    elif dew_s < 30:
+        score *= 0.30
+        penalty += 24
+    elif vpd_s < 30:
+        score *= 0.50
+        penalty += 18
+    elif cape_s > 60 and dew_s < 40:
+        # CAPE fort mais humidité modérément insuffisante — pénalité légère
+        score *= 0.60
+        penalty += 12
+    return score, penalty
+
+
+def _apply_environment_modifiers(
+    score: float,
+    penalty: float,
+    *,
+    dt: datetime,
+    cape_s: int,
+    dew_s: int,
+    cin_support_s: int | None,
+    cin_actual_s: int | None,
+    surface_trigger_s: int | None,
+    precipitable_water_s: int | None,
+    shortwave_s: int | None,
+    convective_activity_s: int | None,
+) -> tuple[float, float]:
+    """Modificateurs secondaires : CIN, convergence de surface, eau précipitable,
+    rayonnement court et activité convective observée. Ordre conservé tel quel."""
+    if cin_support_s is not None:
+        if cin_support_s < 25:
+            score *= 0.55
+            penalty += 16
+        elif cin_support_s < 40:
+            score *= 0.75
+            penalty += 8
+    if cin_actual_s is not None and cin_actual_s >= 70:
+        score += 5
+    if surface_trigger_s is not None:
+        if surface_trigger_s < 25 and cape_s < 65:
+            score *= 0.88
+            penalty += 5
+        elif surface_trigger_s >= 75 and cape_s >= 35 and dew_s >= 40 and (cin_support_s is None or cin_support_s >= 35):
+            score += 6
+    if precipitable_water_s is not None:
+        if precipitable_water_s < 25 and cape_s >= 45:
+            score *= 0.92
+            penalty += 4
+        elif precipitable_water_s >= 75 and cape_s >= 35 and dew_s >= 45:
+            score += 4
+    if shortwave_s is not None:
+        if shortwave_s < 20 and 9 <= dt.hour <= 19 and cape_s >= 45:
+            score *= 0.94
+            penalty += 3
+        elif shortwave_s >= 70 and cape_s >= 35 and dew_s >= 40:
+            score += 3
+    if convective_activity_s is not None:
+        activity_score = convective_activity_s
+        if cape_s < 15 and dew_s < 35:
+            activity_score *= 0.55
+            penalty += 6
+        elif cape_s < 15:
+            activity_score *= 0.75
+            penalty += 3
+        score = max(score, activity_score)
+    return score, penalty
+
+
 def compute_initiation(
     cape: float,
     dewpoint_c: float,
@@ -724,10 +821,14 @@ def compute_initiation(
         elif cloud_activity >= 55 and gust_activity >= 35:
             convective_activity_s = clamp(cloud_activity * 0.55 + gust_activity * 0.25 + precipitation_s * 0.20)
 
+    # RH et VPD mesurent tous deux l'écart à la saturation (fortement corrélés) :
+    # on les fusionne en un seul axe "déficit de saturation" pour ne pas double-compter
+    # ce signal. Le point de rosée (humidité absolue) reste l'axe dominant et distinct.
+    saturation_s = clamp(vpd_s * 0.60 + rh_s * 0.40)
     if precipitable_water_s is None:
-        humidity_block = clamp(dew_s * 0.60 + rh_s * 0.20 + vpd_s * 0.20)
+        humidity_block = clamp(dew_s * 0.65 + saturation_s * 0.35)
     else:
-        humidity_block = clamp(dew_s * 0.45 + rh_s * 0.15 + vpd_s * 0.18 + wet_s * 0.07 + precipitable_water_s * 0.15)
+        humidity_block = clamp(dew_s * 0.48 + saturation_s * 0.27 + wet_s * 0.08 + precipitable_water_s * 0.17)
     moisture = humidity_block
     instability = cape_s
 
@@ -746,68 +847,27 @@ def compute_initiation(
         )
 
     inhibition_penalty = 0.0
-    if cape <= 0 or cape_s <= 0:
-        score = min(score * 0.20, 8)
-        inhibition_penalty += 20
-    elif cape_s < 12:
-        score *= 0.45
-        inhibition_penalty += 12
-    elif cape_s < 25:
-        score *= 0.65
-        inhibition_penalty += 8
-    elif cape_s < 40:
-        score *= 0.78
-        inhibition_penalty += 5
-    if 300 < cape < 1000 and dew_s > 70:
-        score += 10
-    if cape_s > 60 and dew_s < 40:
-        score *= 0.50
-        inhibition_penalty += 18
-    if dew_s < 30:
-        score *= 0.30
-        inhibition_penalty += 24
-    if vpd_s < 30:
-        score *= 0.50
-        inhibition_penalty += 18
-    if dew_s < 30 and vpd_s < 30:
-        score *= 0.20
-        inhibition_penalty += 20
-    if cin_support_s is not None:
-        if cin_support_s < 25:
-            score *= 0.55
-            inhibition_penalty += 16
-        elif cin_support_s < 40:
-            score *= 0.75
-            inhibition_penalty += 8
-    if cin_actual_s is not None and cin_actual_s >= 70:
-        score += 5
-    if surface_trigger_s is not None:
-        if surface_trigger_s < 25 and cape_s < 65:
-            score *= 0.88
-            inhibition_penalty += 5
-        elif surface_trigger_s >= 75 and cape_s >= 35 and dew_s >= 40 and (cin_support_s is None or cin_support_s >= 35):
-            score += 6
-    if precipitable_water_s is not None:
-        if precipitable_water_s < 25 and cape_s >= 45:
-            score *= 0.92
-            inhibition_penalty += 4
-        elif precipitable_water_s >= 75 and cape_s >= 35 and dew_s >= 45:
-            score += 4
-    if shortwave_s is not None:
-        if shortwave_s < 20 and 9 <= dt.hour <= 19 and cape_s >= 45:
-            score *= 0.94
-            inhibition_penalty += 3
-        elif shortwave_s >= 70 and cape_s >= 35 and dew_s >= 40:
-            score += 3
-    if convective_activity_s is not None:
-        activity_score = convective_activity_s
-        if cape_s < 15 and dew_s < 35:
-            activity_score *= 0.55
-            inhibition_penalty += 6
-        elif cape_s < 15:
-            activity_score *= 0.75
-            inhibition_penalty += 3
-        score = max(score, activity_score)
+    score, inhibition_penalty = _apply_cape_moisture_gates(
+        score,
+        inhibition_penalty,
+        cape=cape,
+        cape_s=cape_s,
+        dew_s=dew_s,
+        vpd_s=vpd_s,
+    )
+    score, inhibition_penalty = _apply_environment_modifiers(
+        score,
+        inhibition_penalty,
+        dt=dt,
+        cape_s=cape_s,
+        dew_s=dew_s,
+        cin_support_s=cin_support_s,
+        cin_actual_s=cin_actual_s,
+        surface_trigger_s=surface_trigger_s,
+        precipitable_water_s=precipitable_water_s,
+        shortwave_s=shortwave_s,
+        convective_activity_s=convective_activity_s,
+    )
 
     # Cloud cover is diagnostic only here: a clear pre-convective sky can
     # support surface heating, so low cloud signal must not subtract
@@ -846,100 +906,6 @@ def compute_initiation(
     }
 
 
-def compute_severity(shear_ms: float, gusts: float, cape: float, initiation_score: int) -> tuple[int, dict[str, int]]:
-    cape_s = score_cape(cape)
-    surface_dynamics_s = clamp(100 - score_gusts(gusts))
-    updraft = cape_s
-    organization = clamp(cape_s * 0.65 + surface_dynamics_s * 0.35)
-    maintenance = clamp(cape_s * 0.45 + surface_dynamics_s * 0.25 + initiation_score * 0.30)
-    score = cape_s * 0.62 + surface_dynamics_s * 0.23 + initiation_score * 0.15
-
-    if cape_s < 40:
-        score *= 0.60
-    if initiation_score < 20:
-        score = 0
-    elif initiation_score < 35:
-        score *= 0.55
-    elif initiation_score < 50:
-        score *= 0.75
-
-    if cape_s > 70 and surface_dynamics_s > 35 and initiation_score >= 60:
-        score += 8
-    elif cape_s > 55 and initiation_score >= 50:
-        score += 4
-
-    return clamp(score), {
-        'updraft': clamp(updraft),
-        'organization': clamp(organization),
-        'maintenance': clamp(maintenance),
-        'surface_dynamics_component': surface_dynamics_s,
-        'gust_component': surface_dynamics_s,
-    }
-
-
-def compute_chaseability(cloud_low: float, cloud_mid: float, cloud_high: float, dt: datetime, gusts: float) -> tuple[int, dict[str, int]]:
-    cloud_score = score_cloud_penalty(cloud_low, cloud_mid, cloud_high)
-    visibility = cloud_score
-    timing_s = score_timing(dt)
-    photogenicity = clamp(visibility * 0.70 + timing_s * 0.30)
-    comfort = score_gusts(gusts)
-    score = visibility * 0.50 + timing_s * 0.30 + comfort * 0.20
-    return clamp(score), {
-        'visibility': clamp(visibility),
-        'photogenicity': clamp(photogenicity),
-        'comfort': clamp(comfort),
-        'cloud_score': clamp(cloud_score),
-    }
-
-
-def compute_reliability(reference: dict, neighbours: list[dict]) -> tuple[int, dict[str, int]]:
-    if not neighbours:
-        base = clamp(reference['trigger'] * 0.45 + reference['moisture'] * 0.35 + reference['timing'] * 0.20)
-        return base, {'consistency': base, 'stability': base, 'confidence_margin': base}
-
-    ref_initiation = reference['trigger']
-    ref_severity = reference['structure']
-    consistency = 88.0
-    if ref_initiation >= 55 and reference['moisture'] < 40:
-        consistency -= 18
-    if ref_initiation >= 45 and reference['cape_component'] < 25:
-        consistency -= 18
-    if ref_severity >= 70 and ref_initiation < 35:
-        consistency -= 12
-
-    initiation_diffs = [abs(ref_initiation - n['trigger']) for n in neighbours]
-    severity_diffs = [abs(ref_severity - n['structure']) for n in neighbours]
-    stability = 86 - (sum(initiation_diffs) / len(initiation_diffs)) * 0.55 - (sum(severity_diffs) / len(severity_diffs)) * 0.25
-
-    low_support = min(reference['cape_component'], reference['dew_component'], reference['vpd_component'])
-    confidence_margin = clamp(low_support * 0.85 + reference['humidity_component'] * 0.15)
-
-    score = consistency * 0.45 + stability * 0.25 + confidence_margin * 0.30
-    return clamp(score), {
-        'consistency': clamp(consistency),
-        'stability': clamp(stability),
-        'confidence_margin': clamp(confidence_margin),
-    }
-def compute_bust_risk(initiation_score: int, severity_score: int, chaseability_score: int, reliability_score: int, moisture_component: int, timing_component: int) -> int:
-    risk = 100.0
-    risk -= initiation_score * 0.55
-    risk -= moisture_component * 0.15
-    risk -= reliability_score * 0.15
-    risk -= timing_component * 0.10
-    risk -= severity_score * 0.05
-
-    if initiation_score < 10:
-        risk += 20
-    elif initiation_score < 25:
-        risk += 12
-    if moisture_component < 30:
-        risk += 16
-    if reliability_score < 35:
-        risk += 10
-    if severity_score >= 70 and initiation_score < 35:
-        risk += 10
-
-    return clamp(risk)
 def compute_signal_confidence(reference: dict, neighbours: list[dict]) -> tuple[int, dict[str, int]]:
     trigger = int(reference.get('trigger') or 0)
     support_values = [
@@ -1011,14 +977,6 @@ def compute_storm_probability(initiation_score: int, confidence_score: int = 50,
 
 
 
-def score_global(trigger_score: int, *_ignored: int, **_kwargs: int) -> int:
-    return clamp(trigger_score)
-
-
-def score_confidence(trigger_score: int, *_ignored: int, **_kwargs: int) -> int:
-    return clamp(trigger_score)
-
-
 def build_cell_diagnostics(metric: dict, confidence_diag: dict[str, int], probability_score: int, confidence_score: int) -> list[str]:
     diagnostics: list[str] = []
 
@@ -1043,8 +1001,10 @@ def build_cell_diagnostics(metric: dict, confidence_diag: dict[str, int], probab
             diagnostics.append("Humidité de colonne faible : le point de rosée de surface est moins robuste pour soutenir une convection profonde.")
         elif int(metric.get('precipitable_water_component') or 0) >= 75:
             diagnostics.append("Humidité de colonne favorable : la réserve en vapeur d’eau soutient mieux le signal convectif.")
+    metric_dt = metric.get('dt')
+    daytime = bool(metric_dt is not None and 9 <= metric_dt.hour <= 19)
     if metric.get('shortwave_radiation_component') is not None:
-        if int(metric.get('shortwave_radiation_component') or 0) < 25 and 9 <= metric['dt'].hour <= 19:
+        if int(metric.get('shortwave_radiation_component') or 0) < 25 and daytime:
             diagnostics.append("Rayonnement court faible : le chauffage de surface prévu soutient peu le déclenchement diurne.")
         elif int(metric.get('shortwave_radiation_component') or 0) >= 70:
             diagnostics.append("Rayonnement court favorable : le chauffage de surface soutient le potentiel pré-convectif.")
@@ -1138,8 +1098,16 @@ def _vapour_pressure_deficit_kpa(temp_c: float | None, dewpoint_c: float | None)
         return None
     if not math.isfinite(temp_c) or not math.isfinite(dewpoint_c):
         return None
-    es = 0.6108 * math.exp((17.27 * temp_c) / (temp_c + 237.3))
-    ea = 0.6108 * math.exp((17.27 * dewpoint_c) / (dewpoint_c + 237.3))
+    # Magnus : le dénominateur (T + 237.3) s'annule à -237.3 °C. Jamais atteint en
+    # surface, mais on protège la division/exp contre les valeurs aberrantes
+    # (mêmes garde-fous que _relative_humidity_from_dewpoint_c).
+    if temp_c <= -237.3 or dewpoint_c <= -237.3:
+        return None
+    try:
+        es = 0.6108 * math.exp((17.27 * temp_c) / (temp_c + 237.3))
+        ea = 0.6108 * math.exp((17.27 * dewpoint_c) / (dewpoint_c + 237.3))
+    except (OverflowError, ZeroDivisionError):
+        return None
     return max(0.0, es - ea)
 
 
@@ -1281,6 +1249,17 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
     for idx, t in enumerate(times):
         dt = dt_from_iso(t)
         day_key = dt.date().isoformat()
+
+        # Température et point de rosée sont indispensables : sans eux, RH, VPD et
+        # bulbe humide deviennent non-physiques (un défaut 0.0 donnerait RH=100 %,
+        # VPD=0). On saute l'heure plutôt que de fabriquer un faux signal humide.
+        temp_raw = _hourly_value(hourly.get("temperature_2m"), idx)
+        dew_raw = _hourly_value(hourly.get("dew_point_2m"), idx)
+        if temp_raw is None or dew_raw is None:
+            continue
+        temp = float(temp_raw)
+        dew = float(dew_raw)
+
         by_day.setdefault(day_key, []).append((idx, dt))
 
         cape = float(_hourly_value(hourly.get("cape"), idx) or 0.0)
@@ -1290,8 +1269,6 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
         precipitable_water = float(precipitable_water_raw) if precipitable_water_raw is not None else None
         shortwave_raw = _hourly_value(hourly.get("shortwave_radiation"), idx)
         shortwave_radiation = float(shortwave_raw) if shortwave_raw is not None else None
-        temp = float(_hourly_value(hourly.get("temperature_2m"), idx) or 0.0)
-        dew = float(_hourly_value(hourly.get("dew_point_2m"), idx) or 0.0)
         rh_raw = _hourly_value(hourly.get("relative_humidity_2m"), idx)
         rh2m = float(rh_raw) if rh_raw is not None else float(_relative_humidity_from_dewpoint_c(temp, dew) or 0.0)
         vpd_raw = _hourly_value(hourly.get("vapour_pressure_deficit"), idx)
@@ -1302,9 +1279,11 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
         cloud_low_raw = _hourly_value(hourly.get("cloud_cover_low"), idx)
         cloud_mid_raw = _hourly_value(hourly.get("cloud_cover_mid"), idx)
         cloud_high_raw = _hourly_value(hourly.get("cloud_cover_high"), idx)
-        cloud_low = float(cloud_low_raw) if cloud_low_raw is not None else 0.0
-        cloud_mid = float(cloud_mid_raw) if cloud_mid_raw is not None else 0.0
-        cloud_high = float(cloud_high_raw) if cloud_high_raw is not None else 0.0
+        # None (donnée absente) propagé tel quel : le scoring saute la pénalité de
+        # ciel clair, et l'affichage montre "—" au lieu d'un trompeur 0 % de nuages.
+        cloud_low = float(cloud_low_raw) if cloud_low_raw is not None else None
+        cloud_mid = float(cloud_mid_raw) if cloud_mid_raw is not None else None
+        cloud_high = float(cloud_high_raw) if cloud_high_raw is not None else None
         gusts = float(_hourly_value(hourly.get("wind_gusts_10m"), idx) or 0.0)
         ws10 = float(_hourly_value(hourly.get("wind_speed_10m"), idx) or 0.0)
         wd10 = float(_hourly_value(hourly.get("wind_direction_10m"), idx) or 0.0)
@@ -1324,9 +1303,9 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
             precipitable_water_kg_m2=precipitable_water,
             shortwave_radiation_w_m2=shortwave_radiation,
             wind_gusts_10m_ms=gusts,
-            cloud_low=cloud_low if cloud_low_raw is not None else None,
-            cloud_mid=cloud_mid if cloud_mid_raw is not None else None,
-            cloud_high=cloud_high if cloud_high_raw is not None else None,
+            cloud_low=cloud_low,
+            cloud_mid=cloud_mid,
+            cloud_high=cloud_high,
         )
 
         metrics.append(
@@ -1423,9 +1402,9 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     "wind_gusts_10m_ms": round_optional(metric.get("gusts"), 1),
                     "convective_inhibition_jkg": round_optional(metric.get("cin"), 1),
                     "surface_convergence_1e4s": round_optional(metric.get("surface_convergence_1e4s"), 2),
-                    "cloud_cover_low": round(metric["cloud_low"], 1),
-                    "cloud_cover_mid": round(metric["cloud_mid"], 1),
-                    "cloud_cover_high": round(metric["cloud_high"], 1),
+                    "cloud_cover_low": round_optional(metric.get("cloud_low"), 1),
+                    "cloud_cover_mid": round_optional(metric.get("cloud_mid"), 1),
+                    "cloud_cover_high": round_optional(metric.get("cloud_high"), 1),
                     "convective_cloud_cover": round_optional(metric.get("convective_cloud_cover"), 1),
                     "total_cloud_cover": round_optional(metric.get("total_cloud_cover"), 1),
                 }
@@ -1493,9 +1472,9 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     precipitable_water=round_optional(metric.get("precipitable_water"), 1),
                     shortwave_radiation=round_optional(metric.get("shortwave_radiation"), 1),
                     precipitation_rate=round_optional(metric.get("precipitation_rate"), 3),
-                    cloud_cover_low=round(metric["cloud_low"], 1),
-                    cloud_cover_mid=round(metric["cloud_mid"], 1),
-                    cloud_cover_high=round(metric["cloud_high"], 1),
+                    cloud_cover_low=round_optional(metric.get("cloud_low"), 1),
+                    cloud_cover_mid=round_optional(metric.get("cloud_mid"), 1),
+                    cloud_cover_high=round_optional(metric.get("cloud_high"), 1),
                     wind_gusts_10m=round(metric["gusts"], 1),
                     wind_speed_10m=round(metric.get("ws10", 0.0), 1),
                     wind_direction_10m=round(metric.get("wd10", 0.0), 0),

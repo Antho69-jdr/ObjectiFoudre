@@ -97,9 +97,6 @@ class ApiContextTests(unittest.TestCase):
 
 
 class ScoreTests(unittest.TestCase):
-    def test_global_score_matches_trigger_score(self):
-        self.assertEqual(wl.score_global(80, 60, 40, 20, 10), 80)
-
     def test_actual_cin_feeds_initiation_score(self):
         dt = wl.datetime(2026, 5, 8, 15)
 
@@ -221,6 +218,57 @@ class ScoreTests(unittest.TestCase):
             self.assertNotIn(removed_key, exported[0])
         self.assertIn("trigger_score", exported[0])
         self.assertIn("confidence_score", exported[0])
+
+    def test_hour_without_temperature_or_dewpoint_is_skipped(self):
+        point = wl.Point("Test-1", 45.0, 4.0, 0.1, 0.1)
+        rows = wl.rows_for_location(
+            point,
+            {
+                "hourly": {
+                    "time": ["2026-05-08T14:00:00+02:00", "2026-05-08T15:00:00+02:00"],
+                    "cape": [800, 900],
+                    "temperature_2m": [None, 24],
+                    "dew_point_2m": [15, 16],
+                    "relative_humidity_2m": [70, 72],
+                    "cloud_cover_low": [20, 25],
+                    "cloud_cover_mid": [25, 30],
+                    "cloud_cover_high": [35, 40],
+                    "wind_gusts_10m": [10, 12],
+                    "wind_speed_10m": [5, 5],
+                    "wind_direction_10m": [220, 220],
+                }
+            },
+        )
+        hours = {row.selected_hour for row in rows}
+        # L'heure 14h sans température doit être écartée, pas scorée avec T=0
+        self.assertNotIn("14h", hours)
+        self.assertIn("15h", hours)
+
+    def test_missing_cloud_cover_propagates_none_not_zero(self):
+        point = wl.Point("Test-1", 45.0, 4.0, 0.1, 0.1)
+        rows = wl.rows_for_location(
+            point,
+            {
+                "hourly": {
+                    "time": ["2026-05-08T15:00:00+02:00"],
+                    "cape": [900],
+                    "temperature_2m": [24],
+                    "dew_point_2m": [16],
+                    "relative_humidity_2m": [72],
+                    "cloud_cover_low": [None],
+                    "cloud_cover_mid": [None],
+                    "cloud_cover_high": [None],
+                    "wind_gusts_10m": [12],
+                    "wind_speed_10m": [5],
+                    "wind_direction_10m": [220],
+                }
+            },
+        )
+        self.assertEqual(len(rows), 1)
+        # Donnée nuageuse absente => None (et non 0 % trompeur de ciel clair)
+        self.assertIsNone(rows[0].cloud_cover_low)
+        self.assertIsNone(rows[0].cloud_cover_mid)
+        self.assertIsNone(rows[0].cloud_cover_high)
 
     def test_rows_expose_actual_cin_metrics(self):
         point = wl.Point("Test-1", 45.0, 4.0, 0.1, 0.1)
