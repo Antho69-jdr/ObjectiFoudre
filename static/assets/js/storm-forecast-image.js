@@ -973,16 +973,43 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
   const shapeMarkup = levels.map((level) => predictionLevelBlobMarkup(cells, project, level, levels)).join('');
   const adminMarkup = predictionAdminLineMarkup(project);
   const regionBoundaryMarkup = predictionRegionBoundaryMarkup(project);
-  const legendMarkup = predictionExportLegendLevels().map((level, index) => {
-    const x = index * 88;
-    return `<g transform="translate(${x} 22)">
-      <rect x="0" y="0" width="24" height="10" rx="5" fill="${level.color}" fill-opacity="0.92" stroke="#e2e8f0" stroke-opacity="0.16"/>
-      <text x="31" y="9" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="10.4" font-weight="800">${predictionEscapeXml(level.label)}</text>
-    </g>`;
-  }).join('');
+  const displayWidth = typeof window !== 'undefined' ? (window.innerWidth || width) : width;
+  const isMobileSvg = displayWidth < 640;
+
+  let legendMarkup, svgHeight, legendY;
+  if (isMobileSvg) {
+    // 2 lignes de 3+2 items, fonts ×2.2 pour être lisibles à ~375px
+    const levels = predictionExportLegendLevels();
+    const perRow = 3;
+    const colW = Math.floor((width - 76) / perRow);
+    const rowH = 52;
+    const rW = 40, rH = 18, rRx = 6, fSize = 22;
+    legendMarkup = levels.map((level, i) => {
+      const col = i % perRow;
+      const row = Math.floor(i / perRow);
+      return `<g transform="translate(${col * colW} ${row * rowH + 28})">
+        <rect x="0" y="0" width="${rW}" height="${rH}" rx="${rRx}" fill="${level.color}" fill-opacity="0.92" stroke="#e2e8f0" stroke-opacity="0.16"/>
+        <text x="${rW + 10}" y="${rH - 3}" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="${fSize}" font-weight="800">${predictionEscapeXml(level.label)}</text>
+      </g>`;
+    }).join('');
+    svgHeight = height + 70;
+    legendY = height - 28;
+  } else {
+    legendMarkup = predictionExportLegendLevels().map((level, index) => {
+      const x = index * 88;
+      return `<g transform="translate(${x} 22)">
+        <rect x="0" y="0" width="24" height="10" rx="5" fill="${level.color}" fill-opacity="0.92" stroke="#e2e8f0" stroke-opacity="0.16"/>
+        <text x="31" y="9" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="10.4" font-weight="800">${predictionEscapeXml(level.label)}</text>
+      </g>`;
+    }).join('');
+    svgHeight = height;
+    legendY = height - 62;
+  }
+
+  const legendTitleSize = isMobileSvg ? 24 : 11;
   const label = predictionEscapeXml(`${period.label} · ${titleDate}`);
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Prévision orageuse ${label}" shape-rendering="geometricPrecision">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${svgHeight}" width="${width}" height="${svgHeight}" role="img" aria-label="Prévision orageuse ${label}" shape-rendering="geometricPrecision">
   <defs>
     <clipPath id="franceClip" clipPathUnits="userSpaceOnUse"><path d="${francePath}"/></clipPath>
     <filter id="mapShadow" x="-14%" y="-14%" width="128%" height="128%" color-interpolation-filters="sRGB">
@@ -990,7 +1017,7 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
     </filter>
     ${filterMarkup}
   </defs>
-  <rect width="${width}" height="${height}" fill="#07111f"/>
+  <rect width="${width}" height="${svgHeight}" fill="#07111f"/>
   <g filter="url(#mapShadow)">
     <path d="${francePath}" fill="${PREDICTION_RISK_LEVELS[0].color}"/>
     <g clip-path="url(#franceClip)">${shapeMarkup}</g>
@@ -999,8 +1026,8 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
     <path d="${francePath}" fill="none" stroke="#020617" stroke-opacity="0.84" stroke-width="1.18" stroke-linejoin="round"/>
     <path d="${francePath}" fill="none" stroke="#7dd3fc" stroke-opacity="0.20" stroke-width="0.32" stroke-linejoin="round"/>
   </g>
-  <g transform="translate(38 ${height - 62})">
-    <text x="0" y="0" fill="#dbeafe" fill-opacity="0.82" font-family="Inter, Arial, sans-serif" font-size="11" font-weight="900">PROBABILITÉ DE RISQUE ORAGEUX</text>
+  <g transform="translate(38 ${legendY})">
+    <text x="0" y="0" fill="#dbeafe" fill-opacity="0.82" font-family="Inter, Arial, sans-serif" font-size="${legendTitleSize}" font-weight="900">PROBABILITÉ DE RISQUE ORAGEUX</text>
     ${legendMarkup}
   </g>
 </svg>`;

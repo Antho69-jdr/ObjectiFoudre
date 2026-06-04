@@ -3600,20 +3600,34 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     border-radius: 999px !important;
   }
 
+  body.mobile-ui .prediction-page-header {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-rows: auto auto !important;
+  }
+
   body.mobile-ui .prediction-period-tabs {
     grid-column: 1 / -1 !important;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     width: 100% !important;
-    margin-top: 8px !important;
+    margin-top: 4px !important;
     padding: 3px !important;
-    overflow-x: auto !important;
-    flex-wrap: nowrap !important;
+    gap: 3px !important;
+    overflow: visible !important;
+    flex-wrap: unset !important;
+  }
+
+  /* "Journée" (premier tab) pleine largeur */
+  body.mobile-ui .prediction-period-tab:first-child {
+    grid-column: 1 / -1 !important;
   }
 
   body.mobile-ui .prediction-period-tab {
     min-height: 30px !important;
-    padding: 0 10px !important;
+    padding: 0 8px !important;
     font-size: 0.68rem !important;
-    flex: 0 0 auto !important;
+    text-align: center !important;
+    white-space: nowrap !important;
   }
 
   body.mobile-ui .prediction-page-body {
@@ -3652,8 +3666,65 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
   body.mobile-ui .prediction-summary-hero,
   body.mobile-ui .prediction-analysis-block,
   body.mobile-ui .prediction-legend {
-    padding: 9px !important;
+    padding: 8px !important;
     border-radius: 10px !important;
+  }
+
+  /* prediction-summary-hero : plus compact */
+  body.mobile-ui .prediction-summary-hero {
+    gap: 8px !important;
+  }
+  body.mobile-ui .prediction-summary-hero b {
+    font-size: 1.55rem !important;
+  }
+  body.mobile-ui .prediction-summary-hero strong {
+    font-size: 0.88rem !important;
+    margin: 2px 0 1px !important;
+  }
+  body.mobile-ui .prediction-summary-hero em {
+    font-size: 0.70rem !important;
+  }
+  body.mobile-ui .prediction-summary-hero small {
+    font-size: 0.68rem !important;
+  }
+
+  /* prediction-sector-chip : plus compact */
+  body.mobile-ui .prediction-sector-chip {
+    min-height: 42px !important;
+    padding: 7px 9px !important;
+    gap: 7px !important;
+  }
+  body.mobile-ui .prediction-sector-chip strong {
+    font-size: 0.76rem !important;
+  }
+  body.mobile-ui .prediction-sector-chip span {
+    font-size: 0.66rem !important;
+  }
+  body.mobile-ui .prediction-sector-chip b {
+    font-size: 0.92rem !important;
+  }
+  body.mobile-ui .prediction-sector-chip em {
+    font-size: 0.64rem !important;
+  }
+
+  /* Légende : plus lisible */
+  body.mobile-ui .prediction-legend-bands span,
+  body.mobile-ui .prediction-legend-bands-compact span {
+    font-size: 0.82rem !important;
+    gap: 9px !important;
+    min-height: 30px !important;
+  }
+  body.mobile-ui .prediction-legend i {
+    width: 26px !important;
+    height: 16px !important;
+    border-radius: 5px !important;
+  }
+  body.mobile-ui .prediction-legend-note {
+    font-size: 0.76rem !important;
+  }
+  body.mobile-ui .prediction-legend-title,
+  body.mobile-ui .prediction-analysis-block-title {
+    font-size: 0.78rem !important;
   }
 }
 

@@ -998,10 +998,16 @@ def compute_signal_confidence(reference: dict, neighbours: list[dict]) -> tuple[
     }
 
 
+_CONFIDENCE_ALPHA = 0.45  # atténuation douce : (conf/100)^0.45 — pénalise fortement <30, peu >70
+
 def compute_storm_probability(initiation_score: int, confidence_score: int = 50, *_ignored: int) -> int:
-    # Confidence is diagnostic only; probability stays strictly trigger-based.
-    del confidence_score
-    return clamp(initiation_score)
+    """Score calibré : signal brut atténué par la confiance.
+
+    Exemples pour initiation=89 :
+      conf=90 → 85 | conf=70 → 82 | conf=50 → 69 | conf=30 → 57 | conf=10 → 37
+    """
+    calibration = (max(1, confidence_score) / 100) ** _CONFIDENCE_ALPHA
+    return clamp(round(initiation_score * calibration))
 
 
 
@@ -1375,7 +1381,8 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     if n_idx in metrics_by_idx and n_idx != idx
                 ]
                 confidence_score, confidence_diag = compute_signal_confidence(metric, neighbours)
-                storm_probability = compute_storm_probability(metric["trigger"], confidence_score)
+                raw_trigger = clamp(metric["trigger"])
+                storm_probability = compute_storm_probability(raw_trigger, confidence_score)
                 pot = potentiel(storm_probability)
                 conf = confiance_label(confidence_score)
                 selected_hour = metric["dt"].strftime("%Hh")
@@ -1455,7 +1462,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                         "margin": confidence_diag.get("margin"),
                     },
                 }
-                diagnostics = build_cell_diagnostics(metric, confidence_diag, storm_probability, confidence_score)
+                diagnostics = build_cell_diagnostics(metric, confidence_diag, raw_trigger, confidence_score)
 
                 row = OutputRow(
                     day_key=day_key,
@@ -1504,7 +1511,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     summary=summary,
                 )
 
-                score_key = storm_probability * 1000 + confidence_score
+                score_key = storm_probability * 100000 + raw_trigger * 100 + confidence_score
                 if score_key > best_score:
                     best_score = score_key
                     best = row
