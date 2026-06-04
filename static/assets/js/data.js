@@ -1,10 +1,3 @@
-    function payloadHasUsableSlots(nextPayload, requestedDayKey) {
-      const days = Array.isArray(nextPayload?.days) ? nextPayload.days : [];
-      const requestedDay = days.find(day => day?.day_key === requestedDayKey);
-      if (requestedDay) return getRenderableSlots(requestedDay).length > 0;
-      return days.some(day => getRenderableSlots(day).length > 0);
-    }
-
     function formatAromeShellDayLabel(dateIso) {
       const normalized = normalizeDateIso(dateIso);
       const parsed = new Date(`${normalized}T12:00:00`);

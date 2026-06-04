@@ -88,18 +88,6 @@
       updateCurrentTimeBadge();
     }
 
-    function currentGridAreaLabel() {
-      const isAromeFrance = (
-        payload?.meta?.france_grid === true
-        || payload?.meta?.arome_shell === true
-        || payload?.meta?.grid_scope === 'france'
-        || payload?.meta?.source_provider === 'meteofrance_arome_grib'
-        || payload?.meta?.provider === 'meteofrance_arome_grib'
-      );
-      if (isAromeFrance) return 'France entière';
-      return payload?.meta?.center?.label || currentCenter.label || 'Zone';
-    }
-
     function updateMetaRunOverflow() {
       if (!metaRun) return;
       const content = metaRun.querySelector('.meta-run-content');
@@ -289,20 +277,4 @@
         essential: true,
         duration: durationForDistance(distanceKm)
       });
-    }
-
-    function fadeOutCurrentGridForReload() {
-      if (!map.isStyleLoaded()) return;
-      gridFillPaintAnimationToken += 1;
-      if (prefersReducedGridMotion(getCurrentSlot()?.cells || [])) {
-        removeLayers(true);
-        return;
-      }
-      if (map.getLayer('grid-fill')) {
-        setGridFillFactor(1);
-        animateGridFillFactor(1, 0, 180);
-      }
-      if (map.getLayer('grid-highlight')) {
-        animateLayerPaintNumber('grid-highlight', 'line-opacity', 1, 0, 160);
-      }
     }

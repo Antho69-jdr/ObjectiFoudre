@@ -34,13 +34,6 @@
       if (topbar.classList.contains('show-search')) positionPanelToButton(document.querySelector('.search-panel'), toggleSearchBtn);
     }
 
-    function toggleTopPanel(panel) {
-      const searchOpen = topbar.classList.contains('show-search');
-      closeTopPanels();
-      if (panel === 'search' && !searchOpen) topbar.classList.add('show-search');
-      requestAnimationFrame(alignTopPanels);
-    }
-
     function openInfoDrawer() {
       infoDrawer.classList.add('visible');
       drawerBackdrop.classList.add('visible');

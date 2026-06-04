@@ -458,10 +458,6 @@ function predictionProjectionMetrics(width, height) {
   return { width, height, bounds, lonScale, scale, offsetX, offsetY, mapWidth, mapHeight, project, invert };
 }
 
-function predictionProjector(width, height) {
-  return predictionProjectionMetrics(width, height).project;
-}
-
 function predictionHexToRgba(hex, alpha = 1) {
   const clean = String(hex || '').replace('#', '').trim();
   if (!/^[0-9a-fA-F]{6}$/.test(clean)) return `rgba(255,255,255,${alpha})`;
@@ -1074,20 +1070,12 @@ function predictionBuildAreaSummary(cells, areas, { topShare = 0.18 } = {}) {
     .sort((a, b) => b.score - a.score);
 }
 
-function predictionRegionForCell(cell) {
-  return predictionAreaForCell(cell, PREDICTION_REGIONS);
-}
-
 function predictionBuildRegionSummary(cells) {
   return predictionBuildAreaSummary(cells, PREDICTION_REGIONS, { topShare: 0.18 });
 }
 
 function predictionBuildLittoralSummary(cells) {
   return predictionBuildAreaSummary(cells, PREDICTION_LITTORALS, { topShare: 0.24 });
-}
-
-function predictionAreaBrief(area) {
-  return `<strong>${area.name}</strong> ${area.category.toLowerCase()} (${area.score}/100, ${predictionHoursText(area.hours)})`;
 }
 
 function predictionBuildSectorSummary(cells) {
@@ -1103,15 +1091,6 @@ function predictionBuildSectorSummary(cells) {
       seen.add(key);
       return true;
     });
-}
-
-function predictionBuildSectorHtml(sectors, periodText) {
-  if (!sectors.length) return '';
-  const active = sectors.filter((area) => area.score >= 60).slice(0, 5);
-  if (!active.length) {
-    return `<p><strong>Secteurs</strong> : signal très faible sur ${periodText}. Les meilleurs signaux restent ${sectors.slice(0, 4).map(predictionAreaBrief).join(', ')}.</p>`;
-  }
-  return `<p><strong>Secteurs</strong> : ${active.map(predictionAreaBrief).join(', ')}.</p>`;
 }
 
 function predictionHoursText(hours) {
@@ -1439,57 +1418,6 @@ function predictionHoverHtml(zone) {
       <div>${predictionEscapeXml(predictionHoursText(summary.hours))}</div>
       ${cityLine}
     </div>`;
-}
-
-function predictionPositionOverlayToImage(element) {
-  if (!element || !predictionImage) return;
-  const panelRect = predictionImage.parentElement.getBoundingClientRect();
-  const imageRect = predictionImage.getBoundingClientRect();
-  element.style.left = `${imageRect.left - panelRect.left}px`;
-  element.style.top = `${imageRect.top - panelRect.top}px`;
-  element.style.width = `${imageRect.width}px`;
-  element.style.height = `${imageRect.height}px`;
-}
-
-function predictionDepartmentRingPath(ring, project) {
-  if (!Array.isArray(ring) || ring.length < 3) return '';
-  return ring.map((point, index) => {
-    const [x, y] = project(Number(point[0]), Number(point[1]));
-    return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
-  }).join(' ') + ' Z';
-}
-
-function predictionHighlightSvg(zone) {
-  const width = 860;
-  const height = 760;
-  const project = predictionProjector(width, height);
-  const francePath = predictionFranceSvgPath(project);
-  const departmentPath = predictionDepartmentRingPath(zone.departmentRing, project);
-  if (!departmentPath) return '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" aria-hidden="true">
-    <defs>
-      <clipPath id="predictionHoverClip"><path d="${francePath}"/></clipPath>
-      <filter id="predictionDeptGlow" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
-        <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#f8fafc" flood-opacity="0.46"/>
-      </filter>
-    </defs>
-    <g clip-path="url(#predictionHoverClip)" filter="url(#predictionDeptGlow)">
-      <path d="${departmentPath}" fill="${zone.level.color}" fill-opacity="0.22" stroke="#f8fafc" stroke-opacity="0.92" stroke-width="2.2" stroke-linejoin="round"/>
-      <path d="${departmentPath}" fill="none" stroke="#020617" stroke-opacity="0.88" stroke-width="0.9" stroke-linejoin="round"/>
-    </g>
-  </svg>`;
-}
-
-function updatePredictionHighlight(zone) {
-  if (typeof predictionHighlight === 'undefined' || !predictionHighlight) return;
-  if (!zone || !zone.cells?.length) {
-    predictionHighlight.hidden = true;
-    predictionHighlight.innerHTML = '';
-    return;
-  }
-  predictionPositionOverlayToImage(predictionHighlight);
-  predictionHighlight.innerHTML = predictionHighlightSvg(zone);
-  predictionHighlight.hidden = false;
 }
 
 function movePredictionHover(event) {

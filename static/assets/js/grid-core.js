@@ -572,18 +572,6 @@
     }
 
 
-    function refreshGridColors() {
-      if (!map?.isStyleLoaded?.()) return;
-      const cells = getCurrentSlot()?.cells || [];
-      if (map.getSource('grid') && cells.length) {
-        const slot = getCurrentSlot();
-        const gridGeoJSON = buildSlotGeoJSON(slot, cells);
-        if (typeof addLayers === 'function') addLayers(gridGeoJSON, cells);
-        else map.getSource('grid').setData(gridGeoJSON);
-        updateHighlight();
-      }
-    }
-
     function sortCellsForReveal(cells) {
       return [...cells].sort((a, b) => {
         const keyA = (-Number(a.lat) * 1000) + (Number(a.lon) * 1000);

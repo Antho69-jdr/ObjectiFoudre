@@ -1,13 +1,3 @@
-    function isHistoricalSlot(day, slot) {
-      const dayKey = normalizeDateIso(day?.day_key);
-      const todayKey = getTodayIsoDate();
-      if (dayKey && dayKey < todayKey) return true;
-      const selectedIso = slot?.cells?.[0]?.selected_time_iso;
-      if (!selectedIso) return false;
-      const ts = Date.parse(selectedIso);
-      return Number.isFinite(ts) && ts < Date.now();
-    }
-
     function timelinePlaybackIcon(isRunning) {
       return isRunning
         ? '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M7 5.5h3.5v13H7v-13Zm6.5 0H17v13h-3.5v-13Z"></path></svg>'
@@ -396,10 +386,6 @@
     let wheelActiveSlotKey = null;
 
     // O(1) : trouve l'index de l'item centré via scrollLeft arithmétique
-    function wheelCenteredIndex(scroller, itemWidth) {
-      return Math.round(scroller.scrollLeft / itemWidth);
-    }
-
     // Utilisé uniquement au commit (après scroll terminé), getBoundingClientRect fiable
     function wheelCenteredItem(scroller) {
       if (!scroller.isConnected) return null;

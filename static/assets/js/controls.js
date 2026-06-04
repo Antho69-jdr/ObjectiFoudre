@@ -33,19 +33,6 @@
     let mfServerAutomationLastMessage = '';
     let exportFormatMenu = null;
 
-    function syncSlotSelection(nextSlotKey) {
-      const currentDay = getCurrentDay();
-      const nextSlot = currentDay?.slots?.find(s => s.slot_key === nextSlotKey);
-      if (!nextSlot) return;
-      selectedSlotKey = nextSlot.slot_key;
-      closeSelection();
-      closeDetails();
-      renderSlotButtons();
-      requestAnimationFrame(alignTopPanels);
-      refreshMap();
-      maybeLoadCachedMeteoFranceGribForSelectedSlot({ quiet: true });
-    }
-
     function shiftSelectedDate(daysDelta, loadingMessage) {
       const base = new Date(`${normalizeDateIso(selectedBaseDate)}T12:00:00`);
       base.setDate(base.getDate() + daysDelta);
@@ -542,143 +529,6 @@
         trimmed = trimmed.slice(0, -1);
       }
       ctx.fillText(`${trimmed}…`, x, y);
-    }
-
-    function buildGifGridExtent(cells) {
-      let north = -Infinity;
-      let south = Infinity;
-      let east = -Infinity;
-      let west = Infinity;
-      const validCells = [];
-      for (const cell of cells) {
-        const lat = Number(cell?.lat);
-        const lon = Number(cell?.lon);
-        const cellHeight = Number(cell?.cell_height_deg);
-        const cellWidth = Number(cell?.cell_width_deg);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-        if (!Number.isFinite(cellHeight) || !Number.isFinite(cellWidth) || cellHeight <= 0 || cellWidth <= 0) continue;
-        validCells.push(cell);
-        north = Math.max(north, lat + (cellHeight / 2));
-        south = Math.min(south, lat - (cellHeight / 2));
-        east = Math.max(east, lon + (cellWidth / 2));
-        west = Math.min(west, lon - (cellWidth / 2));
-      }
-      if (!validCells.length || !Number.isFinite(north) || !Number.isFinite(south) || !Number.isFinite(east) || !Number.isFinite(west)) return null;
-      return { north, south, east, west, validCells };
-    }
-
-    function gifCellOpacity(cell, bestZones, hasMapBackground = false) {
-      const baseOpacity = opacityFromConfidence(cell?.confidence_score);
-      if (hasMapBackground) {
-        if (!bestCellsMode || !bestZones) return Math.max(0.24, Math.min(0.58, baseOpacity + 0.05));
-        const isBest = bestZones.has(cell?.zone);
-        return isBest ? Math.max(0.38, Math.min(0.68, baseOpacity + 0.1)) : Math.max(0.08, Math.min(0.18, baseOpacity * 0.25));
-      }
-      const lift = 0.18;
-      if (!bestCellsMode || !bestZones) return Math.max(0.28, Math.min(0.9, baseOpacity + lift));
-      const isBest = bestZones.has(cell?.zone);
-      return isBest ? Math.max(0.68, Math.min(0.94, baseOpacity + lift)) : Math.max(0.12, baseOpacity * 0.35);
-    }
-
-    function waitForMapIdleForGif(timeoutMs = 900) {
-      return new Promise((resolve) => {
-        if (!map?.once) {
-          resolve();
-          return;
-        }
-        let done = false;
-        const finish = () => {
-          if (done) return;
-          done = true;
-          try { map.off('idle', finish); } catch (_) {}
-          resolve();
-        };
-        try { map.once('idle', finish); } catch (_) { finish(); }
-        window.setTimeout(finish, timeoutMs);
-      });
-    }
-
-    async function captureGifMapBackground() {
-      if (!map?.getCanvas || !map?.getStyle || !map?.isStyleLoaded?.()) return null;
-      const gridLayerIds = (map.getStyle()?.layers || [])
-        .map(layer => layer?.id)
-        .filter(id => typeof id === 'string' && id.startsWith('grid-') && map.getLayer(id));
-      const previousVisibility = gridLayerIds.map((id) => {
-        let visibility = 'visible';
-        try { visibility = map.getLayoutProperty(id, 'visibility') || 'visible'; } catch (_) {}
-        return [id, visibility];
-      });
-
-      try {
-        for (const id of gridLayerIds) {
-          try { map.setLayoutProperty(id, 'visibility', 'none'); } catch (_) {}
-        }
-        try { map.triggerRepaint(); } catch (_) {}
-        await waitForMapIdleForGif();
-        await new Promise(resolve => requestAnimationFrame(resolve));
-
-        const sourceCanvas = map.getCanvas();
-        if (!sourceCanvas?.width || !sourceCanvas?.height) return null;
-        const backgroundCanvas = document.createElement('canvas');
-        backgroundCanvas.width = sourceCanvas.width;
-        backgroundCanvas.height = sourceCanvas.height;
-        const backgroundCtx = backgroundCanvas.getContext('2d', { willReadFrequently: true });
-        backgroundCtx.drawImage(sourceCanvas, 0, 0);
-        backgroundCtx.getImageData(0, 0, 1, 1);
-        return {
-          canvas: backgroundCanvas,
-          width: backgroundCanvas.width,
-          height: backgroundCanvas.height,
-          pixelRatioX: backgroundCanvas.width / Math.max(1, sourceCanvas.clientWidth || backgroundCanvas.width),
-          pixelRatioY: backgroundCanvas.height / Math.max(1, sourceCanvas.clientHeight || backgroundCanvas.height),
-        };
-      } catch (error) {
-        console.warn('Export GIF : capture du fond de carte indisponible.', error);
-        return null;
-      } finally {
-        for (const [id, visibility] of previousVisibility) {
-          try { map.setLayoutProperty(id, 'visibility', visibility || 'visible'); } catch (_) {}
-        }
-        try { map.triggerRepaint(); } catch (_) {}
-      }
-    }
-
-    function buildGifMapViewport(mapBackground, destLeft, destTop, destWidth, destHeight) {
-      if (!mapBackground?.canvas || !destWidth || !destHeight) return null;
-      const sourceAspect = mapBackground.width / Math.max(1, mapBackground.height);
-      const destAspect = destWidth / Math.max(1, destHeight);
-      let sx = 0;
-      let sy = 0;
-      let sw = mapBackground.width;
-      let sh = mapBackground.height;
-      if (sourceAspect > destAspect) {
-        sw = Math.round(mapBackground.height * destAspect);
-        sx = Math.round((mapBackground.width - sw) / 2);
-      } else {
-        sh = Math.round(mapBackground.width / destAspect);
-        sy = Math.round((mapBackground.height - sh) / 2);
-      }
-      return {
-        sx, sy, sw, sh,
-        destLeft, destTop, destWidth, destHeight,
-        scaleX: destWidth / Math.max(1, sw),
-        scaleY: destHeight / Math.max(1, sh),
-      };
-    }
-
-    function projectGifMapPoint(mapViewport, lon, lat, mapBackground) {
-      if (!mapViewport || !map?.project) return null;
-      try {
-        const projected = map.project([lon, lat]);
-        const sourceX = projected.x * mapBackground.pixelRatioX;
-        const sourceY = projected.y * mapBackground.pixelRatioY;
-        return {
-          x: mapViewport.destLeft + ((sourceX - mapViewport.sx) * mapViewport.scaleX),
-          y: mapViewport.destTop + ((sourceY - mapViewport.sy) * mapViewport.scaleY),
-        };
-      } catch (_) {
-        return null;
-      }
     }
 
     const GIF_FRANCE_EXTENT = Object.freeze({
@@ -1610,11 +1460,6 @@
       return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     }
 
-    function meteoFranceQuotaCooldownRemainingSeconds() {
-      if (!mfQuotaCooldownEndsAtMs) return 0;
-      return Math.max(0, Math.ceil((mfQuotaCooldownEndsAtMs - Date.now()) / 1000));
-    }
-
     function clearMeteoFranceQuotaCooldownBadge() {
       mfQuotaCooldownEndsAtMs = 0;
       mfQuotaCooldownMessage = '';
@@ -1946,10 +1791,6 @@
       } else if (preload?.already_done) {
         mfPreloadPollTimer = setTimeout(() => pollMeteoFrancePreloadProgress(jobKey), METEOFRANCE_PRELOAD_POLL_START_MS);
       }
-    }
-
-    function setMeteoFranceButtonsDisabled(disabled) {
-      if (mfGribFullPackageProbeBtn) mfGribFullPackageProbeBtn.disabled = disabled;
     }
 
     function readMeteoFranceApiKey() {
@@ -2638,114 +2479,6 @@
     }
 
 
-    async function buildMeteoFranceGribFranceGridForSelectedSlot({ quiet = true } = {}) {
-      if (!quiet && typeof setMeteoFranceTestStatus === 'function') {
-        setMeteoFranceTestStatus('Matérialisation horaire directe désactivée : attente du préchargement serveur par paquets complets.', 'waiting');
-      }
-      return false;
-    }
-
-
-    async function preloadMeteoFranceGribNationalDay({ fromAutoResume = false } = {}) {
-      if (!fromAutoResume) cancelMeteoFranceQuotaAutoResume();
-      const token = readMeteoFranceApiKey();
-      if (!token) {
-        setMeteoFranceTestStatus('Colle une clé API Météo-France avant de précharger la France AROME.', 'error');
-        return;
-      }
-      const dateStatus = getMeteoFranceWcsDateStatus(selectedBaseDate, { allowPreviousDay: true });
-      if (!dateStatus.ok) {
-        setMeteoFranceTestStatus(dateStatus.message.replace('WCS', 'GRIB'), 'error');
-        return;
-      }
-      const localCooldownSeconds = meteoFranceQuotaCooldownRemainingSeconds();
-      if (!fromAutoResume && localCooldownSeconds > 1) {
-        const sourceKey = mfQuotaCooldownSourceKey || `local|${selectedBaseDate}|quota`;
-        scheduleMeteoFranceQuotaAutoResume(localCooldownSeconds, sourceKey);
-        renderMeteoFrancePreloadProgress({
-          running: false,
-          scope: 'national_day',
-          title: 'Préchargement France suspendu',
-          detail: 'Cooldown quota actif côté navigateur',
-          unit_count: 72,
-          completed_count: 0,
-          ok_count: 0,
-          failed_count: 0,
-          quota_cooldown_seconds: localCooldownSeconds,
-        });
-        setMeteoFranceTestStatus(`Cooldown quota AROME actif : aucun nouvel appel de préchargement lancé. Reprise automatique dans ${formatMeteoFranceCooldown(localCooldownSeconds)}.`, 'waiting');
-        return;
-      }
-      persistCurrentMeteoFranceApiKey();
-      const hour = selectedMeteoFranceHour();
-      const detailLevel = 'core';
-      const preloadStartedAtMs = Date.now();
-      mfPreloadClientStartedAtMs = preloadStartedAtMs;
-      setMeteoFranceButtonsDisabled(true);
-      setMeteoFranceTestStatus(`Préchargement France AROME demandé pour ${selectedBaseDate}…`, 'waiting');
-      renderMeteoFrancePreloadProgress({
-        running: true,
-        indeterminate: true,
-        scope: 'national_day',
-        title: 'Préchargement France AROME',
-        detail: '24 heures · champs nationaux · préparation du job serveur',
-        current_hour: 0,
-        client_started_at_ms: preloadStartedAtMs,
-      });
-      try {
-        const response = await fetch('/api/meteofrance/grib-preload-national-day', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            token,
-            lat: currentCenter.lat,
-            lon: currentCenter.lon,
-            label: currentCenter.label,
-            date: selectedBaseDate,
-            hour,
-            detail_level: detailLevel,
-            scope: 'day',
-            max_hours: 24,
-          }),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || (!data?.job_key && !data?.already_done)) {
-          setMeteoFranceTestStatus(data?.message || `Préchargement France AROME impossible (HTTP ${response.status}).`, 'error');
-          renderMeteoFrancePreloadProgress(null);
-          return;
-        }
-        const hasQuotaCooldown = syncMeteoFranceQuotaCooldown(data);
-        if (!hasQuotaCooldown && (data.scheduled || data.already_running || data.already_done)) {
-          clearMeteoFranceQuotaCooldownBadge();
-        }
-        if (data.scheduled) mfPreloadClientStartedAtMs = preloadStartedAtMs;
-        else mfPreloadClientStartedAtMs = 0;
-        trackMeteoFrancePreload(data);
-        const unitCount = Number(data.unit_count || 0);
-        const cooldownSeconds = Number(data.quota_cooldown_seconds || 0);
-        if (data.quota_cooldown && cooldownSeconds > 0 && !data.scheduled && !data.already_running && !data.already_done) {
-          const cooldownMinutes = Math.max(1, Math.ceil(cooldownSeconds / 60));
-          const progress = normalizeMeteoFrancePreloadProgress(data);
-          const okCount = Number(progress?.ok_count || 0);
-          const progressText = okCount > 0 ? ` Progression conservée : ${okCount}/${progress?.unit_count || unitCount || 72} champ(s).` : '';
-          scheduleMeteoFranceQuotaAutoResume(cooldownSeconds, meteoFranceQuotaCooldownSourceKey(data, progress));
-          setMeteoFranceTestStatus(`${data.message || `Quota Météo-France atteint : nouvel essai possible dans ${cooldownMinutes} min.`}${progressText} Reprise automatique dans ${formatMeteoFranceCooldown(cooldownSeconds)}.`, 'waiting');
-        } else if (data.scheduled) {
-          setMeteoFranceTestStatus(`Préchargement France AROME lancé en arrière-plan : ${unitCount || 192} champ(s).`, 'waiting');
-        } else if (data.already_running) {
-          setMeteoFranceTestStatus(`Préchargement France AROME déjà en cours : ${unitCount || 192} champ(s).`, 'waiting');
-        } else if (data.already_done) {
-          cancelMeteoFranceQuotaAutoResume();
-          clearMeteoFranceQuotaCooldownBadge();
-          setMeteoFranceTestStatus(`Préchargement France AROME déjà terminé : ${data.ok_count || 0}/${data.unit_count || unitCount || 192} champ(s).`, 'ok');
-        }
-      } catch (error) {
-        setMeteoFranceTestStatus(`Erreur pendant le lancement du préchargement France AROME : ${error?.message || error}`, 'error');
-        renderMeteoFrancePreloadProgress(null);
-      } finally {
-        setMeteoFranceButtonsDisabled(false);
-      }
-    }
 
 
     function setupPrimaryControls() {

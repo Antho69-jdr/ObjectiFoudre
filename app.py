@@ -3059,25 +3059,6 @@ def _meteofrance_grib_profile_cache_key(api_key: str, requested_grid: str | None
     return f"{base}:grid={grid_part}:packages={package_part}:time={time_part}:max={max_messages}"
 
 
-def _meteofrance_grib_target_cache_key(
-    api_key: str,
-    requested_grid: str | None,
-    package_id: str,
-    requested_time_group: str | None,
-    parameter_label: str,
-    level_contains: str | None,
-    forecast_hour: int | None,
-    max_messages: int,
-) -> str:
-    grid_part = requested_grid or "auto"
-    time_part = requested_time_group or "auto"
-    hour_part = "any" if forecast_hour is None else str(forecast_hour)
-    safe_parameter = _label_cache_key(parameter_label)
-    level_part = _label_cache_key(level_contains or "any")
-    base = _meteofrance_metadata_cache_key(api_key, "grib-target")
-    return f"{base}:grid={grid_part}:package={package_id}:time={time_part}:parameter={safe_parameter}:level={level_part}:hour={hour_part}:max={max_messages}"
-
-
 def _meteofrance_quota_cooldown_cache_key(api_key: str, scope: str) -> str:
     return _meteofrance_metadata_cache_key(api_key, f"quota-cooldown:{scope}")
 
@@ -4617,11 +4598,6 @@ def _index_grib_message_headers(
         "parameter_summary": parameter_summary,
         "statuses": statuses,
     }
-
-
-def _meteofrance_grib_index_cache_key(product_href: str, max_messages: int, metadata_bytes: int) -> str:
-    source = f"{product_href}|max={int(max_messages)}|metadata={int(metadata_bytes)}"
-    return f"meteofrance:grib-index:{_stable_cache_hash(source)}"
 
 
 def _meteofrance_grib_progressive_index_cache_key(product_href: str, metadata_bytes: int) -> str:

@@ -1,23 +1,11 @@
 
-    window.STORM_DEBUG = true;
+    window.STORM_DEBUG = false;
 
     function debugLog(scope, payload = null) {
       if (!window.STORM_DEBUG) return;
       const ts = new Date().toISOString().slice(11, 23);
       if (payload === null || typeof payload === 'undefined') console.log(`[storm ${ts}] ${scope}`);
       else console.log(`[storm ${ts}] ${scope}`, payload);
-    }
-
-    function debugGroup(scope, payload = null) {
-      if (!window.STORM_DEBUG) return;
-      const ts = new Date().toISOString().slice(11, 23);
-      if (typeof console.groupCollapsed === 'function') {
-        console.groupCollapsed(`[storm ${ts}] ${scope}`);
-        if (payload !== null && typeof payload !== 'undefined') console.log(payload);
-        console.groupEnd();
-      } else {
-        debugLog(scope, payload);
-      }
     }
 
     function getTodayIsoDate() {
@@ -239,16 +227,6 @@
       return metric === STORM_FORECAST_METRIC ? colorFromStormForecast(score) : colorFromScore(score);
     }
 
-    function stormForecastCategory(score) {
-      const s = clampScore(score);
-      if (s < 15) return 'Très faible';
-      if (s < 32) return 'Faible';
-      if (s < 50) return 'Modérée';
-      if (s < 68) return 'Forte';
-      if (s < 84) return 'Très forte';
-      return 'Extrême';
-    }
-
     function numericCellValue(cell, key, fallback = 0) {
       const value = Number(cell?.[key]);
       return Number.isFinite(value) ? value : fallback;
@@ -281,11 +259,6 @@
     function getCellFillColor(cell, metricValue = null) {
       const score = metricValue === null || metricValue === undefined ? getCellMetricValue(cell) : metricValue;
       return colorFromMetricScore(score);
-    }
-
-    function opacityFromConfidence(confidence) {
-      const c = Math.max(0, Math.min(100, Number(confidence) || 0));
-      return 0.12 + (c / 100) * 0.48;
     }
 
     function opacityFromScoreGlobal(score) {
@@ -430,20 +403,6 @@
       try {
         localStorage.removeItem('storm_center');
       } catch (_) {}
-    }
-
-    function formatFrenchRun(dateString) {
-      if (!dateString) return '—';
-      const parsed = new Date(dateString);
-      if (Number.isNaN(parsed.getTime())) return String(dateString);
-      const formatted = new Intl.DateTimeFormat('fr-FR', {
-        timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', hour12: false
-      }).format(parsed).replace(',', '');
-      const tzPart = new Intl.DateTimeFormat('fr-FR', {
-        timeZone: 'Europe/Paris', timeZoneName: 'shortOffset', hour: '2-digit'
-      }).formatToParts(parsed).find(part => part.type === 'timeZoneName')?.value || 'GMT+2';
-      return `${formatted} ${tzPart}`;
     }
 
     async function geocodeCity(query, signal) {

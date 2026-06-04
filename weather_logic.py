@@ -228,13 +228,6 @@ class OutputRow:
     summary: str
 
 
-def frange(start: float, stop: float, step: float) -> Iterable[float]:
-    value = start
-    while value <= stop + 1e-9:
-        yield round(value, 5)
-        value += step
-
-
 def build_grid(center_lat: float = DEFAULT_CENTER_LAT, center_lon: float = DEFAULT_CENTER_LON, zone_prefix: str = DEFAULT_CENTER_LABEL) -> list[Point]:
     step_lat = km_to_deg_lat(CELL_SIZE_KM)
     step_lon = km_to_deg_lon(CELL_SIZE_KM, center_lat)
@@ -351,16 +344,6 @@ def location_structures(payload: dict) -> list[dict]:
 
 def dt_from_iso(value: str) -> datetime:
     return datetime.fromisoformat(value)
-
-
-def shear_proxy_ms(ws10: float, wd10: float, ws100: float, wd100: float) -> float:
-    u10 = -ws10 * math.sin(math.radians(wd10))
-    v10 = -ws10 * math.cos(math.radians(wd10))
-    u100 = -ws100 * math.sin(math.radians(wd100))
-    v100 = -ws100 * math.cos(math.radians(wd100))
-    du = u100 - u10
-    dv = v100 - v10
-    return round(math.sqrt(du * du + dv * dv), 1)
 
 
 def wind_components_ms(speed_ms: float, direction_deg: float) -> tuple[float, float]:
@@ -487,18 +470,6 @@ def score_shortwave_radiation(shortwave_w_m2: float | None) -> int | None:
     ])
 
 
-def score_gusts(gusts: float) -> int:
-    return piecewise_score(gusts, [
-        (40, 8),
-        (32, 24),
-        (26, 48),
-        (20, 68),
-        (14, 86),
-        (8, 96),
-        (0, 100),
-    ], inverse=True)
-
-
 def score_gust_potential(gusts_ms: float | None) -> int | None:
     if gusts_ms is None:
         return None
@@ -532,13 +503,6 @@ def score_precipitation_rate(rate_mm_h: float | None) -> int:
         (2.50, 92),
         (5.00, 100),
     ])
-
-
-def score_cloud_penalty(cloud_low: float, cloud_mid: float, cloud_high: float) -> int:
-    low = piecewise_score(cloud_low, [(0, 100), (10, 95), (25, 84), (40, 66), (60, 38), (80, 16), (100, 4)])
-    mid = piecewise_score(cloud_mid, [(0, 100), (10, 96), (25, 88), (40, 74), (60, 50), (80, 24), (100, 6)])
-    high = piecewise_score(cloud_high, [(0, 100), (10, 96), (25, 90), (40, 80), (60, 62), (80, 36), (100, 10)])
-    return clamp(low * 0.50 + mid * 0.30 + high * 0.20)
 
 
 def _cloud_value(value: float | None) -> float | None:
