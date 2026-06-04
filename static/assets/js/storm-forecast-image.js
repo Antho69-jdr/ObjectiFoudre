@@ -1,4 +1,4 @@
-const PREDICTION_IMAGE_RENDER_VERSION = 'vector-risk-atlas-v36';
+const PREDICTION_IMAGE_RENDER_VERSION = 'iso-contour-atlas-v43';
 
 const PREDICTION_IMAGE_CACHE = new Map();
 const PREDICTION_IMAGE_PREWARMING = new Set();
@@ -227,10 +227,19 @@ function predictionDaySignature(day = getCurrentDay()) {
   }).join('|');
 }
 
+// Variant de légende selon le viewport. La légende est gravée dans le SVG (qui est
+// mis en cache ET réutilisé pour l'export PNG), donc elle doit faire partie de la
+// clé de cache : sans ça, une image générée à une largeur s'afficherait avec la
+// mauvaise légende à une autre. Seuil aligné sur le breakpoint mobile CSS (768).
+function predictionLegendVariant() {
+  const w = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 860;
+  return w < 768 ? 'm' : 'd';
+}
+
 function predictionCacheKey(day = getCurrentDay(), periodKey = selectedPredictionPeriodKey) {
   const status = predictionDayStatus(day);
   const period = predictionPeriodConfig(periodKey);
-  return `${predictionDayKey(day)}|${period.key}|${status.loadedCount}/${status.totalCount}|${predictionStringHash(predictionDaySignature(day))}|${PREDICTION_IMAGE_RENDER_VERSION}|arome-france`;
+  return `${predictionDayKey(day)}|${period.key}|${status.loadedCount}/${status.totalCount}|${predictionStringHash(predictionDaySignature(day))}|${PREDICTION_IMAGE_RENDER_VERSION}|${predictionLegendVariant()}|arome-france`;
 }
 
 function predictionMean(values) {
@@ -270,7 +279,25 @@ function predictionLayerScore(cell) {
   return Math.round(clampScore(Math.max(smooth, daily * 0.94)));
 }
 
+// Journée entière = enveloppe des périodes : pour chaque cellule on prend son
+// MEILLEUR score parmi matin / après-midi / soirée, au lieu de moyenner sur 24 h
+// (ce qui diluait le signal avec les heures calmes et rendait la journée plus
+// pauvre que l'après-midi seule — un paradoxe). Sens météo correct d'un risque
+// journalier : « à un moment ou un autre de la journée, quel risque max ici ? ».
+// La zone journée englobe ainsi toujours celles des périodes.
+function predictionDayCellsFromPeriods(day) {
+  const byId = new Map();
+  ['morning', 'afternoon', 'evening'].forEach((periodKey) => {
+    collectPredictionDailyCells(day, periodKey).forEach((cell) => {
+      const existing = byId.get(cell.id);
+      if (!existing || cell.score > existing.score) byId.set(cell.id, cell);
+    });
+  });
+  return Array.from(byId.values());
+}
+
 function collectPredictionDailyCells(day = getCurrentDay(), periodKey = 'day') {
+  if (periodKey === 'day') return predictionDayCellsFromPeriods(day);
   const grouped = new Map();
   const period = predictionPeriodConfig(periodKey);
   const slots = predictionPeriodLoadedSlots(day, period.key);
@@ -613,13 +640,10 @@ function predictionEscapeXml(value) {
 }
 
 function predictionAllLevelConfigs() {
-  return PREDICTION_RISK_LEVELS.slice(1).map((level, index) => ({
+  // On exclut le niveau 0 ("sous seuil") : seuls les niveaux cartographiés (≥ 65).
+  return PREDICTION_RISK_LEVELS.slice(1).map((level) => ({
     ...level,
     threshold: level.min,
-    border: level.stroke,
-    margin: 32 - index * 2.6,
-    blur: 5.6 - index * 0.48,
-    expand: 1.28 - index * 0.045,
   }));
 }
 
@@ -636,42 +660,6 @@ function predictionLevelForScore(score, levels = predictionAllLevelConfigs()) {
     if (s >= level.threshold) selected = level;
   });
   return selected;
-}
-
-function predictionNextLevelThreshold(level, levels = predictionAllLevelConfigs()) {
-  const index = levels.findIndex((item) => item.key === level?.key);
-  if (index < 0 || index >= levels.length - 1) return Infinity;
-  return levels[index + 1].threshold;
-}
-
-function predictionVisibleLevelCells(cells, level, levels = predictionAllLevelConfigs()) {
-  const nextThreshold = predictionNextLevelThreshold(level, levels);
-  return (Array.isArray(cells) ? cells : []).filter((cell) => {
-    const score = predictionLayerScore(cell);
-    return score >= level.threshold && score < nextThreshold;
-  });
-}
-
-
-function predictionCornerCutPoints(points, passes = 2) {
-  let out = Array.isArray(points) ? points : [];
-  for (let pass = 0; pass < passes; pass += 1) {
-    const next = [];
-    for (let index = 0; index < out.length; index += 1) {
-      const a = out[index];
-      const b = out[(index + 1) % out.length];
-      next.push([
-        a[0] * 0.72 + b[0] * 0.28,
-        a[1] * 0.72 + b[1] * 0.28,
-      ]);
-      next.push([
-        a[0] * 0.28 + b[0] * 0.72,
-        a[1] * 0.28 + b[1] * 0.72,
-      ]);
-    }
-    out = next;
-  }
-  return out;
 }
 
 function predictionClosedBezierPath(points, tension = 0.82) {
@@ -691,142 +679,204 @@ function predictionClosedBezierPath(points, tension = 0.82) {
   return path.join(' ');
 }
 
-function predictionLayerCells(cells, threshold) {
-  return (Array.isArray(cells) ? cells : []).filter((cell) => predictionLayerScore(cell) >= threshold);
+// ===== Rendu par iso-contours (style atlas météo, type Keraunos) =====
+// On rasterise les scores des cellules sur une grille régulière, on la lisse, puis
+// on extrait par "marching squares" le contour fermé de chaque seuil de risque.
+// Résultat : une zone continue et arrondie qui épouse la forme réelle du signal
+// (concavités possibles), au lieu de bulles par cellule ou d'un convex hull débordant.
+
+function predictionMedian(values) {
+  const arr = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!arr.length) return NaN;
+  const mid = Math.floor(arr.length / 2);
+  return arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
 }
 
-function predictionConnectedCellGroups(cells, maxGapKm = 42) {
-  const pool = Array.isArray(cells) ? cells.slice() : [];
-  const groups = [];
-  while (pool.length) {
-    const first = pool.shift();
-    const group = [first];
-    const queue = [first];
-    while (queue.length) {
-      const current = queue.shift();
-      for (let index = pool.length - 1; index >= 0; index -= 1) {
-        const other = pool[index];
-        if (predictionCellConnectionDistanceKm(current, other) > maxGapKm) continue;
-        pool.splice(index, 1);
-        group.push(other);
-        queue.push(other);
+// Construit le champ scalaire en "peignant" chaque cellule comme un disque plat de
+// ~40 km à sa valeur (combinés par max). Pas de moyennage avec le vide (qui
+// écraserait le signal) : le score est préservé, les cellules voisines fusionnent,
+// et le contour iso épouse l'union des disques — d'où des zones rondes et fidèles.
+const PREDICTION_FIELD_RADIUS_KM = 55;
+
+function predictionBuildScalarField(cells) {
+  const b = predictionBounds();
+  const cellW = predictionMedian(cells.map((c) => Number(c.cellWidthDeg || c.cell_width_deg))) || 0.16;
+  const cellH = predictionMedian(cells.map((c) => Number(c.cellHeightDeg || c.cell_height_deg))) || 0.16;
+  const radiusNodes = Math.max(1.4, PREDICTION_FIELD_RADIUS_KM / (cellH * 111));
+  const reach = Math.ceil(radiusNodes);
+  // Bordure de zéros (padding ≥ portée des disques) : garantit qu'aucune zone ne
+  // touche le bord de la grille, donc tout contour se referme à l'intérieur. Sans
+  // ça, une zone atteignant le nord de la France (~51,2°N = bord) restait ouverte
+  // et était jetée → carte vide sur la journée entière.
+  const pad = reach + 1;
+  const cols = Math.max(2, Math.round((b.maxLon - b.minLon) / cellW) + 1) + pad * 2;
+  const rows = Math.max(2, Math.round((b.maxLat - b.minLat) / cellH) + 1) + pad * 2;
+  const grid = Array.from({ length: rows }, () => new Float64Array(cols));
+  cells.forEach((cell) => {
+    const cs = predictionLayerScore(cell);
+    if (cs <= 0) return;
+    const ci = Math.round((Number(cell.lon) - b.minLon) / cellW) + pad;
+    const cj = Math.round((Number(cell.lat) - b.minLat) / cellH) + pad;
+    for (let dj = -reach; dj <= reach; dj += 1) {
+      for (let di = -reach; di <= reach; di += 1) {
+        const i = ci + di;
+        const j = cj + dj;
+        if (i < 0 || i >= cols || j < 0 || j >= rows) continue;
+        if (Math.hypot(di, dj) > radiusNodes) continue;
+        if (cs > grid[j][i]) grid[j][i] = cs;
       }
     }
-    groups.push(group);
-  }
-  return groups;
-}
-
-function predictionConvexHull(points) {
-  const clean = (Array.isArray(points) ? points : [])
-    .filter((point) => Number.isFinite(point?.[0]) && Number.isFinite(point?.[1]))
-    .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  if (clean.length <= 3) return clean;
-  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const lower = [];
-  clean.forEach((point) => {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
-    lower.push(point);
   });
-  const upper = [];
-  clean.slice().reverse().forEach((point) => {
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
-    upper.push(point);
-  });
-  upper.pop();
-  lower.pop();
-  return lower.concat(upper);
+  return { grid, rows, cols, minLon: b.minLon, minLat: b.minLat, cellW, cellH, pad };
 }
 
-function predictionCellEnvelopePoints(cell, project, level) {
-  const lat = Number(cell.lat);
-  const lon = Number(cell.lon);
-  const halfW = Math.max(0.05, Number(cell.cellWidthDeg || cell.cell_width_deg || 0.16) / 2);
-  const halfH = Math.max(0.05, Number(cell.cellHeightDeg || cell.cell_height_deg || 0.16) / 2);
-  const [cx, cy] = project(lon, lat);
-  const [right] = project(lon + halfW, lat);
-  const [, top] = project(lon, lat + halfH);
-  const rx = Math.max(28, Math.abs(right - cx) + 30 + Math.max(0, predictionLayerScore(cell) - level.threshold) * 0.075);
-  const ry = Math.max(26, Math.abs(top - cy) + 28 + Math.max(0, predictionLayerScore(cell) - level.threshold) * 0.055);
-  const points = [];
-  for (let index = 0; index < 28; index += 1) {
-    const theta = (Math.PI * 2 * index) / 28;
-    const wave = 1 + Math.sin(theta * 2 + lat * 0.31 + lon * 0.47) * 0.004;
-    points.push([cx + Math.cos(theta) * rx * wave, cy + Math.sin(theta) * ry * wave]);
+// Marching squares → anneaux fermés (points en coordonnées de grille fractionnaires).
+function predictionMarchingSquaresRings(field, threshold) {
+  const { grid, rows, cols } = field;
+  const segments = [];
+  const interp = (xa, ya, va, xb, yb, vb) => {
+    const t = (va === vb) ? 0.5 : (threshold - va) / (vb - va);
+    return [xa + (xb - xa) * t, ya + (yb - ya) * t];
+  };
+  for (let j = 0; j < rows - 1; j += 1) {
+    for (let i = 0; i < cols - 1; i += 1) {
+      const v0 = grid[j][i];
+      const v1 = grid[j][i + 1];
+      const v2 = grid[j + 1][i + 1];
+      const v3 = grid[j + 1][i];
+      let c = 0;
+      if (v0 >= threshold) c |= 1;
+      if (v1 >= threshold) c |= 2;
+      if (v2 >= threshold) c |= 4;
+      if (v3 >= threshold) c |= 8;
+      if (c === 0 || c === 15) continue;
+      const B = () => interp(i, j, v0, i + 1, j, v1);
+      const R = () => interp(i + 1, j, v1, i + 1, j + 1, v2);
+      const T = () => interp(i, j + 1, v3, i + 1, j + 1, v2);
+      const L = () => interp(i, j, v0, i, j + 1, v3);
+      switch (c) {
+        case 1: segments.push([L(), B()]); break;
+        case 2: segments.push([B(), R()]); break;
+        case 3: segments.push([L(), R()]); break;
+        case 4: segments.push([R(), T()]); break;
+        case 5: segments.push([L(), B()]); segments.push([R(), T()]); break;
+        case 6: segments.push([B(), T()]); break;
+        case 7: segments.push([L(), T()]); break;
+        case 8: segments.push([T(), L()]); break;
+        case 9: segments.push([B(), T()]); break;
+        case 10: segments.push([B(), R()]); segments.push([T(), L()]); break;
+        case 11: segments.push([R(), T()]); break;
+        case 12: segments.push([L(), R()]); break;
+        case 13: segments.push([B(), R()]); break;
+        case 14: segments.push([L(), B()]); break;
+        default: break;
+      }
+    }
   }
-  return points;
+  return predictionStitchSegments(segments);
 }
 
-function predictionRelaxClosedPoints(points, passes = 1) {
-  let out = Array.isArray(points) ? points : [];
-  for (let pass = 0; pass < passes; pass += 1) {
-    out = out.map((point, index) => {
-      const prev = out[(index - 1 + out.length) % out.length];
-      const next = out[(index + 1) % out.length];
-      return [
-        point[0] * 0.54 + prev[0] * 0.23 + next[0] * 0.23,
-        point[1] * 0.54 + prev[1] * 0.23 + next[1] * 0.23,
-      ];
-    });
+function predictionStitchSegments(segments) {
+  const key = (p) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`;
+  const adj = new Map();
+  segments.forEach((seg, idx) => {
+    const ka = key(seg[0]);
+    const kb = key(seg[1]);
+    if (!adj.has(ka)) adj.set(ka, []);
+    if (!adj.has(kb)) adj.set(kb, []);
+    adj.get(ka).push({ idx, to: seg[1], toKey: kb });
+    adj.get(kb).push({ idx, to: seg[0], toKey: ka });
+  });
+  const used = new Array(segments.length).fill(false);
+  const rings = [];
+  segments.forEach((seg, startIdx) => {
+    if (used[startIdx]) return;
+    used[startIdx] = true;
+    const ring = [seg[0], seg[1]];
+    const startKey = key(seg[0]);
+    let currentKey = key(seg[1]);
+    let guard = 0;
+    let closed = false;
+    while (guard <= segments.length) {
+      if (currentKey === startKey) { closed = true; break; }
+      guard += 1;
+      const next = (adj.get(currentKey) || []).find((l) => !used[l.idx]);
+      if (!next) break;
+      used[next.idx] = true;
+      ring.push(next.to);
+      currentKey = next.toKey;
+    }
+    // On ne garde que les anneaux qui se referment : un anneau ouvert serait fermé
+    // par une corde droite (= le trait diagonal parasite vu sur la journée entière).
+    if (closed && ring.length >= 3) rings.push(ring);
+  });
+  return rings;
+}
+
+function predictionPolygonArea(points) {
+  let area = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    area += a[0] * b[1] - b[0] * a[1];
+  }
+  return Math.abs(area) / 2;
+}
+
+function predictionChaikinClosed(points, passes) {
+  let out = points;
+  for (let p = 0; p < passes; p += 1) {
+    const next = [];
+    for (let i = 0; i < out.length; i += 1) {
+      const a = out[i];
+      const b = out[(i + 1) % out.length];
+      next.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
+      next.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+    }
+    out = next;
   }
   return out;
 }
 
-function predictionComponentWavePath(group, project, level) {
-  const points = group.flatMap((cell) => predictionCellEnvelopePoints(cell, project, level));
-  let hull = predictionConvexHull(points);
-  if (hull.length < 3) return '';
-  hull = predictionCornerCutPoints(hull, group.length > 2 ? 6 : 4);
-  hull = predictionRelaxClosedPoints(hull, group.length > 3 ? 7 : 4);
-  return predictionClosedBezierPath(hull, group.length > 2 ? 0.18 : 0.16);
+function predictionRingCentroidPt(ring) {
+  let sx = 0;
+  let sy = 0;
+  ring.forEach((p) => { sx += p[0]; sy += p[1]; });
+  return [sx / ring.length, sy / ring.length];
 }
 
-function predictionLayerPatchMarkup(cells, project, level, levels = predictionAllLevelConfigs()) {
-  const minGroupSize = level.threshold < 75 ? 3 : (level.threshold < 85 ? 2 : 1);
-  const groups = predictionConnectedCellGroups(predictionLayerCells(cells, level.threshold), 68)
-    .filter((group) => group.length >= minGroupSize);
-  return groups
-    .map((group) => predictionComponentWavePath(group, project, level))
-    .filter(Boolean)
-    .map((d) => "<path d=\"" + d + "\"/>")
-    .join("");
+function predictionRingContains(ring, pt) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
+    if (((yi > pt[1]) !== (yj > pt[1])) && (pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
 
-
-function predictionHigherLevelPatchMarkup(cells, project, level, levels = predictionAllLevelConfigs()) {
-  const nextThreshold = predictionNextLevelThreshold(level, levels);
-  if (!Number.isFinite(nextThreshold)) return '';
-  return levels
-    .filter((item) => item.threshold >= nextThreshold)
-    .map((item) => predictionLayerPatchMarkup(cells, project, item, levels))
-    .join('');
-}
-
-function predictionGooFilterMarkup(level, kind, color) {
-  const isBorder = kind === "border";
-  const blur = Math.max(1.0, isBorder ? level.blur * 0.50 : level.blur * 0.88);
-  const gain = isBorder ? 24 : 27;
-  const bias = isBorder ? -10.4 : -12.1;
-  const morphology = isBorder
-    ? "<feMorphology in=\"goo\" operator=\"dilate\" radius=\"0.82\" result=\"shape\"/>"
-    : "<feMorphology in=\"goo\" operator=\"erode\" radius=\"0.02\" result=\"shape\"/>";
-  const opacity = 1;
-  return "<filter id=\"risk-" + kind + "-" + level.key + "\" x=\"-14%\" y=\"-14%\" width=\"128%\" height=\"128%\" color-interpolation-filters=\"sRGB\">"
-    + "<feGaussianBlur in=\"SourceGraphic\" stdDeviation=\"" + blur.toFixed(1) + "\" result=\"blur\"/>"
-    + "<feColorMatrix in=\"blur\" mode=\"matrix\" values=\"1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 " + gain + " " + bias + "\" result=\"goo\"/>"
-    + morphology
-    + "<feFlood flood-color=\"" + color + "\" flood-opacity=\"" + opacity + "\" result=\"paint\"/>"
-    + "<feComposite in=\"paint\" in2=\"shape\" operator=\"in\"/>"
-    + "</filter>";
-}
-
-
-function predictionLevelBlobMarkup(cells, project, level, levels = predictionAllLevelConfigs()) {
-  const patches = predictionLayerPatchMarkup(cells, project, level, levels);
-  if (!patches) return '';
+function predictionContourLevelMarkup(field, project, level) {
+  let rings = predictionMarchingSquaresRings(field, level.threshold)
+    // anti-bruit : ignore les contours minuscules (< ~1,4 cellule de grille)
+    .filter((ring) => predictionPolygonArea(ring) >= 1.4);
+  if (!rings.length) return '';
+  // Retire les anneaux internes (trous) : on ne veut pas affirmer « pas de risque
+  // ici » au milieu d'une zone — la prévision orageuse est trop incertaine pour ça.
+  const areas = rings.map(predictionPolygonArea);
+  const centroids = rings.map(predictionRingCentroidPt);
+  rings = rings.filter((ring, idx) => !rings.some((other, k) => k !== idx && areas[k] > areas[idx] && predictionRingContains(other, centroids[idx])));
+  const paths = rings.map((ring) => {
+    const smoothed = predictionChaikinClosed(ring, 3);
+    const projected = smoothed.map(([gi, gj]) => project(field.minLon + (gi - field.pad) * field.cellW, field.minLat + (gj - field.pad) * field.cellH));
+    return predictionClosedBezierPath(projected, 0.6);
+  }).filter(Boolean).join(' ');
+  if (!paths) return '';
   return `<g class="risk-level risk-${level.key}">
-    <g filter="url(#risk-border-${level.key})" fill="#000">${patches}</g>
-    <g filter="url(#risk-fill-${level.key})" fill="#000">${patches}</g>
+    <path d="${paths}" fill="${level.color}" fill-opacity="0.55" fill-rule="nonzero" stroke="${level.stroke}" stroke-opacity="0.85" stroke-width="1.4" stroke-linejoin="round"/>
   </g>`;
 }
 
@@ -841,15 +891,11 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
     ? predictionWindowDateLabel(day)
     : (typeof formatTimelineDateLabel === 'function' ? formatTimelineDateLabel(predictionDayKey(day)) : predictionDayKey(day));
   const levels = predictionLevelConfigs(cells);
-  const filterMarkup = levels.map((level) => [
-    predictionGooFilterMarkup(level, 'border', level.border),
-    predictionGooFilterMarkup(level, 'fill', level.color),
-  ].join('')).join('');
-  const shapeMarkup = levels.map((level) => predictionLevelBlobMarkup(cells, project, level, levels)).join('');
+  const field = predictionBuildScalarField(cells);
+  const shapeMarkup = levels.map((level) => predictionContourLevelMarkup(field, project, level)).join('');
   const adminMarkup = predictionAdminLineMarkup(project);
   const regionBoundaryMarkup = predictionRegionBoundaryMarkup(project);
-  const displayWidth = typeof window !== 'undefined' ? (window.innerWidth || width) : width;
-  const isMobileSvg = displayWidth < 640;
+  const isMobileSvg = predictionLegendVariant() === 'm';
 
   let legendMarkup, svgHeight, legendY;
   if (isMobileSvg) {
@@ -890,7 +936,6 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
     <filter id="mapShadow" x="-14%" y="-14%" width="128%" height="128%" color-interpolation-filters="sRGB">
       <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#000" flood-opacity="0.34"/>
     </filter>
-    ${filterMarkup}
   </defs>
   <rect width="${width}" height="${svgHeight}" fill="#07111f"/>
   <g filter="url(#mapShadow)">
@@ -1120,30 +1165,6 @@ function predictionImagePointerGeo(event) {
   if (!Number.isFinite(geo.lon) || !Number.isFinite(geo.lat)) return null;
   if (!predictionPointInsideFrance(geo.lon, geo.lat)) return null;
   return { ...geo, x, y, rect };
-}
-
-function predictionCellConnectionDistanceKm(a, b) {
-  const base = predictionDistanceKm(a, b);
-  const sizeA = Math.max(Number(a.cellHeightDeg || a.cell_height_deg || 0.16), Number(a.cellWidthDeg || a.cell_width_deg || 0.16)) * 111;
-  const sizeB = Math.max(Number(b.cellHeightDeg || b.cell_height_deg || 0.16), Number(b.cellWidthDeg || b.cell_width_deg || 0.16)) * 111;
-  return base - (sizeA + sizeB) * 0.5;
-}
-
-function predictionConnectedZone(seedCell, visibleCells) {
-  const queue = [seedCell];
-  const seen = new Set([predictionCellId(seedCell)]);
-  const byId = new Map(visibleCells.map((cell) => [predictionCellId(cell), cell]));
-  while (queue.length) {
-    const current = queue.shift();
-    visibleCells.forEach((other) => {
-      const id = predictionCellId(other);
-      if (seen.has(id)) return;
-      if (predictionCellConnectionDistanceKm(current, other) > 34) return;
-      seen.add(id);
-      queue.push(other);
-    });
-  }
-  return Array.from(seen).map((id) => byId.get(id)).filter(Boolean);
 }
 
 function predictionKnownPlaces() {
@@ -1797,6 +1818,21 @@ function maybePrecomputePredictionPageImage(day = getCurrentDay()) {
   if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 1200 });
   else setTimeout(run, 80);
 }
+
+// Si le viewport franchit le seuil mobile/desktop pendant que la carte est ouverte,
+// la légende gravée dans le SVG ne correspond plus : on régénère (nouveau variant de
+// clé → cache hit ou génération) et on réaffiche. Ne fait rien hors franchissement.
+let predictionLegendVariantCurrent = predictionLegendVariant();
+function handlePredictionViewportChange() {
+  const variant = predictionLegendVariant();
+  if (variant === predictionLegendVariantCurrent) return;
+  predictionLegendVariantCurrent = variant;
+  if (predictionPage?.getAttribute('aria-hidden') === 'false') {
+    renderPredictionPageResult(ensurePredictionPageImage(getCurrentDay(), { periodKey: selectedPredictionPeriodKey }));
+  }
+}
+window.addEventListener('resize', handlePredictionViewportChange, { passive: true });
+window.addEventListener('orientationchange', handlePredictionViewportChange, { passive: true });
 
 window.openPredictionPage = openPredictionPage;
 window.closePredictionPage = closePredictionPage;
