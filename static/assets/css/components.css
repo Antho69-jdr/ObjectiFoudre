@@ -3741,3 +3741,94 @@ body.mobile-blocked #app {
     padding: 14px 2px 0;
   }
 }
+
+/* --- Écran Historique (réutilise .prediction-page pour l'overlay/le style) --- */
+.history-page .history-page-body {
+  grid-template-columns: minmax(170px, 230px) minmax(0, 1.45fr) minmax(240px, 0.7fr);
+}
+.history-dates-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: rgba(10, 18, 32, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  padding: 12px;
+  overflow: hidden;
+}
+.history-dates-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+  margin-bottom: 10px;
+}
+.history-dates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.history-date-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  color: inherit;
+  font: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.history-date-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.history-date-btn.active {
+  background: rgba(90, 140, 210, 0.22);
+  border-color: rgba(120, 170, 230, 0.5);
+}
+.history-date-day {
+  font-weight: 600;
+}
+.history-date-count {
+  font-size: 11px;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+.history-dates-empty {
+  opacity: 0.6;
+  font-size: 13px;
+  padding: 8px;
+  line-height: 1.4;
+}
+.history-empty-hint {
+  margin: auto;
+  align-self: center;
+  text-align: center;
+  opacity: 0.6;
+  font-size: 14px;
+  padding: 16px;
+}
+@media (max-width: 920px) {
+  .history-page .history-page-body {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+  .history-dates-panel {
+    max-height: 26vh;
+  }
+  .history-dates-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .history-date-btn {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+}
