@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
+import gzip
 import hashlib
 import http.client
 import importlib.util
@@ -165,6 +166,13 @@ METEOFRANCE_PERSISTENT_CACHE_DIR = Path(
     or BASE_DIR / ".cache" / "meteofrance"
 ).expanduser()
 OBJECTIFOUDRE_SERVER_TIMEZONE = ZoneInfo(os.environ.get("OBJECTIFOUDRE_TIMEZONE", "Europe/Paris"))
+# --- Historique de grille : archive durable hors du cache TTL ------------------
+OBJECTIFOUDRE_HISTORY_ENABLED = _env_flag("OBJECTIFOUDRE_HISTORY_ENABLED", True)
+OBJECTIFOUDRE_HISTORY_DIR = Path(
+    os.environ.get("OBJECTIFOUDRE_HISTORY_DIR")
+    or BASE_DIR / "history"
+).expanduser()
+OBJECTIFOUDRE_HISTORY_RETENTION_DAYS = _env_int("OBJECTIFOUDRE_HISTORY_RETENTION_DAYS", 180, min_value=1)
 OBJECTIFOUDRE_AUTO_PRELOAD_INTERVAL_SECONDS = _env_int("OBJECTIFOUDRE_AUTO_PRELOAD_INTERVAL_SECONDS", 5 * 60, min_value=60)
 OBJECTIFOUDRE_AROME_RUN_UPDATE_INTERVAL_SECONDS = _env_int(
     "OBJECTIFOUDRE_AROME_RUN_UPDATE_INTERVAL_SECONDS",
@@ -2322,6 +2330,219 @@ def _write_meteofrance_local_persistent_cache(namespace: str, key: str, payload:
         tmp_path.replace(path)
     except Exception:
         return
+
+
+# --- Historique de grille -----------------------------------------------------
+# On persiste chaque grille France fraîchement calculée hors du cache TTL, pour
+# pouvoir rouvrir d'anciennes prévisions (et plus tard les comparer au réel).
+# Rétention : dernier run AROME par (date, créneau) — un run plus récent écrase.
+HISTORY_SCHEMA_VERSION = 1
+_history_last_prune_at = 0.0
+_history_prune_lock = threading.Lock()
+
+
+def _is_iso_date(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 10
+        and value[4] == "-"
+        and value[7] == "-"
+        and value[:4].isdigit()
+        and value[5:7].isdigit()
+        and value[8:10].isdigit()
+    )
+
+
+def _history_now_iso() -> str:
+    return datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).isoformat()
+
+
+def _history_slot_path(date_str: str, hour: int) -> Path:
+    return OBJECTIFOUDRE_HISTORY_DIR / "france" / date_str / f"h{int(hour):02d}.json.gz"
+
+
+def _write_history_gzip(path: Path, obj: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".gz.tmp")
+    data = json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    with gzip.open(tmp_path, "wb") as handle:
+        handle.write(data)
+    tmp_path.replace(path)
+
+
+def _read_history_gzip(path: Path) -> dict[str, Any] | None:
+    with gzip.open(path, "rb") as handle:
+        return json.loads(handle.read().decode("utf-8"))
+
+
+def _archive_france_slot_grid(result: dict[str, Any]) -> None:
+    """Persist a freshly computed France slot grid into the durable history store.
+    Keeps only the latest AROME run per (date, slot). Never raises: archiving must
+    never break the request path."""
+    if not OBJECTIFOUDRE_HISTORY_ENABLED:
+        return
+    try:
+        if not isinstance(result, dict) or not result.get("ok"):
+            return
+        payload = result.get("payload")
+        if not isinstance(payload, dict):
+            return
+        meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+        if meta.get("grid_scope") != "france":
+            return
+        date_str = str(meta.get("requested_date") or "").strip()
+        hour = meta.get("requested_hour")
+        if not _is_iso_date(date_str) or not isinstance(hour, int) or not (0 <= hour <= 23):
+            return
+        days = payload.get("days") if isinstance(payload.get("days"), list) else []
+        day = days[0] if days else {}
+        day_slots = day.get("slots") if isinstance(day, dict) else []
+        slot = day_slots[0] if isinstance(day_slots, list) and day_slots else None
+        if not isinstance(slot, dict) or not slot.get("cells"):
+            return  # no real grid -> nothing worth archiving
+        run_ref = str(meta.get("arome_run_latest_reference_time") or "")
+        path = _history_slot_path(date_str, hour)
+        if path.exists() and run_ref:
+            try:
+                existing = _read_history_gzip(path)
+                existing_run = str((existing or {}).get("run_reference_time") or "")
+                if existing_run and run_ref < existing_run:
+                    return  # incoming AROME run is older than the archived one
+            except Exception:
+                pass
+        record = {
+            "schema": HISTORY_SCHEMA_VERSION,
+            "date": date_str,
+            "slot_key": meta.get("requested_slot") or f"h{hour:02d}",
+            "hour": hour,
+            "run_reference_time": run_ref,
+            "algorithm_version": meta.get("grib_slot_grid_algorithm_version"),
+            "generated_at": meta.get("generated_at"),
+            "archived_at": _history_now_iso(),
+            "payload": payload,
+        }
+        _write_history_gzip(path, record)
+        _prune_history_dirs()
+    except Exception:
+        pass
+
+
+def _prune_history_dirs(now: float | None = None) -> None:
+    """Drop history date folders older than the retention window. Throttled to
+    once per hour; never raises."""
+    global _history_last_prune_at
+    current = now or time.time()
+    with _history_prune_lock:
+        if current - _history_last_prune_at < 3600:
+            return
+        _history_last_prune_at = current
+    try:
+        base = OBJECTIFOUDRE_HISTORY_DIR / "france"
+        if not base.is_dir():
+            return
+        cutoff = (
+            datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+            - timedelta(days=OBJECTIFOUDRE_HISTORY_RETENTION_DAYS)
+        ).isoformat()
+        for child in base.iterdir():
+            if child.is_dir() and _is_iso_date(child.name) and child.name < cutoff:
+                shutil.rmtree(child, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def _list_history_dates() -> list[dict[str, Any]]:
+    base = OBJECTIFOUDRE_HISTORY_DIR / "france"
+    out: list[dict[str, Any]] = []
+    if not base.is_dir():
+        return out
+    for child in base.iterdir():
+        if not child.is_dir() or not _is_iso_date(child.name):
+            continue
+        slot_files = sorted(child.glob("h*.json.gz"))
+        if not slot_files:
+            continue
+        out.append({
+            "date": child.name,
+            "slot_count": len(slot_files),
+            "slot_keys": [path.name.split(".")[0] for path in slot_files],
+        })
+    out.sort(key=lambda item: item["date"], reverse=True)
+    return out
+
+
+def _get_history_france_day_sync(date_str: str) -> dict[str, Any]:
+    """Assemble an archived day from its per-slot files, in the same shape the
+    live grib-france-day-cache returns, so the existing grid renderer can show it."""
+    slots: list[dict[str, Any]] = []
+    cached_hours: list[int] = []
+    missing_hours: list[int] = []
+    first_meta: dict[str, Any] = {}
+    run_refs: set[str] = set()
+    for hour in range(24):
+        path = _history_slot_path(date_str, hour)
+        record = None
+        if path.exists():
+            try:
+                record = _read_history_gzip(path)
+            except Exception:
+                record = None
+        payload = record.get("payload") if isinstance(record, dict) and isinstance(record.get("payload"), dict) else {}
+        days = payload.get("days") if isinstance(payload.get("days"), list) else []
+        day = days[0] if days else {}
+        day_slots = day.get("slots") if isinstance(day, dict) else []
+        slot = day_slots[0] if isinstance(day_slots, list) and day_slots else None
+        if record and isinstance(slot, dict):
+            slots.append(slot)
+            cached_hours.append(hour)
+            if not first_meta:
+                first_meta = copy.deepcopy(payload.get("meta") if isinstance(payload.get("meta"), dict) else {})
+            if record.get("run_reference_time"):
+                run_refs.add(str(record["run_reference_time"]))
+        else:
+            missing_hours.append(hour)
+    meta = {
+        **first_meta,
+        "provider": "meteofrance_arome_grib",
+        "source_provider": "meteofrance_arome_grib",
+        "source_label": "Historique ObjectiFoudre (archive)",
+        "requested_date": date_str,
+        "grid_scope": "france",
+        "france_grid": True,
+        "country_mask": "france",
+        "history": True,
+        "cached_hours": cached_hours,
+        "missing_hours": missing_hours,
+        "archived_runs": sorted(run_refs),
+    }
+    payload = {
+        "meta": meta,
+        "days": [{
+            "day_key": date_str,
+            "day_label": date_str,
+            "day_index": 0,
+            "slots": slots,
+        }],
+    }
+    return {
+        "ok": bool(slots),
+        "status": 200 if slots else 404,
+        "history": True,
+        "grid_scope": "france",
+        "france_grid": True,
+        "date": date_str,
+        "cached_hours": cached_hours,
+        "cached_slot_keys": [f"h{hour:02d}" for hour in cached_hours],
+        "missing_hours": missing_hours,
+        "cached_count": len(cached_hours),
+        "hour_count": 24,
+        "payload": payload if slots else None,
+        "archived_runs": sorted(run_refs),
+        "message": (
+            f"{len(cached_hours)}/24 créneau(x) archivé(s) pour {date_str}."
+            if slots else f"Aucune grille archivée pour {date_str}."
+        ),
+    }
 
 
 def _meteofrance_grib_full_package_cache_key(product_href: str) -> str:
@@ -6827,6 +7048,8 @@ def _build_meteofrance_grib_slot_grid_sync(
         }
         _set_cached_value(cache_key, result)
         _write_meteofrance_local_persistent_cache(cache_namespace, cache_key, result)
+        if cache_namespace == "grib-france-slot-grid":
+            _archive_france_slot_grid(result)
         return result
     except Exception as exc:
         failure = _meteofrance_failure_result(exc, target)
@@ -11177,6 +11400,25 @@ async def meteofrance_grib_france_day_cache(payload: MeteoFranceGribCacheStatusR
         payload.detail_level,
     )
     return result
+
+
+@app.get("/api/history/dates")
+async def history_dates() -> dict[str, Any]:
+    dates = await asyncio.to_thread(_list_history_dates)
+    return {
+        "ok": True,
+        "enabled": OBJECTIFOUDRE_HISTORY_ENABLED,
+        "retention_days": OBJECTIFOUDRE_HISTORY_RETENTION_DAYS,
+        "date_count": len(dates),
+        "dates": dates,
+    }
+
+
+@app.get("/api/history/day")
+async def history_day(date: str = Query(..., min_length=10, max_length=10)) -> dict[str, Any]:
+    if not _is_iso_date(date):
+        raise HTTPException(status_code=400, detail="Date attendue au format AAAA-MM-JJ.")
+    return await asyncio.to_thread(_get_history_france_day_sync, date)
 
 
 @app.post("/api/meteofrance/grib-slot-grid-cache")

@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 *.bak
 .cache/
+history/
 orages_output_horizons.json
 mnt/
 Clef API.txt
