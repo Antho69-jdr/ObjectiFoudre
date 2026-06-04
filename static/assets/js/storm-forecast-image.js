@@ -1,4 +1,4 @@
-const PREDICTION_IMAGE_RENDER_VERSION = 'vector-risk-atlas-v35';
+const PREDICTION_IMAGE_RENDER_VERSION = 'vector-risk-atlas-v36';
 
 const PREDICTION_IMAGE_CACHE = new Map();
 const PREDICTION_IMAGE_PREWARMING = new Set();
@@ -252,16 +252,17 @@ function predictionCellId(cell) {
 
 function predictionCellScore(cell) {
   if (!cell) return 0;
-  const trigger = clampScore(cell.trigger_score);
-  const conservative = typeof stormForecastBaseScore === 'function' ? clampScore(stormForecastBaseScore(cell)) : trigger;
-  const guarded = Number.isFinite(conservative) && conservative > 0 && conservative < trigger
-    ? clampScore((conservative * 0.48) + (trigger * 0.52))
-    : trigger;
-  const confidence = clampScore(cell.confidence_score ?? 60);
-  const confidenceFactor = 0.90 + (confidence / 100) * 0.10;
-  return Math.round(clampScore(guarded * confidenceFactor));
+  // trigger_score est déjà la probabilité orageuse calibrée côté serveur :
+  // confiance intégrée (v1.2.0) ET gating météo (CAPE/sécheresse/CIN…) appliqué
+  // dans compute_initiation. On la prend telle quelle pour que la carte coïncide
+  // avec le score de la fiche de détail — pas de ré-application client (qui
+  // double-comptait la confiance) ni de re-plafonnement (qui dupliquait le gating).
+  return Math.round(clampScore(cell.trigger_score));
 }
 
+// Score utilisé pour le rendu des couches : on prend le score lissé spatialement,
+// mais on garde un plancher à 94 % du score brut de la cellule pour qu'un lissage
+// trop diffusif n'efface pas un pic local réel.
 function predictionLayerScore(cell) {
   if (!cell) return 0;
   const smooth = clampScore(cell.smoothedScore ?? cell.score ?? 0);
@@ -295,7 +296,6 @@ function collectPredictionDailyCells(day = getCurrentDay(), periodKey = 'day') {
         temperature: [],
         dewpoint: [],
         gusts: [],
-        clouds: [],
       };
       const score = predictionCellScore(cell);
       entry.scores.push(score);
@@ -306,13 +306,10 @@ function collectPredictionDailyCells(day = getCurrentDay(), periodKey = 'day') {
       const temperature = Number(cell.temp_c);
       const dewpoint = Number(cell.dewpoint_c);
       const gusts = Number(cell.wind_gusts_10m);
-      const cloudLow = Number(cell.cloud_cover_low);
-      const cloudMid = Number(cell.cloud_cover_mid);
       if (Number.isFinite(cape)) entry.cape.push(cape);
       if (Number.isFinite(temperature)) entry.temperature.push(temperature);
       if (Number.isFinite(dewpoint)) entry.dewpoint.push(dewpoint);
       if (Number.isFinite(gusts)) entry.gusts.push(gusts);
-      if (Number.isFinite(cloudLow) || Number.isFinite(cloudMid)) entry.clouds.push((Number.isFinite(cloudLow) ? cloudLow : 0) + (Number.isFinite(cloudMid) ? cloudMid : 0));
       grouped.set(id, entry);
     });
   });
@@ -325,11 +322,18 @@ function collectPredictionDailyCells(day = getCurrentDay(), periodKey = 'day') {
     const activeCount = entry.scores.filter((score) => score >= 65).length;
     const watchCount = entry.scores.filter((score) => score >= 45).length;
     const confidenceMean = predictionMean(entry.confidence);
+    // Score journalier agrégé d'une cellule sur la fenêtre 24 h (poids = 1.0) :
+    //  - topMean 0.58 : domine, reflète les meilleures heures (pic soutenu)
+    //  - mean 0.18 : tient compte du fond de la journée
+    //  - peak 0.18 : récompense un pic isolé fort
+    //  - watchCount 0.06 : léger bonus de persistance (heures ≥ 45)
     let score = (topMean * 0.58) + (mean * 0.18) + (peak * 0.18) + (Math.min(100, watchCount * 14) * 0.06);
-    if (activeCount <= 0 && peak < 68) score = Math.min(score, 64);
-    if (activeCount === 1 && peak < 82) score = Math.min(score, peak - 2);
-    if (activeCount >= 3) score += Math.min(8, activeCount * 1.2);
-    if (confidenceMean > 0) score *= 0.95 + (confidenceMean / 100) * 0.05;
+    if (activeCount <= 0 && peak < 68) score = Math.min(score, 64);   // aucune heure active → reste sous seuil
+    if (activeCount === 1 && peak < 82) score = Math.min(score, peak - 2); // signal d'une seule heure → atténué
+    if (activeCount >= 3) score += Math.min(8, activeCount * 1.2);     // persistance multi-heures → bonus plafonné
+    // La confiance est déjà intégrée dans trigger_score (donc dans chaque score de
+    // cellule) côté serveur — pas de ré-application ici. confidenceMean reste
+    // calculé et exposé à titre diagnostique uniquement.
     score = Math.round(clampScore(score));
     const bestHourCandidates = entry.hours
       .filter((item) => item.score >= Math.max(28, peak - 10))
@@ -350,7 +354,6 @@ function collectPredictionDailyCells(day = getCurrentDay(), periodKey = 'day') {
       meanTemperature: predictionMean(entry.temperature),
       meanDewpoint: predictionMean(entry.dewpoint),
       maxGusts: Math.max(...entry.gusts, 0),
-      meanClouds: predictionMean(entry.clouds),
     };
   });
 }
@@ -364,6 +367,10 @@ function predictionDistanceKm(a, b) {
   return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(0, 1 - h)));
 }
 
+// Lissage spatial gaussien : adoucit la carte en mélangeant chaque cellule avec
+// ses voisines dans un rayon de 78 km (~5 cellules AROME), pondération gaussienne.
+// Le résultat est un mélange 56 % cellule / 44 % moyenne locale, de sorte que le
+// pic propre de la cellule reste dominant tout en gommant le bruit isolé.
 function smoothPredictionCells(cells) {
   if (!Array.isArray(cells) || !cells.length) return [];
   const radiusKm = 78;
@@ -379,6 +386,8 @@ function smoothPredictionCells(cells) {
     }
     const localMean = totalWeight ? weighted / totalWeight : cell.score;
     let smoothedScore = clampScore(cell.score * 0.56 + localMean * 0.44);
+    // Une cellule faible (< 54) ne doit pas être remontée au-dessus du seuil
+    // cartographié (65) par le seul lissage de voisines plus actives.
     if (cell.score < 54 && smoothedScore >= 65) smoothedScore = 64;
     return {
       ...cell,
@@ -427,20 +436,6 @@ function predictionProjector(width, height) {
   return predictionProjectionMetrics(width, height).project;
 }
 
-function drawPredictionFrancePath(ctx, project) {
-  const rings = typeof FRANCE_GRID_CLIP_RINGS !== 'undefined' ? FRANCE_GRID_CLIP_RINGS : [];
-  ctx.beginPath();
-  rings.forEach((ring) => {
-    if (!Array.isArray(ring) || ring.length < 3) return;
-    ring.forEach((point, index) => {
-      const [x, y] = project(point[0], point[1]);
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.closePath();
-  });
-}
-
 function predictionHexToRgba(hex, alpha = 1) {
   const clean = String(hex || '').replace('#', '').trim();
   if (!/^[0-9a-fA-F]{6}$/.test(clean)) return `rgba(255,255,255,${alpha})`;
@@ -461,73 +456,6 @@ function predictionRiskLevel(score) {
 
 function predictionRiskLabel(score) {
   return predictionRiskLevel(score).label;
-}
-
-function predictionRiskRgba(score, alpha = 1) {
-  return predictionHexToRgba(predictionRiskLevel(score).color, alpha);
-}
-
-function predictionBoundaryRgba(score, alpha = 1) {
-  return predictionHexToRgba(predictionRiskLevel(score).stroke, alpha);
-}
-
-function predictionRiskText(score) {
-  const level = predictionRiskLevel(score);
-  return `${level.label} · ${level.range}`;
-}
-
-
-function predictionRiskCutoff(cells) {
-  const scores = (Array.isArray(cells) ? cells : [])
-    .map((cell) => predictionLayerScore(cell))
-    .filter((score) => score > 0)
-    .sort((a, b) => b - a);
-  if (!scores.length) return 101;
-  const maxScore = scores[0];
-  if (maxScore < 16) return maxScore + 1;
-  const topShare = maxScore < 30 ? 0.16 : (maxScore < 45 ? 0.26 : 0.42);
-  const percentileIndex = Math.min(scores.length - 1, Math.max(0, Math.floor(scores.length * topShare)));
-  const percentileCut = scores[percentileIndex];
-  const spreadCut = maxScore - (maxScore < 30 ? 4.5 : (maxScore < 45 ? 8 : 14));
-  return Math.max(14, Math.min(maxScore - 0.8, Math.max(percentileCut, spreadCut)));
-}
-
-function predictionRiskAlpha(score, cutoff, maxScore) {
-  const s = clampScore(score);
-  if (s < cutoff) return 0;
-  const span = Math.max(1, maxScore - cutoff);
-  const t = Math.max(0, Math.min(1, (s - cutoff) / span));
-  const maxAlpha = maxScore < 30 ? 0.34 : (maxScore < 45 ? 0.48 : 0.68);
-  const minAlpha = maxScore < 30 ? 0.10 : 0.16;
-  return minAlpha + Math.pow(t, 0.78) * (maxAlpha - minAlpha);
-}
-
-function predictionVisualScore(score, cutoff, maxScore) {
-  const s = clampScore(score);
-  const span = Math.max(1, maxScore - cutoff);
-  const t = Math.max(0, Math.min(1, (s - cutoff) / span));
-  if (maxScore < 42) return 23 + t * 17;
-  if (maxScore < 64) return 42 + t * 20;
-  return Math.max(64, s);
-}
-
-function drawPredictionSoftBoundary(ctx, cells, project, cutoff, maxScore) {
-  const boundaryCells = cells.filter((cell) => Number(cell.smoothedScore || 0) >= cutoff);
-  if (!boundaryCells.length) return;
-  ctx.save();
-  boundaryCells.forEach((cell) => {
-    const visualScore = predictionVisualScore(cell.smoothedScore, cutoff, maxScore);
-    const [x, y] = project(cell.lon, cell.lat);
-    const radius = 58 + visualScore * 1.36;
-    const alpha = Math.min(0.16, predictionRiskAlpha(cell.smoothedScore, cutoff, maxScore) * 0.34);
-    const gradient = ctx.createRadialGradient(x, y, radius * 0.62, x, y, radius);
-    gradient.addColorStop(0, predictionBoundaryRgba(visualScore, 0));
-    gradient.addColorStop(0.72, predictionBoundaryRgba(visualScore, alpha));
-    gradient.addColorStop(1, predictionBoundaryRgba(visualScore, 0));
-    ctx.fillStyle = gradient;
-    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
-  });
-  ctx.restore();
 }
 
 function predictionFranceSvgPath(project) {
@@ -762,59 +690,6 @@ function predictionClosedBezierPath(points, tension = 0.82) {
   path.push('Z');
   return path.join(' ');
 }
-
-function predictionCellPatchMetrics(cell, project, level, index = 0) {
-  const lat = Number(cell.lat);
-  const lon = Number(cell.lon);
-  const [cx, cy] = project(lon, lat);
-  const halfW = Math.max(0.05, Number(cell.cellWidthDeg || cell.cell_width_deg || 0.16) / 2);
-  const halfH = Math.max(0.05, Number(cell.cellHeightDeg || cell.cell_height_deg || 0.16) / 2);
-  const [x2] = project(lon + halfW, lat);
-  const [, y2] = project(lon, lat + halfH);
-  const cellW = Math.abs(x2 - cx) * 2;
-  const cellH = Math.abs(y2 - cy) * 2;
-  const scoreLift = Math.max(0, predictionLayerScore(cell) - level.threshold);
-  const width = Math.max(24, (cellW + level.margin + scoreLift * 0.11) * level.expand);
-  const height = Math.max(22, (cellH + level.margin * 0.92 + scoreLift * 0.08) * level.expand);
-  const seed = Math.sin((lat * 37.13) + (lon * 91.77) + (index * 0.47)) * 10000;
-  const angle = 0;
-  return { cx, cy, width, height, angle, seed };
-}
-
-function predictionCellPatchPath(cell, project, level, index = 0) {
-  const { cx, cy, width, height, angle, seed } = predictionCellPatchMetrics(cell, project, level, index);
-  const cosA = Math.cos(angle);
-  const sinA = Math.sin(angle);
-  const points = [];
-  const steps = 20;
-  for (let step = 0; step < steps; step += 1) {
-    const theta = (Math.PI * 2 * step) / steps;
-    const c = Math.cos(theta);
-    const s = Math.sin(theta);
-    const superX = Math.sign(c) * Math.pow(Math.abs(c), 0.92);
-    const superY = Math.sign(s) * Math.pow(Math.abs(s), 0.92);
-    const ripple = 1 + Math.sin(theta * 2 + seed) * 0.004;
-    const x = superX * width * 0.5 * ripple;
-    const y = superY * height * 0.5 * ripple;
-    points.push([
-      cx + x * cosA - y * sinA,
-      cy + x * sinA + y * cosA,
-    ]);
-  }
-  return predictionClosedBezierPath(predictionCornerCutPoints(points, 1), 0.24);
-}
-
-function predictionPointInCellPatch(x, y, cell, project, level, index = 0) {
-  const { cx, cy, width, height, angle } = predictionCellPatchMetrics(cell, project, level, index);
-  const cosA = Math.cos(-angle);
-  const sinA = Math.sin(-angle);
-  const dx = x - cx;
-  const dy = y - cy;
-  const rx = (dx * cosA - dy * sinA) / Math.max(1, width * 0.52);
-  const ry = (dx * sinA + dy * cosA) / Math.max(1, height * 0.52);
-  return (Math.abs(rx) ** 2.55 + Math.abs(ry) ** 2.55) <= 1.0;
-}
-
 
 function predictionLayerCells(cells, threshold) {
   return (Array.isArray(cells) ? cells : []).filter((cell) => predictionLayerScore(cell) >= threshold);
@@ -1054,7 +929,6 @@ function predictionAreaEntrySummary(entry, topShare = 0.18) {
     temperature: entry.temperature.length ? Math.round(predictionMean(entry.temperature) * 10) / 10 : NaN,
     dewpoint: entry.dewpoint.length ? Math.round(predictionMean(entry.dewpoint) * 10) / 10 : NaN,
     gusts: entry.gusts.length ? Math.round(Math.max(...entry.gusts, 0)) : NaN,
-    clouds: entry.clouds.length ? Math.round(predictionMean(entry.clouds)) : NaN,
     hours,
   };
 }
@@ -1064,14 +938,13 @@ function predictionBuildAreaSummary(cells, areas, { topShare = 0.18 } = {}) {
   cells.forEach((cell) => {
     const area = predictionAreaForCell(cell, areas);
     if (!area) return;
-    const entry = map.get(area.name) || { name: area.name, cells: [], scores: [], cape: [], temperature: [], dewpoint: [], gusts: [], clouds: [], hours: [] };
+    const entry = map.get(area.name) || { name: area.name, cells: [], scores: [], cape: [], temperature: [], dewpoint: [], gusts: [], hours: [] };
     entry.cells.push(cell);
     entry.scores.push(predictionLayerScore(cell));
     if (Number.isFinite(cell.meanCape)) entry.cape.push(cell.meanCape);
     if (Number.isFinite(cell.meanTemperature)) entry.temperature.push(cell.meanTemperature);
     if (Number.isFinite(cell.meanDewpoint)) entry.dewpoint.push(cell.meanDewpoint);
     if (Number.isFinite(cell.maxGusts)) entry.gusts.push(cell.maxGusts);
-    if (Number.isFinite(cell.meanClouds)) entry.clouds.push(cell.meanClouds);
     entry.hours.push(...(cell.bestHours || []));
     map.set(area.name, entry);
   });
