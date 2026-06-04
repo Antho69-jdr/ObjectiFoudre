@@ -1,4 +1,4 @@
-const PREDICTION_IMAGE_RENDER_VERSION = 'iso-contour-atlas-v43';
+const PREDICTION_IMAGE_RENDER_VERSION = 'iso-contour-atlas-v53';
 
 const PREDICTION_IMAGE_CACHE = new Map();
 const PREDICTION_IMAGE_PREWARMING = new Set();
@@ -15,12 +15,12 @@ let selectedPredictionPeriodKey = 'day';
 let currentPredictionPageResult = null;
 
 const PREDICTION_RISK_LEVELS = Object.freeze([
-  { key: 'below-threshold', label: 'Sous seuil', range: '0-64', min: 0, color: '#e7edf1', stroke: '#586b7a', text: 'signal inférieur au seuil cartographié' },
-  { key: 'low', label: 'Faible', range: '65-74', min: 65, color: '#4da6b4', stroke: '#123a42', text: 'signal faible, à surveiller localement' },
-  { key: 'medium', label: 'Moyen', range: '75-84', min: 75, color: '#75a96d', stroke: '#253b25', text: 'signal moyen, environnement à suivre' },
-  { key: 'elevated', label: 'Élevé', range: '85-89', min: 85, color: '#bf7d57', stroke: '#482b1a', text: 'signal élevé à surveiller sérieusement' },
-  { key: 'very-high', label: 'Très élevé', range: '90-94', min: 90, color: '#bd5d66', stroke: '#4d1f27', text: 'signal très élevé, à contrôler finement' },
-  { key: 'certain', label: 'Certain', range: '95-100', min: 95, color: '#9a72c8', stroke: '#33224d', text: 'signal maximal ou quasi maximal' },
+  { key: 'below-threshold', label: 'Sous seuil', range: '0-59', min: 0, color: '#e7edf1', stroke: '#586b7a', text: 'signal inférieur au seuil cartographié' },
+  { key: 'low', label: 'Faible', range: '60-70', min: 60, color: '#4da6b4', stroke: '#123a42', text: 'signal faible, à surveiller localement' },
+  { key: 'medium', label: 'Moyen', range: '71-80', min: 71, color: '#75a96d', stroke: '#253b25', text: 'signal moyen, environnement à suivre' },
+  { key: 'elevated', label: 'Élevé', range: '81-89', min: 81, color: '#bf7d57', stroke: '#482b1a', text: 'signal élevé à surveiller sérieusement' },
+  { key: 'very-high', label: 'Très élevé', range: '90-95', min: 90, color: '#bd5d66', stroke: '#4d1f27', text: 'signal très élevé, à contrôler finement' },
+  { key: 'certain', label: 'Certain', range: '96-100', min: 96, color: '#9a72c8', stroke: '#33224d', text: 'signal maximal ou quasi maximal' },
 ]);
 
 function predictionPeriodConfig(periodKey = selectedPredictionPeriodKey) {
@@ -346,18 +346,17 @@ function collectPredictionDailyCells(day = getCurrentDay(), periodKey = 'day') {
     const topMean = predictionTopMean(entry.scores, topCount);
     const mean = predictionMean(entry.scores);
     const peak = Math.max(...entry.scores, 0);
-    const activeCount = entry.scores.filter((score) => score >= 65).length;
-    const watchCount = entry.scores.filter((score) => score >= 45).length;
+    const activeCount = entry.scores.filter((score) => score >= 60).length;
     const confidenceMean = predictionMean(entry.confidence);
-    // Score journalier agrégé d'une cellule sur la fenêtre 24 h (poids = 1.0) :
-    //  - topMean 0.58 : domine, reflète les meilleures heures (pic soutenu)
-    //  - mean 0.18 : tient compte du fond de la journée
-    //  - peak 0.18 : récompense un pic isolé fort
-    //  - watchCount 0.06 : léger bonus de persistance (heures ≥ 45)
-    let score = (topMean * 0.58) + (mean * 0.18) + (peak * 0.18) + (Math.min(100, watchCount * 14) * 0.06);
-    if (activeCount <= 0 && peak < 68) score = Math.min(score, 64);   // aucune heure active → reste sous seuil
-    if (activeCount === 1 && peak < 82) score = Math.min(score, peak - 2); // signal d'une seule heure → atténué
-    if (activeCount >= 3) score += Math.min(8, activeCount * 1.2);     // persistance multi-heures → bonus plafonné
+    // Score PIC-DOMINANT : une carte de RISQUE doit refléter le pic atteint dans la
+    // période (« quel est le pire moment ici ? »), pas une moyenne qui dilue les
+    // pics brefs avec les heures calmes. topMean (meilleures heures) robustifie
+    // contre un pic d'une seule heure isolée. Comme topMean ≤ pic, le score est
+    // toujours ≤ pic : une cellule ne se colore que si son pic est réellement élevé.
+    let score = (topMean * 0.65) + (peak * 0.35);
+    // Petit bonus de persistance : un orage soutenu (≥ 3 h cartographiées) est plus
+    // certain qu'un pic isolé.
+    if (activeCount >= 3) score += Math.min(4, activeCount * 0.8);
     // La confiance est déjà intégrée dans trigger_score (donc dans chaque score de
     // cellule) côté serveur — pas de ré-application ici. confidenceMean reste
     // calculé et exposé à titre diagnostique uniquement.
@@ -693,30 +692,76 @@ function predictionMedian(values) {
 }
 
 // Construit le champ scalaire en "peignant" chaque cellule comme un disque plat de
-// ~40 km à sa valeur (combinés par max). Pas de moyennage avec le vide (qui
-// écraserait le signal) : le score est préservé, les cellules voisines fusionnent,
-// et le contour iso épouse l'union des disques — d'où des zones rondes et fidèles.
-const PREDICTION_FIELD_RADIUS_KM = 55;
+// ~60 km à sa valeur (combinés par max), PUIS en floutant le tout. Le disque large
+// est un plateau robuste : le flou n'efface pas le signal mais arrondit ses bords,
+// de sorte que le contour iso devient un ovale lisse façon atlas météo — au lieu de
+// suivre les bords durs des disques (effet "carrés arrondis" à la résolution
+// cellule). Les clusters réels survivent ; les cellules isolées limites s'effacent
+// (bon filtrage de bruit, renforcé par le seuil d'aire des contours).
+const PREDICTION_FIELD_RADIUS_KM = 60;
+const PREDICTION_FIELD_SMOOTH_PASSES = 3;
+// Subdivision : la grille de CONTOUR est plus fine que le maillage des données
+// (15 km). On découple les deux : le champ reste dérivé du 15 km, mais on le trace
+// sur une grille ~7,5 km → le contour a 2× plus de sommets, donc des courbes bien
+// plus fluides et organiques (formes moins « chunky » à la résolution cellule).
+const PREDICTION_FIELD_SUBDIV = 2;
+// Masse minimale d'une zone : nombre de cellules réellement ≥ seuil qu'un contour
+// doit contenir pour être dessiné. En-dessous, c'est une tache isolée non
+// significative — un prévisionniste ne dessinerait jamais de zone autour. C'est ce
+// critère (et non le rayon) qui distingue une zone d'orages cohérente d'un point.
+const PREDICTION_MIN_ZONE_CELLS = 4;
+
+function predictionGridBlur(grid, rows, cols, passes) {
+  let src = grid;
+  for (let p = 0; p < passes; p += 1) {
+    const dst = Array.from({ length: rows }, () => new Float64Array(cols));
+    for (let j = 0; j < rows; j += 1) {
+      for (let i = 0; i < cols; i += 1) {
+        let sum = 0;
+        let n = 0;
+        for (let dj = -1; dj <= 1; dj += 1) {
+          for (let di = -1; di <= 1; di += 1) {
+            const jj = j + dj;
+            const ii = i + di;
+            if (jj < 0 || jj >= rows || ii < 0 || ii >= cols) continue;
+            sum += src[jj][ii];
+            n += 1;
+          }
+        }
+        dst[j][i] = n ? sum / n : 0;
+      }
+    }
+    src = dst;
+  }
+  return src;
+}
 
 function predictionBuildScalarField(cells) {
   const b = predictionBounds();
   const cellW = predictionMedian(cells.map((c) => Number(c.cellWidthDeg || c.cell_width_deg))) || 0.16;
   const cellH = predictionMedian(cells.map((c) => Number(c.cellHeightDeg || c.cell_height_deg))) || 0.16;
-  const radiusNodes = Math.max(1.4, PREDICTION_FIELD_RADIUS_KM / (cellH * 111));
+  // Pas de la grille de contour = pas des données / subdivision (grille plus fine).
+  const stepW = cellW / PREDICTION_FIELD_SUBDIV;
+  const stepH = cellH / PREDICTION_FIELD_SUBDIV;
+  const radiusNodes = Math.max(1.4, PREDICTION_FIELD_RADIUS_KM / (stepH * 111));
   const reach = Math.ceil(radiusNodes);
-  // Bordure de zéros (padding ≥ portée des disques) : garantit qu'aucune zone ne
-  // touche le bord de la grille, donc tout contour se referme à l'intérieur. Sans
+  // À grille plus fine, on multiplie les passes de flou par SUBDIV² pour conserver
+  // le MÊME lissage en km (un flou de N nœuds couvre N×pas, donc moins de km si le
+  // pas rétrécit).
+  const blurPasses = PREDICTION_FIELD_SMOOTH_PASSES * PREDICTION_FIELD_SUBDIV * PREDICTION_FIELD_SUBDIV;
+  // Bordure de zéros (padding ≥ portée des disques + flou) : garantit qu'aucune zone
+  // ne touche le bord de la grille, donc tout contour se referme à l'intérieur. Sans
   // ça, une zone atteignant le nord de la France (~51,2°N = bord) restait ouverte
   // et était jetée → carte vide sur la journée entière.
-  const pad = reach + 1;
-  const cols = Math.max(2, Math.round((b.maxLon - b.minLon) / cellW) + 1) + pad * 2;
-  const rows = Math.max(2, Math.round((b.maxLat - b.minLat) / cellH) + 1) + pad * 2;
-  const grid = Array.from({ length: rows }, () => new Float64Array(cols));
+  const pad = reach + blurPasses + 1;
+  const cols = Math.max(2, Math.round((b.maxLon - b.minLon) / stepW) + 1) + pad * 2;
+  const rows = Math.max(2, Math.round((b.maxLat - b.minLat) / stepH) + 1) + pad * 2;
+  let grid = Array.from({ length: rows }, () => new Float64Array(cols));
   cells.forEach((cell) => {
     const cs = predictionLayerScore(cell);
     if (cs <= 0) return;
-    const ci = Math.round((Number(cell.lon) - b.minLon) / cellW) + pad;
-    const cj = Math.round((Number(cell.lat) - b.minLat) / cellH) + pad;
+    const ci = Math.round((Number(cell.lon) - b.minLon) / stepW) + pad;
+    const cj = Math.round((Number(cell.lat) - b.minLat) / stepH) + pad;
     for (let dj = -reach; dj <= reach; dj += 1) {
       for (let di = -reach; di <= reach; di += 1) {
         const i = ci + di;
@@ -727,7 +772,10 @@ function predictionBuildScalarField(cells) {
       }
     }
   });
-  return { grid, rows, cols, minLon: b.minLon, minLat: b.minLat, cellW, cellH, pad };
+  grid = predictionGridBlur(grid, rows, cols, blurPasses);
+  // On renvoie le PAS fin comme cellW/cellH : tout le reste (contour→lon/lat,
+  // comptage de cellules) projette correctement depuis ce pas.
+  return { grid, rows, cols, minLon: b.minLon, minLat: b.minLat, cellW: stepW, cellH: stepH, pad };
 }
 
 // Marching squares → anneaux fermés (points en coordonnées de grille fractionnaires).
@@ -859,7 +907,7 @@ function predictionRingContains(ring, pt) {
   return inside;
 }
 
-function predictionContourLevelMarkup(field, project, level) {
+function predictionContourLevelMarkup(field, project, level, cells) {
   let rings = predictionMarchingSquaresRings(field, level.threshold)
     // anti-bruit : ignore les contours minuscules (< ~1,4 cellule de grille)
     .filter((ring) => predictionPolygonArea(ring) >= 1.4);
@@ -869,6 +917,34 @@ function predictionContourLevelMarkup(field, project, level) {
   const areas = rings.map(predictionPolygonArea);
   const centroids = rings.map(predictionRingCentroidPt);
   rings = rings.filter((ring, idx) => !rings.some((other, k) => k !== idx && areas[k] > areas[idx] && predictionRingContains(other, centroids[idx])));
+  // Critère de signifiance (logique prévisionniste) : une zone n'est dessinée que si
+  // elle contient au moins PREDICTION_MIN_ZONE_CELLS cellules réellement ≥ seuil.
+  // En-dessous, c'est une tache isolée non significative — on ne la dessine pas.
+  const sigPts = (Array.isArray(cells) ? cells : [])
+    .filter((c) => predictionLayerScore(c) >= level.threshold)
+    .map((c) => [(Number(c.lon) - field.minLon) / field.cellW + field.pad, (Number(c.lat) - field.minLat) / field.cellH + field.pad]);
+  rings = rings.filter((ring) => {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const p of ring) {
+      if (p[0] < minX) minX = p[0];
+      if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1];
+      if (p[1] > maxY) maxY = p[1];
+    }
+    let count = 0;
+    for (const s of sigPts) {
+      if (s[0] < minX || s[0] > maxX || s[1] < minY || s[1] > maxY) continue;
+      if (predictionRingContains(ring, s)) {
+        count += 1;
+        if (count >= PREDICTION_MIN_ZONE_CELLS) return true;
+      }
+    }
+    return false;
+  });
+  if (!rings.length) return '';
   const paths = rings.map((ring) => {
     const smoothed = predictionChaikinClosed(ring, 3);
     const projected = smoothed.map(([gi, gj]) => project(field.minLon + (gi - field.pad) * field.cellW, field.minLat + (gj - field.pad) * field.cellH));
@@ -892,7 +968,7 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
     : (typeof formatTimelineDateLabel === 'function' ? formatTimelineDateLabel(predictionDayKey(day)) : predictionDayKey(day));
   const levels = predictionLevelConfigs(cells);
   const field = predictionBuildScalarField(cells);
-  const shapeMarkup = levels.map((level) => predictionContourLevelMarkup(field, project, level)).join('');
+  const shapeMarkup = levels.map((level) => predictionContourLevelMarkup(field, project, level, cells)).join('');
   const adminMarkup = predictionAdminLineMarkup(project);
   const regionBoundaryMarkup = predictionRegionBoundaryMarkup(project);
   const isMobileSvg = predictionLegendVariant() === 'm';
@@ -1031,7 +1107,7 @@ function predictionBuildSectorSummary(cells) {
 
 function predictionBuildSectorHtml(sectors, periodText) {
   if (!sectors.length) return '';
-  const active = sectors.filter((area) => area.score >= 65).slice(0, 5);
+  const active = sectors.filter((area) => area.score >= 60).slice(0, 5);
   if (!active.length) {
     return `<p><strong>Secteurs</strong> : signal très faible sur ${periodText}. Les meilleurs signaux restent ${sectors.slice(0, 4).map(predictionAreaBrief).join(', ')}.</p>`;
   }
@@ -1061,7 +1137,7 @@ function predictionBuildAnalysisHtml(day, cells, periodKey = selectedPredictionP
   const activeLevel = predictionRiskLevel(maxScore);
   const baseDateText = typeof formatTimelineDateLabel === 'function' ? formatTimelineDateLabel(predictionDayKey(day)) : predictionDayKey(day);
   const dateText = period.key === 'day' ? predictionWindowDateLabel(day) : baseDateText;
-  const activeSectors = sectors.filter((area) => area.score >= 65).slice(0, 4);
+  const activeSectors = sectors.filter((area) => area.score >= 60).slice(0, 4);
   const quietText = !activeSectors.length
     ? 'Aucun secteur ne dépasse le seuil cartographié. La carte reste en fond très faible.'
     : activeSectors.map((area) => {
@@ -1073,7 +1149,6 @@ function predictionBuildAnalysisHtml(day, cells, periodKey = selectedPredictionP
             <span>${predictionEscapeXml(predictionHoursText(area.hours))}</span>
             ${ingredients ? `<em>${predictionEscapeXml(ingredients)}</em>` : ''}
           </div>
-          <b>${Math.round(area.score)}</b>
         </div>`;
       }).join('');
   return `<div class="prediction-summary-hero" style="--risk-color:${activeLevel.color};--risk-stroke:${activeLevel.stroke}">
@@ -1082,7 +1157,6 @@ function predictionBuildAnalysisHtml(day, cells, periodKey = selectedPredictionP
       <strong>${predictionEscapeXml(activeLevel.label)}</strong>
       <em>${predictionEscapeXml(activeLevel.text)}</em>
     </div>
-    <b>${maxScore}<small>/100</small></b>
   </div>
   <div class="prediction-analysis-block">
     <div class="prediction-analysis-block-title">Zones à surveiller</div>
@@ -1490,7 +1564,7 @@ function predictionDownloadFilename(result = currentPredictionPageResult) {
 }
 
 function predictionExportLegendLevels() {
-  return PREDICTION_RISK_LEVELS.filter((level) => Number(level.min) >= 65);
+  return PREDICTION_RISK_LEVELS.filter((level) => Number(level.min) >= 60);
 }
 
 function predictionLoadImage(src) {
@@ -1559,7 +1633,7 @@ function predictionExportSummary(result) {
   const level = predictionRiskLevel(maxScore);
   const sectors = predictionBuildSectorSummary(cells);
   const lead = sectors[0] || null;
-  const watchSectors = sectors.filter((area) => area.score >= 65).slice(0, 4);
+  const watchSectors = sectors.filter((area) => area.score >= 60).slice(0, 4);
   return { period, titleDate, maxScore, level, sectors, lead, watchSectors };
 }
 
