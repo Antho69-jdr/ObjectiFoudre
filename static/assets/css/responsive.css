@@ -4479,3 +4479,24 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
   }
 }
+
+/* Page prédiction / historique en PLEIN ÉCRAN sur desktop + tablette (>= 768px).
+   Le mobile (< 768px) est déjà plein écran plus haut et est de toute façon bloqué.
+   Sélecteur par ID (1,1,0) + !important pour gagner sur les multiples règles
+   .prediction-page-shell de components.css. */
+@media (min-width: 768px) {
+  #predictionPage.prediction-page,
+  #historyPage.prediction-page {
+    padding: 0 !important;
+    place-items: stretch !important;
+  }
+  #predictionPage .prediction-page-shell,
+  #historyPage .prediction-page-shell {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    border-width: 0 !important;
+  }
+}
