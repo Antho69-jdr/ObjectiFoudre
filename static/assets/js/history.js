@@ -1,9 +1,8 @@
 // Écran Historique — vue dédiée, séparée de la carte temps réel.
-// Réutilise le moteur de rendu iso-contours de storm-forecast-image.js
-// (fonctions globales : collectPredictionDailyCells / smoothPredictionCells /
-// drawPredictionImage / predictionBuildAnalysisHtml / predictionPeriodConfig /
-// predictionLayerScore), mais alimenté par /api/history/* — aucun couplage avec
-// selectedBaseDate ni le modèle de données live.
+// Rejoue une journée archivée en ANIMATION 24 h, façon export vidéo/GIF :
+// fond France + grille colorée, rendue en haute qualité puis encodée en frames
+// JPEG (légères) via le moteur global de controls.js (drawGridAnimationFrame).
+// Alimenté par /api/history/* — aucun couplage avec le modèle de données live.
 (function () {
   const historyPage = document.getElementById('historyPage');
   if (!historyPage) return;
@@ -11,16 +10,26 @@
   const openBtn = document.getElementById('historyPageBtn');
   const closeBtn = document.getElementById('historyPageCloseBtn');
   const dateListEl = document.getElementById('historyDateList');
-  const imageEl = document.getElementById('historyImage');
+  const frameEl = document.getElementById('historyFrame');
   const emptyHintEl = document.getElementById('historyEmptyHint');
+  const controlsEl = document.getElementById('historyPlayerControls');
+  const playBtn = document.getElementById('historyPlayBtn');
+  const scrubber = document.getElementById('historyScrubber');
+  const hourLabel = document.getElementById('historyHourLabel');
+  const downloadBtn = document.getElementById('historyDownloadBtn');
   const analysisEl = document.getElementById('historyAnalysisText');
   const subtitleEl = document.getElementById('historyPageSubtitle');
   const titleEl = document.getElementById('historyPageTitle');
-  const periodButtons = Array.from(historyPage.querySelectorAll('[data-history-period]'));
 
-  let historyPeriodKey = 'day';
-  let historyDay = null;
+  const FRAME_SIZE = 1280;     // haute qualité
+  const JPEG_QUALITY = 0.9;    // léger mais net
+  const FRAME_MS = 420;        // ≈ 2,4 images/s
+
   let historyDate = null;
+  let frames = [];             // [{ slotKey, hour, dataUrl }]
+  let frameIndex = 0;
+  let playing = false;
+  let timer = null;
   let loadToken = 0;
 
   function formatDateLabel(iso) {
@@ -34,8 +43,14 @@
     }
   }
 
+  function hourText(hour) {
+    const value = Number.isFinite(hour) ? hour : 0;
+    return `${String(value).padStart(2, '0')}:00`;
+  }
+
   function setHint(message) {
-    if (imageEl) imageEl.hidden = true;
+    if (controlsEl) controlsEl.hidden = true;
+    if (frameEl) frameEl.hidden = true;
     if (emptyHintEl) { emptyHintEl.hidden = false; emptyHintEl.textContent = message; }
   }
 
@@ -54,7 +69,7 @@
     if (!dateListEl) return;
     if (!dates.length) {
       dateListEl.innerHTML = '<div class="history-dates-empty">Aucune date archivée pour l’instant.</div>';
-      historyDay = null;
+      frames = [];
       setHint('L’historique se remplira au fil des préchargements AROME.');
       if (analysisEl) analysisEl.textContent = 'Aucune grille archivée pour l’instant.';
       return;
@@ -92,6 +107,7 @@
   async function selectDate(date) {
     historyDate = date;
     highlightActiveDate();
+    pause();
     const token = ++loadToken;
     setHint('Chargement de la grille archivée…');
     try {
@@ -100,81 +116,128 @@
       if (token !== loadToken) return;
       const day = data?.payload?.days?.[0] || null;
       if (!data?.ok || !day) {
-        historyDay = null;
+        frames = [];
         setHint(data?.message || 'Aucune grille archivée pour cette date.');
         if (analysisEl) analysisEl.textContent = data?.message || 'Aucune grille archivée pour cette date.';
         return;
       }
-      historyDay = day;
-      render();
-    } catch (_) {
+      setHint('Génération de l’animation haute qualité…');
+      const built = await buildFrames(day, token);
       if (token !== loadToken) return;
-      setHint('Erreur de chargement de l’historique.');
-    }
-  }
-
-  // Comme generatePredictionPageImage mais sans le verrou de complétude (08-08) :
-  // on rend ce qui est archivé, même pour une journée partielle.
-  function generateImage(day, periodKey) {
-    if (typeof collectPredictionDailyCells !== 'function' || typeof drawPredictionImage !== 'function') {
-      return { ok: false, message: 'Moteur de rendu indisponible.' };
-    }
-    const period = (typeof predictionPeriodConfig === 'function')
-      ? predictionPeriodConfig(periodKey)
-      : { key: periodKey, label: periodKey };
-    let cells = collectPredictionDailyCells(day, period.key);
-    if (typeof smoothPredictionCells === 'function') cells = smoothPredictionCells(cells);
-    if (!cells || !cells.length) {
-      return { ok: false, periodKey: period.key, periodLabel: period.label, message: `Aucune cellule archivée pour ${(period.label || '').toLowerCase()}.` };
-    }
-    const dataUrl = drawPredictionImage(day, cells, period.key);
-    const analysisHtml = (typeof predictionBuildAnalysisHtml === 'function') ? predictionBuildAnalysisHtml(day, cells, period.key) : '';
-    const maxScore = (typeof predictionLayerScore === 'function') ? Math.max(...cells.map((cell) => predictionLayerScore(cell)), 0) : 0;
-    return { ok: true, periodKey: period.key, periodLabel: period.label, dataUrl, analysisHtml, maxScore };
-  }
-
-  function render() {
-    updatePeriodTabs();
-    if (!historyDay) return;
-    const result = generateImage(historyDay, historyPeriodKey);
-    const dateText = historyDate ? formatDateLabel(historyDate) : '';
-    if (titleEl) {
-      titleEl.textContent = result.periodKey === 'day'
-        ? 'Historique · carte journalière'
-        : `Historique · ${result.periodLabel || ''}`;
-    }
-    if (subtitleEl) {
-      subtitleEl.textContent = result.ok
-        ? `${dateText} · max ${Math.round(result.maxScore)}/100`
-        : `${dateText} · ${result.message || ''}`;
-    }
-    if (result.ok && result.dataUrl) {
-      if (imageEl) {
-        imageEl.src = result.dataUrl;
-        imageEl.alt = `Carte de risque archivée ${dateText}`;
-        imageEl.hidden = false;
+      frames = built;
+      if (!frames.length) {
+        setHint('Aucune cellule exploitable pour cette journée.');
+        return;
       }
-      if (emptyHintEl) emptyHintEl.hidden = true;
-      if (analysisEl) analysisEl.innerHTML = result.analysisHtml || '';
-    } else {
-      setHint(result.message || 'Carte indisponible pour cette période.');
-      if (analysisEl) analysisEl.textContent = result.message || 'Carte indisponible pour cette période.';
+      setupPlayer(day);
+    } catch (_) {
+      if (token === loadToken) setHint('Erreur de chargement de l’historique.');
     }
   }
 
-  function updatePeriodTabs() {
-    periodButtons.forEach((btn) => {
-      const active = btn.dataset.historyPeriod === historyPeriodKey;
-      btn.classList.toggle('active', active);
-      btn.setAttribute('aria-selected', active ? 'true' : 'false');
-    });
+  // Rend chaque créneau via le moteur d'export (fond France + grille colorée +
+  // bandeau timeline) puis encode en JPEG. Cède la main toutes les 4 frames pour
+  // ne pas figer l'UI.
+  async function buildFrames(day, token) {
+    if (typeof drawGridAnimationFrame !== 'function') return [];
+    const slots = (typeof getRenderableSlots === 'function')
+      ? getRenderableSlots(day)
+      : (Array.isArray(day?.slots) ? day.slots : []);
+    if (!slots.length) return [];
+    const canvas = document.createElement('canvas');
+    canvas.width = FRAME_SIZE;
+    canvas.height = FRAME_SIZE;
+    const ctx = canvas.getContext('2d');
+    const out = [];
+    for (let i = 0; i < slots.length; i += 1) {
+      try {
+        drawGridAnimationFrame(ctx, slots[i], day, i, slots.length, slots);
+      } catch (_) {
+        continue;
+      }
+      out.push({
+        slotKey: slots[i].slot_key,
+        hour: (typeof gifSlotHour === 'function') ? gifSlotHour(slots[i], i) : i,
+        dataUrl: canvas.toDataURL('image/jpeg', JPEG_QUALITY),
+      });
+      if ((i & 3) === 3) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        if (token !== loadToken) return [];
+      }
+    }
+    return out;
   }
 
-  periodButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      historyPeriodKey = btn.dataset.historyPeriod || 'day';
-      render();
-    });
+  function setupPlayer(day) {
+    frameIndex = 0;
+    if (scrubber) { scrubber.min = 0; scrubber.max = Math.max(0, frames.length - 1); scrubber.value = 0; }
+    if (controlsEl) controlsEl.hidden = false;
+    if (emptyHintEl) emptyHintEl.hidden = true;
+    if (frameEl) frameEl.hidden = false;
+    if (titleEl) titleEl.textContent = 'Historique · animation 24 h';
+    if (subtitleEl) {
+      const fps = (1000 / FRAME_MS).toFixed(1);
+      subtitleEl.textContent = `${historyDate ? formatDateLabel(historyDate) : ''} · ${frames.length} h animées · ${fps} img/s`;
+    }
+    renderAnalysis(day);
+    showFrame(0);
+    play();
+  }
+
+  function showFrame(index) {
+    if (!frames.length) return;
+    frameIndex = ((index % frames.length) + frames.length) % frames.length;
+    const frame = frames[frameIndex];
+    if (frameEl && frame) {
+      frameEl.src = frame.dataUrl;
+      frameEl.alt = `Grille ${historyDate || ''} à ${hourText(frame.hour)}`;
+    }
+    if (scrubber) scrubber.value = String(frameIndex);
+    if (hourLabel && frame) hourLabel.textContent = hourText(frame.hour);
+  }
+
+  function tick() {
+    showFrame(frameIndex + 1);
+  }
+
+  function play() {
+    if (playing || frames.length < 2) return;
+    playing = true;
+    if (playBtn) { playBtn.textContent = '⏸'; playBtn.setAttribute('aria-label', 'Pause'); }
+    timer = window.setInterval(tick, FRAME_MS);
+  }
+
+  function pause() {
+    playing = false;
+    if (playBtn) { playBtn.textContent = '▶'; playBtn.setAttribute('aria-label', 'Lecture'); }
+    if (timer) { window.clearInterval(timer); timer = null; }
+  }
+
+  // Synthèse textuelle de la journée (réutilise le résumé iso-contours « jour »).
+  function renderAnalysis(day) {
+    if (!analysisEl) return;
+    try {
+      if (typeof collectPredictionDailyCells === 'function' && typeof predictionBuildAnalysisHtml === 'function') {
+        let cells = collectPredictionDailyCells(day, 'day');
+        if (typeof smoothPredictionCells === 'function') cells = smoothPredictionCells(cells);
+        analysisEl.innerHTML = cells.length
+          ? predictionBuildAnalysisHtml(day, cells, 'day')
+          : 'Pas de synthèse disponible pour cette journée.';
+      }
+    } catch (_) {
+      analysisEl.textContent = 'Synthèse indisponible.';
+    }
+  }
+
+  if (playBtn) playBtn.addEventListener('click', () => (playing ? pause() : play()));
+  if (scrubber) scrubber.addEventListener('input', () => { pause(); showFrame(Number(scrubber.value) || 0); });
+  if (downloadBtn) downloadBtn.addEventListener('click', () => {
+    const frame = frames[frameIndex];
+    if (!frame) return;
+    const link = document.createElement('a');
+    link.href = frame.dataUrl;
+    link.download = `objectifoudre-historique-${historyDate || ''}-${String(frame.hour).padStart(2, '0')}h.jpg`;
+    link.click();
   });
 
   function openHistoryPage() {
@@ -186,6 +249,7 @@
   function closeHistoryPage() {
     historyPage.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('history-open');
+    pause();
   }
 
   if (openBtn) openBtn.addEventListener('click', openHistoryPage);

@@ -371,16 +371,10 @@
           <div>
             <div class="prediction-eyebrow">Archive des prévisions</div>
             <h2 id="historyPageTitle">Historique des grilles</h2>
-            <p id="historyPageSubtitle">Choisis une date archivée pour revoir sa carte de risque.</p>
+            <p id="historyPageSubtitle">Choisis une date archivée pour rejouer sa journée en animation.</p>
           </div>
           <div class="prediction-page-actions">
             <button class="icon-btn prediction-close-btn" id="historyPageCloseBtn" aria-label="Fermer">×</button>
-          </div>
-          <div class="prediction-period-tabs" id="historyPeriodTabs" role="tablist" aria-label="Période de prévision">
-            <button class="prediction-period-tab history-period-tab active" type="button" role="tab" aria-selected="true" data-history-period="day">Journée 08-08</button>
-            <button class="prediction-period-tab history-period-tab" type="button" role="tab" aria-selected="false" data-history-period="morning">Matinée</button>
-            <button class="prediction-period-tab history-period-tab" type="button" role="tab" aria-selected="false" data-history-period="afternoon">Après-midi</button>
-            <button class="prediction-period-tab history-period-tab" type="button" role="tab" aria-selected="false" data-history-period="evening">Soirée / nuit</button>
           </div>
         </header>
         <div class="prediction-page-body history-page-body">
@@ -390,12 +384,18 @@
               <div class="history-dates-empty">Chargement…</div>
             </div>
           </aside>
-          <div class="prediction-map-panel">
-            <img id="historyImage" class="prediction-image" alt="Carte de risque historique" hidden />
+          <div class="prediction-map-panel history-player">
+            <img id="historyFrame" class="history-frame" alt="Animation de la journée archivée" hidden />
             <div class="history-empty-hint" id="historyEmptyHint">Sélectionne une date à gauche.</div>
+            <div class="history-player-controls" id="historyPlayerControls" hidden>
+              <button class="history-play-btn" id="historyPlayBtn" type="button" aria-label="Lecture">▶</button>
+              <input class="history-scrubber" id="historyScrubber" type="range" min="0" max="23" value="0" step="1" aria-label="Heure" />
+              <span class="history-hour-label" id="historyHourLabel">00:00</span>
+              <button class="history-download-btn" id="historyDownloadBtn" type="button" aria-label="Télécharger l'image (JPG)" title="Télécharger l'image (JPG)">⤓</button>
+            </div>
           </div>
           <aside class="prediction-analysis-panel">
-            <div class="prediction-analysis-title">Synthèse de la prévision</div>
+            <div class="prediction-analysis-title">Synthèse de la journée</div>
             <div id="historyAnalysisText" class="prediction-analysis-text">La synthèse s'affichera après le choix d'une date.</div>
           </aside>
         </div>
@@ -413,7 +413,6 @@
   <script src="/assets/js/grid-core.js?v=1.1.111"></script>
   <script src="/assets/js/france-admin-lines.js?v=1.1.111"></script>
   <script src="/assets/js/storm-forecast-image.js?v=1.1.111"></script>
-  <script src="/assets/js/history.js?v=1.1.111"></script>
   <script src="/assets/js/grid-layers.js?v=1.1.111"></script>
   <script src="/assets/js/grid.js?v=1.1.111"></script>
   <script src="/assets/js/metric-data.js?v=1.1.111"></script>
@@ -423,6 +422,7 @@
   <script src="/assets/js/services.js?v=1.1.111"></script>
   <script src="/assets/js/search-autocomplete.js?v=1.1.111"></script>
   <script src="/assets/js/controls.js?v=1.1.111"></script>
+  <script src="/assets/js/history.js?v=1.1.111"></script>
   <script src="/assets/js/bootstrap.js?v=1.1.111"></script>
   <script src="/assets/js/mobile-block.js?v=1.1.111"></script>
 </body>
