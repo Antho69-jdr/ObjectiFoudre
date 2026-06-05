@@ -17,6 +17,7 @@
   const scrubber = document.getElementById('historyScrubber');
   const hourLabel = document.getElementById('historyHourLabel');
   const downloadBtn = document.getElementById('historyDownloadBtn');
+  const flashBtn = document.getElementById('historyFlashBtn');
   const analysisEl = document.getElementById('historyAnalysisText');
   const verifEl = document.getElementById('historyVerification');
   const subtitleEl = document.getElementById('historyPageSubtitle');
@@ -32,7 +33,10 @@
   let playing = false;
   let timer = null;
   let loadToken = 0;
-  const framesByDate = new Map(); // cache des frames générées, par date
+  const framesByDate = new Map(); // cache des frames générées, par (date, overlay)
+  let showFlashes = false;        // overlay des impacts de foudre observés
+  let dayFlashPoints = [];        // points [lat, lon] de la date courante
+  let flashPointsDate = null;
 
   function formatDateLabel(iso) {
     try {
@@ -134,8 +138,12 @@
     pause();
     const token = ++loadToken;
     loadVerification(date);  // indépendant de la génération de l'animation
-    // Frames 4K déjà générées pour cette date -> réaffichage instantané.
-    const cached = framesByDate.get(date);
+    // les points de foudre doivent être prêts AVANT de cuire l'overlay dans les frames
+    if (showFlashes) { await ensureFlashPoints(date); if (token !== loadToken) return; }
+    else { ensureFlashPoints(date); }
+    // Frames 4K déjà générées pour cette (date, overlay) -> réaffichage instantané.
+    const cacheKey = `${date}|${showFlashes ? 'f' : 'n'}`;
+    const cached = framesByDate.get(cacheKey);
     if (cached && cached.frames.length) {
       frames = cached.frames;
       setupPlayer(cached.analysisHtml);
@@ -160,8 +168,8 @@
         return;
       }
       const analysisHtml = computeAnalysisHtml(day);
-      framesByDate.set(date, { frames: built, analysisHtml });
-      while (framesByDate.size > 3) framesByDate.delete(framesByDate.keys().next().value);
+      framesByDate.set(cacheKey, { frames: built, analysisHtml });
+      while (framesByDate.size > 6) framesByDate.delete(framesByDate.keys().next().value);
       setupPlayer(analysisHtml);
     } catch (_) {
       if (token === loadToken) setHint('Erreur de chargement de l’historique.');
@@ -187,6 +195,7 @@
     for (let i = 0; i < slots.length; i += 1) {
       try {
         drawGridAnimationFrame(ctx, slots[i], day, i, slots.length, slots);
+        if (showFlashes && dayFlashPoints.length) drawFlashOverlay(ctx);
       } catch (_) {
         continue;
       }
@@ -342,6 +351,61 @@
     }
   }
 
+  // --- Overlay des impacts de foudre observés (MTG-LI) sur la carte ---
+  async function ensureFlashPoints(date) {
+    if (flashPointsDate === date) return;
+    flashPointsDate = date;
+    dayFlashPoints = [];
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(`/api/history/lightning?date=${encodeURIComponent(date)}`, { signal: controller.signal });
+      const data = await response.json().catch(() => ({}));
+      if (flashPointsDate === date && data && data.ok && Array.isArray(data.points)) {
+        dayFlashPoints = data.points;
+      }
+    } catch (_) { /* timeout/abort : overlay vide, on ne bloque pas le build */ }
+    finally { window.clearTimeout(timer); }
+  }
+
+  // Dessine les impacts sur le canvas d'une frame, en réutilisant EXACTEMENT la
+  // projection France du moteur GIF (mêmes marges que drawGridAnimationFrame).
+  function drawFlashOverlay(ctx) {
+    if (typeof buildGifFranceProjection !== 'function') return;
+    const W = ctx.canvas.width;
+    const H = ctx.canvas.height;
+    const top = Math.round(H * 0.082);
+    const bottom = Math.round(H * 0.17);
+    const side = Math.round(W * 0.03);
+    const mapRect = { left: side, top, width: W - side * 2, height: H - top - bottom };
+    const proj = buildGifFranceProjection(mapRect);
+    if (!proj || typeof proj.project !== 'function') return;
+    const core = Math.max(1.5, W / 900);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(mapRect.left, mapRect.top, mapRect.width, mapRect.height);
+    ctx.clip();
+    for (const pt of dayFlashPoints) {
+      const p = proj.project(pt[1], pt[0]); // project(lon, lat), pt = [lat, lon]
+      if (!p) continue;
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255, 214, 64, 0.30)';
+      ctx.arc(p.x, p.y, core * 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255, 248, 205, 0.95)';
+      ctx.arc(p.x, p.y, core, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function updateFlashBtn() {
+    if (!flashBtn) return;
+    flashBtn.classList.toggle('active', showFlashes);
+    flashBtn.setAttribute('aria-pressed', showFlashes ? 'true' : 'false');
+  }
+
   if (playBtn) playBtn.addEventListener('click', () => (playing ? pause() : play()));
   if (scrubber) scrubber.addEventListener('input', () => { pause(); showFrame(Number(scrubber.value) || 0); });
   if (downloadBtn) downloadBtn.addEventListener('click', () => {
@@ -351,6 +415,12 @@
     link.href = frame.dataUrl;
     link.download = `objectifoudre-historique-${historyDate || ''}-${String(frame.hour).padStart(2, '0')}h.jpg`;
     link.click();
+  });
+
+  if (flashBtn) flashBtn.addEventListener('click', () => {
+    showFlashes = !showFlashes;
+    updateFlashBtn();
+    if (historyDate) selectDate(historyDate); // régénère les frames (avec/sans overlay, mis en cache)
   });
 
   function openHistoryPage() {

@@ -2837,6 +2837,13 @@ def _build_lightning_archive_for_date(
         return {"ok": False, "date": date_str, "reason": "no_forecast_archived"}
     per_cell = verification.bin_flashes_to_cells(flashes, cells)
     total = round(sum(per_cell.values()), 1)
+    # Points individuels pour la VISUALISATION (overlay des impacts sur la carte).
+    # Downsample si trop nombreux pour rester léger à transférer/dessiner.
+    points = [[round(float(f[0]), 3), round(float(f[1]), 3)] for f in flashes]
+    point_cap = 25000
+    if len(points) > point_cap:
+        step = (len(points) // point_cap) + 1
+        points = points[::step]
     record = {
         "schema": 1,
         "date": date_str,
@@ -2845,6 +2852,8 @@ def _build_lightning_archive_for_date(
         "flash_total": total,
         "touched_cells": len(per_cell),
         "flashes_per_cell": per_cell,
+        "points": points,
+        "point_count": len(points),
     }
     path = _lightning_archive_path(date_str)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -11811,6 +11820,24 @@ async def history_collect_lightning(date: str = Query(..., min_length=10, max_le
     if not _is_iso_date(date):
         raise HTTPException(status_code=400, detail="Date attendue au format AAAA-MM-JJ.")
     return await asyncio.to_thread(_build_lightning_archive_for_date, date)
+
+
+@app.get("/api/history/lightning")
+async def history_lightning(date: str = Query(..., min_length=10, max_length=10)) -> dict[str, Any]:
+    """Points de foudre observés (lat, lon) pour l'overlay sur la carte."""
+    if not _is_iso_date(date):
+        raise HTTPException(status_code=400, detail="Date attendue au format AAAA-MM-JJ.")
+    record = await asyncio.to_thread(_read_lightning_archive, date)
+    if not record:
+        return {"ok": False, "date": date, "reason": "no_observation", "points": []}
+    points = record.get("points") or []
+    return {
+        "ok": True,
+        "date": date,
+        "flash_total": record.get("flash_total"),
+        "count": record.get("point_count") or len(points),
+        "points": points,
+    }
 
 
 @app.post("/api/meteofrance/grib-slot-grid-cache")
