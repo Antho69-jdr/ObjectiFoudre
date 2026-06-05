@@ -133,16 +133,21 @@ def compute_verification(
         denom = total - expected
         hss = round((hits + correct_neg - expected) / denom, 3) if denom != 0 else None
 
+    # Trop peu d'orages observés -> le CSI est très bruité, score peu significatif.
+    low_signal = observed_cells < 5
     # Score de fidélité 0-100 : CSI quand il y a des orages ; cas particuliers sinon.
     if observed_cells == 0 and forecast_cells == 0:
         fidelity = 100
         label = "Journée calme correctement prévue"
     elif observed_cells == 0 and forecast_cells > 0:
         fidelity = 0
-        label = "Orages prévus mais aucun observé (fausses alertes)"
+        label = "Calme observé, quelques zones prévues à tort"
     elif csi is None:
         fidelity = None
         label = "Indéterminé"
+    elif low_signal:
+        fidelity = round(csi * 100)
+        label = "Activité orageuse faible — score peu significatif"
     else:
         fidelity = round(csi * 100)
         if fidelity >= 70:
@@ -177,6 +182,7 @@ def compute_verification(
         },
         "fidelity": fidelity,
         "label": label,
+        "low_signal": low_signal,
     }
 
 

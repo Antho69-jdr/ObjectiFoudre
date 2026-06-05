@@ -2440,6 +2440,9 @@ def _archive_france_slot_grid(result: dict[str, Any]) -> None:
         _write_history_gzip(path, record)
         with _history_day_cache_lock:
             _history_day_bytes_cache.pop(date_str, None)
+        # la prévision du jour a changé -> caches dérivés obsolètes
+        _forecast_cells_cache.pop(date_str, None)
+        _verification_cache.pop(date_str, None)
         _prune_history_dirs()
     except Exception:
         pass
@@ -2610,9 +2613,18 @@ def _read_lightning_archive(date_str: str) -> dict[str, Any] | None:
         return None
 
 
+# Caches (invalidés quand un créneau prévu est archivé, ou la foudre re-collectée).
+_forecast_cells_cache: dict[str, list[dict[str, Any]]] = {}
+_verification_cache: dict[str, dict[str, Any]] = {}
+
+
 def _forecast_day_cells(date_str: str) -> list[dict[str, Any]]:
     """Cellules prévues du jour avec leur trigger_score MAX sur les 24 créneaux
-    (« a-t-on prévu un orage ici à un moment de la journée ? »)."""
+    (« a-t-on prévu un orage ici à un moment de la journée ? »). Mis en cache : la
+    décompression des 24 archives est coûteuse."""
+    cached = _forecast_cells_cache.get(date_str)
+    if cached is not None:
+        return cached
     day_payload = _get_history_france_day_sync(date_str, slim=True)
     if not day_payload.get("ok"):
         return []
@@ -2641,7 +2653,12 @@ def _forecast_day_cells(date_str: str) -> list[dict[str, Any]]:
                 }
             elif score > existing["trigger_score"]:
                 existing["trigger_score"] = score
-    return list(by_key.values())
+    cells = list(by_key.values())
+    if cells:
+        _forecast_cells_cache[date_str] = cells
+        while len(_forecast_cells_cache) > 8:
+            _forecast_cells_cache.pop(next(iter(_forecast_cells_cache)))
+    return cells
 
 
 _eumdac_token_state: dict[str, Any] = {"token": None, "exp": 0.0}
@@ -2808,6 +2825,10 @@ def _build_lightning_archive_for_date(
         flashes, status = _fetch_mtg_li_flashes_for_date(date_str)
         if flashes is None:
             return {"ok": False, "date": date_str, "reason": status}
+        if status == "no_products":
+            # aucune donnée d'observation (date future ou indisponible) : on n'écrit
+            # pas d'archive « 0 flash » qui fausserait la vérification.
+            return {"ok": False, "date": date_str, "reason": "no_products"}
         source = status if status != "ok" else source
     else:
         source = "injected"
@@ -2828,10 +2849,14 @@ def _build_lightning_archive_for_date(
     path = _lightning_archive_path(date_str)
     path.parent.mkdir(parents=True, exist_ok=True)
     _write_history_gzip(path, record)
+    _verification_cache.pop(date_str, None)  # la foudre a changé -> recalcul
     return {"ok": True, "date": date_str, "flash_total": total, "touched_cells": len(per_cell), "source": source}
 
 
 def _compute_day_verification(date_str: str) -> dict[str, Any]:
+    cached = _verification_cache.get(date_str)
+    if cached is not None:
+        return cached
     lightning = _read_lightning_archive(date_str)
     if not lightning:
         return {
@@ -2853,6 +2878,9 @@ def _compute_day_verification(date_str: str) -> dict[str, Any]:
     result["flash_total"] = lightning.get("flash_total")
     result["observation_source"] = lightning.get("source")
     result["observation_generated_at"] = lightning.get("generated_at")
+    _verification_cache[date_str] = result
+    while len(_verification_cache) > 16:
+        _verification_cache.pop(next(iter(_verification_cache)))
     return result
 
 
