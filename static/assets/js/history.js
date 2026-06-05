@@ -21,7 +21,7 @@
   const subtitleEl = document.getElementById('historyPageSubtitle');
   const titleEl = document.getElementById('historyPageTitle');
 
-  const FRAME_SIZE = 1280;     // haute qualité
+  const FRAME_SIZE = 3840;     // 4K (carré) — chaque frame est lourde à générer
   const JPEG_QUALITY = 0.9;    // léger mais net
   const FRAME_MS = 420;        // ≈ 2,4 images/s
 
@@ -31,6 +31,7 @@
   let playing = false;
   let timer = null;
   let loadToken = 0;
+  const framesByDate = new Map(); // cache des frames générées, par date
 
   function formatDateLabel(iso) {
     try {
@@ -131,6 +132,13 @@
     highlightActiveDate();
     pause();
     const token = ++loadToken;
+    // Frames 4K déjà générées pour cette date -> réaffichage instantané.
+    const cached = framesByDate.get(date);
+    if (cached && cached.frames.length) {
+      frames = cached.frames;
+      setupPlayer(cached.analysisHtml);
+      return;
+    }
     setHint('Chargement de la grille archivée…');
     try {
       const data = await fetchDay(date, token);
@@ -142,7 +150,6 @@
         if (analysisEl) analysisEl.textContent = data?.message || 'Aucune grille archivée pour cette date.';
         return;
       }
-      setHint('Génération de l’animation haute qualité…');
       const built = await buildFrames(day, token);
       if (token !== loadToken) return;
       frames = built;
@@ -150,15 +157,18 @@
         setHint('Aucune cellule exploitable pour cette journée.');
         return;
       }
-      setupPlayer(day);
+      const analysisHtml = computeAnalysisHtml(day);
+      framesByDate.set(date, { frames: built, analysisHtml });
+      while (framesByDate.size > 3) framesByDate.delete(framesByDate.keys().next().value);
+      setupPlayer(analysisHtml);
     } catch (_) {
       if (token === loadToken) setHint('Erreur de chargement de l’historique.');
     }
   }
 
   // Rend chaque créneau via le moteur d'export (fond France + grille colorée +
-  // bandeau timeline) puis encode en JPEG. Cède la main toutes les 4 frames pour
-  // ne pas figer l'UI.
+  // bandeau timeline) puis encode en JPEG 4K. Chaque frame est lourde : on affiche
+  // la progression et on cède la main à CHAQUE frame pour ne pas figer l'UI.
   async function buildFrames(day, token) {
     if (typeof drawGridAnimationFrame !== 'function') return [];
     const slots = (typeof getRenderableSlots === 'function')
@@ -170,6 +180,8 @@
     canvas.height = FRAME_SIZE;
     const ctx = canvas.getContext('2d');
     const out = [];
+    setHint(`Génération de l’animation 4K… 0/${slots.length}`);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     for (let i = 0; i < slots.length; i += 1) {
       try {
         drawGridAnimationFrame(ctx, slots[i], day, i, slots.length, slots);
@@ -181,15 +193,14 @@
         hour: (typeof gifSlotHour === 'function') ? gifSlotHour(slots[i], i) : i,
         dataUrl: canvas.toDataURL('image/jpeg', JPEG_QUALITY),
       });
-      if ((i & 3) === 3) {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        if (token !== loadToken) return [];
-      }
+      setHint(`Génération de l’animation 4K… ${out.length}/${slots.length}`);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      if (token !== loadToken) return [];
     }
     return out;
   }
 
-  function setupPlayer(day) {
+  function setupPlayer(analysisHtml) {
     frameIndex = 0;
     if (scrubber) { scrubber.min = 0; scrubber.max = Math.max(0, frames.length - 1); scrubber.value = 0; }
     if (controlsEl) controlsEl.hidden = false;
@@ -198,9 +209,9 @@
     if (titleEl) titleEl.textContent = 'Historique · animation 24 h';
     if (subtitleEl) {
       const fps = (1000 / FRAME_MS).toFixed(1);
-      subtitleEl.textContent = `${historyDate ? formatDateLabel(historyDate) : ''} · ${frames.length} h animées · ${fps} img/s`;
+      subtitleEl.textContent = `${historyDate ? formatDateLabel(historyDate) : ''} · ${frames.length} h animées · 4K · ${fps} img/s`;
     }
-    renderAnalysis(day);
+    if (analysisEl) analysisEl.innerHTML = analysisHtml || 'Pas de synthèse disponible pour cette journée.';
     showFrame(0);
     play();
   }
@@ -235,19 +246,16 @@
   }
 
   // Synthèse textuelle de la journée (réutilise le résumé iso-contours « jour »).
-  function renderAnalysis(day) {
-    if (!analysisEl) return;
+  // Retourne le HTML pour qu'il soit mis en cache avec les frames.
+  function computeAnalysisHtml(day) {
     try {
       if (typeof collectPredictionDailyCells === 'function' && typeof predictionBuildAnalysisHtml === 'function') {
         let cells = collectPredictionDailyCells(day, 'day');
         if (typeof smoothPredictionCells === 'function') cells = smoothPredictionCells(cells);
-        analysisEl.innerHTML = cells.length
-          ? predictionBuildAnalysisHtml(day, cells, 'day')
-          : 'Pas de synthèse disponible pour cette journée.';
+        if (cells.length) return predictionBuildAnalysisHtml(day, cells, 'day');
       }
-    } catch (_) {
-      analysisEl.textContent = 'Synthèse indisponible.';
-    }
+    } catch (_) { /* ignore */ }
+    return 'Pas de synthèse disponible pour cette journée.';
   }
 
   if (playBtn) playBtn.addEventListener('click', () => (playing ? pause() : play()));
