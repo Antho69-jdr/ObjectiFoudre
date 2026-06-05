@@ -32,7 +32,7 @@ from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -2339,6 +2339,11 @@ def _write_meteofrance_local_persistent_cache(namespace: str, key: str, payload:
 HISTORY_SCHEMA_VERSION = 1
 _history_last_prune_at = 0.0
 _history_prune_lock = threading.Lock()
+# Cache des réponses /api/history/day déjà sérialisées (date -> octets JSON slim).
+# Évite de re-décompresser 24 archives + re-sérialiser à chaque ouverture.
+# Invalidé pour une date dès qu'un nouveau créneau y est archivé.
+_history_day_bytes_cache: dict[str, bytes] = {}
+_history_day_cache_lock = threading.Lock()
 
 
 def _is_iso_date(value: Any) -> bool:
@@ -2422,6 +2427,8 @@ def _archive_france_slot_grid(result: dict[str, Any]) -> None:
             "payload": payload,
         }
         _write_history_gzip(path, record)
+        with _history_day_cache_lock:
+            _history_day_bytes_cache.pop(date_str, None)
         _prune_history_dirs()
     except Exception:
         pass
@@ -2451,6 +2458,36 @@ def _prune_history_dirs(now: float | None = None) -> None:
         pass
 
 
+# Champs conservés en mode « slim » : juste ce qu'il faut au rendu de la grille
+# colorée + une synthèse minimale. On écarte les gros objets imbriqués par cellule
+# (metrics_used, metric_scores, category_breakdown, diagnostics, summary…) qui
+# faisaient exploser la réponse à ~195 Mo. Les floats sont arrondis pour alléger.
+_HISTORY_SLIM_CELL_FIELDS = (
+    "zone", "lat", "lon", "cell_height_deg", "cell_width_deg",
+    "trigger_score", "confidence_score",
+    "mucape", "temp_c", "dewpoint_c", "wind_gusts_10m",
+    "source_provider",
+)
+
+
+def _history_round(value: Any) -> Any:
+    if isinstance(value, float):
+        return round(value, 3)
+    return value
+
+
+def _history_project_slot(slot: dict[str, Any]) -> dict[str, Any]:
+    cells = slot.get("cells")
+    if not isinstance(cells, list):
+        return slot
+    projected = {key: value for key, value in slot.items() if key != "cells"}
+    projected["cells"] = [
+        {field: _history_round(cell[field]) for field in _HISTORY_SLIM_CELL_FIELDS if field in cell}
+        for cell in cells if isinstance(cell, dict)
+    ]
+    return projected
+
+
 def _list_history_dates() -> list[dict[str, Any]]:
     base = OBJECTIFOUDRE_HISTORY_DIR / "france"
     out: list[dict[str, Any]] = []
@@ -2471,9 +2508,11 @@ def _list_history_dates() -> list[dict[str, Any]]:
     return out
 
 
-def _get_history_france_day_sync(date_str: str) -> dict[str, Any]:
+def _get_history_france_day_sync(date_str: str, slim: bool = True) -> dict[str, Any]:
     """Assemble an archived day from its per-slot files, in the same shape the
-    live grib-france-day-cache returns, so the existing grid renderer can show it."""
+    live grib-france-day-cache returns, so the existing grid renderer can show it.
+    `slim` (default) projects cells to render+summary fields only — the faithful
+    archive keeps everything, but the full day is ~195 Mo and must not be shipped."""
     slots: list[dict[str, Any]] = []
     cached_hours: list[int] = []
     missing_hours: list[int] = []
@@ -2493,7 +2532,7 @@ def _get_history_france_day_sync(date_str: str) -> dict[str, Any]:
         day_slots = day.get("slots") if isinstance(day, dict) else []
         slot = day_slots[0] if isinstance(day_slots, list) and day_slots else None
         if record and isinstance(slot, dict):
-            slots.append(slot)
+            slots.append(_history_project_slot(slot) if slim else slot)
             cached_hours.append(hour)
             if not first_meta:
                 first_meta = copy.deepcopy(payload.get("meta") if isinstance(payload.get("meta"), dict) else {})
@@ -11402,9 +11441,39 @@ async def meteofrance_grib_france_day_cache(payload: MeteoFranceGribCacheStatusR
     return result
 
 
+def _build_history_day_bytes(date_str: str) -> bytes:
+    """Build the slim day once, serialize to JSON bytes and memo-cache them, so
+    later opens are served instantly (no re-decompression / re-serialization)."""
+    payload = _get_history_france_day_sync(date_str, slim=True)
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    with _history_day_cache_lock:
+        _history_day_bytes_cache[date_str] = data
+        # borne mémoire : on ne garde que les dates récemment consultées
+        while len(_history_day_bytes_cache) > 12:
+            _history_day_bytes_cache.pop(next(iter(_history_day_bytes_cache)))
+    return data
+
+
+async def _warm_history_day(date_str: str) -> None:
+    try:
+        if date_str not in _history_day_bytes_cache:
+            await asyncio.to_thread(_build_history_day_bytes, date_str)
+    except Exception:
+        pass
+
+
 @app.get("/api/history/dates")
 async def history_dates() -> dict[str, Any]:
     dates = await asyncio.to_thread(_list_history_dates)
+    # Préchauffe en arrière-plan les caches des dates récentes : à l'ouverture de
+    # l'écran, /dates est appelé en premier ; le temps que l'utilisateur clique
+    # une date, sa réponse est déjà construite (sinon la 1re construction de ~4 s
+    # peut être affamée par les connexions navigateur durant un préchargement).
+    if OBJECTIFOUDRE_HISTORY_ENABLED:
+        for item in dates[:4]:
+            date_value = item.get("date")
+            if date_value:
+                asyncio.create_task(_warm_history_day(date_value))
     return {
         "ok": True,
         "enabled": OBJECTIFOUDRE_HISTORY_ENABLED,
@@ -11415,10 +11484,19 @@ async def history_dates() -> dict[str, Any]:
 
 
 @app.get("/api/history/day")
-async def history_day(date: str = Query(..., min_length=10, max_length=10)) -> dict[str, Any]:
+async def history_day(
+    date: str = Query(..., min_length=10, max_length=10),
+    full: bool = Query(False),
+) -> Response:
     if not _is_iso_date(date):
         raise HTTPException(status_code=400, detail="Date attendue au format AAAA-MM-JJ.")
-    return await asyncio.to_thread(_get_history_france_day_sync, date)
+    if full:
+        payload = await asyncio.to_thread(_get_history_france_day_sync, date, False)
+        return JSONResponse(payload)
+    cached = _history_day_bytes_cache.get(date)
+    if cached is None:
+        cached = await asyncio.to_thread(_build_history_day_bytes, date)
+    return Response(content=cached, media_type="application/json")
 
 
 @app.post("/api/meteofrance/grib-slot-grid-cache")

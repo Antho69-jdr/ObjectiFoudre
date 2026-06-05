@@ -104,6 +104,28 @@
     });
   }
 
+  // L'app live peut saturer les connexions du navigateur pendant un préchargement
+  // AROME : on borne chaque tentative et on réessaie (le cache serveur rend les
+  // retries quasi instantanés une fois une connexion obtenue).
+  async function fetchDay(date, token, attempt = 1) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch(`/api/history/day?date=${encodeURIComponent(date)}`, { signal: controller.signal });
+      window.clearTimeout(timer);
+      return await response.json().catch(() => ({}));
+    } catch (_) {
+      window.clearTimeout(timer);
+      if (token === loadToken && attempt < 4) {
+        setHint(`Chargement de la grille archivée… (tentative ${attempt + 1})`);
+        await new Promise((resolve) => window.setTimeout(resolve, 800));
+        if (token !== loadToken) return {};
+        return fetchDay(date, token, attempt + 1);
+      }
+      return {};
+    }
+  }
+
   async function selectDate(date) {
     historyDate = date;
     highlightActiveDate();
@@ -111,8 +133,7 @@
     const token = ++loadToken;
     setHint('Chargement de la grille archivée…');
     try {
-      const response = await fetch(`/api/history/day?date=${encodeURIComponent(date)}`);
-      const data = await response.json().catch(() => ({}));
+      const data = await fetchDay(date, token);
       if (token !== loadToken) return;
       const day = data?.payload?.days?.[0] || null;
       if (!data?.ok || !day) {

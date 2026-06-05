@@ -3852,6 +3852,9 @@ body.mobile-blocked #app {
   background: #050b14;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
+.history-player-controls[hidden] {
+  display: none;
+}
 .history-player-controls {
   display: flex;
   align-items: center;
