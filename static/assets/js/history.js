@@ -18,6 +18,7 @@
   const hourLabel = document.getElementById('historyHourLabel');
   const downloadBtn = document.getElementById('historyDownloadBtn');
   const analysisEl = document.getElementById('historyAnalysisText');
+  const verifEl = document.getElementById('historyVerification');
   const subtitleEl = document.getElementById('historyPageSubtitle');
   const titleEl = document.getElementById('historyPageTitle');
 
@@ -132,6 +133,7 @@
     highlightActiveDate();
     pause();
     const token = ++loadToken;
+    loadVerification(date);  // indépendant de la génération de l'animation
     // Frames 4K déjà générées pour cette date -> réaffichage instantané.
     const cached = framesByDate.get(date);
     if (cached && cached.frames.length) {
@@ -256,6 +258,88 @@
       }
     } catch (_) { /* ignore */ }
     return 'Pas de synthèse disponible pour cette journée.';
+  }
+
+  // --- Vérification prévision vs réalité (foudre MTG-LI observée) ---
+  let verifToken = 0;
+
+  function fidelityTone(data) {
+    if (!data || data.fidelity == null || data.low_signal) return 'muted';
+    const f = data.fidelity;
+    if (f >= 70) return 'good';
+    if (f >= 45) return 'ok';
+    if (f >= 20) return 'mid';
+    return 'low';
+  }
+
+  const asPct = (x) => (x == null ? '—' : `${Math.round(x * 100)} %`);
+  const asNum = (x) => (x == null ? '—' : x);
+
+  async function loadVerification(date) {
+    if (!verifEl) return;
+    const token = ++verifToken;
+    verifEl.innerHTML = '<div class="history-verif-empty">Calcul du score de vérification…</div>';
+    try {
+      const response = await fetch(`/api/history/verification?date=${encodeURIComponent(date)}`);
+      const data = await response.json().catch(() => ({}));
+      if (token !== verifToken || date !== historyDate) return;
+      renderVerification(data, date);
+    } catch (_) {
+      if (token === verifToken) verifEl.innerHTML = '<div class="history-verif-empty">Score indisponible.</div>';
+    }
+  }
+
+  function renderVerification(data, date) {
+    if (!verifEl) return;
+    if (!data || !data.ok) {
+      if (data && data.reason === 'no_observation') {
+        verifEl.innerHTML = '<div class="history-verif-empty">Pas encore de foudre observée archivée pour ce jour.</div>'
+          + '<button class="history-collect-btn" id="historyCollectBtn" type="button">Collecter la foudre observée (≈ 1 min)</button>';
+        const btn = document.getElementById('historyCollectBtn');
+        if (btn) btn.addEventListener('click', () => collectLightning(date));
+      } else {
+        verifEl.innerHTML = `<div class="history-verif-empty">${(data && data.message) || 'Score indisponible.'}</div>`;
+      }
+      return;
+    }
+    const tone = fidelityTone(data);
+    const c = data.contingency || {};
+    const s = data.scores || {};
+    const csi = s.csi == null ? '—' : Number(s.csi).toFixed(2);
+    verifEl.innerHTML = `
+      <div class="history-verif-score tone-${tone}">
+        <div class="history-verif-fidelity">${data.fidelity == null ? '—' : data.fidelity}<span>/100</span></div>
+        <div class="history-verif-label">${data.label || ''}</div>
+      </div>
+      <div class="history-verif-metrics">
+        <div><span>Détection (POD)</span><b>${asPct(s.pod)}</b></div>
+        <div><span>Précision</span><b>${asPct(s.success_ratio)}</b></div>
+        <div><span>Succès (CSI)</span><b>${csi}</b></div>
+      </div>
+      <div class="history-verif-counts">
+        <div><b>${asNum(data.forecast_cells)}</b><span>zones prévues</span></div>
+        <div><b>${asNum(data.observed_cells)}</b><span>zones observées</span></div>
+        <div><b>${asNum(data.flash_total)}</b><span>flashs</span></div>
+      </div>
+      <div class="history-verif-cont">✔ ${asNum(c.hits)} bonnes · ✘ ${asNum(c.misses)} ratées · ⚠ ${asNum(c.false_alarms)} fausses alertes</div>`;
+  }
+
+  async function collectLightning(date) {
+    if (!verifEl) return;
+    const token = ++verifToken;
+    verifEl.innerHTML = '<div class="history-verif-empty">Collecte de la foudre observée… (téléchargement satellite MTG-LI, ≈ 1 min)</div>';
+    try {
+      const response = await fetch(`/api/history/collect-lightning?date=${encodeURIComponent(date)}`, { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (token !== verifToken || date !== historyDate) return;
+      if (!data || !data.ok) {
+        verifEl.innerHTML = `<div class="history-verif-empty">Collecte impossible : ${(data && data.reason) || 'erreur'}.</div>`;
+        return;
+      }
+      loadVerification(date);
+    } catch (_) {
+      if (token === verifToken) verifEl.innerHTML = '<div class="history-verif-empty">Collecte impossible.</div>';
+    }
   }
 
   if (playBtn) playBtn.addEventListener('click', () => (playing ? pause() : play()));
