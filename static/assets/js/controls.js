@@ -761,10 +761,13 @@
         const h = Math.abs(se.y - nw.y);
         if (w <= 0 || h <= 0) continue;
         const score = Number(cell?.trigger_score ?? 0) || 0;
-        const rectX = Math.round(x);
-        const rectY = Math.round(y);
-        const rectW = Math.max(1, Math.round(x + w) - rectX);
-        const rectH = Math.max(1, Math.round(y + h) - rectY);
+        // Arrondi VERS L'EXTÉRIEUR (floor/ceil) : les cellules se chevauchent d'au
+        // plus 1px, ce qui supprime les coutures noires entre rangées dues au pas
+        // de latitude non uniforme (0.1351 vs 0.1352°).
+        const rectX = Math.floor(x);
+        const rectY = Math.floor(y);
+        const rectW = Math.max(1, Math.ceil(x + w) - rectX);
+        const rectH = Math.max(1, Math.ceil(y + h) - rectY);
         ctx.globalAlpha = 1;
         ctx.fillStyle = gifScoreColor(score);
         ctx.fillRect(rectX, rectY, rectW, rectH);
