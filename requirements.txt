@@ -2,3 +2,4 @@ fastapi==0.115.12
 uvicorn[standard]==0.34.2
 eccodes==2.47.0
 cfgrib==0.9.15.1
+h5py>=3.11

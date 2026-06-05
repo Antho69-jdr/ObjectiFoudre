@@ -11,9 +11,12 @@ import json
 import math
 import mimetypes
 import os
+import io
 import shutil
 import struct
+import tempfile
 import threading
+import zipfile
 import time
 import unicodedata
 import urllib.error
@@ -2641,20 +2644,156 @@ def _forecast_day_cells(date_str: str) -> list[dict[str, Any]]:
     return list(by_key.values())
 
 
+_eumdac_token_state: dict[str, Any] = {"token": None, "exp": 0.0}
+_eumdac_token_lock = threading.Lock()
+LI_FLASH_COLLECTION = "EO:EUM:DAT:0691"  # « LI Lightning Flashes - MTG - 0 degree »
+
+
+def _eumdac_token() -> str | None:
+    """Jeton OAuth EUMETSAT (client_credentials), mis en cache ~1 h."""
+    if not (EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET):
+        return None
+    with _eumdac_token_lock:
+        now = time.time()
+        if _eumdac_token_state["token"] and now < float(_eumdac_token_state["exp"]) - 60:
+            return _eumdac_token_state["token"]
+        auth = base64.b64encode(f"{EUMETSAT_CONSUMER_KEY}:{EUMETSAT_CONSUMER_SECRET}".encode()).decode()
+        req = urllib.request.Request(
+            "https://api.eumetsat.int/token",
+            data=b"grant_type=client_credentials",
+            headers={"Authorization": f"Basic {auth}", "Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        token = data.get("access_token")
+        _eumdac_token_state["token"] = token
+        _eumdac_token_state["exp"] = now + float(data.get("expires_in") or 3000)
+        return token
+
+
+def _eumdac_search_flash_links(date_str: str) -> list[str]:
+    """URLs de téléchargement des produits LI Flashes couvrant la journée UTC."""
+    token = _eumdac_token()
+    if not token:
+        return []
+    dtstart = f"{date_str}T00:00:00Z"
+    dtend = (Date.fromisoformat(date_str) + timedelta(days=1)).isoformat() + "T00:00:00Z"
+    links: list[str] = []
+    start_index = 0
+    for _ in range(40):  # garde-fou pagination (~144 produits/jour)
+        url = (
+            "https://api.eumetsat.int/data/search-products/1.0.0/os?format=json"
+            f"&pi={LI_FLASH_COLLECTION}&dtstart={dtstart}&dtend={dtend}"
+            f"&si={start_index}&c=100"
+        )
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        feats = payload.get("features", [])
+        for feat in feats:
+            data_links = (feat.get("properties", {}).get("links", {}) or {}).get("data") or []
+            if data_links and data_links[0].get("href"):
+                links.append(data_links[0]["href"])
+        total = int(payload.get("totalResults") or 0)
+        start_index += len(feats)
+        if not feats or start_index >= total:
+            break
+    return links
+
+
+def _eumdac_extract_france_flashes(zip_bytes: bytes) -> list[tuple[float, float, float]]:
+    """D'un produit (zip -> .nc CHK-BODY) : flashs dans la bbox France. lat/lon sont
+    des int16 scalés (CF) : degrés = raw * scale_factor + add_offset."""
+    import h5py
+    import numpy as np
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
+            body = next((n for n in archive.namelist() if "CHK-BODY" in n and n.endswith(".nc")), None)
+            if not body:
+                return []
+            nc_bytes = archive.read(body)
+    except Exception:
+        return []
+
+    def _scalar(value: Any) -> float | None:
+        arr = np.asarray(value).ravel()
+        return float(arr[0]) if arr.size else None
+
+    def _decode(handle, name: str):
+        dataset = handle[name]
+        raw = dataset[:].astype("f8")
+        fill = _scalar(dataset.attrs.get("_FillValue"))
+        scale = _scalar(dataset.attrs.get("scale_factor"))
+        offset = _scalar(dataset.attrs.get("add_offset"))
+        if fill is not None:
+            raw = np.where(raw == fill, np.nan, raw)
+        if scale:
+            raw = raw * scale
+        if offset:
+            raw = raw + offset
+        return raw
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as tmp:
+            tmp.write(nc_bytes)
+            tmp_path = tmp.name
+        with h5py.File(tmp_path, "r") as handle:
+            if "latitude" not in handle or "longitude" not in handle:
+                return []
+            lat = _decode(handle, "latitude")
+            lon = _decode(handle, "longitude")
+    except Exception:
+        return []
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    west, south, east, north = FRANCE_LIGHTNING_BBOX
+    mask = (
+        (lon >= west) & (lon <= east) & (lat >= south) & (lat <= north)
+        & np.isfinite(lat) & np.isfinite(lon)
+    )
+    return [
+        (round(float(la), 4), round(float(lo), 4), 1.0)
+        for la, lo in zip(lat[mask].tolist(), lon[mask].tolist())
+    ]
+
+
 def _fetch_mtg_li_flashes_for_date(date_str: str) -> tuple[list[tuple[float, float, float]] | None, str]:
-    """Récupère les flashs MTG-LI du jour (densité 2 km) en points pondérés
-    (lat, lon, count) sur la bbox France. SCAFFOLD : l'appel EUMDAC réel sera
-    branché quand la clé EUMETSAT sera disponible. Retour (flashs|None, status)."""
+    """Flashs MTG-LI du jour (impacts individuels) sur la bbox France, via le Data
+    Store EUMETSAT (collection LI Lightning Flashes, fichiers full-disk de 10 min).
+    Retour (flashs|None, status). Ne lève pas."""
     if not (EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET):
         return None, "eumdac_not_configured"
     try:
-        import eumdac  # noqa: F401
+        import h5py  # noqa: F401
+        import numpy  # noqa: F401
     except Exception:
-        return None, "eumdac_not_installed"
-    # TODO(phase3) : via EUMDAC, télécharger la collection « LI Accumulated Flashes »
-    # pour date + bbox FRANCE_LIGHTNING_BBOX, lire le NetCDF (grille 2 km) et
-    # retourner les mailles non nulles en (lat, lon, count).
-    return None, "fetch_not_implemented"
+        return None, "h5py_not_installed"
+    try:
+        if not _eumdac_token():
+            return None, "auth_failed"
+        links = _eumdac_search_flash_links(date_str)
+    except Exception as exc:
+        return None, f"fetch_failed:{type(exc).__name__}"
+    if not links:
+        return [], "no_products"
+    flashes: list[tuple[float, float, float]] = []
+    for href in links:
+        try:
+            req = urllib.request.Request(href, headers={"Authorization": f"Bearer {_eumdac_token()}"})
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                zip_bytes = resp.read()
+            flashes.extend(_eumdac_extract_france_flashes(zip_bytes))
+        except Exception:
+            continue
+    return flashes, "ok"
 
 
 def _build_lightning_archive_for_date(
