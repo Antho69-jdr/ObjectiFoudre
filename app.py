@@ -37,6 +37,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from weather_logic import DEFAULT_CENTER_LABEL, CELL_SIZE_KM, Point, build_historical_analysis_payload, build_latest_payload, build_grid, fetch_model, flatten_rows_for_analysis, group_for_output, km_to_deg_lat, km_to_deg_lon, rows_for_grid_locations
+import verification
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -173,6 +174,13 @@ OBJECTIFOUDRE_HISTORY_DIR = Path(
     or BASE_DIR / "history"
 ).expanduser()
 OBJECTIFOUDRE_HISTORY_RETENTION_DAYS = _env_int("OBJECTIFOUDRE_HISTORY_RETENTION_DAYS", 180, min_value=1)
+# --- Vérification prévision vs réalité (Phase 3) : foudre MTG-LI / EUMETSAT ----
+# Identifiants EUMDAC (compte EUMETSAT gratuit). À renseigner pour activer la
+# collecte ; le scoring et l'archive fonctionnent sans (ex. archive injectée).
+EUMETSAT_CONSUMER_KEY = os.environ.get("EUMETSAT_CONSUMER_KEY") or os.environ.get("EUMDAC_KEY") or None
+EUMETSAT_CONSUMER_SECRET = os.environ.get("EUMETSAT_CONSUMER_SECRET") or os.environ.get("EUMDAC_SECRET") or None
+# bbox France métropolitaine (mêmes bornes que la grille France)
+FRANCE_LIGHTNING_BBOX = (-5.55, 41.05, 9.75, 51.45)  # west, south, east, north
 OBJECTIFOUDRE_AUTO_PRELOAD_INTERVAL_SECONDS = _env_int("OBJECTIFOUDRE_AUTO_PRELOAD_INTERVAL_SECONDS", 5 * 60, min_value=60)
 OBJECTIFOUDRE_AROME_RUN_UPDATE_INTERVAL_SECONDS = _env_int(
     "OBJECTIFOUDRE_AROME_RUN_UPDATE_INTERVAL_SECONDS",
@@ -2582,6 +2590,131 @@ def _get_history_france_day_sync(date_str: str, slim: bool = True) -> dict[str, 
             if slots else f"Aucune grille archivée pour {date_str}."
         ),
     }
+
+
+# --- Vérification prévision vs réalité (foudre MTG-LI) ------------------------
+def _lightning_archive_path(date_str: str) -> Path:
+    return OBJECTIFOUDRE_HISTORY_DIR / "lightning" / "france" / f"{date_str}.json.gz"
+
+
+def _read_lightning_archive(date_str: str) -> dict[str, Any] | None:
+    path = _lightning_archive_path(date_str)
+    if not path.exists():
+        return None
+    try:
+        return _read_history_gzip(path)
+    except Exception:
+        return None
+
+
+def _forecast_day_cells(date_str: str) -> list[dict[str, Any]]:
+    """Cellules prévues du jour avec leur trigger_score MAX sur les 24 créneaux
+    (« a-t-on prévu un orage ici à un moment de la journée ? »)."""
+    day_payload = _get_history_france_day_sync(date_str, slim=True)
+    if not day_payload.get("ok"):
+        return []
+    days = day_payload.get("payload", {}).get("days", [])
+    slots = days[0].get("slots", []) if days else []
+    by_key: dict[str, dict[str, Any]] = {}
+    for slot in slots:
+        for cell in (slot.get("cells") or []):
+            lat = cell.get("lat")
+            lon = cell.get("lon")
+            if lat is None or lon is None:
+                continue
+            key = verification.cell_key(lat, lon)
+            try:
+                score = float(cell.get("trigger_score") or 0)
+            except (TypeError, ValueError):
+                score = 0.0
+            existing = by_key.get(key)
+            if existing is None:
+                by_key[key] = {
+                    "lat": lat,
+                    "lon": lon,
+                    "cell_height_deg": cell.get("cell_height_deg"),
+                    "cell_width_deg": cell.get("cell_width_deg"),
+                    "trigger_score": score,
+                }
+            elif score > existing["trigger_score"]:
+                existing["trigger_score"] = score
+    return list(by_key.values())
+
+
+def _fetch_mtg_li_flashes_for_date(date_str: str) -> tuple[list[tuple[float, float, float]] | None, str]:
+    """Récupère les flashs MTG-LI du jour (densité 2 km) en points pondérés
+    (lat, lon, count) sur la bbox France. SCAFFOLD : l'appel EUMDAC réel sera
+    branché quand la clé EUMETSAT sera disponible. Retour (flashs|None, status)."""
+    if not (EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET):
+        return None, "eumdac_not_configured"
+    try:
+        import eumdac  # noqa: F401
+    except Exception:
+        return None, "eumdac_not_installed"
+    # TODO(phase3) : via EUMDAC, télécharger la collection « LI Accumulated Flashes »
+    # pour date + bbox FRANCE_LIGHTNING_BBOX, lire le NetCDF (grille 2 km) et
+    # retourner les mailles non nulles en (lat, lon, count).
+    return None, "fetch_not_implemented"
+
+
+def _build_lightning_archive_for_date(
+    date_str: str,
+    flashes: list[tuple[float, float, float]] | None = None,
+) -> dict[str, Any]:
+    """Construit l'archive foudre du jour : agrège les flashs sur la grille prévue
+    (mêmes clés de cellule) -> {cell_key: count}, puis l'écrit. `flashes` peut être
+    injecté directement (test) ; sinon on tente MTG-LI."""
+    source = "mtg-li"
+    if flashes is None:
+        flashes, status = _fetch_mtg_li_flashes_for_date(date_str)
+        if flashes is None:
+            return {"ok": False, "date": date_str, "reason": status}
+        source = status if status != "ok" else source
+    else:
+        source = "injected"
+    cells = _forecast_day_cells(date_str)
+    if not cells:
+        return {"ok": False, "date": date_str, "reason": "no_forecast_archived"}
+    per_cell = verification.bin_flashes_to_cells(flashes, cells)
+    total = round(sum(per_cell.values()), 1)
+    record = {
+        "schema": 1,
+        "date": date_str,
+        "source": source,
+        "generated_at": _history_now_iso(),
+        "flash_total": total,
+        "touched_cells": len(per_cell),
+        "flashes_per_cell": per_cell,
+    }
+    path = _lightning_archive_path(date_str)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_history_gzip(path, record)
+    return {"ok": True, "date": date_str, "flash_total": total, "touched_cells": len(per_cell), "source": source}
+
+
+def _compute_day_verification(date_str: str) -> dict[str, Any]:
+    lightning = _read_lightning_archive(date_str)
+    if not lightning:
+        return {
+            "ok": False,
+            "date": date_str,
+            "reason": "no_observation",
+            "message": "Pas encore de foudre observée archivée pour cette date.",
+        }
+    cells = _forecast_day_cells(date_str)
+    if not cells:
+        return {
+            "ok": False,
+            "date": date_str,
+            "reason": "no_forecast_archived",
+            "message": "Aucune grille prévue archivée pour cette date.",
+        }
+    result = verification.compute_verification(cells, lightning.get("flashes_per_cell") or {})
+    result["date"] = date_str
+    result["flash_total"] = lightning.get("flash_total")
+    result["observation_source"] = lightning.get("source")
+    result["observation_generated_at"] = lightning.get("generated_at")
+    return result
 
 
 def _meteofrance_grib_full_package_cache_key(product_href: str) -> str:
@@ -11497,6 +11630,20 @@ async def history_day(
     if cached is None:
         cached = await asyncio.to_thread(_build_history_day_bytes, date)
     return Response(content=cached, media_type="application/json")
+
+
+@app.get("/api/history/verification")
+async def history_verification(date: str = Query(..., min_length=10, max_length=10)) -> dict[str, Any]:
+    if not _is_iso_date(date):
+        raise HTTPException(status_code=400, detail="Date attendue au format AAAA-MM-JJ.")
+    return await asyncio.to_thread(_compute_day_verification, date)
+
+
+@app.post("/api/history/collect-lightning")
+async def history_collect_lightning(date: str = Query(..., min_length=10, max_length=10)) -> dict[str, Any]:
+    if not _is_iso_date(date):
+        raise HTTPException(status_code=400, detail="Date attendue au format AAAA-MM-JJ.")
+    return await asyncio.to_thread(_build_lightning_archive_for_date, date)
 
 
 @app.post("/api/meteofrance/grib-slot-grid-cache")
