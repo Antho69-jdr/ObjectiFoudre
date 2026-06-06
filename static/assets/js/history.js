@@ -450,8 +450,11 @@
   function zoomAt(px, py, factor) {
     const next = Math.min(Z_MAX, Math.max(Z_MIN, zScale * factor));
     if (next === zScale) return;
-    zTx = px - ((px - zTx) / zScale) * next; // garde le point (px,py) fixe (origin 0 0)
-    zTy = py - ((py - zTy) / zScale) * next;
+    // px,py = curseur relatif au coin de la boîte TRANSFORMÉE (getBoundingClientRect).
+    // Pour garder le point sous le curseur fixe : tx += px·(1 − next/scale).
+    const ratio = 1 - next / zScale;
+    zTx += px * ratio;
+    zTy += py * ratio;
     zScale = next;
     clampPan();
     applyZoom();
@@ -517,7 +520,8 @@
       if (mode === 'pinch' && event.touches.length === 2) {
         event.preventDefault();
         const target = Math.min(Z_MAX, Math.max(Z_MIN, startScale * (touchDist(event.touches) / Math.max(1, startDist))));
-        zoomAt(pinchMid.x, pinchMid.y, target / zScale);
+        const m = touchMid(event.touches); // recalculé sur la boîte courante (transformée)
+        zoomAt(m.x, m.y, target / zScale);
       } else if (mode === 'pan' && event.touches.length === 1) {
         event.preventDefault();
         const t = event.touches[0];
