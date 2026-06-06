@@ -193,15 +193,16 @@
     setHint(`Génération de l’animation 4K… 0/${slots.length}`);
     await new Promise((resolve) => requestAnimationFrame(resolve));
     for (let i = 0; i < slots.length; i += 1) {
+      const slotHour = (typeof gifSlotHour === 'function') ? gifSlotHour(slots[i], i) : i;
       try {
         drawGridAnimationFrame(ctx, slots[i], day, i, slots.length, slots);
-        if (showFlashes && dayFlashPoints.length) drawFlashOverlay(ctx);
+        if (showFlashes && dayFlashPoints.length) drawFlashOverlay(ctx, slotHour);
       } catch (_) {
         continue;
       }
       out.push({
         slotKey: slots[i].slot_key,
-        hour: (typeof gifSlotHour === 'function') ? gifSlotHour(slots[i], i) : i,
+        hour: slotHour,
         dataUrl: canvas.toDataURL('image/jpeg', JPEG_QUALITY),
       });
       setHint(`Génération de l’animation 4K… ${out.length}/${slots.length}`);
@@ -368,9 +369,10 @@
     finally { window.clearTimeout(timer); }
   }
 
-  // Dessine les impacts sur le canvas d'une frame, en réutilisant EXACTEMENT la
-  // projection France du moteur GIF (mêmes marges que drawGridAnimationFrame).
-  function drawFlashOverlay(ctx) {
+  // Dessine les impacts de l'HEURE donnée sur le canvas d'une frame, en réutilisant
+  // EXACTEMENT la projection France du moteur GIF (mêmes marges que
+  // drawGridAnimationFrame) -> la foudre est synchronisée à l'animation.
+  function drawFlashOverlay(ctx, hour) {
     if (typeof buildGifFranceProjection !== 'function') return;
     const W = ctx.canvas.width;
     const H = ctx.canvas.height;
@@ -386,6 +388,7 @@
     ctx.rect(mapRect.left, mapRect.top, mapRect.width, mapRect.height);
     ctx.clip();
     for (const pt of dayFlashPoints) {
+      if (pt[2] !== hour) continue; // seulement les flashs de cette heure
       const p = proj.project(pt[1], pt[0]); // project(lon, lat), pt = [lat, lon]
       if (!p) continue;
       ctx.beginPath();

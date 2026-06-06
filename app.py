@@ -184,6 +184,11 @@ EUMETSAT_CONSUMER_KEY = os.environ.get("EUMETSAT_CONSUMER_KEY") or os.environ.ge
 EUMETSAT_CONSUMER_SECRET = os.environ.get("EUMETSAT_CONSUMER_SECRET") or os.environ.get("EUMDAC_SECRET") or None
 # bbox France métropolitaine (mêmes bornes que la grille France)
 FRANCE_LIGHTNING_BBOX = (-5.55, 41.05, 9.75, 51.45)  # west, south, east, north
+# Automatisation : collecte quotidienne de la foudre des journées écoulées.
+OBJECTIFOUDRE_LIGHTNING_AUTOMATION = _env_flag("OBJECTIFOUDRE_LIGHTNING_AUTOMATION", True)
+OBJECTIFOUDRE_LIGHTNING_AUTOMATION_INTERVAL_SECONDS = _env_int(
+    "OBJECTIFOUDRE_LIGHTNING_AUTOMATION_INTERVAL_SECONDS", 6 * 3600, min_value=900
+)
 OBJECTIFOUDRE_AUTO_PRELOAD_INTERVAL_SECONDS = _env_int("OBJECTIFOUDRE_AUTO_PRELOAD_INTERVAL_SECONDS", 5 * 60, min_value=60)
 OBJECTIFOUDRE_AROME_RUN_UPDATE_INTERVAL_SECONDS = _env_int(
     "OBJECTIFOUDRE_AROME_RUN_UPDATE_INTERVAL_SECONDS",
@@ -1644,6 +1649,9 @@ _meteofrance_last_external_request_at = 0.0
 _server_arome_automation_lock = threading.Lock()
 _server_arome_automation_stop = threading.Event()
 _server_arome_automation_thread: threading.Thread | None = None
+_lightning_automation_lock = threading.Lock()
+_lightning_automation_stop = threading.Event()
+_lightning_automation_thread: threading.Thread | None = None
 _server_arome_cache_dir_status_lock = threading.Lock()
 _server_arome_cache_dir_status_snapshot: dict[str, Any] | None = None
 _server_arome_cache_dir_status_snapshot_at = 0.0
@@ -2719,9 +2727,11 @@ def _eumdac_search_flash_links(date_str: str) -> list[str]:
     return links
 
 
-def _eumdac_extract_france_flashes(zip_bytes: bytes) -> list[tuple[float, float, float]]:
-    """D'un produit (zip -> .nc CHK-BODY) : flashs dans la bbox France. lat/lon sont
-    des int16 scalés (CF) : degrés = raw * scale_factor + add_offset."""
+def _eumdac_extract_france_flashes(zip_bytes: bytes, offset_seconds: float = 0.0) -> list[tuple[float, float, int]]:
+    """D'un produit (zip -> .nc CHK-BODY) : flashs dans la bbox France, en
+    (lat, lon, heure_locale). lat/lon sont des int16 scalés (CF) : degrés = raw *
+    scale_factor + add_offset. flash_time = secondes depuis 2000-01-01 UTC -> on
+    ajoute offset_seconds (UTC->Paris) puis on en tire l'heure locale 0-23."""
     import h5py
     import numpy as np
 
@@ -2762,6 +2772,10 @@ def _eumdac_extract_france_flashes(zip_bytes: bytes) -> list[tuple[float, float,
                 return []
             lat = _decode(handle, "latitude")
             lon = _decode(handle, "longitude")
+            if "flash_time" in handle:
+                ftime = np.nan_to_num(handle["flash_time"][:].astype("f8"), nan=0.0)
+            else:
+                ftime = np.zeros_like(lat)
     except Exception:
         return []
     finally:
@@ -2776,9 +2790,10 @@ def _eumdac_extract_france_flashes(zip_bytes: bytes) -> list[tuple[float, float,
         (lon >= west) & (lon <= east) & (lat >= south) & (lat <= north)
         & np.isfinite(lat) & np.isfinite(lon)
     )
+    hours = (np.floor((ftime + offset_seconds) / 3600.0) % 24).astype(int)
     return [
-        (round(float(la), 4), round(float(lo), 4), 1.0)
-        for la, lo in zip(lat[mask].tolist(), lon[mask].tolist())
+        (round(float(la), 4), round(float(lo), 4), int(h))
+        for la, lo, h in zip(lat[mask].tolist(), lon[mask].tolist(), hours[mask].tolist())
     ]
 
 
@@ -2801,13 +2816,20 @@ def _fetch_mtg_li_flashes_for_date(date_str: str) -> tuple[list[tuple[float, flo
         return None, f"fetch_failed:{type(exc).__name__}"
     if not links:
         return [], "no_products"
-    flashes: list[tuple[float, float, float]] = []
+    try:
+        offset_seconds = datetime(
+            int(date_str[:4]), int(date_str[5:7]), int(date_str[8:10]), 12,
+            tzinfo=OBJECTIFOUDRE_SERVER_TIMEZONE,
+        ).utcoffset().total_seconds()
+    except Exception:
+        offset_seconds = 0.0
+    flashes: list[tuple[float, float, int]] = []
     for href in links:
         try:
             req = urllib.request.Request(href, headers={"Authorization": f"Bearer {_eumdac_token()}"})
             with urllib.request.urlopen(req, timeout=120) as resp:
                 zip_bytes = resp.read()
-            flashes.extend(_eumdac_extract_france_flashes(zip_bytes))
+            flashes.extend(_eumdac_extract_france_flashes(zip_bytes, offset_seconds))
         except Exception:
             continue
     return flashes, "ok"
@@ -2835,20 +2857,28 @@ def _build_lightning_archive_for_date(
     cells = _forecast_day_cells(date_str)
     if not cells:
         return {"ok": False, "date": date_str, "reason": "no_forecast_archived"}
-    per_cell = verification.bin_flashes_to_cells(flashes, cells)
+    # Agrégation pour le SCORE : (lat, lon) seulement (l'heure n'est pas un poids).
+    per_cell = verification.bin_flashes_to_cells([(f[0], f[1]) for f in flashes], cells)
     total = round(sum(per_cell.values()), 1)
-    # Points individuels pour la VISUALISATION (overlay des impacts sur la carte).
-    # Downsample si trop nombreux pour rester léger à transférer/dessiner.
-    points = [[round(float(f[0]), 3), round(float(f[1]), 3)] for f in flashes]
+    # Points individuels pour la VISUALISATION : (lat, lon, heure_locale) pour
+    # l'overlay synchronisé à l'animation. Masqués à la France (dans une cellule)
+    # pour ne pas afficher la plaine du Pô attrapée par la bbox. Downsample si gros.
+    france_flashes = verification.flashes_within_cells(flashes, cells)
+    points = [
+        [round(float(f[0]), 3), round(float(f[1]), 3), int(f[2]) if len(f) > 2 else 0]
+        for f in france_flashes
+    ]
     point_cap = 25000
     if len(points) > point_cap:
         step = (len(points) // point_cap) + 1
         points = points[::step]
+    today_iso = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date().isoformat()
     record = {
-        "schema": 1,
+        "schema": 2,
         "date": date_str,
         "source": source,
         "generated_at": _history_now_iso(),
+        "final": date_str < today_iso,  # journée complète (données du jour complètes)
         "flash_total": total,
         "touched_cells": len(per_cell),
         "flashes_per_cell": per_cell,
@@ -2859,7 +2889,7 @@ def _build_lightning_archive_for_date(
     path.parent.mkdir(parents=True, exist_ok=True)
     _write_history_gzip(path, record)
     _verification_cache.pop(date_str, None)  # la foudre a changé -> recalcul
-    return {"ok": True, "date": date_str, "flash_total": total, "touched_cells": len(per_cell), "source": source}
+    return {"ok": True, "date": date_str, "flash_total": total, "touched_cells": len(per_cell), "final": record["final"], "source": source}
 
 
 def _compute_day_verification(date_str: str) -> dict[str, Any]:
@@ -2891,6 +2921,64 @@ def _compute_day_verification(date_str: str) -> dict[str, Any]:
     while len(_verification_cache) > 16:
         _verification_cache.pop(next(iter(_verification_cache)))
     return result
+
+
+def _collect_pending_lightning() -> dict[str, Any]:
+    """Collecte la foudre observée pour chaque journée PRÉVUE déjà écoulée qui n'a
+    pas encore d'archive finale. Idempotent : une journée déjà finalisée est sautée.
+    On ne collecte jamais aujourd'hui/le futur (jour partiel)."""
+    if not (EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET):
+        return {"ok": False, "reason": "eumdac_not_configured"}
+    today_iso = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date().isoformat()
+    collected: list[dict[str, Any]] = []
+    for item in _list_history_dates():
+        date_str = item.get("date")
+        if not date_str or date_str >= today_iso:
+            continue
+        existing = _read_lightning_archive(date_str)
+        if existing and existing.get("final"):
+            continue
+        try:
+            result = _build_lightning_archive_for_date(date_str)
+        except Exception as exc:
+            result = {"ok": False, "reason": type(exc).__name__}
+        collected.append({
+            "date": date_str,
+            "ok": bool(result.get("ok")),
+            "flash_total": result.get("flash_total"),
+            "reason": result.get("reason"),
+        })
+        if _lightning_automation_stop.is_set():
+            break
+        _lightning_automation_stop.wait(3)  # politesse entre journées
+    return {"ok": True, "today": today_iso, "collected_count": len(collected), "collected": collected}
+
+
+def _lightning_automation_loop() -> None:
+    # délai initial : on laisse le démarrage + le préchargement AROME respirer.
+    _lightning_automation_stop.wait(180)
+    while not _lightning_automation_stop.is_set():
+        try:
+            _collect_pending_lightning()
+        except Exception:
+            pass
+        _lightning_automation_stop.wait(OBJECTIFOUDRE_LIGHTNING_AUTOMATION_INTERVAL_SECONDS)
+
+
+def _start_lightning_automation_thread() -> None:
+    global _lightning_automation_thread
+    if not (OBJECTIFOUDRE_LIGHTNING_AUTOMATION and EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET):
+        return
+    with _lightning_automation_lock:
+        if _lightning_automation_thread is not None and _lightning_automation_thread.is_alive():
+            return
+        _lightning_automation_stop.clear()
+        _lightning_automation_thread = threading.Thread(
+            target=_lightning_automation_loop,
+            daemon=True,
+            name="objectifoudre-lightning-automation",
+        )
+        _lightning_automation_thread.start()
 
 
 def _meteofrance_grib_full_package_cache_key(product_href: str) -> str:
@@ -9969,11 +10057,16 @@ def _startup_server_arome_automation() -> None:
                 running=False,
                 message="Automatisation AROME non démarrée : clé API serveur absente.",
             )
+    try:
+        _start_lightning_automation_thread()
+    except Exception:
+        pass
 
 
 @app.on_event("shutdown")
 def _shutdown_server_arome_automation() -> None:
     _stop_server_arome_automation_thread()
+    _lightning_automation_stop.set()
 
 
 def _probe_meteofrance_grib_profile_sync(
@@ -11836,8 +11929,16 @@ async def history_lightning(date: str = Query(..., min_length=10, max_length=10)
         "date": date,
         "flash_total": record.get("flash_total"),
         "count": record.get("point_count") or len(points),
+        "final": record.get("final"),
         "points": points,
     }
+
+
+@app.post("/api/history/collect-pending-lightning")
+async def history_collect_pending_lightning() -> dict[str, Any]:
+    """Déclenche la collecte foudre de toutes les journées prévues écoulées non
+    encore finalisées (idempotent). Ce que fait aussi l'automatisation quotidienne."""
+    return await asyncio.to_thread(_collect_pending_lightning)
 
 
 @app.post("/api/meteofrance/grib-slot-grid-cache")

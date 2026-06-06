@@ -80,6 +80,38 @@ def bin_flashes_to_cells(
     return counts
 
 
+def flashes_within_cells(
+    flashes: Iterable[tuple[float, float] | tuple[float, float, float]],
+    cells: list[dict[str, Any]],
+) -> list[tuple]:
+    """Sous-ensemble des flashs tombant DANS une cellule de la grille (= masque
+    France : la grille épouse la forme du pays, contrairement à la bbox rectangle
+    qui attrape l'Italie/la Suisse). Conserve chaque tuple flash tel quel (heure
+    incluse)."""
+    buckets: dict[tuple[int, int], list[tuple[float, float, float, float]]] = {}
+    for cell in cells:
+        bounds = _cell_bounds(cell)
+        if bounds is None:
+            continue
+        s, n, w, e = bounds
+        for blat in range(math.floor(s), math.floor(n) + 1):
+            for blon in range(math.floor(w), math.floor(e) + 1):
+                buckets.setdefault((blat, blon), []).append((s, n, w, e))
+    out: list[tuple] = []
+    for flash in flashes:
+        flat, flon = float(flash[0]), float(flash[1])
+        if not (math.isfinite(flat) and math.isfinite(flon)):
+            continue
+        candidates = buckets.get((math.floor(flat), math.floor(flon)))
+        if not candidates:
+            continue
+        for s, n, w, e in candidates:
+            if s <= flat <= n and w <= flon <= e:
+                out.append(flash)
+                break
+    return out
+
+
 def compute_verification(
     cells: list[dict[str, Any]],
     flashes_per_cell: dict[str, float],
