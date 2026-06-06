@@ -3841,6 +3841,7 @@ body.mobile-blocked #app {
   justify-content: center;
   gap: 10px;
   min-height: 0;
+  overflow: hidden; /* clippe l'image zoomée */
 }
 .history-frame {
   flex: 1 1 auto;
@@ -3851,6 +3852,8 @@ body.mobile-blocked #app {
   border-radius: 12px;
   background: #050b14;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  touch-action: none; /* on gère le pinch/pan nous-mêmes */
+  will-change: transform;
 }
 .history-player-controls[hidden] {
   display: none;

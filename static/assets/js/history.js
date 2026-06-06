@@ -23,7 +23,7 @@
   const subtitleEl = document.getElementById('historyPageSubtitle');
   const titleEl = document.getElementById('historyPageTitle');
 
-  const FRAME_SIZE = 3840;     // 4K (carré) — chaque frame est lourde à générer
+  const FRAME_SIZE = 2048;     // 2K (carré) — plus léger ; le zoom compense le détail
   const JPEG_QUALITY = 0.9;    // léger mais net
   const FRAME_MS = 420;        // ≈ 2,4 images/s
 
@@ -141,7 +141,7 @@
     // les points de foudre doivent être prêts AVANT de cuire l'overlay dans les frames
     if (showFlashes) { await ensureFlashPoints(date); if (token !== loadToken) return; }
     else { ensureFlashPoints(date); }
-    // Frames 4K déjà générées pour cette (date, overlay) -> réaffichage instantané.
+    // Frames 2K déjà générées pour cette (date, overlay) -> réaffichage instantané.
     const cacheKey = `${date}|${showFlashes ? 'f' : 'n'}`;
     const cached = framesByDate.get(cacheKey);
     if (cached && cached.frames.length) {
@@ -177,7 +177,7 @@
   }
 
   // Rend chaque créneau via le moteur d'export (fond France + grille colorée +
-  // bandeau timeline) puis encode en JPEG 4K. Chaque frame est lourde : on affiche
+  // bandeau timeline) puis encode en JPEG 2K. Chaque frame est lourde : on affiche
   // la progression et on cède la main à CHAQUE frame pour ne pas figer l'UI.
   async function buildFrames(day, token) {
     if (typeof drawGridAnimationFrame !== 'function') return [];
@@ -190,7 +190,7 @@
     canvas.height = FRAME_SIZE;
     const ctx = canvas.getContext('2d');
     const out = [];
-    setHint(`Génération de l’animation 4K… 0/${slots.length}`);
+    setHint(`Génération de l’animation 2K… 0/${slots.length}`);
     await new Promise((resolve) => requestAnimationFrame(resolve));
     for (let i = 0; i < slots.length; i += 1) {
       const slotHour = (typeof gifSlotHour === 'function') ? gifSlotHour(slots[i], i) : i;
@@ -205,7 +205,7 @@
         hour: slotHour,
         dataUrl: canvas.toDataURL('image/jpeg', JPEG_QUALITY),
       });
-      setHint(`Génération de l’animation 4K… ${out.length}/${slots.length}`);
+      setHint(`Génération de l’animation 2K… ${out.length}/${slots.length}`);
       await new Promise((resolve) => requestAnimationFrame(resolve));
       if (token !== loadToken) return [];
     }
@@ -221,7 +221,7 @@
     if (titleEl) titleEl.textContent = 'Historique · animation 24 h';
     if (subtitleEl) {
       const fps = (1000 / FRAME_MS).toFixed(1);
-      subtitleEl.textContent = `${historyDate ? formatDateLabel(historyDate) : ''} · ${frames.length} h animées · 4K · ${fps} img/s`;
+      subtitleEl.textContent = `${historyDate ? formatDateLabel(historyDate) : ''} · ${frames.length} h animées · 2K · ${fps} img/s`;
     }
     if (analysisEl) analysisEl.innerHTML = analysisHtml || 'Pas de synthèse disponible pour cette journée.';
     showFrame(0);
@@ -426,9 +426,115 @@
     if (historyDate) selectDate(historyDate); // régénère les frames (avec/sans overlay, mis en cache)
   });
 
+  // --- Zoom / pan sur l'image (molette souris + pinch tactile, double-clic = reset) ---
+  let zScale = 1;
+  let zTx = 0;
+  let zTy = 0;
+  const Z_MIN = 1;
+  const Z_MAX = 8;
+
+  function applyZoom() {
+    if (!frameEl) return;
+    if (zScale <= 1.001) { zScale = 1; zTx = 0; zTy = 0; }
+    frameEl.style.transform = `translate(${zTx.toFixed(1)}px, ${zTy.toFixed(1)}px) scale(${zScale.toFixed(3)})`;
+    frameEl.style.cursor = zScale > 1 ? 'grab' : '';
+  }
+  function resetZoom() { zScale = 1; zTx = 0; zTy = 0; applyZoom(); }
+  function clampPan() {
+    if (!frameEl) return;
+    const w = frameEl.clientWidth;
+    const h = frameEl.clientHeight;
+    zTx = Math.min(0, Math.max(w - w * zScale, zTx));
+    zTy = Math.min(0, Math.max(h - h * zScale, zTy));
+  }
+  function zoomAt(px, py, factor) {
+    const next = Math.min(Z_MAX, Math.max(Z_MIN, zScale * factor));
+    if (next === zScale) return;
+    zTx = px - ((px - zTx) / zScale) * next; // garde le point (px,py) fixe (origin 0 0)
+    zTy = py - ((py - zTy) / zScale) * next;
+    zScale = next;
+    clampPan();
+    applyZoom();
+  }
+
+  if (frameEl) {
+    frameEl.style.transformOrigin = '0 0';
+    frameEl.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      const rect = frameEl.getBoundingClientRect();
+      zoomAt(event.clientX - rect.left, event.clientY - rect.top, event.deltaY < 0 ? 1.18 : 1 / 1.18);
+    }, { passive: false });
+    frameEl.addEventListener('dblclick', resetZoom);
+
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+    frameEl.addEventListener('mousedown', (event) => {
+      if (zScale <= 1) return;
+      dragging = true;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      frameEl.style.cursor = 'grabbing';
+      event.preventDefault();
+    });
+    window.addEventListener('mousemove', (event) => {
+      if (!dragging) return;
+      zTx += event.clientX - lastX;
+      zTy += event.clientY - lastY;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      clampPan();
+      applyZoom();
+    });
+    window.addEventListener('mouseup', () => {
+      if (dragging) { dragging = false; frameEl.style.cursor = zScale > 1 ? 'grab' : ''; }
+    });
+
+    const touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const touchMid = (t) => {
+      const r = frameEl.getBoundingClientRect();
+      return { x: (t[0].clientX + t[1].clientX) / 2 - r.left, y: (t[0].clientY + t[1].clientY) / 2 - r.top };
+    };
+    let mode = null;
+    let startDist = 0;
+    let startScale = 1;
+    let pinchMid = null;
+    let lastTouch = null;
+    frameEl.addEventListener('touchstart', (event) => {
+      if (event.touches.length === 2) {
+        mode = 'pinch';
+        startDist = touchDist(event.touches);
+        startScale = zScale;
+        pinchMid = touchMid(event.touches);
+      } else if (event.touches.length === 1 && zScale > 1) {
+        mode = 'pan';
+        lastTouch = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+      } else {
+        mode = null;
+      }
+    }, { passive: false });
+    frameEl.addEventListener('touchmove', (event) => {
+      if (mode === 'pinch' && event.touches.length === 2) {
+        event.preventDefault();
+        const target = Math.min(Z_MAX, Math.max(Z_MIN, startScale * (touchDist(event.touches) / Math.max(1, startDist))));
+        zoomAt(pinchMid.x, pinchMid.y, target / zScale);
+      } else if (mode === 'pan' && event.touches.length === 1) {
+        event.preventDefault();
+        const t = event.touches[0];
+        zTx += t.clientX - lastTouch.x;
+        zTy += t.clientY - lastTouch.y;
+        lastTouch = { x: t.clientX, y: t.clientY };
+        clampPan();
+        applyZoom();
+      }
+    }, { passive: false });
+    frameEl.addEventListener('touchend', (event) => { if (event.touches.length === 0) mode = null; });
+  }
+
   function openHistoryPage() {
     historyPage.setAttribute('aria-hidden', 'false');
     document.body.classList.add('history-open');
+    resetZoom();
     loadDates();
   }
 
