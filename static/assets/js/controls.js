@@ -957,8 +957,9 @@
       const height = ctx.canvas.height;
       const showLabels = !options || options.labels !== false;
       const showFooter = !options || options.footer !== false;
+      const showTitle = !options || options.title !== false;
       const cells = Array.isArray(slot?.cells) ? slot.cells : [];
-      const top = Math.round(height * 0.082);
+      const top = Math.round(height * (showTitle ? 0.082 : 0.02));
       const bottom = Math.round(height * (showFooter ? 0.17 : 0.03));
       const side = Math.round(width * 0.03);
       const mapRect = {
@@ -981,8 +982,10 @@
       ctx.globalAlpha = 1;
       ctx.fillStyle = '#050b14';
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = '#0b1220';
-      ctx.fillRect(0, 0, width, top - 10);
+      if (showTitle) {
+        ctx.fillStyle = '#0b1220';
+        ctx.fillRect(0, 0, width, top - 10);
+      }
       if (showFooter) {
         ctx.fillStyle = '#0b1220';
         ctx.fillRect(0, height - bottom + 4, width, bottom - 4);
@@ -999,14 +1002,16 @@
       ctx.strokeRect(Math.round(mapRect.left) + 0.5, Math.round(mapRect.top) + 0.5, Math.round(mapRect.width), Math.round(mapRect.height));
       ctx.restore();
 
-      ctx.textBaseline = 'alphabetic';
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = `800 ${Math.max(24, Math.round(width / 38))}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-      drawFittedText(ctx, 'ObjectiFoudre', side, Math.round(top * 0.4), width * 0.32);
-      ctx.font = `650 ${Math.max(15, Math.round(width / 66))}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-      ctx.fillStyle = '#cbd5e1';
-      drawFittedText(ctx, title, side, Math.round(top * 0.72), width * 0.58);
+      if (showTitle) {
+        ctx.textBaseline = 'alphabetic';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = `800 ${Math.max(24, Math.round(width / 38))}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+        drawFittedText(ctx, 'ObjectiFoudre', side, Math.round(top * 0.4), width * 0.32);
+        ctx.font = `650 ${Math.max(15, Math.round(width / 66))}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+        ctx.fillStyle = '#cbd5e1';
+        drawFittedText(ctx, title, side, Math.round(top * 0.72), width * 0.58);
+      }
 
       if (showFooter) drawGifTimelineFooter(ctx, slot, frameIndex, frameCount, footerRect, slots);
     }

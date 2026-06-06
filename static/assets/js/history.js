@@ -195,7 +195,7 @@
     for (let i = 0; i < slots.length; i += 1) {
       const slotHour = (typeof gifSlotHour === 'function') ? gifSlotHour(slots[i], i) : i;
       try {
-        drawGridAnimationFrame(ctx, slots[i], day, i, slots.length, slots, { labels: false, footer: false });
+        drawGridAnimationFrame(ctx, slots[i], day, i, slots.length, slots, { labels: false, footer: false, title: false });
         if (showFlashes && dayFlashPoints.length) drawFlashOverlay(ctx, slotHour);
       } catch (_) {
         continue;
@@ -376,7 +376,7 @@
     if (typeof buildGifFranceProjection !== 'function') return;
     const W = ctx.canvas.width;
     const H = ctx.canvas.height;
-    const top = Math.round(H * 0.082);
+    const top = Math.round(H * 0.02); // doit matcher le mode minimal (titre masqué)
     const bottom = Math.round(H * 0.03); // doit matcher le mode minimal (footer masqué)
     const side = Math.round(W * 0.03);
     const mapRect = { left: side, top, width: W - side * 2, height: H - top - bottom };
