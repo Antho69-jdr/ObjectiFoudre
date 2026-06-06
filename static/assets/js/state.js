@@ -121,80 +121,79 @@ function improveCartoVectorReadability() {
   setMapPaintIfLayer('boundary_county', 'line-color', 'rgba(116, 142, 170, 0.72)');
   setMapPaintIfLayer('boundary_county', 'line-width', ['interpolate', ['linear'], ['zoom'], 5, 0.45, 8, 0.8, 10, 1.15]);
   setMapPaintIfLayer('boundary_county', 'line-opacity', 0.78);
-  setMapPaintIfLayer('boundary_state', 'line-color', 'rgba(165, 191, 220, 0.82)');
-  setMapPaintIfLayer('boundary_state', 'line-width', ['interpolate', ['linear'], ['zoom'], 4, 0.75, 8, 1.25, 10, 1.7]);
-  setMapPaintIfLayer('boundary_state', 'line-opacity', 0.88);
+  // Régions : la couche CARTO `boundary_state` a des tracés imprécis. On la masque
+  // (applyFranceRegionBoundaries) au profit du tracé officiel IGN (FRANCE_REGIONS_GEOJSON).
 
+  // --- Routes volontairement discrètes : moins de réseau routier sur la carte. ---
+  // Grands axes (autoroutes + voies rapides) : fins, sobres, n'apparaissent qu'en zoom moyen.
   [
     'tunnel_mot_fill',
     'tunnel_trunk_fill',
-    'tunnel_pri_fill',
     'road_mot_fill_ramp',
     'road_mot_fill_noramp',
     'road_trunk_fill_ramp',
     'road_trunk_fill_noramp',
     'bridge_mot_fill',
-    'bridge_trunk_fill',
-    'bridge_pri_fill'
+    'bridge_trunk_fill'
   ].forEach((id) => {
-    setMapPaintIfLayer(id, 'line-color', 'rgba(178, 205, 232, 1)');
-    setMapPaintIfLayer(id, 'line-opacity', 1);
-    setMapPaintIfLayer(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 5, 0.95, 7, 1.35, 9, 2.05, 12, 3.6, 15, 7.2, 18, 18]);
+    setMapPaintIfLayer(id, 'line-color', 'rgba(96, 122, 150, 0.7)');
+    setMapPaintIfLayer(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 6, 0, 7.5, 0.5, 11, 0.7]);
+    setMapPaintIfLayer(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 7, 0.35, 10, 0.9, 13, 1.7, 16, 3.4]);
   });
 
   [
     'tunnel_mot_case',
     'tunnel_trunk_case',
-    'tunnel_pri_case',
     'road_mot_case_ramp',
     'road_mot_case_noramp',
     'road_trunk_case_ramp',
     'road_trunk_case_noramp',
-    'road_pri_case_ramp',
-    'road_pri_case_noramp',
     'bridge_mot_case',
-    'bridge_trunk_case',
-    'bridge_pri_case'
+    'bridge_trunk_case'
   ].forEach((id) => {
-    setMapPaintIfLayer(id, 'line-color', 'rgba(94, 127, 160, 0.98)');
-    setMapPaintIfLayer(id, 'line-opacity', 1);
-    setMapPaintIfLayer(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 5, 0.8, 7, 1.15, 9, 1.7, 12, 4.4, 15, 8.6, 18, 20]);
+    setMapPaintIfLayer(id, 'line-color', 'rgba(40, 58, 80, 0.6)');
+    setMapPaintIfLayer(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 6, 0, 8, 0.45]);
+    setMapPaintIfLayer(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 7, 0.5, 10, 1.1, 13, 2.2, 16, 4.4]);
   });
 
+  // Routes primaires / secondaires : encore plus discrètes, seulement en zoom rapproché.
   [
+    'tunnel_pri_fill',
     'tunnel_sec_fill',
     'road_pri_fill_ramp',
     'road_pri_fill_noramp',
     'road_sec_fill_noramp',
+    'bridge_pri_fill',
     'bridge_sec_fill'
   ].forEach((id) => {
-    setMapPaintIfLayer(id, 'line-color', 'rgba(143, 174, 204, 0.98)');
-    setMapPaintIfLayer(id, 'line-opacity', 1);
-    setMapPaintIfLayer(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 8, 0.75, 10, 1.25, 12, 2.05, 15, 5.6, 18, 14]);
+    setMapPaintIfLayer(id, 'line-color', 'rgba(86, 110, 138, 0.6)');
+    setMapPaintIfLayer(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 8.5, 0, 10, 0.4, 13, 0.55]);
+    setMapPaintIfLayer(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 9, 0.3, 12, 0.9, 15, 2.1, 18, 4.6]);
   });
 
   [
+    'tunnel_pri_case',
     'tunnel_sec_case',
+    'road_pri_case_ramp',
+    'road_pri_case_noramp',
     'road_sec_case_noramp',
+    'bridge_pri_case',
     'bridge_sec_case'
   ].forEach((id) => {
-    setMapPaintIfLayer(id, 'line-color', 'rgba(74, 105, 137, 0.96)');
-    setMapPaintIfLayer(id, 'line-opacity', 1);
+    setMapPaintIfLayer(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 8.5, 0, 11, 0.35]);
   });
 
+  // Petites routes, voies de service, chemins, rampes mineures : masqués (clutter).
   [
     'tunnel_minor_fill',
     'tunnel_service_fill',
+    'tunnel_path',
     'road_minor_fill',
     'road_service_fill',
+    'road_path',
     'bridge_minor_fill',
-    'bridge_service_fill'
-  ].forEach((id) => {
-    setMapPaintIfLayer(id, 'line-color', 'rgba(103, 131, 159, 0.92)');
-    setMapPaintIfLayer(id, 'line-opacity', 0.96);
-  });
-
-  [
+    'bridge_service_fill',
+    'bridge_path',
     'tunnel_minor_case',
     'tunnel_service_case',
     'road_minor_case',
@@ -202,20 +201,18 @@ function improveCartoVectorReadability() {
     'bridge_minor_case',
     'bridge_service_case'
   ].forEach((id) => {
-    setMapPaintIfLayer(id, 'line-color', 'rgba(47, 70, 96, 0.9)');
-    setMapPaintIfLayer(id, 'line-opacity', 1);
+    setMapLayoutIfLayer(id, 'visibility', 'none');
   });
 
-  [
-    'roadname_major',
-    'roadname_pri',
-    'roadname_sec',
-    'roadname_minor'
-  ].forEach((id) => {
-    setMapPaintIfLayer(id, 'text-color', 'rgba(226, 238, 252, 0.96)');
-    setMapPaintIfLayer(id, 'text-halo-color', 'rgba(3, 8, 15, 0.96)');
-    setMapPaintIfLayer(id, 'text-halo-width', 1.35);
-    setMapPaintIfLayer(id, 'text-opacity', 1);
+  // Noms de routes : on masque les petites, et on garde les grands axes discrets.
+  ['roadname_minor', 'roadname_sec'].forEach((id) => {
+    setMapLayoutIfLayer(id, 'visibility', 'none');
+  });
+  ['roadname_major', 'roadname_pri'].forEach((id) => {
+    setMapPaintIfLayer(id, 'text-color', 'rgba(190, 208, 228, 0.82)');
+    setMapPaintIfLayer(id, 'text-halo-color', 'rgba(3, 8, 15, 0.9)');
+    setMapPaintIfLayer(id, 'text-halo-width', 1.1);
+    setMapPaintIfLayer(id, 'text-opacity', ['interpolate', ['linear'], ['zoom'], 9, 0, 11, 0.8]);
   });
 
   setMapPaintIfLayer('place_state', 'text-color', 'rgba(214, 235, 248, 0.68)');
@@ -243,10 +240,80 @@ function improveCartoVectorReadability() {
     setMapPaintIfLayer(id, 'icon-opacity', 0.92);
   });
 
-  setMapPaintIfLayer('water', 'fill-color', 'rgba(45, 67, 83, 1)');
-  setMapPaintIfLayer('waterway', 'line-color', 'rgba(82, 120, 145, 0.92)');
+  setMapPaintIfLayer('water', 'fill-color', 'rgba(38, 56, 72, 1)');
+  // Cours d'eau : discrets, seulement en zoom rapproché (moins de rivières sur la carte).
+  setMapPaintIfLayer('waterway', 'line-color', 'rgba(70, 100, 124, 0.55)');
+  setMapPaintIfLayer('waterway', 'line-opacity', ['interpolate', ['linear'], ['zoom'], 8, 0, 10, 0.4, 13, 0.6]);
+  setMapPaintIfLayer('waterway', 'line-width', ['interpolate', ['linear'], ['zoom'], 8, 0.2, 11, 0.6, 14, 1.2, 17, 2.4]);
+  setMapLayoutIfLayer('waterway_label', 'visibility', 'none');
+}
+
+// Départements officiels IGN (FRANCE_DEPARTMENT_RINGS) : traits fins pointillés,
+// subordonnés aux régions, qui apparaissent dès le zoom moyen (~z6.5) au lieu de z9.
+// Remplace la couche CARTO `boundary_county` (tracés imprécis).
+function applyFranceDepartmentBoundaries() {
+  if (!map || typeof FRANCE_DEPARTMENT_RINGS === 'undefined' || !Array.isArray(FRANCE_DEPARTMENT_RINGS)) return;
+  try {
+    if (!map.getSource('france-departments')) {
+      map.addSource('france-departments', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'MultiLineString', coordinates: FRANCE_DEPARTMENT_RINGS },
+        },
+      });
+    }
+    if (!map.getLayer('france-department-lines')) {
+      const beforeId = map.getLayer('waterway_label') ? 'waterway_label' : undefined;
+      map.addLayer({
+        id: 'france-department-lines',
+        type: 'line',
+        source: 'france-departments',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': 'rgba(120, 145, 175, 0.5)',
+          'line-dasharray': [2, 2],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.3, 8, 0.6, 11, 1.0, 14, 1.6],
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0, 6.8, 0.45, 9, 0.6],
+        },
+      }, beforeId);
+    }
+  } catch (_) {}
+  // Couche départements CARTO imprécise -> masquée au profit du tracé IGN.
+  setMapLayoutIfLayer('boundary_county', 'visibility', 'none');
+}
+
+// Découpage régional officiel IGN : couche vectorielle propre qui remplace la couche
+// CARTO `boundary_state` (tracés imprécis). Insérée sous les labels, au-dessus des routes.
+function applyFranceRegionBoundaries() {
+  if (!map || typeof FRANCE_REGIONS_GEOJSON === 'undefined') return;
+  try {
+    if (!map.getSource('france-regions')) {
+      map.addSource('france-regions', { type: 'geojson', data: FRANCE_REGIONS_GEOJSON });
+    }
+    if (!map.getLayer('france-region-lines')) {
+      const beforeId = map.getLayer('waterway_label') ? 'waterway_label' : undefined;
+      map.addLayer({
+        id: 'france-region-lines',
+        type: 'line',
+        source: 'france-regions',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': 'rgba(150, 176, 208, 0.62)',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.6, 6, 1.0, 8, 1.5, 11, 2.4],
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 4, 0.7, 8, 0.85],
+        },
+      }, beforeId);
+    }
+  } catch (_) {}
+  // Couche régions CARTO imprécise -> masquée au profit du tracé IGN.
+  setMapLayoutIfLayer('boundary_state', 'visibility', 'none');
 }
 
 function improveBasemapReadability() {
   improveCartoVectorReadability();
+  // Départements d'abord (couche du dessous), puis régions par-dessus : hiérarchie visuelle.
+  applyFranceDepartmentBoundaries();
+  applyFranceRegionBoundaries();
 }
