@@ -16,7 +16,7 @@ from typing import Any, Iterable
 
 
 # Seuils par défaut, alignés sur l'échelle de la carte de risque.
-DEFAULT_SCORE_THRESHOLD = 60      # « Faible » et au-dessus = orage prévu
+DEFAULT_SCORE_THRESHOLD = 75      # ≥ 75 (haut « Moyen » et au-dessus) = orage prévu
 DEFAULT_FLASH_THRESHOLD = 1       # ≥ 1 flash dans la cellule = orage observé
 
 
