@@ -195,7 +195,7 @@
     for (let i = 0; i < slots.length; i += 1) {
       const slotHour = (typeof gifSlotHour === 'function') ? gifSlotHour(slots[i], i) : i;
       try {
-        drawGridAnimationFrame(ctx, slots[i], day, i, slots.length, slots);
+        drawGridAnimationFrame(ctx, slots[i], day, i, slots.length, slots, { labels: false, footer: false });
         if (showFlashes && dayFlashPoints.length) drawFlashOverlay(ctx, slotHour);
       } catch (_) {
         continue;
@@ -377,7 +377,7 @@
     const W = ctx.canvas.width;
     const H = ctx.canvas.height;
     const top = Math.round(H * 0.082);
-    const bottom = Math.round(H * 0.17);
+    const bottom = Math.round(H * 0.03); // doit matcher le mode minimal (footer masqué)
     const side = Math.round(W * 0.03);
     const mapRect = { left: side, top, width: W - side * 2, height: H - top - bottom };
     const proj = buildGifFranceProjection(mapRect);
@@ -392,11 +392,11 @@
       const p = proj.project(pt[1], pt[0]); // project(lon, lat), pt = [lat, lon]
       if (!p) continue;
       ctx.beginPath();
-      ctx.fillStyle = 'rgba(255, 214, 64, 0.30)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.28)'; // halo blanc
       ctx.arc(p.x, p.y, core * 2.4, 0, Math.PI * 2);
       ctx.fill();
       ctx.beginPath();
-      ctx.fillStyle = 'rgba(255, 248, 205, 0.95)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.98)'; // cœur blanc
       ctx.arc(p.x, p.y, core, 0, Math.PI * 2);
       ctx.fill();
     }

@@ -952,12 +952,14 @@
       ctx.restore();
     }
 
-    function drawGridAnimationFrame(ctx, slot, day, frameIndex, frameCount, slots = null) {
+    function drawGridAnimationFrame(ctx, slot, day, frameIndex, frameCount, slots = null, options = null) {
       const width = ctx.canvas.width;
       const height = ctx.canvas.height;
+      const showLabels = !options || options.labels !== false;
+      const showFooter = !options || options.footer !== false;
       const cells = Array.isArray(slot?.cells) ? slot.cells : [];
       const top = Math.round(height * 0.082);
-      const bottom = Math.round(height * 0.17);
+      const bottom = Math.round(height * (showFooter ? 0.17 : 0.03));
       const side = Math.round(width * 0.03);
       const mapRect = {
         left: side,
@@ -981,13 +983,15 @@
       ctx.fillRect(0, 0, width, height);
       ctx.fillStyle = '#0b1220';
       ctx.fillRect(0, 0, width, top - 10);
-      ctx.fillStyle = '#0b1220';
-      ctx.fillRect(0, height - bottom + 4, width, bottom - 4);
+      if (showFooter) {
+        ctx.fillStyle = '#0b1220';
+        ctx.fillRect(0, height - bottom + 4, width, bottom - 4);
+      }
 
       drawGifFranceBase(ctx, projection, mapRect);
       drawGifFranceGridCells(ctx, cells, projection);
       drawGifAdminLines(ctx, projection);
-      drawGifLabels(ctx, projection);
+      if (showLabels) drawGifLabels(ctx, projection);
 
       ctx.save();
       ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
@@ -1004,7 +1008,7 @@
       ctx.fillStyle = '#cbd5e1';
       drawFittedText(ctx, title, side, Math.round(top * 0.72), width * 0.58);
 
-      drawGifTimelineFooter(ctx, slot, frameIndex, frameCount, footerRect, slots);
+      if (showFooter) drawGifTimelineFooter(ctx, slot, frameIndex, frameCount, footerRect, slots);
     }
 
     function sanitizeGifFilenamePart(value) {
