@@ -151,12 +151,14 @@
     return { x, y, w: w + 0.5, h: h + 0.5 }; // léger overlap anti-couture
   }
 
-  function ringsToPath(rings, proj) {
+  function ringsToPath(rings, proj, step = 1) {
     let d = '';
     for (const ring of rings) {
       if (!Array.isArray(ring) || ring.length < 2) continue;
-      for (let j = 0; j < ring.length; j += 1) {
-        const p = proj.project(Number(ring[j][0]), Number(ring[j][1])); // ring point = [lon, lat]
+      const last = ring.length - 1;
+      for (let j = 0; j <= last; j += step) {
+        const k = j > last ? last : j;
+        const p = proj.project(Number(ring[k][0]), Number(ring[k][1])); // ring point = [lon, lat]
         if (!p) continue;
         d += (j === 0 ? 'M' : 'L') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
       }
@@ -204,49 +206,32 @@
       return { hour: (typeof gifSlotHour === 'function') ? gifSlotHour(slot, i) : i, colors };
     });
 
-    // 3) DOM SVG
-    const clipRings = (typeof FRANCE_GRID_CLIP_RINGS !== 'undefined' && Array.isArray(FRANCE_GRID_CLIP_RINGS) && FRANCE_GRID_CLIP_RINGS.length)
-      ? FRANCE_GRID_CLIP_RINGS
-      : ((typeof FRANCE_DEPARTMENT_RINGS !== 'undefined' && Array.isArray(FRANCE_DEPARTMENT_RINGS)) ? FRANCE_DEPARTMENT_RINGS : []);
-    const deptRings = (typeof FRANCE_DEPARTMENT_RINGS !== 'undefined' && Array.isArray(FRANCE_DEPARTMENT_RINGS)) ? FRANCE_DEPARTMENT_RINGS : clipRings;
-    const clipPathData = clipRings.length ? ringsToPath(clipRings, proj) : '';
-    const bordersData = deptRings.length ? ringsToPath(deptRings, proj) : '';
+    // 3) DOM SVG — PAS de clipPath (les 2636 cellules sont déjà masquées France
+    // côté serveur : leur union forme la France) ni de fond plein : énorme gain
+    // de perf (le clip sur 2636 rects + un gros path se re-rasterisaient à chaque
+    // frame). Contours de départements décimés. shape-rendering: optimizeSpeed.
+    const deptRings = (typeof FRANCE_DEPARTMENT_RINGS !== 'undefined' && Array.isArray(FRANCE_DEPARTMENT_RINGS)) ? FRANCE_DEPARTMENT_RINGS
+      : ((typeof FRANCE_GRID_CLIP_RINGS !== 'undefined' && Array.isArray(FRANCE_GRID_CLIP_RINGS)) ? FRANCE_GRID_CLIP_RINGS : []);
+    const bordersData = deptRings.length ? ringsToPath(deptRings, proj, 3) : '';
 
     while (frameEl.firstChild) frameEl.removeChild(frameEl.firstChild);
     frameEl.setAttribute('viewBox', `0 0 ${VB} ${VB}`);
     frameEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
-    if (clipPathData) {
-      const defs = document.createElementNS(SVGNS, 'defs');
-      const clip = document.createElementNS(SVGNS, 'clipPath');
-      clip.setAttribute('id', 'historyFranceClip');
-      const cp = document.createElementNS(SVGNS, 'path');
-      cp.setAttribute('d', clipPathData);
-      clip.appendChild(cp);
-      defs.appendChild(clip);
-      frameEl.appendChild(defs);
-    }
     const bg = document.createElementNS(SVGNS, 'rect');
     bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
     bg.setAttribute('width', String(VB)); bg.setAttribute('height', String(VB));
     bg.setAttribute('fill', '#070f1c');
     frameEl.appendChild(bg);
 
-    if (clipPathData) {
-      const base = document.createElementNS(SVGNS, 'path');
-      base.setAttribute('d', clipPathData);
-      base.setAttribute('fill', baseColor);
-      frameEl.appendChild(base);
-    }
-
     const cellsG = document.createElementNS(SVGNS, 'g');
-    if (clipPathData) cellsG.setAttribute('clip-path', 'url(#historyFranceClip)');
+    cellsG.setAttribute('shape-rendering', 'optimizeSpeed'); // pas d'anti-aliasing -> bien plus rapide
     cellEls = geom.map((g) => {
       const r = document.createElementNS(SVGNS, 'rect');
-      r.setAttribute('x', g.x.toFixed(2));
-      r.setAttribute('y', g.y.toFixed(2));
-      r.setAttribute('width', g.w.toFixed(2));
-      r.setAttribute('height', g.h.toFixed(2));
+      r.setAttribute('x', g.x.toFixed(1));
+      r.setAttribute('y', g.y.toFixed(1));
+      r.setAttribute('width', g.w.toFixed(1));
+      r.setAttribute('height', g.h.toFixed(1));
       r.setAttribute('fill', baseColor);
       cellsG.appendChild(r);
       return r;
@@ -258,9 +243,10 @@
       const borders = document.createElementNS(SVGNS, 'path');
       borders.setAttribute('d', bordersData);
       borders.setAttribute('fill', 'none');
-      borders.setAttribute('stroke', 'rgba(148,163,184,0.32)');
+      borders.setAttribute('stroke', 'rgba(160,180,205,0.28)');
       borders.setAttribute('stroke-width', '0.7');
       borders.setAttribute('vector-effect', 'non-scaling-stroke');
+      borders.setAttribute('pointer-events', 'none');
       frameEl.appendChild(borders);
     }
 
