@@ -3844,16 +3844,16 @@ body.mobile-blocked #app {
   overflow: hidden; /* clippe l'image zoomée */
 }
 .history-frame {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
+  aspect-ratio: 1 / 1;
   max-width: 100%;
   max-height: calc(100% - 56px);
-  object-fit: contain;
+  display: block;
   border-radius: 12px;
-  background: #050b14;
+  background: #070f1c;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   touch-action: none; /* on gère le pinch/pan nous-mêmes */
-  will-change: transform;
 }
 .history-player-controls[hidden] {
   display: none;

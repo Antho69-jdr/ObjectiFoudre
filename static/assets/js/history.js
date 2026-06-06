@@ -1,8 +1,9 @@
 // Écran Historique — vue dédiée, séparée de la carte temps réel.
-// Rejoue une journée archivée en ANIMATION 24 h, façon export vidéo/GIF :
-// fond France + grille colorée, rendue en haute qualité puis encodée en frames
-// JPEG (légères) via le moteur global de controls.js (drawGridAnimationFrame).
-// Alimenté par /api/history/* — aucun couplage avec le modèle de données live.
+// Rejoue une journée archivée en ANIMATION 24 h en SVG VECTORIEL : grille de
+// cellules <rect> colorées (clippées à la France) + contours de départements,
+// animées en JS sur la frise (mise à jour des couleurs par heure). Zoom net via
+// viewBox. Foudre observée (MTG-LI) en <circle> blancs synchronisés à l'heure.
+// Réutilise les globales de controls.js / france-admin-lines.js / utils.js.
 (function () {
   const historyPage = document.getElementById('historyPage');
   if (!historyPage) return;
@@ -10,7 +11,7 @@
   const openBtn = document.getElementById('historyPageBtn');
   const closeBtn = document.getElementById('historyPageCloseBtn');
   const dateListEl = document.getElementById('historyDateList');
-  const frameEl = document.getElementById('historyFrame');
+  const frameEl = document.getElementById('historyFrame'); // <svg>
   const emptyHintEl = document.getElementById('historyEmptyHint');
   const controlsEl = document.getElementById('historyPlayerControls');
   const playBtn = document.getElementById('historyPlayBtn');
@@ -23,19 +24,23 @@
   const subtitleEl = document.getElementById('historyPageSubtitle');
   const titleEl = document.getElementById('historyPageTitle');
 
-  const FRAME_SIZE = 2048;     // 2K (carré) — plus léger ; le zoom compense le détail
-  const JPEG_QUALITY = 0.9;    // léger mais net
-  const FRAME_MS = 420;        // ≈ 2,4 images/s
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const VB = 1000;           // taille logique du viewBox (carré)
+  const FRAME_MS = 420;      // ≈ 2,4 images/s
+  const Z_MAX = 8;
 
   let historyDate = null;
-  let frames = [];             // [{ slotKey, hour, dataUrl }]
+  let slotFrames = [];       // [{ hour, colors:[...] }] par créneau
+  let cellEls = [];          // <rect> des cellules
+  let curColors = [];        // couleurs appliquées (diff pour limiter les écritures DOM)
+  let flashLayer = null;     // <g> des impacts
+  let projection = null;     // buildGifFranceProjection(...)
   let frameIndex = 0;
   let playing = false;
   let timer = null;
   let loadToken = 0;
-  const framesByDate = new Map(); // cache des frames générées, par (date, overlay)
-  let showFlashes = false;        // overlay des impacts de foudre observés
-  let dayFlashPoints = [];        // points [lat, lon] de la date courante
+  let showFlashes = false;
+  let dayFlashPoints = [];
   let flashPointsDate = null;
 
   function formatDateLabel(iso) {
@@ -75,7 +80,7 @@
     if (!dateListEl) return;
     if (!dates.length) {
       dateListEl.innerHTML = '<div class="history-dates-empty">Aucune date archivée pour l’instant.</div>';
-      frames = [];
+      slotFrames = [];
       setHint('L’historique se remplira au fil des préchargements AROME.');
       if (analysisEl) analysisEl.textContent = 'Aucune grille archivée pour l’instant.';
       return;
@@ -111,17 +116,16 @@
   }
 
   // L'app live peut saturer les connexions du navigateur pendant un préchargement
-  // AROME : on borne chaque tentative et on réessaie (le cache serveur rend les
-  // retries quasi instantanés une fois une connexion obtenue).
+  // AROME : on borne chaque tentative et on réessaie.
   async function fetchDay(date, token, attempt = 1) {
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 12000);
+    const t = window.setTimeout(() => controller.abort(), 12000);
     try {
       const response = await fetch(`/api/history/day?date=${encodeURIComponent(date)}`, { signal: controller.signal });
-      window.clearTimeout(timer);
+      window.clearTimeout(t);
       return await response.json().catch(() => ({}));
     } catch (_) {
-      window.clearTimeout(timer);
+      window.clearTimeout(t);
       if (token === loadToken && attempt < 4) {
         setHint(`Chargement de la grille archivée… (tentative ${attempt + 1})`);
         await new Promise((resolve) => window.setTimeout(resolve, 800));
@@ -132,87 +136,172 @@
     }
   }
 
+  const cellKey = (cell) => `${(+cell.lat).toFixed(3)}|${(+cell.lon).toFixed(3)}`;
+
+  function projectCellRect(cell, proj) {
+    const halfH = (Number(cell.cell_height_deg) || 0.135) / 2;
+    const halfW = (Number(cell.cell_width_deg) || 0.18) / 2;
+    const nw = proj.project(Number(cell.lon) - halfW, Number(cell.lat) + halfH);
+    const se = proj.project(Number(cell.lon) + halfW, Number(cell.lat) - halfH);
+    if (!nw || !se) return null;
+    const x = Math.min(nw.x, se.x);
+    const y = Math.min(nw.y, se.y);
+    const w = Math.abs(se.x - nw.x);
+    const h = Math.abs(se.y - nw.y);
+    return { x, y, w: w + 0.5, h: h + 0.5 }; // léger overlap anti-couture
+  }
+
+  function ringsToPath(rings, proj) {
+    let d = '';
+    for (const ring of rings) {
+      if (!Array.isArray(ring) || ring.length < 2) continue;
+      for (let j = 0; j < ring.length; j += 1) {
+        const p = proj.project(Number(ring[j][0]), Number(ring[j][1])); // ring point = [lon, lat]
+        if (!p) continue;
+        d += (j === 0 ? 'M' : 'L') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+      }
+      d += 'Z';
+    }
+    return d;
+  }
+
+  // Construit le SVG (DOM) une fois pour la journée + retourne les couleurs par créneau.
+  function buildSvg(day) {
+    if (!frameEl || typeof buildGifFranceProjection !== 'function') return null;
+    const slots = (typeof getRenderableSlots === 'function')
+      ? getRenderableSlots(day)
+      : (Array.isArray(day?.slots) ? day.slots : []);
+    if (!slots.length) return null;
+    const proj = buildGifFranceProjection({ left: 0, top: 0, width: VB, height: VB });
+    projection = proj;
+    const color = (typeof gifScoreColor === 'function') ? gifScoreColor : ((s) => (typeof colorFromScore === 'function' ? colorFromScore(s) : '#3a6'));
+    const baseColor = color(0);
+
+    // 1) géométrie : union des cellules sur tous les créneaux
+    const idxByKey = new Map();
+    const geom = [];
+    for (const slot of slots) {
+      for (const cell of (slot.cells || [])) {
+        if (!cell || cell.source_provider !== 'meteofrance_arome_grib' || cell.lat == null || cell.lon == null) continue;
+        const key = cellKey(cell);
+        if (!idxByKey.has(key)) {
+          const g = projectCellRect(cell, proj);
+          if (g) { idxByKey.set(key, geom.length); geom.push(g); }
+        }
+      }
+    }
+    if (!geom.length) return null;
+    const n = geom.length;
+
+    // 2) couleurs par créneau
+    const frames = slots.map((slot, i) => {
+      const colors = new Array(n).fill(baseColor);
+      for (const cell of (slot.cells || [])) {
+        if (!cell || cell.source_provider !== 'meteofrance_arome_grib') continue;
+        const idx = idxByKey.get(cellKey(cell));
+        if (idx != null) colors[idx] = color(Number(cell.trigger_score) || 0);
+      }
+      return { hour: (typeof gifSlotHour === 'function') ? gifSlotHour(slot, i) : i, colors };
+    });
+
+    // 3) DOM SVG
+    const clipRings = (typeof FRANCE_GRID_CLIP_RINGS !== 'undefined' && Array.isArray(FRANCE_GRID_CLIP_RINGS) && FRANCE_GRID_CLIP_RINGS.length)
+      ? FRANCE_GRID_CLIP_RINGS
+      : ((typeof FRANCE_DEPARTMENT_RINGS !== 'undefined' && Array.isArray(FRANCE_DEPARTMENT_RINGS)) ? FRANCE_DEPARTMENT_RINGS : []);
+    const deptRings = (typeof FRANCE_DEPARTMENT_RINGS !== 'undefined' && Array.isArray(FRANCE_DEPARTMENT_RINGS)) ? FRANCE_DEPARTMENT_RINGS : clipRings;
+    const clipPathData = clipRings.length ? ringsToPath(clipRings, proj) : '';
+    const bordersData = deptRings.length ? ringsToPath(deptRings, proj) : '';
+
+    while (frameEl.firstChild) frameEl.removeChild(frameEl.firstChild);
+    frameEl.setAttribute('viewBox', `0 0 ${VB} ${VB}`);
+    frameEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+    if (clipPathData) {
+      const defs = document.createElementNS(SVGNS, 'defs');
+      const clip = document.createElementNS(SVGNS, 'clipPath');
+      clip.setAttribute('id', 'historyFranceClip');
+      const cp = document.createElementNS(SVGNS, 'path');
+      cp.setAttribute('d', clipPathData);
+      clip.appendChild(cp);
+      defs.appendChild(clip);
+      frameEl.appendChild(defs);
+    }
+    const bg = document.createElementNS(SVGNS, 'rect');
+    bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
+    bg.setAttribute('width', String(VB)); bg.setAttribute('height', String(VB));
+    bg.setAttribute('fill', '#070f1c');
+    frameEl.appendChild(bg);
+
+    if (clipPathData) {
+      const base = document.createElementNS(SVGNS, 'path');
+      base.setAttribute('d', clipPathData);
+      base.setAttribute('fill', baseColor);
+      frameEl.appendChild(base);
+    }
+
+    const cellsG = document.createElementNS(SVGNS, 'g');
+    if (clipPathData) cellsG.setAttribute('clip-path', 'url(#historyFranceClip)');
+    cellEls = geom.map((g) => {
+      const r = document.createElementNS(SVGNS, 'rect');
+      r.setAttribute('x', g.x.toFixed(2));
+      r.setAttribute('y', g.y.toFixed(2));
+      r.setAttribute('width', g.w.toFixed(2));
+      r.setAttribute('height', g.h.toFixed(2));
+      r.setAttribute('fill', baseColor);
+      cellsG.appendChild(r);
+      return r;
+    });
+    frameEl.appendChild(cellsG);
+    curColors = new Array(n).fill(baseColor);
+
+    if (bordersData) {
+      const borders = document.createElementNS(SVGNS, 'path');
+      borders.setAttribute('d', bordersData);
+      borders.setAttribute('fill', 'none');
+      borders.setAttribute('stroke', 'rgba(148,163,184,0.32)');
+      borders.setAttribute('stroke-width', '0.7');
+      borders.setAttribute('vector-effect', 'non-scaling-stroke');
+      frameEl.appendChild(borders);
+    }
+
+    flashLayer = document.createElementNS(SVGNS, 'g');
+    frameEl.appendChild(flashLayer);
+    return frames;
+  }
+
   async function selectDate(date) {
     historyDate = date;
     highlightActiveDate();
     pause();
+    resetZoom();
     const token = ++loadToken;
-    loadVerification(date);  // indépendant de la génération de l'animation
-    // les points de foudre doivent être prêts AVANT de cuire l'overlay dans les frames
-    if (showFlashes) { await ensureFlashPoints(date); if (token !== loadToken) return; }
-    else { ensureFlashPoints(date); }
-    // Frames 2K déjà générées pour cette (date, overlay) -> réaffichage instantané.
-    const cacheKey = `${date}|${showFlashes ? 'f' : 'n'}`;
-    const cached = framesByDate.get(cacheKey);
-    if (cached && cached.frames.length) {
-      frames = cached.frames;
-      setupPlayer(cached.analysisHtml);
-      return;
-    }
+    loadVerification(date);
+    ensureFlashPoints(date); // couche SVG séparée -> pas besoin d'attendre
     setHint('Chargement de la grille archivée…');
     try {
       const data = await fetchDay(date, token);
       if (token !== loadToken) return;
       const day = data?.payload?.days?.[0] || null;
       if (!data?.ok || !day) {
-        frames = [];
+        slotFrames = [];
         setHint(data?.message || 'Aucune grille archivée pour cette date.');
         if (analysisEl) analysisEl.textContent = data?.message || 'Aucune grille archivée pour cette date.';
         return;
       }
-      const built = await buildFrames(day, token);
+      const frames = buildSvg(day);
       if (token !== loadToken) return;
-      frames = built;
-      if (!frames.length) {
+      if (!frames || !frames.length) {
         setHint('Aucune cellule exploitable pour cette journée.');
         return;
       }
-      const analysisHtml = computeAnalysisHtml(day);
-      framesByDate.set(cacheKey, { frames: built, analysisHtml });
-      while (framesByDate.size > 6) framesByDate.delete(framesByDate.keys().next().value);
-      setupPlayer(analysisHtml);
+      setupPlayer(frames, computeAnalysisHtml(day));
     } catch (_) {
       if (token === loadToken) setHint('Erreur de chargement de l’historique.');
     }
   }
 
-  // Rend chaque créneau via le moteur d'export (fond France + grille colorée +
-  // bandeau timeline) puis encode en JPEG 2K. Chaque frame est lourde : on affiche
-  // la progression et on cède la main à CHAQUE frame pour ne pas figer l'UI.
-  async function buildFrames(day, token) {
-    if (typeof drawGridAnimationFrame !== 'function') return [];
-    const slots = (typeof getRenderableSlots === 'function')
-      ? getRenderableSlots(day)
-      : (Array.isArray(day?.slots) ? day.slots : []);
-    if (!slots.length) return [];
-    const canvas = document.createElement('canvas');
-    canvas.width = FRAME_SIZE;
-    canvas.height = FRAME_SIZE;
-    const ctx = canvas.getContext('2d');
-    const out = [];
-    setHint(`Génération de l’animation 2K… 0/${slots.length}`);
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-    for (let i = 0; i < slots.length; i += 1) {
-      const slotHour = (typeof gifSlotHour === 'function') ? gifSlotHour(slots[i], i) : i;
-      try {
-        drawGridAnimationFrame(ctx, slots[i], day, i, slots.length, slots, { labels: false, footer: false, title: false });
-        if (showFlashes && dayFlashPoints.length) drawFlashOverlay(ctx, slotHour);
-      } catch (_) {
-        continue;
-      }
-      out.push({
-        slotKey: slots[i].slot_key,
-        hour: slotHour,
-        dataUrl: canvas.toDataURL('image/jpeg', JPEG_QUALITY),
-      });
-      setHint(`Génération de l’animation 2K… ${out.length}/${slots.length}`);
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      if (token !== loadToken) return [];
-    }
-    return out;
-  }
-
-  function setupPlayer(analysisHtml) {
+  function setupPlayer(frames, analysisHtml) {
+    slotFrames = frames;
     frameIndex = 0;
     if (scrubber) { scrubber.min = 0; scrubber.max = Math.max(0, frames.length - 1); scrubber.value = 0; }
     if (controlsEl) controlsEl.hidden = false;
@@ -221,31 +310,32 @@
     if (titleEl) titleEl.textContent = 'Historique · animation 24 h';
     if (subtitleEl) {
       const fps = (1000 / FRAME_MS).toFixed(1);
-      subtitleEl.textContent = `${historyDate ? formatDateLabel(historyDate) : ''} · ${frames.length} h animées · 2K · ${fps} img/s`;
+      subtitleEl.textContent = `${historyDate ? formatDateLabel(historyDate) : ''} · ${frames.length} h animées · SVG · ${fps} img/s`;
     }
     if (analysisEl) analysisEl.innerHTML = analysisHtml || 'Pas de synthèse disponible pour cette journée.';
-    showFrame(0);
+    showHour(0);
     play();
   }
 
-  function showFrame(index) {
-    if (!frames.length) return;
-    frameIndex = ((index % frames.length) + frames.length) % frames.length;
-    const frame = frames[frameIndex];
-    if (frameEl && frame) {
-      frameEl.src = frame.dataUrl;
-      frameEl.alt = `Grille ${historyDate || ''} à ${hourText(frame.hour)}`;
+  function showHour(index) {
+    if (!slotFrames.length) return;
+    frameIndex = ((index % slotFrames.length) + slotFrames.length) % slotFrames.length;
+    const colors = slotFrames[frameIndex].colors;
+    for (let k = 0; k < cellEls.length; k += 1) {
+      if (colors[k] !== curColors[k]) {
+        cellEls[k].setAttribute('fill', colors[k]);
+        curColors[k] = colors[k];
+      }
     }
+    renderFlashHour(slotFrames[frameIndex].hour);
     if (scrubber) scrubber.value = String(frameIndex);
-    if (hourLabel && frame) hourLabel.textContent = hourText(frame.hour);
+    if (hourLabel) hourLabel.textContent = hourText(slotFrames[frameIndex].hour);
   }
 
-  function tick() {
-    showFrame(frameIndex + 1);
-  }
+  function tick() { showHour(frameIndex + 1); }
 
   function play() {
-    if (playing || frames.length < 2) return;
+    if (playing || slotFrames.length < 2) return;
     playing = true;
     if (playBtn) { playBtn.textContent = '⏸'; playBtn.setAttribute('aria-label', 'Pause'); }
     timer = window.setInterval(tick, FRAME_MS);
@@ -258,7 +348,6 @@
   }
 
   // Synthèse textuelle de la journée (réutilise le résumé iso-contours « jour »).
-  // Retourne le HTML pour qu'il soit mis en cache avec les frames.
   function computeAnalysisHtml(day) {
     try {
       if (typeof collectPredictionDailyCells === 'function' && typeof predictionBuildAnalysisHtml === 'function') {
@@ -346,61 +435,50 @@
         verifEl.innerHTML = `<div class="history-verif-empty">Collecte impossible : ${(data && data.reason) || 'erreur'}.</div>`;
         return;
       }
+      flashPointsDate = null; // forcer le rechargement des points
+      ensureFlashPoints(date);
       loadVerification(date);
     } catch (_) {
       if (token === verifToken) verifEl.innerHTML = '<div class="history-verif-empty">Collecte impossible.</div>';
     }
   }
 
-  // --- Overlay des impacts de foudre observés (MTG-LI) sur la carte ---
+  // --- Foudre observée : points + overlay SVG par heure ---
   async function ensureFlashPoints(date) {
     if (flashPointsDate === date) return;
     flashPointsDate = date;
     dayFlashPoints = [];
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 10000);
+    const t = window.setTimeout(() => controller.abort(), 10000);
     try {
       const response = await fetch(`/api/history/lightning?date=${encodeURIComponent(date)}`, { signal: controller.signal });
       const data = await response.json().catch(() => ({}));
       if (flashPointsDate === date && data && data.ok && Array.isArray(data.points)) {
         dayFlashPoints = data.points;
+        if (showFlashes && slotFrames.length) renderFlashHour(slotFrames[frameIndex].hour);
       }
-    } catch (_) { /* timeout/abort : overlay vide, on ne bloque pas le build */ }
-    finally { window.clearTimeout(timer); }
+    } catch (_) { /* timeout/abort : overlay vide */ }
+    finally { window.clearTimeout(t); }
   }
 
-  // Dessine les impacts de l'HEURE donnée sur le canvas d'une frame, en réutilisant
-  // EXACTEMENT la projection France du moteur GIF (mêmes marges que
-  // drawGridAnimationFrame) -> la foudre est synchronisée à l'animation.
-  function drawFlashOverlay(ctx, hour) {
-    if (typeof buildGifFranceProjection !== 'function') return;
-    const W = ctx.canvas.width;
-    const H = ctx.canvas.height;
-    const top = Math.round(H * 0.02); // doit matcher le mode minimal (titre masqué)
-    const bottom = Math.round(H * 0.03); // doit matcher le mode minimal (footer masqué)
-    const side = Math.round(W * 0.03);
-    const mapRect = { left: side, top, width: W - side * 2, height: H - top - bottom };
-    const proj = buildGifFranceProjection(mapRect);
-    if (!proj || typeof proj.project !== 'function') return;
-    const core = Math.max(1.5, W / 900);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(mapRect.left, mapRect.top, mapRect.width, mapRect.height);
-    ctx.clip();
+  function renderFlashHour(hour) {
+    if (!flashLayer) return;
+    while (flashLayer.firstChild) flashLayer.removeChild(flashLayer.firstChild);
+    if (!showFlashes || !dayFlashPoints.length || !projection) return;
+    const r = VB / 360;
     for (const pt of dayFlashPoints) {
-      if (pt[2] !== hour) continue; // seulement les flashs de cette heure
-      const p = proj.project(pt[1], pt[0]); // project(lon, lat), pt = [lat, lon]
+      if (pt[2] !== hour) continue;
+      const p = projection.project(pt[1], pt[0]); // project(lon, lat), pt = [lat, lon]
       if (!p) continue;
-      ctx.beginPath();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.28)'; // halo blanc
-      ctx.arc(p.x, p.y, core * 2.4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.98)'; // cœur blanc
-      ctx.arc(p.x, p.y, core, 0, Math.PI * 2);
-      ctx.fill();
+      const halo = document.createElementNS(SVGNS, 'circle');
+      halo.setAttribute('cx', p.x.toFixed(1)); halo.setAttribute('cy', p.y.toFixed(1));
+      halo.setAttribute('r', (r * 2.2).toFixed(1)); halo.setAttribute('fill', 'rgba(255,255,255,0.28)');
+      flashLayer.appendChild(halo);
+      const core = document.createElementNS(SVGNS, 'circle');
+      core.setAttribute('cx', p.x.toFixed(1)); core.setAttribute('cy', p.y.toFixed(1));
+      core.setAttribute('r', r.toFixed(1)); core.setAttribute('fill', 'rgba(255,255,255,0.98)');
+      flashLayer.appendChild(core);
     }
-    ctx.restore();
   }
 
   function updateFlashBtn() {
@@ -409,63 +487,89 @@
     flashBtn.setAttribute('aria-pressed', showFlashes ? 'true' : 'false');
   }
 
-  if (playBtn) playBtn.addEventListener('click', () => (playing ? pause() : play()));
-  if (scrubber) scrubber.addEventListener('input', () => { pause(); showFrame(Number(scrubber.value) || 0); });
-  if (downloadBtn) downloadBtn.addEventListener('click', () => {
-    const frame = frames[frameIndex];
-    if (!frame) return;
-    const link = document.createElement('a');
-    link.href = frame.dataUrl;
-    link.download = `objectifoudre-historique-${historyDate || ''}-${String(frame.hour).padStart(2, '0')}h.jpg`;
-    link.click();
-  });
+  // Export PNG (rasterise le SVG de l'heure courante, France entière).
+  function downloadCurrent() {
+    if (!frameEl || !slotFrames.length) return;
+    const clone = frameEl.cloneNode(true);
+    clone.setAttribute('viewBox', `0 0 ${VB} ${VB}`);
+    clone.setAttribute('width', String(VB));
+    clone.setAttribute('height', String(VB));
+    const xml = new XMLSerializer().serializeToString(clone);
+    const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = VB; canvas.height = VB;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#070f1c';
+      ctx.fillRect(0, 0, VB, VB);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      const link = document.createElement('a');
+      link.href = canvas.toDataURL('image/png');
+      const h = String(slotFrames[frameIndex].hour).padStart(2, '0');
+      link.download = `objectifoudre-historique-${historyDate || ''}-${h}h.png`;
+      link.click();
+    };
+    img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+  }
 
+  if (playBtn) playBtn.addEventListener('click', () => (playing ? pause() : play()));
+  if (scrubber) scrubber.addEventListener('input', () => { pause(); showHour(Number(scrubber.value) || 0); });
+  if (downloadBtn) downloadBtn.addEventListener('click', downloadCurrent);
   if (flashBtn) flashBtn.addEventListener('click', () => {
     showFlashes = !showFlashes;
     updateFlashBtn();
-    if (historyDate) selectDate(historyDate); // régénère les frames (avec/sans overlay, mis en cache)
+    if (slotFrames.length) renderFlashHour(slotFrames[frameIndex].hour);
   });
 
-  // --- Zoom / pan sur l'image (molette souris + pinch tactile, double-clic = reset) ---
-  let zScale = 1;
-  let zTx = 0;
-  let zTy = 0;
-  const Z_MIN = 1;
-  const Z_MAX = 8;
+  // --- Zoom / pan via viewBox SVG (net à tout niveau) ---
+  const vb = { x: 0, y: 0, w: VB, h: VB };
 
-  function applyZoom() {
-    if (!frameEl) return;
-    if (zScale <= 1.001) { zScale = 1; zTx = 0; zTy = 0; }
-    frameEl.style.transform = `translate(${zTx.toFixed(1)}px, ${zTy.toFixed(1)}px) scale(${zScale.toFixed(3)})`;
-    frameEl.style.cursor = zScale > 1 ? 'grab' : '';
+  function applyViewBox() {
+    if (frameEl) frameEl.setAttribute('viewBox', `${vb.x.toFixed(2)} ${vb.y.toFixed(2)} ${vb.w.toFixed(2)} ${vb.h.toFixed(2)}`);
   }
-  function resetZoom() { zScale = 1; zTx = 0; zTy = 0; applyZoom(); }
-  function clampPan() {
-    if (!frameEl) return;
-    const w = frameEl.clientWidth;
-    const h = frameEl.clientHeight;
-    zTx = Math.min(0, Math.max(w - w * zScale, zTx));
-    zTy = Math.min(0, Math.max(h - h * zScale, zTy));
+  function resetZoom() {
+    vb.x = 0; vb.y = 0; vb.w = VB; vb.h = VB;
+    applyViewBox();
+    if (frameEl) frameEl.style.cursor = '';
   }
-  function zoomAt(px, py, factor) {
-    const next = Math.min(Z_MAX, Math.max(Z_MIN, zScale * factor));
-    if (next === zScale) return;
-    // px,py = curseur relatif au coin de la boîte TRANSFORMÉE (getBoundingClientRect).
-    // Pour garder le point sous le curseur fixe : tx += px·(1 − next/scale).
-    const ratio = 1 - next / zScale;
-    zTx += px * ratio;
-    zTy += py * ratio;
-    zScale = next;
-    clampPan();
-    applyZoom();
+  function clampVb() {
+    vb.w = Math.min(VB, Math.max(VB / Z_MAX, vb.w));
+    vb.h = vb.w;
+    vb.x = Math.min(VB - vb.w, Math.max(0, vb.x));
+    vb.y = Math.min(VB - vb.h, Math.max(0, vb.y));
+  }
+  function userAt(clientX, clientY) {
+    try {
+      const ctm = frameEl.getScreenCTM();
+      if (ctm) {
+        const pt = frameEl.createSVGPoint();
+        pt.x = clientX; pt.y = clientY;
+        const u = pt.matrixTransform(ctm.inverse());
+        return { x: u.x, y: u.y, ax: ctm.a, ay: ctm.d };
+      }
+    } catch (_) { /* fallback */ }
+    const r = frameEl.getBoundingClientRect();
+    return { x: vb.x + ((clientX - r.left) / r.width) * vb.w, y: vb.y + ((clientY - r.top) / r.height) * vb.h, ax: r.width / vb.w, ay: r.height / vb.h };
+  }
+  function zoomAtClient(clientX, clientY, factor) {
+    const u = userAt(clientX, clientY);
+    const newW = Math.min(VB, Math.max(VB / Z_MAX, vb.w / factor));
+    const k = newW / vb.w;
+    vb.x = u.x - (u.x - vb.x) * k; // garde le point sous le curseur fixe
+    vb.y = u.y - (u.y - vb.y) * k;
+    vb.w = newW; vb.h = newW;
+    clampVb();
+    applyViewBox();
+    if (frameEl) frameEl.style.cursor = vb.w < VB ? 'grab' : '';
   }
 
   if (frameEl) {
-    frameEl.style.transformOrigin = '0 0';
     frameEl.addEventListener('wheel', (event) => {
       event.preventDefault();
-      const rect = frameEl.getBoundingClientRect();
-      zoomAt(event.clientX - rect.left, event.clientY - rect.top, event.deltaY < 0 ? 1.18 : 1 / 1.18);
+      zoomAtClient(event.clientX, event.clientY, event.deltaY < 0 ? 1.18 : 1 / 1.18);
     }, { passive: false });
     frameEl.addEventListener('dblclick', resetZoom);
 
@@ -473,45 +577,32 @@
     let lastX = 0;
     let lastY = 0;
     frameEl.addEventListener('mousedown', (event) => {
-      if (zScale <= 1) return;
-      dragging = true;
-      lastX = event.clientX;
-      lastY = event.clientY;
+      if (vb.w >= VB) return;
+      dragging = true; lastX = event.clientX; lastY = event.clientY;
       frameEl.style.cursor = 'grabbing';
       event.preventDefault();
     });
     window.addEventListener('mousemove', (event) => {
       if (!dragging) return;
-      zTx += event.clientX - lastX;
-      zTy += event.clientY - lastY;
-      lastX = event.clientX;
-      lastY = event.clientY;
-      clampPan();
-      applyZoom();
+      const u = userAt(event.clientX, event.clientY);
+      vb.x -= (event.clientX - lastX) / u.ax;
+      vb.y -= (event.clientY - lastY) / u.ay;
+      lastX = event.clientX; lastY = event.clientY;
+      clampVb(); applyViewBox();
     });
     window.addEventListener('mouseup', () => {
-      if (dragging) { dragging = false; frameEl.style.cursor = zScale > 1 ? 'grab' : ''; }
+      if (dragging) { dragging = false; frameEl.style.cursor = vb.w < VB ? 'grab' : ''; }
     });
 
     const touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-    const touchMid = (t) => {
-      const r = frameEl.getBoundingClientRect();
-      return { x: (t[0].clientX + t[1].clientX) / 2 - r.left, y: (t[0].clientY + t[1].clientY) / 2 - r.top };
-    };
     let mode = null;
     let startDist = 0;
-    let startScale = 1;
-    let pinchMid = null;
     let lastTouch = null;
     frameEl.addEventListener('touchstart', (event) => {
       if (event.touches.length === 2) {
-        mode = 'pinch';
-        startDist = touchDist(event.touches);
-        startScale = zScale;
-        pinchMid = touchMid(event.touches);
-      } else if (event.touches.length === 1 && zScale > 1) {
-        mode = 'pan';
-        lastTouch = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+        mode = 'pinch'; startDist = touchDist(event.touches);
+      } else if (event.touches.length === 1 && vb.w < VB) {
+        mode = 'pan'; lastTouch = { x: event.touches[0].clientX, y: event.touches[0].clientY };
       } else {
         mode = null;
       }
@@ -519,17 +610,20 @@
     frameEl.addEventListener('touchmove', (event) => {
       if (mode === 'pinch' && event.touches.length === 2) {
         event.preventDefault();
-        const target = Math.min(Z_MAX, Math.max(Z_MIN, startScale * (touchDist(event.touches) / Math.max(1, startDist))));
-        const m = touchMid(event.touches); // recalculé sur la boîte courante (transformée)
-        zoomAt(m.x, m.y, target / zScale);
+        const d = touchDist(event.touches);
+        const factor = d / Math.max(1, startDist);
+        startDist = d;
+        const cx = (event.touches[0].clientX + event.touches[1].clientX) / 2;
+        const cy = (event.touches[0].clientY + event.touches[1].clientY) / 2;
+        zoomAtClient(cx, cy, factor);
       } else if (mode === 'pan' && event.touches.length === 1) {
         event.preventDefault();
         const t = event.touches[0];
-        zTx += t.clientX - lastTouch.x;
-        zTy += t.clientY - lastTouch.y;
+        const u = userAt(t.clientX, t.clientY);
+        vb.x -= (t.clientX - lastTouch.x) / u.ax;
+        vb.y -= (t.clientY - lastTouch.y) / u.ay;
         lastTouch = { x: t.clientX, y: t.clientY };
-        clampPan();
-        applyZoom();
+        clampVb(); applyViewBox();
       }
     }, { passive: false });
     frameEl.addEventListener('touchend', (event) => { if (event.touches.length === 0) mode = null; });
