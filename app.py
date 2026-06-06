@@ -40,7 +40,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from weather_logic import DEFAULT_CENTER_LABEL, CELL_SIZE_KM, Point, build_historical_analysis_payload, build_latest_payload, build_grid, fetch_model, flatten_rows_for_analysis, group_for_output, km_to_deg_lat, km_to_deg_lon, rows_for_grid_locations
+import weather_logic
 import verification
+import learning
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -49,7 +51,7 @@ JS_DIR = ASSETS_DIR / "js"
 CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.1.112"
+APP_VERSION = "1.1.113"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -2912,7 +2914,9 @@ def _compute_day_verification(date_str: str) -> dict[str, Any]:
             "reason": "no_forecast_archived",
             "message": "Aucune grille prévue archivée pour cette date.",
         }
-    result = verification.compute_verification(cells, lightning.get("flashes_per_cell") or {})
+    result = verification.compute_verification(
+        cells, lightning.get("flashes_per_cell") or {}, score_threshold=_active_score_threshold,
+    )
     result["date"] = date_str
     result["flash_total"] = lightning.get("flash_total")
     result["observation_source"] = lightning.get("source")
@@ -2921,6 +2925,138 @@ def _compute_day_verification(date_str: str) -> dict[str, Any]:
     while len(_verification_cache) > 16:
         _verification_cache.pop(next(iter(_verification_cache)))
     return result
+
+
+# --- Auto-calibration & apprentissage (boucle fermée, cf. learning.py) ---------
+# Seuil de décision « zones prévues » actif (appris ou défaut). Les poids de mélange
+# appris vivent dans weather_logic (set_active_blend_weights). Tout est réversible.
+_active_score_threshold: int = verification.DEFAULT_SCORE_THRESHOLD
+_learning_lock = threading.Lock()
+
+
+def _learning_full_day_loader(date_str: str) -> dict[str, Any] | None:
+    """Payload FULL d'un jour archivé (cellules avec metric_scores) pour l'apprentissage."""
+    result = _get_history_france_day_sync(date_str, slim=False)
+    return result.get("payload") if result.get("ok") else None
+
+
+def _learning_finalized_dates() -> list[str]:
+    """Dates ayant à la fois une prévision archivée ET une foudre finale."""
+    dates: list[str] = []
+    for item in _list_history_dates():
+        d = item.get("date")
+        if not d:
+            continue
+        light = _read_lightning_archive(d)
+        if light and light.get("final"):
+            dates.append(d)
+    return sorted(dates)
+
+
+def _learning_data_counts_cheap() -> dict[str, int]:
+    """Compteurs de progression sans décompresser les 24 créneaux (lit la foudre seule)."""
+    days = storm_days = positives = 0
+    for d in _learning_finalized_dates():
+        light = _read_lightning_archive(d)
+        if not light:
+            continue
+        days += 1
+        touched = len(light.get("flashes_per_cell") or {})
+        if touched > 0:
+            storm_days += 1
+            positives += touched
+    return {"days": days, "storm_days": storm_days, "positives": positives}
+
+
+def _apply_learning_config(config: dict[str, Any] | None) -> None:
+    """Applique (ou réinitialise) la config apprise : poids de mélange + seuil de décision."""
+    global _active_score_threshold
+    if config:
+        weights = config.get("weights") or {}
+        weather_logic.set_active_blend_weights(weights if weights.get("enabled") else None)
+        try:
+            _active_score_threshold = int(config.get("threshold") or verification.DEFAULT_SCORE_THRESHOLD)
+        except (TypeError, ValueError):
+            _active_score_threshold = verification.DEFAULT_SCORE_THRESHOLD
+    else:
+        weather_logic.set_active_blend_weights(None)
+        _active_score_threshold = verification.DEFAULT_SCORE_THRESHOLD
+    _verification_cache.clear()  # le seuil « zones prévues » a pu changer
+
+
+def _load_and_apply_active_learning() -> dict[str, Any] | None:
+    """Au démarrage : charge active.json et applique poids + seuil (sinon défaut)."""
+    config = learning.load_active(OBJECTIFOUDRE_HISTORY_DIR)
+    _apply_learning_config(config)
+    return config
+
+
+def _run_learning_evaluation(*, source: str = "manual") -> dict[str, Any]:
+    """Construit le jeu d'apprentissage, évalue, et en mode auto applique le candidat
+    s'il bat la baseline (held-out). Toujours journalisé. Réversible."""
+    with _learning_lock:
+        dates = _learning_finalized_dates()
+        examples = learning.build_training_examples(
+            dates, _learning_full_day_loader, _read_lightning_archive,
+        )
+        res = learning.evaluate_and_select(examples)
+        applied = False
+        config = res.get("config")
+        if config:
+            config["fitted_at"] = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).isoformat()
+        if res["decision"] == "activate" and config:
+            learning.save_active(OBJECTIFOUDRE_HISTORY_DIR, config)
+            _apply_learning_config(config)
+            applied = True
+        elif config:
+            learning.save_candidate(OBJECTIFOUDRE_HISTORY_DIR, config)
+        learning.append_log(OBJECTIFOUDRE_HISTORY_DIR, {
+            "at": datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).isoformat(),
+            "source": source,
+            "decision": res["decision"],
+            "reason": res.get("reason"),
+            "data": res.get("data"),
+            "applied": applied,
+            "skill": res.get("skill"),
+        })
+        res["applied"] = applied
+        return res
+
+
+def _learning_status() -> dict[str, Any]:
+    """État courant pour l'UI : volumes, garde-fous, seuil/poids actifs, skill, journal."""
+    active = learning.load_active(OBJECTIFOUDRE_HISTORY_DIR)
+    counts = _learning_data_counts_cheap()
+    gates = {
+        "calibration_ready": counts["days"] >= learning.CALIB_MIN_DAYS and counts["positives"] >= learning.CALIB_MIN_POSITIVES,
+        "weights_ready": counts["days"] >= learning.WEIGHTS_MIN_DAYS and counts["positives"] >= learning.WEIGHTS_MIN_POSITIVES,
+        "calib_min_days": learning.CALIB_MIN_DAYS,
+        "calib_min_positives": learning.CALIB_MIN_POSITIVES,
+        "weights_min_days": learning.WEIGHTS_MIN_DAYS,
+        "weights_min_positives": learning.WEIGHTS_MIN_POSITIVES,
+    }
+    if active:
+        state = "active"
+    elif gates["calibration_ready"]:
+        state = "baseline"   # assez de données mais aucun candidat n'améliorait la baseline
+    else:
+        state = "collecting"
+    return {
+        "ok": True,
+        "state": state,
+        "mode": "auto",
+        "data": counts,
+        "gates": gates,
+        "threshold": {"active": _active_score_threshold, "baseline": verification.DEFAULT_SCORE_THRESHOLD},
+        "weights": {
+            "active": (active.get("weights") if active else None),
+            "default": learning.DEFAULT_BLEND_WEIGHTS,
+        },
+        "calibration": (active.get("calibration") if active else None),
+        "skill": (active.get("skill") if active else None),
+        "fitted_at": (active.get("fitted_at") if active else None),
+        "last_runs": learning.read_log_tail(OBJECTIFOUDRE_HISTORY_DIR, 10),
+    }
 
 
 def _collect_pending_lightning() -> dict[str, Any]:
@@ -2960,6 +3096,11 @@ def _lightning_automation_loop() -> None:
     while not _lightning_automation_stop.is_set():
         try:
             _collect_pending_lightning()
+        except Exception:
+            pass
+        # Boucle fermée : après chaque collecte de foudre, on réévalue le modèle.
+        try:
+            _run_learning_evaluation(source="automation")
         except Exception:
             pass
         _lightning_automation_stop.wait(OBJECTIFOUDRE_LIGHTNING_AUTOMATION_INTERVAL_SECONDS)
@@ -10061,6 +10202,11 @@ def _startup_server_arome_automation() -> None:
         _start_lightning_automation_thread()
     except Exception:
         pass
+    # Applique la config d'auto-calibration déjà apprise (poids + seuil), si présente.
+    try:
+        _load_and_apply_active_learning()
+    except Exception:
+        pass
 
 
 @app.on_event("shutdown")
@@ -11939,6 +12085,33 @@ async def history_collect_pending_lightning() -> dict[str, Any]:
     """Déclenche la collecte foudre de toutes les journées prévues écoulées non
     encore finalisées (idempotent). Ce que fait aussi l'automatisation quotidienne."""
     return await asyncio.to_thread(_collect_pending_lightning)
+
+
+@app.get("/api/learning/status")
+async def learning_status() -> dict[str, Any]:
+    """État de l'auto-calibration : volumes, garde-fous, seuil/poids actifs, skill, journal."""
+    return await asyncio.to_thread(_learning_status)
+
+
+@app.post("/api/learning/retrain")
+async def learning_retrain() -> dict[str, Any]:
+    """Réentraîne maintenant : construit le jeu, évalue, et applique si meilleur (auto)."""
+    res = await asyncio.to_thread(_run_learning_evaluation, source="manual")
+    status = await asyncio.to_thread(_learning_status)
+    return {"ok": True, "result": res, "status": status}
+
+
+@app.post("/api/learning/revert")
+async def learning_revert() -> dict[str, Any]:
+    """Revient au modèle de base (supprime active.json, réinitialise poids + seuil)."""
+    cleared = await asyncio.to_thread(learning.clear_active, OBJECTIFOUDRE_HISTORY_DIR)
+    await asyncio.to_thread(_apply_learning_config, None)
+    await asyncio.to_thread(learning.append_log, OBJECTIFOUDRE_HISTORY_DIR, {
+        "at": datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).isoformat(),
+        "source": "manual", "decision": "revert", "applied": cleared,
+    })
+    status = await asyncio.to_thread(_learning_status)
+    return {"ok": True, "reverted": cleared, "status": status}
 
 
 @app.post("/api/meteofrance/grib-slot-grid-cache")

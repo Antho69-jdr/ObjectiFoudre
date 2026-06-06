@@ -70,6 +70,25 @@ def clamp(value: float, low: float = 0, high: float = 100) -> int:
     return int(max(low, min(high, round(value))))
 
 
+# --- Poids de mélange appris (auto-calibration, cf. learning.py) ----------------
+# None = poids d'origine codés en dur (comportement par défaut, non-régression).
+# Sinon dict {'cape','humid','heat','conv'} injecté par app.py depuis active.json.
+_active_blend_weights: dict[str, float] | None = None
+
+
+def set_active_blend_weights(weights: dict[str, float] | None) -> None:
+    """Active des poids de mélange appris (ou None pour revenir aux poids d'origine)."""
+    global _active_blend_weights
+    if weights and all(k in weights for k in ("cape", "humid", "heat", "conv")):
+        _active_blend_weights = {k: float(weights[k]) for k in ("cape", "humid", "heat", "conv")}
+    else:
+        _active_blend_weights = None
+
+
+def get_active_blend_weights() -> dict[str, float] | None:
+    return _active_blend_weights
+
+
 def km_to_deg_lat(km: float) -> float:
     return km / 111.0
 
@@ -796,19 +815,39 @@ def compute_initiation(
     moisture = humidity_block
     instability = cape_s
 
-    if surface_trigger_s is None:
-        score = (
-            0.50 * cape_s +
-            0.40 * humidity_block +
-            0.10 * surface_heating_s
-        )
+    _w = _active_blend_weights
+    if _w is None:
+        # Poids d'origine (comportement par défaut). Cas sans convergence : barème
+        # dédié 0.50/0.40/0.10 (et non une simple renormalisation).
+        if surface_trigger_s is None:
+            score = (
+                0.50 * cape_s +
+                0.40 * humidity_block +
+                0.10 * surface_heating_s
+            )
+        else:
+            score = (
+                0.44 * cape_s +
+                0.34 * humidity_block +
+                0.10 * surface_heating_s +
+                0.12 * surface_trigger_s
+            )
     else:
-        score = (
-            0.44 * cape_s +
-            0.34 * humidity_block +
-            0.10 * surface_heating_s +
-            0.12 * surface_trigger_s
-        )
+        # Poids appris (auto-calibration). Renormalisation sur 3 si convergence absente
+        # — identique à learning.blend_score, pour que train/apply concordent.
+        if surface_trigger_s is None:
+            _denom = _w["cape"] + _w["humid"] + _w["heat"]
+            score = (
+                (_w["cape"] * cape_s + _w["humid"] * humidity_block + _w["heat"] * surface_heating_s) / _denom
+                if _denom > 0 else 0.0
+            )
+        else:
+            score = (
+                _w["cape"] * cape_s +
+                _w["humid"] * humidity_block +
+                _w["heat"] * surface_heating_s +
+                _w["conv"] * surface_trigger_s
+            )
 
     inhibition_penalty = 0.0
     score, inhibition_penalty = _apply_cape_moisture_gates(

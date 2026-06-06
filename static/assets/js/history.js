@@ -23,6 +23,9 @@
   const verifEl = document.getElementById('historyVerification');
   const subtitleEl = document.getElementById('historyPageSubtitle');
   const titleEl = document.getElementById('historyPageTitle');
+  const learningEl = document.getElementById('learningPanel');
+  const learningRetrainBtn = document.getElementById('learningRetrainBtn');
+  const learningRevertBtn = document.getElementById('learningRevertBtn');
 
   const SVGNS = 'http://www.w3.org/2000/svg';
   const VB = 1000;           // taille logique du viewBox (carré)
@@ -409,6 +412,95 @@
       <div class="history-verif-cont">✔ ${asNum(c.hits)} bonnes · ✘ ${asNum(c.misses)} ratées · ⚠ ${asNum(c.false_alarms)} fausses alertes</div>`;
   }
 
+  // --- Auto-calibration : statut + actions ---
+  let learningToken = 0;
+  const WEIGHT_LABELS = { cape: 'CAPE', humid: 'Humidité', heat: 'Chauffage', conv: 'Converg.' };
+
+  function renderLearningStatus(st) {
+    if (!learningEl) return;
+    if (!st || !st.ok) { learningEl.innerHTML = '<div class="history-learning-muted">Indisponible.</div>'; return; }
+    const d = st.data || {};
+    const g = st.gates || {};
+    const stateLabel = { collecting: 'En collecte', baseline: 'Modèle de base', active: 'Calibré' }[st.state] || st.state;
+    const stateTone = { collecting: 'wait', baseline: 'base', active: 'on' }[st.state] || 'base';
+    let html = `<div class="history-learning-state tone-${stateTone}">${stateLabel}</div>`;
+    html += `<div class="history-learning-data">
+      <div><b>${asNum(d.days)}</b><span>jours appris</span></div>
+      <div><b>${asNum(d.storm_days)}</b><span>jours orageux</span></div>
+      <div><b>${asNum(d.positives)}</b><span>cellules foudre</span></div>
+    </div>`;
+    if (st.state === 'collecting') {
+      const dayPct = Math.min(100, Math.round(100 * (d.days || 0) / (g.calib_min_days || 10)));
+      html += `<div class="history-learning-gauge"><span>Vers la 1re calibration</span>
+        <div class="hl-bar"><i style="width:${dayPct}%"></i></div>
+        <small>${asNum(d.days)}/${g.calib_min_days} jours · ${asNum(d.positives)}/${g.calib_min_positives} cellules orageuses</small></div>`;
+      html += `<div class="history-learning-muted">Le modèle accumule des journées. Une correction ne sera appliquée que lorsqu'elle améliorera réellement le score sur des jours de test.</div>`;
+    }
+    const thr = st.threshold || {};
+    const thrExtra = (thr.active !== thr.baseline) ? ` <i>(base ${asNum(thr.baseline)})</i>` : '';
+    html += `<div class="history-learning-row"><span>Seuil « zones prévues »</span><b>${asNum(thr.active)}${thrExtra}</b></div>`;
+    const w = (st.weights && st.weights.active) || null;
+    if (w && w.enabled) {
+      const def = (st.weights && st.weights.default) || {};
+      html += `<div class="history-learning-weights"><div class="hl-w-title">Poids appris vs origine</div>`
+        + ['cape', 'humid', 'heat', 'conv'].map((k) =>
+            `<div><span>${WEIGHT_LABELS[k]}</span><b>${Math.round((w[k] || 0) * 100)}%</b><i>${Math.round((def[k] || 0) * 100)}%</i></div>`
+          ).join('')
+        + `</div>`;
+    }
+    const sk = st.skill || null;
+    if (sk && sk.baseline && sk.candidate) {
+      html += `<div class="history-learning-skill"><span>Score CSI (test)</span><b>${Number(sk.baseline.csi).toFixed(2)} → ${Number(sk.candidate.csi).toFixed(2)}</b></div>`;
+    }
+    if (st.fitted_at) html += `<div class="history-learning-muted">Dernier ajustement : ${String(st.fitted_at).slice(0, 16).replace('T', ' ')}</div>`;
+    learningEl.innerHTML = html;
+  }
+
+  async function loadLearningStatus() {
+    if (!learningEl) return;
+    const token = ++learningToken;
+    learningEl.innerHTML = '<div class="history-learning-loading">Chargement…</div>';
+    try {
+      const response = await fetch('/api/learning/status');
+      const data = await response.json().catch(() => ({}));
+      if (token !== learningToken) return;
+      renderLearningStatus(data);
+    } catch (_) {
+      if (token === learningToken) learningEl.innerHTML = '<div class="history-learning-muted">Indisponible.</div>';
+    }
+  }
+
+  async function retrainLearning() {
+    if (!learningEl) return;
+    const token = ++learningToken;
+    if (learningRetrainBtn) learningRetrainBtn.disabled = true;
+    learningEl.innerHTML = '<div class="history-learning-loading">Réentraînement en cours… (lecture des archives)</div>';
+    try {
+      const response = await fetch('/api/learning/retrain', { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (token === learningToken) renderLearningStatus(data.status || null);
+    } catch (_) {
+      if (token === learningToken) learningEl.innerHTML = '<div class="history-learning-muted">Réentraînement impossible.</div>';
+    } finally {
+      if (learningRetrainBtn) learningRetrainBtn.disabled = false;
+    }
+  }
+
+  async function revertLearning() {
+    if (!learningEl) return;
+    const token = ++learningToken;
+    if (learningRevertBtn) learningRevertBtn.disabled = true;
+    try {
+      const response = await fetch('/api/learning/revert', { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (token === learningToken) renderLearningStatus(data.status || null);
+    } catch (_) {
+      /* ignore */
+    } finally {
+      if (learningRevertBtn) learningRevertBtn.disabled = false;
+    }
+  }
+
   async function collectLightning(date) {
     if (!verifEl) return;
     const token = ++verifToken;
@@ -615,11 +707,15 @@
     frameEl.addEventListener('touchend', (event) => { if (event.touches.length === 0) mode = null; });
   }
 
+  if (learningRetrainBtn) learningRetrainBtn.addEventListener('click', retrainLearning);
+  if (learningRevertBtn) learningRevertBtn.addEventListener('click', revertLearning);
+
   function openHistoryPage() {
     historyPage.setAttribute('aria-hidden', 'false');
     document.body.classList.add('history-open');
     resetZoom();
     loadDates();
+    loadLearningStatus();
   }
 
   function closeHistoryPage() {
