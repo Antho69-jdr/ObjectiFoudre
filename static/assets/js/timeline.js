@@ -1,7 +1,7 @@
     function timelinePlaybackIcon(isRunning) {
       return isRunning
-        ? '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M7 5.5h3.5v13H7v-13Zm6.5 0H17v13h-3.5v-13Z"></path></svg>'
-        : '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8 5.5v13l10-6.5-10-6.5Z"></path></svg>';
+        ? '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><rect x="9" y="8.3" width="2.2" height="7.4" rx="0.6" fill="currentColor" stroke="none"></rect><rect x="12.8" y="8.3" width="2.2" height="7.4" rx="0.6" fill="currentColor" stroke="none"></rect></svg>'
+        : '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M10 8.2 16.3 12 10 15.8Z" fill="currentColor" stroke="none"></path></svg>';
     }
 
     function timelineSelectableSlots(day = getCurrentDay()) {

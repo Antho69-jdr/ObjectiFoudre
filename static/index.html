@@ -7,14 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="ObjectiFoudre" />
-  <link rel="manifest" href="/manifest.webmanifest?v=1.2.26" />
+  <link rel="manifest" href="/manifest.webmanifest?v=1.2.27" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <title>ObjectiFoudre — Tactile</title>
-  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.2.26"></script>
-  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.2.26" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/css/main.css?v=1.2.26" />
-<link rel="stylesheet" href="/assets/css/components.css?v=1.2.26" />
-<link rel="stylesheet" href="/assets/css/responsive.css?v=1.2.26" />
+  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.2.27"></script>
+  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.2.27" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/main.css?v=1.2.27" />
+<link rel="stylesheet" href="/assets/css/components.css?v=1.2.27" />
+<link rel="stylesheet" href="/assets/css/responsive.css?v=1.2.27" />
 </head>
 <body>
   <div id="mobileBlockScreen" class="mobile-block-screen" hidden>
@@ -119,17 +119,16 @@
             </svg>
           </button>
           <button id="playTimelineBtn" class="timeline-icon-btn timeline-play-btn" type="button" aria-pressed="false" title="Lire les horaires du jour">
-            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
-              <path d="M8 5.5v13l10-6.5-10-6.5Z"></path>
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"></circle>
+              <path d="M10 8.2 16.3 12 10 15.8Z" fill="currentColor" stroke="none"></path>
             </svg>
           </button>
           <button id="exportGifBtn" class="timeline-icon-btn timeline-gif-btn" type="button" aria-label="Exporter l’animation de grille" title="Exporter animation" aria-haspopup="menu" aria-expanded="false">
-            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="4" y="4" width="16" height="13" rx="2"></rect>
-              <path d="M8 4v13"></path>
-              <path d="M16 4v13"></path>
-              <path d="M12 17v4"></path>
-              <path d="m9 19 3 3 3-3"></path>
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"></path>
+              <path d="M17 21v-8H7v8"></path>
+              <path d="M7 3v5h8"></path>
             </svg>
           </button>
         </div>
@@ -218,7 +217,7 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.2.26">Version : v1.2.26 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.2.27">Version : v1.2.27 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
@@ -418,30 +417,30 @@
       </div>
     </section>
   </div>
-  <script src="/assets/js/dom.js?v=1.2.26"></script>
-  <script src="/assets/js/utils.js?v=1.2.26"></script>
-  <script src="/assets/js/panels.js?v=1.2.26"></script>
-  <script src="/assets/js/state.js?v=1.2.26"></script>
-  <script src="/assets/js/core.js?v=1.2.26"></script>
-  <script src="/assets/js/map-ui.js?v=1.2.26"></script>
-  <script src="/assets/js/timeline.js?v=1.2.26"></script>
-  <script src="/assets/js/grid-loader.js?v=1.2.26"></script>
-  <script src="/assets/js/grid-core.js?v=1.2.26"></script>
-  <script src="/assets/js/france-admin-lines.js?v=1.2.26"></script>
-  <script src="/assets/js/france-regions.js?v=1.2.26"></script>
-  <script src="/assets/js/storm-forecast-image.js?v=1.2.26"></script>
-  <script src="/assets/js/grid-layers.js?v=1.2.26"></script>
-  <script src="/assets/js/grid.js?v=1.2.26"></script>
-  <script src="/assets/js/metric-data.js?v=1.2.26"></script>
-  <script src="/assets/js/metric-ui.js?v=1.2.26"></script>
-  <script src="/assets/js/selection.js?v=1.2.26"></script>
-  <script src="/assets/js/data.js?v=1.2.26"></script>
-  <script src="/assets/js/services.js?v=1.2.26"></script>
-  <script src="/assets/js/search-autocomplete.js?v=1.2.26"></script>
-  <script src="/assets/js/controls.js?v=1.2.26"></script>
-  <script src="/assets/js/history.js?v=1.2.26"></script>
-  <script src="/assets/js/bootstrap.js?v=1.2.26"></script>
-  <script src="/assets/js/mobile-block.js?v=1.2.26"></script>
-  <script src="/assets/js/tooltip.js?v=1.2.26"></script>
+  <script src="/assets/js/dom.js?v=1.2.27"></script>
+  <script src="/assets/js/utils.js?v=1.2.27"></script>
+  <script src="/assets/js/panels.js?v=1.2.27"></script>
+  <script src="/assets/js/state.js?v=1.2.27"></script>
+  <script src="/assets/js/core.js?v=1.2.27"></script>
+  <script src="/assets/js/map-ui.js?v=1.2.27"></script>
+  <script src="/assets/js/timeline.js?v=1.2.27"></script>
+  <script src="/assets/js/grid-loader.js?v=1.2.27"></script>
+  <script src="/assets/js/grid-core.js?v=1.2.27"></script>
+  <script src="/assets/js/france-admin-lines.js?v=1.2.27"></script>
+  <script src="/assets/js/france-regions.js?v=1.2.27"></script>
+  <script src="/assets/js/storm-forecast-image.js?v=1.2.27"></script>
+  <script src="/assets/js/grid-layers.js?v=1.2.27"></script>
+  <script src="/assets/js/grid.js?v=1.2.27"></script>
+  <script src="/assets/js/metric-data.js?v=1.2.27"></script>
+  <script src="/assets/js/metric-ui.js?v=1.2.27"></script>
+  <script src="/assets/js/selection.js?v=1.2.27"></script>
+  <script src="/assets/js/data.js?v=1.2.27"></script>
+  <script src="/assets/js/services.js?v=1.2.27"></script>
+  <script src="/assets/js/search-autocomplete.js?v=1.2.27"></script>
+  <script src="/assets/js/controls.js?v=1.2.27"></script>
+  <script src="/assets/js/history.js?v=1.2.27"></script>
+  <script src="/assets/js/bootstrap.js?v=1.2.27"></script>
+  <script src="/assets/js/mobile-block.js?v=1.2.27"></script>
+  <script src="/assets/js/tooltip.js?v=1.2.27"></script>
 </body>
 </html>

@@ -1750,8 +1750,8 @@ body.mobile-blocked #app {
 .timeline-bar.timeline-bar-frise,
 #timelineDock .timeline-bar.timeline-bar-frise {
   display: grid !important;
-  grid-template-columns: 40px minmax(0, 1fr) 40px 40px 40px !important;
-  grid-template-areas: "prev slots next play gif" !important;
+  grid-template-columns: 40px 40px minmax(0, 1fr) 40px 40px !important;
+  grid-template-areas: "prev next slots play gif" !important;
   align-items: center !important;
   justify-content: center !important;
   width: min(100%, 1120px) !important;

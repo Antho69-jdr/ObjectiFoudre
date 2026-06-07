@@ -1372,8 +1372,8 @@
 .timeline-bar.timeline-bar-frise,
 #timelineDock .timeline-bar.timeline-bar-frise {
   display: grid !important;
-  grid-template-columns: 40px minmax(280px, 1fr) 40px 40px !important;
-  grid-template-areas: "prev slots next play" !important;
+  grid-template-columns: 40px 40px minmax(280px, 1fr) 40px !important;
+  grid-template-areas: "prev next slots play" !important;
   align-items: center !important;
   justify-content: center !important;
   width: min(100%, 1120px) !important;
@@ -1417,8 +1417,8 @@
 /* ===== v1.0.116 timeline action buttons + cursor polish ===== */
 .timeline-bar.timeline-bar-frise,
 #timelineDock .timeline-bar.timeline-bar-frise {
-  grid-template-columns: 44px minmax(280px, 1fr) 44px 44px 44px !important;
-  grid-template-areas: "prev slots next play gif" !important;
+  grid-template-columns: 44px 44px minmax(280px, 1fr) 44px 44px !important;
+  grid-template-areas: "prev next slots play gif" !important;
   gap: 10px !important;
   width: min(100%, 1180px) !important;
 }
@@ -1727,7 +1727,7 @@
 
 .timeline-bar.timeline-bar-frise,
 #timelineDock .timeline-bar.timeline-bar-frise {
-  grid-template-columns: 40px minmax(300px, 1fr) 40px 40px 40px !important;
+  grid-template-columns: 40px 40px minmax(300px, 1fr) 40px 40px !important;
   gap: 8px !important;
   width: min(100%, 1080px) !important;
 }
@@ -1920,7 +1920,7 @@ body.mobile-ui .mobile-toggle-btn {
 
 .timeline-bar.timeline-bar-frise,
 #timelineDock .timeline-bar.timeline-bar-frise {
-  grid-template-columns: 36px minmax(300px, 1fr) 36px 36px 36px !important;
+  grid-template-columns: 36px 36px minmax(300px, 1fr) 36px 36px !important;
   gap: 7px !important;
   width: min(100%, 1020px) !important;
   margin: 0 auto !important;
@@ -2122,7 +2122,7 @@ body.mobile-ui .mobile-toggle-btn {
 
 .timeline-bar.timeline-bar-frise,
 #timelineDock .timeline-bar.timeline-bar-frise {
-  grid-template-columns: 34px minmax(320px, 1fr) 34px 34px 34px !important;
+  grid-template-columns: 34px 34px minmax(320px, 1fr) 34px 34px !important;
   gap: 6px !important;
   width: min(100%, 1000px) !important;
   margin: 0 auto !important;
