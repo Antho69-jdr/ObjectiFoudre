@@ -651,13 +651,25 @@
       return true;
     }
 
+    function getGifRegionRings() {
+      return (typeof franceRegionRings === 'function') ? franceRegionRings() : [];
+    }
+
     function drawGifAdminLines(ctx, projection) {
       const departmentRings = getGifDepartmentRings();
+      const regionRings = getGifRegionRings();
       const clipRings = getGifClipRings();
       ctx.save();
+      // départements (discrets, dessous)
       if (departmentRings.length && addGifRingsPath(ctx, departmentRings, projection)) {
-        ctx.strokeStyle = 'rgba(226, 232, 240, 0.46)';
-        ctx.lineWidth = Math.max(0.7, ctx.canvas.width / 1180);
+        ctx.strokeStyle = 'rgba(200, 214, 232, 0.34)';
+        ctx.lineWidth = Math.max(0.6, ctx.canvas.width / 1320);
+        ctx.stroke();
+      }
+      // régions (nettes, dessus)
+      if (regionRings.length && addGifRingsPath(ctx, regionRings, projection)) {
+        ctx.strokeStyle = 'rgba(214, 228, 246, 0.7)';
+        ctx.lineWidth = Math.max(1.0, ctx.canvas.width / 760);
         ctx.stroke();
       }
       if (clipRings.length && addGifRingsPath(ctx, clipRings, projection)) {

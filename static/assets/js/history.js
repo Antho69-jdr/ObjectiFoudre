@@ -213,9 +213,13 @@
     // côté serveur : leur union forme la France) ni de fond plein : énorme gain
     // de perf (le clip sur 2636 rects + un gros path se re-rasterisaient à chaque
     // frame). Contours de départements décimés. shape-rendering: optimizeSpeed.
+    // Frontières IGN : départements fins (dessous) + régions nettes (dessus), comme
+    // la carte de base. Décimation légère des départements pour garder l'animation fluide.
     const deptRings = (typeof FRANCE_DEPARTMENT_RINGS !== 'undefined' && Array.isArray(FRANCE_DEPARTMENT_RINGS)) ? FRANCE_DEPARTMENT_RINGS
       : ((typeof FRANCE_GRID_CLIP_RINGS !== 'undefined' && Array.isArray(FRANCE_GRID_CLIP_RINGS)) ? FRANCE_GRID_CLIP_RINGS : []);
-    const bordersData = deptRings.length ? ringsToPath(deptRings, proj, 3) : '';
+    const regionRings = (typeof franceRegionRings === 'function') ? franceRegionRings() : [];
+    const deptData = deptRings.length ? ringsToPath(deptRings, proj, 2) : '';
+    const regionData = regionRings.length ? ringsToPath(regionRings, proj, 1) : '';
 
     while (frameEl.firstChild) frameEl.removeChild(frameEl.firstChild);
     frameEl.setAttribute('viewBox', `0 0 ${VB} ${VB}`);
@@ -242,16 +246,21 @@
     frameEl.appendChild(cellsG);
     curColors = new Array(n).fill(baseColor);
 
-    if (bordersData) {
-      const borders = document.createElementNS(SVGNS, 'path');
-      borders.setAttribute('d', bordersData);
-      borders.setAttribute('fill', 'none');
-      borders.setAttribute('stroke', 'rgba(160,180,205,0.28)');
-      borders.setAttribute('stroke-width', '0.7');
-      borders.setAttribute('vector-effect', 'non-scaling-stroke');
-      borders.setAttribute('pointer-events', 'none');
-      frameEl.appendChild(borders);
-    }
+    const addBorderPath = (d, stroke, width) => {
+      if (!d) return;
+      const p = document.createElementNS(SVGNS, 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', stroke);
+      p.setAttribute('stroke-width', String(width));
+      p.setAttribute('vector-effect', 'non-scaling-stroke');
+      p.setAttribute('stroke-linejoin', 'round');
+      p.setAttribute('stroke-linecap', 'round');
+      p.setAttribute('pointer-events', 'none');
+      frameEl.appendChild(p);
+    };
+    addBorderPath(deptData, 'rgba(150,170,200,0.30)', 0.5);   // départements (dessous, discret)
+    addBorderPath(regionData, 'rgba(176,200,228,0.66)', 1.1); // régions (dessus, net)
 
     flashLayer = document.createElementNS(SVGNS, 'g');
     frameEl.appendChild(flashLayer);
