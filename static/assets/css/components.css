@@ -4165,10 +4165,10 @@ body.mobile-blocked #app {
 }
 .history-learning-btn-ghost:hover { background: rgba(255, 255, 255, 0.07); }
 
-/* ===== Fixes UI desktop (régressions exposées par le bump de cache) ===== */
+/* ===== Fixes UI tablette + desktop (régime « rail » de la frise, >= 768px) ===== */
 /* (Le fix du shell plein écran historique/prévision est dans responsive.css, qui
    charge après ce fichier — c'est là que vit la règle plein écran.) */
-@media (min-width: 921px) {
+@media (min-width: 768px) {
   /* Bug 1 : les icônes jour/nuit/lever/coucher étaient invisibles car le
      `backdrop-filter` du dock crée un contexte de rendu qui masque ces descendants
      imbriqués (comportement Chromium). On déporte le fond ET le backdrop-filter sur

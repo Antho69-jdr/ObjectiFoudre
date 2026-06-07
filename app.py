@@ -51,7 +51,7 @@ JS_DIR = ASSETS_DIR / "js"
 CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.20"
+APP_VERSION = "1.2.21"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
