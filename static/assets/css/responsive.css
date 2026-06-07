@@ -4567,3 +4567,32 @@ body.mobile-ui #timelineDock.timeline-dock,
   padding-top: 12px !important;
   padding-bottom: calc(12px + env(safe-area-inset-bottom)) !important;
 }
+
+/* Mobile (<768px) : le wheel de la frise doit REMPLIR la hauteur du dock (pas de
+   marge verticale) et le dock être plus compact. Le dock a une hauteur FIXE
+   (--timeline-height-px) qu'on réduit, on annule le padding vertical, et on force
+   le wheel + son wrapper à 100% (en battant la hauteur fixe 76px de #slotButtons
+   .timeline-wheel). Le dock reste collé au metastack (position inchangée). */
+@media (max-width: 767px) {
+  body.mobile-ui {
+    --timeline-height-px: 72px !important;
+    --touch-timeline-h: 72px !important;
+  }
+  body.mobile-ui #timelineDock.timeline-dock,
+  #timelineDock.timeline-dock {
+    padding-top: 0 !important;
+    padding-bottom: env(safe-area-inset-bottom) !important;
+  }
+  /* wheel + scroller à la hauteur exacte du dock (chaîne % cassée -> valeur fixe) */
+  body.mobile-ui #slotButtons .timeline-wheel,
+  body.mobile-ui #slotButtons .timeline-wheel-scroller {
+    height: 72px !important;
+    min-height: 72px !important;
+    max-height: 72px !important;
+  }
+  /* padding du scroller réduit pour que les items (64px) remplissent sans déborder */
+  body.mobile-ui #slotButtons .timeline-wheel-scroller {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+  }
+}
