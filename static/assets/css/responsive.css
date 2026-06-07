@@ -4524,17 +4524,24 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
    desktop/paysage : pas de coins arrondis, pas d'espace en plus, séparateurs
    verticaux, même hauteur (~30px). --mobile-meta-h recalé pour que le dock suive. */
 @media (min-width: 768px) and (max-width: 1024px) {
-  body.mobile-ui { --mobile-meta-h: 30px !important; }
+  body.mobile-ui { --mobile-meta-h: 30px !important; --meta-height-px: 30px !important; }
   body.mobile-ui .meta-stack,
   .meta-stack {
     gap: 0 !important;
-    min-height: 0 !important;
+    height: var(--mobile-meta-h) !important;
+    min-height: var(--mobile-meta-h) !important;
     padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) !important;
     background: rgba(7, 17, 31, 0.94) !important;
     border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
     box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.18) !important;
     backdrop-filter: blur(14px) saturate(1.05) !important;
     -webkit-backdrop-filter: blur(14px) saturate(1.05) !important;
+  }
+  /* Dock collé juste au-dessus du metastack : on bat les règles portrait
+     (#timelineDock, calc(var(--meta-height-px,48px)-1px)) avec une spécificité (1,2,0). */
+  #timelineDock.timeline-dock,
+  body.mobile-ui #timelineDock.timeline-dock {
+    bottom: calc(var(--mobile-meta-h) + env(safe-area-inset-bottom)) !important;
   }
   body.mobile-ui .meta-stack .meta-corner,
   .meta-stack .meta-corner {
