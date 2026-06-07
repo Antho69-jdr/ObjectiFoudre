@@ -4518,3 +4518,35 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     mask-image: none !important;
   }
 }
+
+/* Fix : sur tablette (768-1024px, surtout en portrait) le metastack était une barre
+   tactile plus haute, espacée et à cases arrondies. On l'aligne EXACTEMENT sur le
+   desktop/paysage : pas de coins arrondis, pas d'espace en plus, séparateurs
+   verticaux, même hauteur (~30px). --mobile-meta-h recalé pour que le dock suive. */
+@media (min-width: 768px) and (max-width: 1024px) {
+  body.mobile-ui { --mobile-meta-h: 30px !important; }
+  body.mobile-ui .meta-stack,
+  .meta-stack {
+    gap: 0 !important;
+    min-height: 0 !important;
+    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) !important;
+    background: rgba(7, 17, 31, 0.94) !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.18) !important;
+    backdrop-filter: blur(14px) saturate(1.05) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(1.05) !important;
+  }
+  body.mobile-ui .meta-stack .meta-corner,
+  .meta-stack .meta-corner {
+    min-height: 0 !important;
+    padding: 8px 12px !important;
+    border-radius: 0 !important;
+    font-size: 11px !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.07) !important;
+  }
+  body.mobile-ui .meta-stack .meta-corner:last-child,
+  .meta-stack .meta-corner:last-child {
+    border-right: 0 !important;
+    text-align: right !important;
+  }
+}
