@@ -9965,28 +9965,36 @@ def _update_server_arome_automation_state(**updates: Any) -> None:
         _server_arome_automation_state.update(updates)
 
 
-def _server_arome_partial_marker(date_iso: str) -> dict[str, Any] | None:
-    """Dernier état de reconstruction d'un jour pour un run encore partiel."""
+def _server_arome_rebuild_marker(date_iso: str) -> dict[str, Any] | None:
+    """Mémoire du dernier « meilleur effort » de reconstruction d'un jour pour un run
+    donné : sert à ne pas reconstruire en boucle quand la couverture ne peut plus
+    progresser (run encore partiel, OU heures passées du jour courant non couvrables
+    par le dernier run)."""
     with _server_arome_automation_lock:
-        markers = _server_arome_automation_state.get("partial_run_rebuilds") or {}
+        markers = _server_arome_automation_state.get("rebuild_markers") or {}
         marker = markers.get(date_iso)
         return dict(marker) if isinstance(marker, dict) else None
 
 
-def _server_arome_set_partial_marker(date_iso: str, run_ref: str | None, max_forecast_hour: Any) -> None:
+def _server_arome_set_rebuild_marker(date_iso: str, run_ref: str | None, max_forecast_hour: Any, cached_ref_after: str | None) -> None:
     with _server_arome_automation_lock:
-        markers = dict(_server_arome_automation_state.get("partial_run_rebuilds") or {})
-        markers[date_iso] = {"run_ref": run_ref, "max_forecast_hour": max_forecast_hour, "at": time.time()}
-        _server_arome_automation_state["partial_run_rebuilds"] = markers
+        markers = dict(_server_arome_automation_state.get("rebuild_markers") or {})
+        markers[date_iso] = {
+            "run_ref": run_ref,
+            "max_forecast_hour": max_forecast_hour,
+            "cached_ref_after": cached_ref_after,
+            "at": time.time(),
+        }
+        _server_arome_automation_state["rebuild_markers"] = markers
 
 
-def _server_arome_clear_partial_marker(date_iso: str) -> None:
+def _server_arome_clear_rebuild_marker(date_iso: str) -> None:
     with _server_arome_automation_lock:
-        markers = _server_arome_automation_state.get("partial_run_rebuilds")
+        markers = _server_arome_automation_state.get("rebuild_markers")
         if isinstance(markers, dict) and date_iso in markers:
             markers = dict(markers)
             markers.pop(date_iso, None)
-            _server_arome_automation_state["partial_run_rebuilds"] = markers
+            _server_arome_automation_state["rebuild_markers"] = markers
 
 
 def _server_arome_automation_loop() -> None:
@@ -10097,9 +10105,9 @@ def _server_arome_automation_loop() -> None:
                 continue
 
             launched_job = False
-            launched_partial_rebuild = False
+            launched_incomplete_rebuild = False
             blocked_by_pending_run = False
-            blocked_by_partial_run = False
+            blocked_by_stale_rebuild = False
             last_schedule = None
             for target_date in target_dates:
                 if _server_arome_automation_stop.is_set():
@@ -10138,26 +10146,28 @@ def _server_arome_automation_loop() -> None:
                     blocked_by_pending_run = True
                     continue
 
-                # Garde-fou run partiel : si le dernier run n'est pas entièrement publié et
-                # qu'on a déjà reconstruit ce jour pour ce run au même stade (mêmes groupes),
-                # on n'enchaîne pas une reconstruction identique inutile. On reconstruit à
-                # nouveau seulement si de nouveaux groupes sont apparus (max_forecast_hour ↑).
-                if run_changed and not api_run_complete:
-                    marker = _server_arome_partial_marker(target_date.isoformat())
-                    already_rebuilt = bool(
+                # Garde-fou anti-boucle : si on a déjà fait le meilleur effort pour ce jour
+                # avec ce run (même run_ref ET pas de nouveaux groupes), et que la dernière
+                # reconstruction n'a pas pu adopter le dernier run, on ne reconstruit pas à
+                # l'identique. Couvre deux cas : run encore partiel (groupes longue échéance
+                # manquants), et jour courant dont les heures passées ne sont pas couvrables
+                # par le dernier run. On relance seulement si le run change ou s'enrichit.
+                if run_changed and cache_complete:
+                    marker = _server_arome_rebuild_marker(target_date.isoformat())
+                    already_best_effort = bool(
                         marker
                         and marker.get("run_ref") == api_ref
+                        and marker.get("max_forecast_hour") is not None
                         and api_run_max_forecast_hour is not None
-                        and int(marker.get("max_forecast_hour") or -1) >= int(api_run_max_forecast_hour)
+                        and int(api_run_max_forecast_hour) <= int(marker.get("max_forecast_hour"))
                     )
-                    if already_rebuilt:
-                        blocked_by_partial_run = True
+                    if already_best_effort:
+                        blocked_by_stale_rebuild = True
                         _update_server_arome_automation_state(
                             running=True,
                             message=(
-                                f"Run AROME {api_ref} encore partiel (publié jusqu'à +{api_run_max_forecast_hour}h) ; "
-                                f"heures disponibles de {target_date.isoformat()} déjà reconstruites, "
-                                f"attente des groupes horaires manquants."
+                                f"Run AROME {api_ref} : couverture {target_date.isoformat()} déjà au mieux "
+                                f"(heures restantes non couvrables par ce run) ; attente d'un nouveau run/groupe."
                             ),
                             last_coverage=coverage_status,
                         )
@@ -10173,12 +10183,6 @@ def _server_arome_automation_loop() -> None:
                 )
                 last_schedule = schedule
                 launched_job = bool(schedule.get("scheduled") or schedule.get("already_running"))
-                if launched_job:
-                    if api_run_complete:
-                        _server_arome_clear_partial_marker(target_date.isoformat())
-                    else:
-                        launched_partial_rebuild = True
-                        _server_arome_set_partial_marker(target_date.isoformat(), api_ref, api_run_max_forecast_hour)
                 job_key = schedule.get("job_key")
                 schedule_cooldown = int(schedule.get("quota_cooldown_seconds") or 0)
                 _update_server_arome_automation_state(
@@ -10236,19 +10240,34 @@ def _server_arome_automation_loop() -> None:
                         return
                     if cooldown > 0:
                         break
+                    # Garde-fou : après une reconstruction réussie, on regarde si le jour a pu
+                    # adopter le dernier run. Si oui -> on efface le marqueur. Sinon (run encore
+                    # partiel, ou heures passées non couvrables) -> on mémorise ce meilleur
+                    # effort pour ne pas refaire la même reconstruction au prochain cycle.
+                    if run_changed and final_status.get("ok"):
+                        cached_ref_after = _server_arome_normalize_reference_time(
+                            _server_arome_cached_run_reference(api_key, target_date, requested_grid)
+                        )
+                        if cached_ref_after == api_ref:
+                            _server_arome_clear_rebuild_marker(target_date.isoformat())
+                        else:
+                            launched_incomplete_rebuild = True
+                            _server_arome_set_rebuild_marker(
+                                target_date.isoformat(), api_ref, api_run_max_forecast_hour, cached_ref_after
+                            )
 
             if cooldown > 0:
                 wait_seconds = min(cooldown, 60)
                 wait_message = f"Automatisation AROME en pause quota : reprise dans {cooldown // 60 + 1} min."
-            elif launched_partial_rebuild or blocked_by_partial_run:
-                # Garde-fou : le run du moment est encore en cours de publication. On a
-                # reconstruit les heures déjà disponibles ; on attend le poll interval (au
-                # lieu de boucler toutes les 20 s) le temps que MF publie les groupes longue
-                # échéance (le cache package-json partiel expire en quelques minutes).
+            elif launched_incomplete_rebuild or blocked_by_stale_rebuild:
+                # Garde-fou : la couverture ne peut pas (encore) adopter pleinement le dernier
+                # run — run en cours de publication, ou heures passées du jour courant. On a fait
+                # le meilleur effort ; on attend le poll interval (au lieu de boucler toutes les
+                # 20 s) qu'un nouveau run/groupe arrive (le cache package-json partiel expire vite).
                 wait_seconds = int(OBJECTIFOUDRE_AROME_RUN_POLL_INTERVAL_SECONDS)
                 wait_message = (
-                    f"Run AROME {api_ref} encore en cours de publication ; heures disponibles "
-                    f"reconstruites, nouvelle tentative dans {wait_seconds // 60} min."
+                    f"Run AROME {api_ref} : couverture déjà au mieux ; nouvelle vérification "
+                    f"dans {wait_seconds // 60} min (attente d'un nouveau run/groupe)."
                 )
             elif launched_job:
                 wait_seconds = 20
