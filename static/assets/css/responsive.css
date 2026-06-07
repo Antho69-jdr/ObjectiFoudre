@@ -4596,3 +4596,84 @@ body.mobile-ui #timelineDock.timeline-dock,
     padding-bottom: 4px !important;
   }
 }
+
+/* Mobile (<768px) : metastack EXACTEMENT comme desktop/tablette (carré, séparateurs
+   verticaux, font 11px, ~30px, texte complet tronqué au lieu des chips raccourcis).
+   On force le style + on annule la compaction mobile (font-size:0 + ::before courts). */
+@media (max-width: 767px) {
+  body.mobile-ui {
+    --touch-meta-h: 30px !important;
+    --mobile-meta-h: 30px !important;
+    --meta-height-px: 30px !important;
+  }
+  body.mobile-ui .meta-stack,
+  .meta-stack {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr) max-content !important;
+    gap: 0 !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) !important;
+    background: rgba(7, 17, 31, 0.94) !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.18) !important;
+    backdrop-filter: blur(14px) saturate(1.05) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(1.05) !important;
+  }
+  body.mobile-ui .meta-stack .meta-corner,
+  .meta-stack .meta-corner {
+    min-height: 0 !important;
+    padding: 8px 12px !important;
+    border-radius: 0 !important;
+    font-size: 11px !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.07) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  body.mobile-ui .meta-stack .meta-corner:last-child,
+  .meta-stack .meta-corner:last-child {
+    border-right: 0 !important;
+    text-align: right !important;
+  }
+  /* Texte complet (annule la compaction icône/court des chips version & échelle) */
+  #versionBadge,
+  #cellScaleChip,
+  /* Restaure le texte (la compaction mobile le rendait transparent + font 0) avec
+     les couleurs exactes du desktop. */
+  #versionBadge,
+  body.mobile-ui .meta-stack .meta-version,
+  .meta-stack .meta-version {
+    font-size: 11px !important;
+    color: rgb(219, 233, 255) !important;
+  }
+  #cellScaleChip,
+  body.mobile-ui .meta-stack .meta-scale,
+  .meta-stack .meta-scale {
+    font-size: 11px !important;
+    color: rgb(183, 199, 223) !important;
+    min-width: max-content !important;
+    max-width: none !important;
+  }
+  /* La version peut être longue : on la laisse se tronquer pour que le créneau
+     (colonne centrale) garde de la place (comme sur tablette). */
+  #versionBadge,
+  body.mobile-ui .meta-stack .meta-version,
+  .meta-stack .meta-version {
+    max-width: 42vw !important;
+  }
+  /* Texte du créneau à la même taille que le desktop (11px), tronqué si besoin. */
+  #metaRun,
+  body.mobile-ui .meta-stack #metaRun,
+  body.mobile-ui .meta-stack .meta-run-overflow {
+    font-size: 11px !important;
+  }
+  #versionBadge::before,
+  #cellScaleChip::before,
+  body.mobile-ui .meta-stack .meta-version::before,
+  body.mobile-ui .meta-stack .meta-scale::before,
+  .meta-stack .meta-version::before,
+  .meta-stack .meta-scale::before {
+    display: none !important;
+    content: none !important;
+  }
+}
