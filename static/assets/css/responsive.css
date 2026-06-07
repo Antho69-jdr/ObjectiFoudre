@@ -4489,14 +4489,31 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
   #historyPage.prediction-page {
     padding: 0 !important;
     place-items: stretch !important;
+    /* Rangée bornée au viewport : sinon la rangée grid "auto" grandit avec le
+       contenu et height:100% du shell ne se résout pas -> shell qui déborde et
+       contrôles du lecteur poussés hors écran. */
+    grid-template-rows: minmax(0, 100vh) !important;
+    overflow: hidden !important;
   }
   #predictionPage .prediction-page-shell,
   #historyPage .prediction-page-shell {
     width: 100% !important;
     height: 100% !important;
     max-width: none !important;
-    max-height: none !important;
+    max-height: 100vh !important;
+    min-height: 0 !important;
     border-radius: 0 !important;
     border-width: 0 !important;
+  }
+}
+
+/* Fix : sur desktop le rail de la frise montre toutes les heures sans défilement.
+   Le `mask-image` (fondu des bords) y clippe verticalement les icônes
+   jour/nuit/lever/coucher (top:-18px au-dessus du rail) -> on le désactive. */
+@media (min-width: 921px) {
+  #slotButtons.timeline-slot-strip.timeline-slider,
+  #slotButtons.timeline-slot-strip {
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
   }
 }
