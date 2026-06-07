@@ -4557,3 +4557,13 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     text-align: right !important;
   }
 }
+
+/* Tâche : timeline-content centré verticalement dans timeline-dock (mobile/tablette/
+   desktop). Le dock est déjà flex align-items:center ; il suffit d'un padding vertical
+   SYMÉTRIQUE (le bas garde le safe-area pour les encoches). Les icônes flottent en
+   absolu au-dessus du rail (overflow libre, masque off) donc pas besoin de marge haute. */
+body.mobile-ui #timelineDock.timeline-dock,
+#timelineDock.timeline-dock {
+  padding-top: 12px !important;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom)) !important;
+}

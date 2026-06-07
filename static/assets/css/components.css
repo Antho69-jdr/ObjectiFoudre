@@ -4169,14 +4169,12 @@ body.mobile-blocked #app {
 /* (Le fix du shell plein écran historique/prévision est dans responsive.css, qui
    charge après ce fichier — c'est là que vit la règle plein écran.) */
 @media (min-width: 768px) {
-  /* Bug 1 : les icônes jour/nuit/lever/coucher étaient invisibles car le
-     `backdrop-filter` du dock crée un contexte de rendu qui masque ces descendants
-     imbriqués (comportement Chromium). On déporte le fond ET le backdrop-filter sur
-     un ::before en z-index:-1 (derrière le contenu) : l'effet verre est préservé,
-     mais l'élément dock ne crée plus le contexte fautif -> les icônes s'affichent.
-     + marge sombre au-dessus du rail pour leur faire de la place (top:-18px). */
+  /* Le `backdrop-filter` du dock crée un contexte de rendu qui masquait les icônes
+     imbriquées (comportement Chromium). On déporte fond + backdrop-filter sur un
+     ::before en z-index:-1 (derrière le contenu) : effet verre préservé, plus de
+     contexte fautif. (Les icônes flottent en absolu au-dessus du rail ; le vrai
+     correctif de leur visibilité = mask-image off, dans responsive.css.) */
   #timelineDock.timeline-dock {
-    padding-top: 22px !important;
     background: transparent !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
@@ -4196,3 +4194,25 @@ body.mobile-blocked #app {
   /* (Le vrai correctif des icônes — désactivation du mask-image du strip qui les
      clippait — est dans responsive.css, qui charge après et porte la règle mask.) */
 }
+
+/* Tooltip applicatif flottant (cf. tooltip.js) : même apparence que les tooltips
+   des icônes de la frise (.timeline-light-icon::before). Ancré au <body> en position
+   fixed -> jamais rogné par un conteneur. Remplace les tooltips natifs (title). */
+.app-tooltip {
+  position: fixed;
+  z-index: 100000;
+  pointer-events: none;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(8, 17, 30, 0.96);
+  border: 1px solid rgba(125, 211, 252, 0.26);
+  color: rgba(248, 250, 252, 0.96);
+  font-size: 10.5px;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.app-tooltip[hidden] { display: none; }
