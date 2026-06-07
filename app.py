@@ -133,6 +133,12 @@ METEOFRANCE_MODEL_PACKAGE_FULL_PROBE_LIMIT_BYTES = 120_000_000
 METEOFRANCE_METADATA_CACHE_TTL_SECONDS = 20 * 60
 METEOFRANCE_SLOT_GRID_CACHE_TTL_SECONDS = 20 * 60
 METEOFRANCE_PACKAGE_JSON_CACHE_TTL_SECONDS = 3 * 60 * 60
+# Un run AROME encore en cours de publication n'expose pas tous ses groupes horaires.
+# On ne fige PAS sa liste 3 h (sinon les heures longue échéance restent bloquées sur le
+# run précédent) : TTL court tant que le run est partiel, puis 3 h une fois complet.
+METEOFRANCE_PACKAGE_JSON_PARTIAL_RUN_CACHE_TTL_SECONDS = _env_int(
+    "OBJECTIFOUDRE_PACKAGE_JSON_PARTIAL_TTL_SECONDS", 5 * 60, min_value=60, max_value=3 * 60 * 60
+)
 METEOFRANCE_PACKAGE_JSON_STALE_TTL_SECONDS = 24 * 60 * 60
 METEOFRANCE_GRIB_SLOT_GRID_CACHE_TTL_SECONDS = 6 * 60 * 60
 METEOFRANCE_GRIB_PROFILE_CACHE_TTL_SECONDS = 6 * 60 * 60
@@ -4088,13 +4094,42 @@ def _read_meteofrance_request_with_retries(
     raise RuntimeError("Lecture Météo-France impossible.")
 
 
+def _meteofrance_package_json_run_is_complete(payload_json: Any) -> bool:
+    """Vrai si un JSON de produits de run AROME couvre tout l'horizon (groupes horaires
+    jusqu'à METEOFRANCE_AROME_FORECAST_HORIZON_HOURS). Un listing de paquets/grille (sans
+    groupe horaire) est considéré complet (stable) -> TTL long. Un run encore en cours de
+    publication (groupes manquants) est partiel -> TTL court, pour le redécouvrir vite."""
+    try:
+        products = _package_product_links(payload_json) if isinstance(payload_json, dict) else []
+    except Exception:
+        return True
+    groups = [str(item.get("time") or "") for item in products if item.get("time")]
+    if not groups:
+        return True
+    max_end = 0
+    for group in groups:
+        bounds = _parse_meteofrance_grib_time_group_bounds(group)
+        if bounds:
+            max_end = max(max_end, bounds[1])
+    return max_end >= METEOFRANCE_AROME_FORECAST_HORIZON_HOURS
+
+
+def _effective_package_json_cache_ttl(payload_json: Any) -> int:
+    if _meteofrance_package_json_run_is_complete(payload_json):
+        return METEOFRANCE_PACKAGE_JSON_CACHE_TTL_SECONDS
+    return METEOFRANCE_PACKAGE_JSON_PARTIAL_RUN_CACHE_TTL_SECONDS
+
+
 def _fetch_meteofrance_package_json(api_key: str, url: str, *, force_refresh: bool = False) -> tuple[int, str, dict[str, Any]]:
     cache_key = f"{_meteofrance_metadata_cache_key(api_key, 'package-json')}:{_stable_cache_hash(url)}"
     if not force_refresh:
-        cached = _get_cached_value(cache_key, ttl=METEOFRANCE_PACKAGE_JSON_CACHE_TTL_SECONDS)
-        if cached is not None:
-            payload = dict(cached["payload"])
-            return int(payload.get("status") or 200), str(payload.get("content_type") or "application/json"), dict(payload.get("json") or {})
+        # TTL conscient de la complétude : un run partiel n'est gardé que quelques minutes,
+        # un run complet (ou un listing sans groupe horaire) reste caché 3 h.
+        entry = _cache.get(cache_key)
+        if entry is not None:
+            payload = dict(entry["payload"])
+            if _cache_fresh(entry, ttl=_effective_package_json_cache_ttl(payload.get("json"))):
+                return int(payload.get("status") or 200), str(payload.get("content_type") or "application/json"), dict(payload.get("json") or {})
 
         persistent = _read_meteofrance_persistent_cache(
             "package-json",
@@ -4104,8 +4139,9 @@ def _fetch_meteofrance_package_json(api_key: str, url: str, *, force_refresh: bo
         )
         if persistent is not None:
             payload = dict(persistent["payload"])
-            _set_cached_value(cache_key, payload)
-            return int(payload.get("status") or 200), str(payload.get("content_type") or "application/json"), dict(payload.get("json") or {})
+            if (time.time() - float(persistent["ts"])) < _effective_package_json_cache_ttl(payload.get("json")):
+                _set_cached_value(cache_key, payload)
+                return int(payload.get("status") or 200), str(payload.get("content_type") or "application/json"), dict(payload.get("json") or {})
 
     request = urllib.request.Request(
         url,
@@ -9714,6 +9750,24 @@ def _server_arome_latest_api_run_sync(api_key: str, requested_grid: str | None =
                 "statuses": statuses,
                 "grid": selected_grid,
             }
+        # Complétude du dernier run : ses groupes horaires couvrent-ils tout l'horizon ?
+        # Sert de garde-fou pour ne pas reconstruire en boucle un run encore partiel.
+        latest.setdefault("complete", True)
+        latest.setdefault("available_time_groups", [])
+        latest.setdefault("max_forecast_hour", None)
+        try:
+            _ls, _lct, latest_run_payload = _fetch_meteofrance_package_json(api_key, str(latest.get("href") or ""))
+            latest_groups = sorted({str(item.get("time") or "") for item in _package_product_links(latest_run_payload) if item.get("time")})
+            latest_max_end = 0
+            for _group in latest_groups:
+                _bounds = _parse_meteofrance_grib_time_group_bounds(_group)
+                if _bounds:
+                    latest_max_end = max(latest_max_end, _bounds[1])
+            latest["available_time_groups"] = latest_groups
+            latest["max_forecast_hour"] = latest_max_end
+            latest["complete"] = (not latest_groups) or latest_max_end >= METEOFRANCE_AROME_FORECAST_HORIZON_HOURS
+        except Exception:
+            latest["complete"] = True  # en cas de doute, ne pas bloquer le rattrapage
         return {
             "ok": True,
             "status": statuses[-1].get("status") if statuses else 200,
@@ -9911,6 +9965,30 @@ def _update_server_arome_automation_state(**updates: Any) -> None:
         _server_arome_automation_state.update(updates)
 
 
+def _server_arome_partial_marker(date_iso: str) -> dict[str, Any] | None:
+    """Dernier état de reconstruction d'un jour pour un run encore partiel."""
+    with _server_arome_automation_lock:
+        markers = _server_arome_automation_state.get("partial_run_rebuilds") or {}
+        marker = markers.get(date_iso)
+        return dict(marker) if isinstance(marker, dict) else None
+
+
+def _server_arome_set_partial_marker(date_iso: str, run_ref: str | None, max_forecast_hour: Any) -> None:
+    with _server_arome_automation_lock:
+        markers = dict(_server_arome_automation_state.get("partial_run_rebuilds") or {})
+        markers[date_iso] = {"run_ref": run_ref, "max_forecast_hour": max_forecast_hour, "at": time.time()}
+        _server_arome_automation_state["partial_run_rebuilds"] = markers
+
+
+def _server_arome_clear_partial_marker(date_iso: str) -> None:
+    with _server_arome_automation_lock:
+        markers = _server_arome_automation_state.get("partial_run_rebuilds")
+        if isinstance(markers, dict) and date_iso in markers:
+            markers = dict(markers)
+            markers.pop(date_iso, None)
+            _server_arome_automation_state["partial_run_rebuilds"] = markers
+
+
 def _server_arome_automation_loop() -> None:
     _update_server_arome_automation_state(
         enabled=True,
@@ -9977,11 +10055,16 @@ def _server_arome_automation_loop() -> None:
                     or api_epoch + 60 >= expected_epoch
                 )
             )
+            # Le dernier run est-il entièrement publié (tous ses groupes horaires) ?
+            api_run_complete = bool(api_run.get("complete", True)) if api_run.get("ok") else True
+            api_run_max_forecast_hour = api_run.get("max_forecast_hour")
             _update_server_arome_automation_state(
                 running=True,
                 run_schedule=run_schedule,
                 last_api_run=api_run,
                 last_api_run_reference_time=api_ref,
+                last_api_run_complete=api_run_complete,
+                last_api_run_max_forecast_hour=api_run_max_forecast_hour,
                 expected_api_run_reference_time=expected_ref or None,
                 api_run_is_expected=api_run_is_expected,
                 quota_cooldown_seconds=0,
@@ -10014,7 +10097,9 @@ def _server_arome_automation_loop() -> None:
                 continue
 
             launched_job = False
+            launched_partial_rebuild = False
             blocked_by_pending_run = False
+            blocked_by_partial_run = False
             last_schedule = None
             for target_date in target_dates:
                 if _server_arome_automation_stop.is_set():
@@ -10053,6 +10138,31 @@ def _server_arome_automation_loop() -> None:
                     blocked_by_pending_run = True
                     continue
 
+                # Garde-fou run partiel : si le dernier run n'est pas entièrement publié et
+                # qu'on a déjà reconstruit ce jour pour ce run au même stade (mêmes groupes),
+                # on n'enchaîne pas une reconstruction identique inutile. On reconstruit à
+                # nouveau seulement si de nouveaux groupes sont apparus (max_forecast_hour ↑).
+                if run_changed and not api_run_complete:
+                    marker = _server_arome_partial_marker(target_date.isoformat())
+                    already_rebuilt = bool(
+                        marker
+                        and marker.get("run_ref") == api_ref
+                        and api_run_max_forecast_hour is not None
+                        and int(marker.get("max_forecast_hour") or -1) >= int(api_run_max_forecast_hour)
+                    )
+                    if already_rebuilt:
+                        blocked_by_partial_run = True
+                        _update_server_arome_automation_state(
+                            running=True,
+                            message=(
+                                f"Run AROME {api_ref} encore partiel (publié jusqu'à +{api_run_max_forecast_hour}h) ; "
+                                f"heures disponibles de {target_date.isoformat()} déjà reconstruites, "
+                                f"attente des groupes horaires manquants."
+                            ),
+                            last_coverage=coverage_status,
+                        )
+                        continue
+
                 schedule = _schedule_meteofrance_grib_national_day_preload(
                     None,
                     api_key,
@@ -10063,6 +10173,12 @@ def _server_arome_automation_loop() -> None:
                 )
                 last_schedule = schedule
                 launched_job = bool(schedule.get("scheduled") or schedule.get("already_running"))
+                if launched_job:
+                    if api_run_complete:
+                        _server_arome_clear_partial_marker(target_date.isoformat())
+                    else:
+                        launched_partial_rebuild = True
+                        _server_arome_set_partial_marker(target_date.isoformat(), api_ref, api_run_max_forecast_hour)
                 job_key = schedule.get("job_key")
                 schedule_cooldown = int(schedule.get("quota_cooldown_seconds") or 0)
                 _update_server_arome_automation_state(
@@ -10124,6 +10240,16 @@ def _server_arome_automation_loop() -> None:
             if cooldown > 0:
                 wait_seconds = min(cooldown, 60)
                 wait_message = f"Automatisation AROME en pause quota : reprise dans {cooldown // 60 + 1} min."
+            elif launched_partial_rebuild or blocked_by_partial_run:
+                # Garde-fou : le run du moment est encore en cours de publication. On a
+                # reconstruit les heures déjà disponibles ; on attend le poll interval (au
+                # lieu de boucler toutes les 20 s) le temps que MF publie les groupes longue
+                # échéance (le cache package-json partiel expire en quelques minutes).
+                wait_seconds = int(OBJECTIFOUDRE_AROME_RUN_POLL_INTERVAL_SECONDS)
+                wait_message = (
+                    f"Run AROME {api_ref} encore en cours de publication ; heures disponibles "
+                    f"reconstruites, nouvelle tentative dans {wait_seconds // 60} min."
+                )
             elif launched_job:
                 wait_seconds = 20
                 wait_message = "Automatisation AROME : vérification courte après préchargement."
