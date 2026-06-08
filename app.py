@@ -163,7 +163,7 @@ METEOFRANCE_EXTERNAL_RETRY_BASE_DELAY_SECONDS = _env_float(
 METEOFRANCE_GRIB_PACKAGE_QUOTA_SCOPE = "grib-package"
 METEOFRANCE_GRIB_AUTO_PRELOAD_MAX_HOURS = 8
 METEOFRANCE_GRIB_AUTO_PRELOAD_JOB_TTL_SECONDS = 10 * 60
-METEOFRANCE_GRIB_SLOT_GRID_ALGORITHM_VERSION = "france-grid-sampling-v46-blh-smart-run-window24"
+METEOFRANCE_GRIB_SLOT_GRID_ALGORITHM_VERSION = "france-grid-sampling-v47-graupel-shf-smart-run-window24"
 METEOFRANCE_GRIB_RUN_SELECTION_MAX_RUNS = 24
 METEOFRANCE_PRECIPITATION_ENRICHMENT_FIELD = "precipitation_rate"
 METEOFRANCE_PRECIPITATION_ENRICHMENT_MAX_HOURS = 0
@@ -614,11 +614,38 @@ METEOFRANCE_GRIB_SLOT_GRID_SPECS = [
         "level_contains": None,
         "required": True,
     },
+    {
+        # Précipitation de grésil (SP1, déjà téléchargé) : champ ACCUMULÉ depuis le run
+        # (kg/m²). Désaccumulé en incrément horaire (cf. METEOFRANCE_GRIB_ACCUMULATED_FIELDS).
+        # Proxy direct d'électrisation (phase glace convective) → aligné cible foudre.
+        "field": "graupel",
+        "package_id": "SP1",
+        "parameter_label": "Précipitation de grésil",
+        "level_contains": None,
+        "required": True,
+    },
+    {
+        # Flux net de chaleur sensible (SP3, déjà téléchargé) : champ ACCUMULÉ (J/m²).
+        # Désaccumulé puis converti en W/m² → mesure directe du chauffage de surface.
+        "field": "sensible_heat_flux",
+        "package_id": "SP3",
+        "parameter_label": "Flux net chaleur sensible",
+        "level_contains": None,
+        "required": True,
+    },
 ]
 # Champs « required » (donc préchargés) dont l'absence ne doit PAS faire échouer la
 # grille : ce sont des enrichissements (le scoring les gère en None). Permet d'ajouter
 # de nouveaux champs AROME sans risque de régression si un run/groupe ne les expose pas.
-METEOFRANCE_GRIB_NON_FATAL_FIELDS = {"boundary_layer_height"}
+METEOFRANCE_GRIB_NON_FATAL_FIELDS = {"boundary_layer_height", "graupel", "sensible_heat_flux"}
+# Champs AROME ACCUMULÉS depuis le début du run → à désaccumuler en incrément horaire
+# (valeur[h] - valeur[h-1], même run garanti si forecast_hour consécutif). `scale`
+# convertit l'incrément (J/m² → W/m² pour les flux) ; `nonnegative` borne à 0 (le grésil
+# ne peut pas « décroître »).
+METEOFRANCE_GRIB_ACCUMULATED_FIELDS = {
+    "graupel": {"scale": 1.0, "nonnegative": True},
+    "sensible_heat_flux": {"scale": 1.0 / 3600.0, "nonnegative": False},
+}
 METEOFRANCE_GRIB_SLOT_PACKAGE_INDEX_LIMITS = {
     "SP1": 24,
     "SP2": 80,
@@ -5175,6 +5202,7 @@ GRIB2_PARAMETER_LABELS = {
     (0, 1, 6): "Évaporation",
     (0, 1, 8): "Précipitations totales",
     (0, 1, 52): "Taux de précipitations total",
+    (0, 1, 75): "Précipitation de grésil",
     (0, 1, 64): "Vapeur d’eau intégrée colonne",
     (0, 1, 83): "Eau liquide nuageuse spécifique",
     (0, 1, 84): "Glace nuageuse spécifique",
@@ -7567,6 +7595,41 @@ def _build_meteofrance_grib_slot_grid_sync(
                 "decoder": decoder,
             }
 
+        # Désaccumulation des champs cumulés depuis le run (grésil, flux sensible) en
+        # incrément horaire. Le run du créneau h-1 est identique à celui de h si et
+        # seulement si forecast_hour_h == forecast_hour_{h-1}+1 (les créneaux sont à 1 h
+        # d'écart et run = heure_slot − forecast_hour). Sinon (bord de run, h=0, h-1
+        # absent) on laisse None : le scoring saute simplement le champ cette heure-là.
+        for accum_field, accum_cfg in METEOFRANCE_GRIB_ACCUMULATED_FIELDS.items():
+            if accum_field not in field_values:
+                continue
+            accum_now = field_values[accum_field]
+            fh_now = next(
+                (fr.get("forecast_hour") for fr in field_requests
+                 if fr.get("field") == accum_field and fr.get("forecast_hour") is not None),
+                None,
+            )
+            deacc = {zone: None for zone in accum_now}
+            spec_for = next((s for s in active_specs if str(s.get("field")) == accum_field), None)
+            if hour >= 1 and fh_now is not None and spec_for is not None:
+                prev_sample = _sample_meteofrance_grib_national_field_registry_for_points(
+                    requested_grid, target_date, hour - 1, accum_field, spec_for, points
+                )
+                fh_prev = (prev_sample or {}).get("field_request", {}).get("forecast_hour")
+                if prev_sample and fh_prev is not None and int(fh_now) == int(fh_prev) + 1:
+                    accum_prev = prev_sample.get("values_by_zone") or {}
+                    scale = float(accum_cfg.get("scale", 1.0))
+                    nonneg = bool(accum_cfg.get("nonnegative"))
+                    for zone, va in accum_now.items():
+                        vb = accum_prev.get(zone)
+                        if va is None or vb is None:
+                            continue
+                        delta = (float(va) - float(vb)) * scale
+                        if nonneg and delta < 0:
+                            delta = 0.0
+                        deacc[zone] = round(delta, 4)
+            field_values[accum_field] = deacc
+
         slot_dt = datetime.combine(target_date, Time(hour=hour), tzinfo=ZoneInfo("Europe/Paris"))
         grid_locations = []
         for point in points:
@@ -7595,6 +7658,8 @@ def _build_meteofrance_grib_slot_grid_sync(
                 "cloud_cover_mid": [field_values.get("cloud_cover_mid", {}).get(zone)],
                 "cloud_cover_high": [field_values.get("cloud_cover_high", {}).get(zone)],
                 "boundary_layer_height": [field_values.get("boundary_layer_height", {}).get(zone)],
+                "graupel": [field_values.get("graupel", {}).get(zone)],
+                "sensible_heat_flux": [field_values.get("sensible_heat_flux", {}).get(zone)],
                 "wind_gusts_10m": [field_values.get("wind_gusts_10m", {}).get(zone) or 0.0],
                 "wind_speed_10m": [wind_speed_10m or 0.0],
                 "wind_direction_10m": [wind_direction_10m or 0.0],
