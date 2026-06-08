@@ -1429,6 +1429,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     "cin_actual_score": metric.get("cin_actual_component"),
                     "surface_trigger_score": metric.get("surface_trigger_component"),
                     "cloud_trigger_score": metric.get("cloud_trigger_component"),
+                    "boundary_layer_score": metric.get("boundary_layer_component"),
                     "clear_sky_penalty_score": metric.get("clear_sky_penalty", 0),
                     "confidence_consistency_score": confidence_diag.get("consistency"),
                     "confidence_temporal_score": confidence_diag.get("temporal_stability"),
@@ -1452,6 +1453,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     "cloud_cover_high": round_optional(metric.get("cloud_high"), 1),
                     "convective_cloud_cover": round_optional(metric.get("convective_cloud_cover"), 1),
                     "total_cloud_cover": round_optional(metric.get("total_cloud_cover"), 1),
+                    "boundary_layer_height_m": round_optional(metric.get("boundary_layer_height_m"), 0),
                 }
                 category_breakdown = {
                     "probability": {
