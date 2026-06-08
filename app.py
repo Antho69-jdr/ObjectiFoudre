@@ -163,7 +163,7 @@ METEOFRANCE_EXTERNAL_RETRY_BASE_DELAY_SECONDS = _env_float(
 METEOFRANCE_GRIB_PACKAGE_QUOTA_SCOPE = "grib-package"
 METEOFRANCE_GRIB_AUTO_PRELOAD_MAX_HOURS = 8
 METEOFRANCE_GRIB_AUTO_PRELOAD_JOB_TTL_SECONDS = 10 * 60
-METEOFRANCE_GRIB_SLOT_GRID_ALGORITHM_VERSION = "france-grid-sampling-v44-smart-run-window24"
+METEOFRANCE_GRIB_SLOT_GRID_ALGORITHM_VERSION = "france-grid-sampling-v45-blh-smart-run-window24"
 METEOFRANCE_GRIB_RUN_SELECTION_MAX_RUNS = 24
 METEOFRANCE_PRECIPITATION_ENRICHMENT_FIELD = "precipitation_rate"
 METEOFRANCE_PRECIPITATION_ENRICHMENT_MAX_HOURS = 0
@@ -604,7 +604,21 @@ METEOFRANCE_GRIB_SLOT_GRID_SPECS = [
         "level_contains": "10 m",
         "required": True,
     },
+    {
+        # Hauteur de couche limite (SP2, déjà téléchargé) : champ INSTANTANÉ en mètres.
+        # Récupéré (required → préchargé) mais NON FATAL si absent (cf.
+        # METEOFRANCE_GRIB_NON_FATAL_FIELDS) pour ne jamais casser la grille.
+        "field": "boundary_layer_height",
+        "package_id": "SP2",
+        "parameter_label": "Hauteur de couche limite",
+        "level_contains": None,
+        "required": True,
+    },
 ]
+# Champs « required » (donc préchargés) dont l'absence ne doit PAS faire échouer la
+# grille : ce sont des enrichissements (le scoring les gère en None). Permet d'ajouter
+# de nouveaux champs AROME sans risque de régression si un run/groupe ne les expose pas.
+METEOFRANCE_GRIB_NON_FATAL_FIELDS = {"boundary_layer_height"}
 METEOFRANCE_GRIB_SLOT_PACKAGE_INDEX_LIMITS = {
     "SP1": 24,
     "SP2": 80,
@@ -5177,6 +5191,7 @@ GRIB2_PARAMETER_LABELS = {
     (0, 2, 14): "Tourbillon potentiel",
     (0, 2, 22): "Rafales",
     (0, 3, 0): "Pression",
+    (0, 3, 18): "Hauteur de couche limite",
     (0, 4, 9): "Flux net rayonnement court",
     (0, 5, 3): "Flux descendant rayonnement long",
     (0, 6, 1): "Nébulosité totale",
@@ -7503,7 +7518,7 @@ def _build_meteofrance_grib_slot_grid_sync(
             }
             if values_by_zone:
                 field_values[field] = values_by_zone
-            elif spec.get("required"):
+            elif spec.get("required") and field not in METEOFRANCE_GRIB_NON_FATAL_FIELDS:
                 missing.append(field)
             else:
                 optional_missing.append(field)
@@ -7579,6 +7594,7 @@ def _build_meteofrance_grib_slot_grid_sync(
                 "cloud_cover_low": [field_values.get("cloud_cover_low", {}).get(zone)],
                 "cloud_cover_mid": [field_values.get("cloud_cover_mid", {}).get(zone)],
                 "cloud_cover_high": [field_values.get("cloud_cover_high", {}).get(zone)],
+                "boundary_layer_height": [field_values.get("boundary_layer_height", {}).get(zone)],
                 "wind_gusts_10m": [field_values.get("wind_gusts_10m", {}).get(zone) or 0.0],
                 "wind_speed_10m": [wind_speed_10m or 0.0],
                 "wind_direction_10m": [wind_direction_10m or 0.0],

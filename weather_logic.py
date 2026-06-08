@@ -630,6 +630,25 @@ def score_surface_convergence(convergence_s1: float | None) -> int | None:
     ])
 
 
+def score_boundary_layer(blh_m: float | None) -> int | None:
+    """Profondeur de la couche limite (AROME `blh`, champ INSTANTANÉ en mètres).
+    Une couche limite bien développée traduit un mélange convectif profond qui aide
+    les parcelles à atteindre leur niveau de convection libre. Signal de SOUTIEN
+    (modificateur), pas un axe principal — l'air sec d'une CL très profonde est déjà
+    pénalisé par Td/VPD. Monotone croissant, plateau au-delà de ~3 km."""
+    if blh_m is None or not math.isfinite(float(blh_m)):
+        return None
+    return piecewise_score(max(0.0, float(blh_m)), [
+        (150, 0),
+        (400, 15),
+        (800, 40),
+        (1200, 62),
+        (1800, 82),
+        (2500, 95),
+        (3500, 100),
+    ])
+
+
 def _apply_cape_moisture_gates(
     score: float,
     penalty: float,
@@ -696,9 +715,10 @@ def _apply_environment_modifiers(
     precipitable_water_s: int | None,
     shortwave_s: int | None,
     convective_activity_s: int | None,
+    boundary_layer_s: int | None = None,
 ) -> tuple[float, float]:
     """Modificateurs secondaires : CIN, convergence de surface, eau précipitable,
-    rayonnement court et activité convective observée. Ordre conservé tel quel."""
+    rayonnement court, couche limite et activité convective observée. Ordre conservé."""
     if cin_support_s is not None:
         if cin_support_s < 25:
             score *= 0.55
@@ -725,6 +745,15 @@ def _apply_environment_modifiers(
             score *= 0.94
             penalty += 3
         elif shortwave_s >= 70 and cape_s >= 35 and dew_s >= 40:
+            score += 3
+    if boundary_layer_s is not None:
+        # Couche limite très peu profonde en journée malgré de la CAPE → mélange et
+        # initiation surface-based difficiles (couvercle, advection stable). À l'inverse,
+        # une CL bien développée + instabilité + humidité favorise le mélange jusqu'au LFC.
+        if boundary_layer_s < 20 and 9 <= dt.hour <= 19 and cape_s >= 45:
+            score *= 0.95
+            penalty += 3
+        elif boundary_layer_s >= 70 and cape_s >= 35 and dew_s >= 40:
             score += 3
     if convective_activity_s is not None:
         activity_score = convective_activity_s
@@ -755,6 +784,7 @@ def compute_initiation(
     cloud_low: float | None = None,
     cloud_mid: float | None = None,
     cloud_high: float | None = None,
+    boundary_layer_height_m: float | None = None,
 ) -> tuple[int, dict[str, float | int | None]]:
     cape_s = score_cape(cape)
     dew_s = score_dewpoint(dewpoint_c)
@@ -793,6 +823,12 @@ def compute_initiation(
         cloud_low,
         cloud_mid,
         cloud_high,
+    )
+    boundary_layer_s = score_boundary_layer(boundary_layer_height_m)
+    boundary_layer_height = (
+        max(0.0, float(boundary_layer_height_m))
+        if boundary_layer_height_m is not None and math.isfinite(float(boundary_layer_height_m))
+        else None
     )
 
     convective_activity_s = None
@@ -870,6 +906,7 @@ def compute_initiation(
         precipitable_water_s=precipitable_water_s,
         shortwave_s=shortwave_s,
         convective_activity_s=convective_activity_s,
+        boundary_layer_s=boundary_layer_s,
     )
 
     # Cloud cover is diagnostic only here: a clear pre-convective sky can
@@ -906,6 +943,8 @@ def compute_initiation(
         'clear_sky_penalty': applied_clear_sky_penalty,
         'convective_cloud_cover': convective_cloud_cover,
         'total_cloud_cover': total_cloud_cover,
+        'boundary_layer_component': boundary_layer_s,
+        'boundary_layer_height_m': round(boundary_layer_height, 0) if boundary_layer_height is not None else None,
     }
 
 
@@ -1287,6 +1326,8 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
         cloud_low = float(cloud_low_raw) if cloud_low_raw is not None else None
         cloud_mid = float(cloud_mid_raw) if cloud_mid_raw is not None else None
         cloud_high = float(cloud_high_raw) if cloud_high_raw is not None else None
+        blh_raw = _hourly_value(hourly.get("boundary_layer_height"), idx)
+        boundary_layer_height = float(blh_raw) if blh_raw is not None else None
         gusts = float(_hourly_value(hourly.get("wind_gusts_10m"), idx) or 0.0)
         ws10 = float(_hourly_value(hourly.get("wind_speed_10m"), idx) or 0.0)
         wd10 = float(_hourly_value(hourly.get("wind_direction_10m"), idx) or 0.0)
@@ -1309,6 +1350,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
             cloud_low=cloud_low,
             cloud_mid=cloud_mid,
             cloud_high=cloud_high,
+            boundary_layer_height_m=boundary_layer_height,
         )
 
         metrics.append(
