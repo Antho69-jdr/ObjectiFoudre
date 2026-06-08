@@ -647,7 +647,9 @@ METEOFRANCE_GRIB_ACCUMULATED_FIELDS = {
     "sensible_heat_flux": {"scale": 1.0 / 3600.0, "nonnegative": False},
 }
 METEOFRANCE_GRIB_SLOT_PACKAGE_INDEX_LIMITS = {
-    "SP1": 24,
+    # SP1 doit couvrir le grésil (tgrp), au message ~33 dans le paquet (sinon ré-indexation
+    # locale étendue à chaque produit → lenteur). Marge au-delà des 45 messages SP1.
+    "SP1": 56,
     "SP2": 80,
     "SP3": 32,
 }
