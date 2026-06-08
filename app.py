@@ -2935,7 +2935,9 @@ def _compute_day_verification(date_str: str) -> dict[str, Any]:
             "message": "Aucune grille prévue archivée pour cette date.",
         }
     result = verification.compute_verification(
-        cells, lightning.get("flashes_per_cell") or {}, score_threshold=_active_score_threshold,
+        cells, lightning.get("flashes_per_cell") or {},
+        score_threshold=_active_score_threshold,
+        neighborhood_km=verification.DEFAULT_NEIGHBORHOOD_KM,
     )
     result["date"] = date_str
     result["flash_total"] = lightning.get("flash_total")

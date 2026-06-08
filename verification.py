@@ -16,13 +16,27 @@ from typing import Any, Iterable
 
 
 # Seuils par défaut, alignés sur l'échelle de la carte de risque.
-DEFAULT_SCORE_THRESHOLD = 70      # ≥ 70 (haut « Faible » et au-dessus) = orage prévu
+DEFAULT_SCORE_THRESHOLD = 60      # ≥ 60 = orage prévu (abaissé de 70 : les vrais orages
+                                  # observés scoraient 50-67, jamais 70+ — cf. analyse
+                                  # modèle-vs-réalité ; CSI=0 à 70, réel à ~55-60).
 DEFAULT_FLASH_THRESHOLD = 1       # ≥ 1 flash dans la cellule = orage observé
+# Vérification de VOISINAGE : un modèle d'environnement à ~15 km ne peut pas pointer la
+# cellule exacte d'une foudre éparse. On tolère un rayon : une cellule prévue est utile si
+# de la foudre tombe à ≤ ce rayon, et une cellule foudre est détectée si une cellule prévue
+# est à ≤ ce rayon. 0 = correspondance cellule exacte (rétro-compatible).
+DEFAULT_NEIGHBORHOOD_KM = 30.0
 
 
 def cell_key(lat: float, lon: float) -> str:
     """Clé stable d'une cellule (mêmes 3 décimales que predictionCellId côté JS)."""
     return f"{float(lat):.3f}|{float(lon):.3f}"
+
+
+def _dist_km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    """Distance approchée (équirectangulaire) entre deux (lat, lon), en km."""
+    dlat = a[0] - b[0]
+    dlon = (a[1] - b[1]) * math.cos(math.radians((a[0] + b[0]) / 2.0))
+    return 111.0 * math.hypot(dlat, dlon)
 
 
 def _cell_bounds(cell: dict[str, Any]) -> tuple[float, float, float, float] | None:
@@ -118,33 +132,50 @@ def compute_verification(
     *,
     score_threshold: int = DEFAULT_SCORE_THRESHOLD,
     flash_threshold: float = DEFAULT_FLASH_THRESHOLD,
+    neighborhood_km: float = 0.0,
 ) -> dict[str, Any]:
     """Table de contingence prévu/observé sur les cellules + scores de vérification.
 
     Retourne hits/misses/false_alarms/correct_negatives, POD, FAR, success ratio,
     CSI, biais de fréquence, HSS, un score de fidélité 0-100 et une étiquette.
+
+    `neighborhood_km` > 0 active la vérification de VOISINAGE : une cellule foudre est un
+    hit s'il existe une cellule prévue à ≤ ce rayon (sinon un miss) ; une cellule prévue est
+    une fausse alerte s'il n'y a aucune foudre à ≤ ce rayon. 0 = correspondance cellule exacte.
     """
-    hits = misses = false_alarms = correct_neg = 0
-    forecast_cells = observed_cells = 0
+    forecast_pts: list[tuple[float, float]] = []
+    observed_pts: list[tuple[float, float]] = []
+    forecast_keys: set[str] = set()
+    observed_keys: set[str] = set()
+    cell_count = len(cells)
     for cell in cells:
         try:
             score = float(cell.get("trigger_score") or 0)
         except (TypeError, ValueError):
             score = 0.0
-        key = cell_key(cell.get("lat"), cell.get("lon")) if cell.get("lat") is not None else None
+        lat, lon = cell.get("lat"), cell.get("lon")
+        key = cell_key(lat, lon) if lat is not None else None
         observed = float(flashes_per_cell.get(key, 0.0)) if key else 0.0
-        forecast_yes = score >= score_threshold
-        observed_yes = observed >= flash_threshold
-        forecast_cells += 1 if forecast_yes else 0
-        observed_cells += 1 if observed_yes else 0
-        if forecast_yes and observed_yes:
-            hits += 1
-        elif observed_yes and not forecast_yes:
-            misses += 1
-        elif forecast_yes and not observed_yes:
-            false_alarms += 1
-        else:
-            correct_neg += 1
+        if score >= score_threshold:
+            forecast_keys.add(key) if key else None
+            forecast_pts.append((float(lat), float(lon)))
+        if observed >= flash_threshold:
+            observed_keys.add(key) if key else None
+            observed_pts.append((float(lat), float(lon)))
+    forecast_cells = len(forecast_pts)
+    observed_cells = len(observed_pts)
+
+    if neighborhood_km and neighborhood_km > 0:
+        radius = float(neighborhood_km)
+        hits = sum(1 for o in observed_pts if any(_dist_km(o, f) <= radius for f in forecast_pts))
+        misses = observed_cells - hits
+        false_alarms = sum(1 for f in forecast_pts if not any(_dist_km(f, o) <= radius for o in observed_pts))
+        correct_neg = max(0, cell_count - hits - misses - false_alarms)
+    else:
+        hits = len(forecast_keys & observed_keys)
+        misses = len(observed_keys - forecast_keys)
+        false_alarms = len(forecast_keys - observed_keys)
+        correct_neg = cell_count - len(forecast_keys | observed_keys)
 
     def _ratio(num: int, den: int) -> float | None:
         return round(num / den, 3) if den > 0 else None
@@ -195,6 +226,7 @@ def compute_verification(
         "ok": True,
         "score_threshold": score_threshold,
         "flash_threshold": flash_threshold,
+        "neighborhood_km": round(float(neighborhood_km), 1),
         "cell_count": len(cells),
         "forecast_cells": forecast_cells,
         "observed_cells": observed_cells,

@@ -30,7 +30,7 @@ import verification
 # Poids de mélange de haut niveau par défaut (= constantes codées en dur de
 # weather_logic.compute_initiation, forme à 4 poids ; convergence renormalisée si absente).
 DEFAULT_BLEND_WEIGHTS: dict[str, float] = {"cape": 0.44, "humid": 0.34, "heat": 0.10, "conv": 0.12}
-BASELINE_THRESHOLD: int = 70  # seuil « zones prévues » de référence (verification.py)
+BASELINE_THRESHOLD: int = 60  # seuil « zones prévues » de référence (verification.py, abaissé 70→60)
 
 # Garde-fous de volume (conservateurs) : rien n'est appris en-dessous.
 CALIB_MIN_DAYS = 10
