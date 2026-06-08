@@ -156,12 +156,14 @@ def build_training_examples(
                 blocks = cell_blocks(cell.get("metric_scores") or {})
                 if blocks is None:
                     continue
-                by_key[key] = {"trigger": trig, "blocks": blocks}
+                by_key[key] = {"trigger": trig, "blocks": blocks, "lat": float(lat), "lon": float(lon)}
         for key, rec in by_key.items():
             observed = float(flashes_per_cell.get(key, 0.0))
             examples.append({
                 "date": date_str,
                 "cell_key": key,
+                "lat": rec["lat"],
+                "lon": rec["lon"],
                 "blocks": rec["blocks"],
                 "trigger": rec["trigger"],
                 "label": 1 if observed >= flash_threshold else 0,
@@ -249,6 +251,69 @@ def best_threshold(scores: list[float], labels: list[int]) -> tuple[int, float]:
     best_thr, best_csi = BASELINE_THRESHOLD, -1.0
     for thr in range(1, 100):
         csi = skill_at_threshold(scores, labels, thr)["csi"]
+        if csi > best_csi + 1e-9 or (abs(csi - best_csi) <= 1e-9 and thr > best_thr):
+            best_csi, best_thr = csi, thr
+    return best_thr, round(best_csi, 4)
+
+
+# --- Skill de VOISINAGE (par jour) : aligne l'apprentissage sur la vérif affichée -----
+
+DEFAULT_NEIGHBORHOOD_KM = verification.DEFAULT_NEIGHBORHOOD_KM
+
+
+def skill_neighborhood(
+    examples: list[dict[str, Any]],
+    scores: list[float],
+    threshold: float,
+    *,
+    neighborhood_km: float = DEFAULT_NEIGHBORHOOD_KM,
+    flash_threshold: int = FLASH_THRESHOLD,
+) -> dict[str, float]:
+    """Skill agrégé en VOISINAGE : regroupe les exemples par jour et réutilise
+    verification.compute_verification (cellules = exemples avec leur score candidat),
+    puis somme la table de contingence sur tous les jours. `examples`/`scores` parallèles.
+    Mesure le MÊME skill que la vérif affichée (cohérence apprentissage ↔ vérité-terrain)."""
+    by_date: dict[str, list[tuple[dict[str, Any], float]]] = {}
+    for ex, sc in zip(examples, scores):
+        by_date.setdefault(ex["date"], []).append((ex, float(sc)))
+    H = M = FA = CN = 0
+    for items in by_date.values():
+        cells = [{"lat": ex.get("lat"), "lon": ex.get("lon"), "trigger_score": sc} for ex, sc in items]
+        fpc = {
+            verification.cell_key(ex["lat"], ex["lon"]): (1.0 if ex["label"] >= flash_threshold else 0.0)
+            for ex, _sc in items if ex.get("lat") is not None and ex["label"] >= flash_threshold
+        }
+        res = verification.compute_verification(
+            cells, fpc, score_threshold=threshold, flash_threshold=flash_threshold,
+            neighborhood_km=neighborhood_km,
+        )
+        c = res["contingency"]
+        H += c["hits"]; M += c["misses"]; FA += c["false_alarms"]; CN += c["correct_negatives"]
+    csi = H / (H + M + FA) if (H + M + FA) > 0 else 0.0
+    total = H + M + FA + CN
+    hss = 0.0
+    if total > 0:
+        expected = ((H + M) * (H + FA) + (CN + M) * (CN + FA)) / total
+        denom = total - expected
+        hss = (H + CN - expected) / denom if denom != 0 else 0.0
+    brier = (
+        sum((min(max(s / 100.0, 0.0), 1.0) - ex["label"]) ** 2 for ex, s in zip(examples, scores)) / len(scores)
+        if scores else 0.0
+    )
+    return {"csi": round(csi, 4), "hss": round(hss, 4), "brier": round(brier, 4),
+            "hits": H, "misses": M, "false_alarms": FA, "correct_negatives": CN}
+
+
+def best_threshold_neighborhood(
+    examples: list[dict[str, Any]],
+    scores: list[float],
+    *,
+    neighborhood_km: float = DEFAULT_NEIGHBORHOOD_KM,
+) -> tuple[int, float]:
+    """Seuil entier maximisant le CSI de VOISINAGE (tie-break : seuil le plus haut)."""
+    best_thr, best_csi = BASELINE_THRESHOLD, -1.0
+    for thr in range(1, 100):
+        csi = skill_neighborhood(examples, scores, thr, neighborhood_km=neighborhood_km)["csi"]
         if csi > best_csi + 1e-9 or (abs(csi - best_csi) <= 1e-9 and thr > best_thr):
             best_csi, best_thr = csi, thr
     return best_thr, round(best_csi, 4)
@@ -352,9 +417,16 @@ def _time_split(examples: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
     return train, test
 
 
-def evaluate_and_select(examples: list[dict[str, Any]]) -> dict[str, Any]:
+def evaluate_and_select(
+    examples: list[dict[str, Any]],
+    *,
+    neighborhood_km: float = DEFAULT_NEIGHBORHOOD_KM,
+) -> dict[str, Any]:
     """Construit un candidat (calibration + poids si gate), le valide en CV temporelle
-    contre la baseline, et décide de l'activer ou non. Renvoie décision + config + skill."""
+    contre la baseline, et décide de l'activer ou non. Renvoie décision + config + skill.
+
+    Le skill (baseline & candidat) est mesuré en VOISINAGE (`neighborhood_km`), comme la
+    vérif affichée — pour que l'apprentissage optimise bien la métrique qu'on regarde."""
     counts = _data_counts(examples)
     gates = {
         "calibration_ready": counts["days"] >= CALIB_MIN_DAYS and counts["positives"] >= CALIB_MIN_POSITIVES,
@@ -383,10 +455,9 @@ def evaluate_and_select(examples: list[dict[str, Any]]) -> dict[str, Any]:
 
     use_weights = gates["weights_ready"]
 
-    # --- baseline (modèle actuel) sur le test ---
+    # --- baseline (modèle actuel) sur le test, en VOISINAGE ---
     base_scores_test = [e["trigger"] for e in test]
-    labels_test = [e["label"] for e in test]
-    baseline_skill = skill_at_threshold(base_scores_test, labels_test, BASELINE_THRESHOLD)
+    baseline_skill = skill_neighborhood(test, base_scores_test, BASELINE_THRESHOLD, neighborhood_km=neighborhood_km)
 
     # --- candidat : fit sur le train uniquement ---
     if use_weights:
@@ -399,8 +470,8 @@ def evaluate_and_select(examples: list[dict[str, Any]]) -> dict[str, Any]:
         cand_scores_test = list(base_scores_test)
     train_labels = [e["label"] for e in train]
     curve = isotonic_pav(train_scores, train_labels)
-    thr, _ = best_threshold(train_scores, train_labels)
-    candidate_skill = skill_at_threshold(cand_scores_test, labels_test, thr)
+    thr, _ = best_threshold_neighborhood(train, train_scores, neighborhood_km=neighborhood_km)
+    candidate_skill = skill_neighborhood(test, cand_scores_test, thr, neighborhood_km=neighborhood_km)
 
     better = (
         candidate_skill["csi"] >= baseline_skill["csi"] + ACTIVATION_CSI_MARGIN
@@ -411,6 +482,7 @@ def evaluate_and_select(examples: list[dict[str, Any]]) -> dict[str, Any]:
         "version": CONFIG_VERSION,
         "mode": "auto",
         "threshold": int(thr),
+        "neighborhood_km": round(float(neighborhood_km), 1),
         "calibration": {"type": "isotonic", "points": curve},
         "weights": ({"enabled": True, **weights} if weights else {"enabled": False}),
         "data": counts,
@@ -546,6 +618,7 @@ if __name__ == "__main__":
             trigger = clamp(0.6 * cape + 0.2 * humid + 0.2 * heat)
             examples.append({
                 "date": date, "cell_key": f"{d}_{_}",
+                "lat": 43.0 + (_ // 8) * 1.0, "lon": 0.0 + (_ % 8) * 1.0,  # grille 1° (>30km) -> voisinage = exact
                 "blocks": {"cape": cape, "humid": humid, "heat": heat, "conv": conv},
                 "trigger": trigger, "label": label,
             })
@@ -574,6 +647,7 @@ if __name__ == "__main__":
             label = 1 if rng.random() < (0.05 if humid < 80 else 0.5) else 0
             sparse.append({
                 "date": date, "cell_key": f"s{d}_{k}",
+                "lat": 43.0 + (k // 8) * 1.0, "lon": 0.0 + (k % 8) * 1.0,
                 "blocks": {"cape": rng.uniform(0, 100), "humid": humid,
                            "heat": rng.uniform(0, 100), "conv": rng.uniform(0, 100)},
                 "trigger": clamp(humid), "label": label,
@@ -587,6 +661,18 @@ if __name__ == "__main__":
     few = [e for e in examples if e["date"] <= "2026-04-05"]
     res2 = evaluate_and_select(few)
     assert res2["decision"] == "collecting", res2["decision"]
+
+    # 4b) skill VOISINAGE : un orage à ~14 km d'une cellule à haut score est un near-miss
+    #     -> 0 hit en exact, 1 hit en voisinage 30 km (valide la logique spatiale du learning).
+    nbh_ex = [
+        {"date": "2026-06-01", "lat": 45.0, "lon": 2.0, "label": 0, "blocks": {}},   # prévu (haut score)
+        {"date": "2026-06-01", "lat": 45.13, "lon": 2.0, "label": 1, "blocks": {}},  # foudre ~14 km au nord
+    ]
+    nbh_scores = [80.0, 10.0]
+    sk_exact = skill_neighborhood(nbh_ex, nbh_scores, 60, neighborhood_km=0)
+    sk_near = skill_neighborhood(nbh_ex, nbh_scores, 60, neighborhood_km=30)
+    assert sk_exact["hits"] == 0 and sk_near["hits"] == 1, (sk_exact, sk_near)
+    print("voisinage learning: exact hits=%d -> 30km hits=%d" % (sk_exact["hits"], sk_near["hits"]))
 
     # 5) persistance round-trip (dossier temp)
     import tempfile
