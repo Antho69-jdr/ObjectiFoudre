@@ -649,39 +649,6 @@ def score_boundary_layer(blh_m: float | None) -> int | None:
     ])
 
 
-def score_graupel(graupel_kg_m2_per_h: float | None) -> int | None:
-    """Précipitation de grésil horaire (AROME `tgrp` DÉSACCUMULÉE, kg/m²/h). Le grésil
-    naît des collisions de glace dans les courants ascendants — le mécanisme même
-    d'électrisation des orages. Un signal quasi DIRECT de cellule électrifiée, donc
-    aligné sur la cible foudre. Même de petites quantités sont significatives."""
-    if graupel_kg_m2_per_h is None or not math.isfinite(float(graupel_kg_m2_per_h)):
-        return None
-    return piecewise_score(max(0.0, float(graupel_kg_m2_per_h)), [
-        (0.0, 0),
-        (0.01, 20),
-        (0.05, 45),
-        (0.20, 68),
-        (0.60, 86),
-        (1.50, 100),
-    ])
-
-
-def score_sensible_heat_flux(flux_w_m2: float | None) -> int | None:
-    """Flux net de chaleur sensible en surface (AROME `sshf` DÉSACCUMULÉ, W/m²). Mesure
-    DIRECTE du chauffage qui alimente les thermiques (mieux que le proxy timing×rayonnement).
-    Positif = la surface chauffe l'air (jour) ; négatif/faible = couche stable (nuit)."""
-    if flux_w_m2 is None or not math.isfinite(float(flux_w_m2)):
-        return None
-    return piecewise_score(float(flux_w_m2), [
-        (0, 0),
-        (50, 15),
-        (120, 35),
-        (220, 60),
-        (350, 82),
-        (500, 100),
-    ])
-
-
 def _apply_cape_moisture_gates(
     score: float,
     penalty: float,
@@ -749,12 +716,9 @@ def _apply_environment_modifiers(
     shortwave_s: int | None,
     convective_activity_s: int | None,
     boundary_layer_s: int | None = None,
-    graupel_s: int | None = None,
-    sensible_heat_flux_s: int | None = None,
 ) -> tuple[float, float]:
     """Modificateurs secondaires : CIN, convergence de surface, eau précipitable,
-    rayonnement court, couche limite, flux sensible, grésil et activité convective.
-    Ordre conservé tel quel."""
+    rayonnement court, couche limite et activité convective observée. Ordre conservé."""
     if cin_support_s is not None:
         if cin_support_s < 25:
             score *= 0.55
@@ -791,24 +755,6 @@ def _apply_environment_modifiers(
             penalty += 3
         elif boundary_layer_s >= 70 and cape_s >= 35 and dew_s >= 40:
             score += 3
-    if sensible_heat_flux_s is not None:
-        # Flux de chaleur sensible = chauffage réel de la basse couche. Quasi nul en
-        # journée malgré de la CAPE → thermiques absents, initiation difficile ; fort →
-        # forçage thermique du déclenchement.
-        if sensible_heat_flux_s < 15 and 9 <= dt.hour <= 18 and cape_s >= 45:
-            score *= 0.95
-            penalty += 3
-        elif sensible_heat_flux_s >= 60 and cape_s >= 35 and dew_s >= 40:
-            score += 3
-    if graupel_s is not None:
-        # Grésil = phase glace convective = électrisation. Preuve quasi directe d'orage :
-        # on relève le score vers ce signal (atténué si aucune instabilité/humidité, pour
-        # ne pas surréagir à du grésil hivernal stratiforme).
-        g = float(graupel_s)
-        if cape_s < 15 and dew_s < 35:
-            g *= 0.5
-            penalty += 4
-        score = max(score, g)
     if convective_activity_s is not None:
         activity_score = convective_activity_s
         if cape_s < 15 and dew_s < 35:
@@ -839,8 +785,6 @@ def compute_initiation(
     cloud_mid: float | None = None,
     cloud_high: float | None = None,
     boundary_layer_height_m: float | None = None,
-    graupel_kg_m2_per_h: float | None = None,
-    sensible_heat_flux_w_m2: float | None = None,
 ) -> tuple[int, dict[str, float | int | None]]:
     cape_s = score_cape(cape)
     dew_s = score_dewpoint(dewpoint_c)
@@ -884,18 +828,6 @@ def compute_initiation(
     boundary_layer_height = (
         max(0.0, float(boundary_layer_height_m))
         if boundary_layer_height_m is not None and math.isfinite(float(boundary_layer_height_m))
-        else None
-    )
-    graupel_s = score_graupel(graupel_kg_m2_per_h)
-    graupel_rate = (
-        max(0.0, float(graupel_kg_m2_per_h))
-        if graupel_kg_m2_per_h is not None and math.isfinite(float(graupel_kg_m2_per_h))
-        else None
-    )
-    sensible_heat_flux_s = score_sensible_heat_flux(sensible_heat_flux_w_m2)
-    sensible_heat_flux = (
-        float(sensible_heat_flux_w_m2)
-        if sensible_heat_flux_w_m2 is not None and math.isfinite(float(sensible_heat_flux_w_m2))
         else None
     )
 
@@ -975,8 +907,6 @@ def compute_initiation(
         shortwave_s=shortwave_s,
         convective_activity_s=convective_activity_s,
         boundary_layer_s=boundary_layer_s,
-        graupel_s=graupel_s,
-        sensible_heat_flux_s=sensible_heat_flux_s,
     )
 
     # Cloud cover is diagnostic only here: a clear pre-convective sky can
@@ -1015,10 +945,6 @@ def compute_initiation(
         'total_cloud_cover': total_cloud_cover,
         'boundary_layer_component': boundary_layer_s,
         'boundary_layer_height_m': round(boundary_layer_height, 0) if boundary_layer_height is not None else None,
-        'graupel_component': graupel_s,
-        'graupel_kg_m2_per_h': round(graupel_rate, 4) if graupel_rate is not None else None,
-        'sensible_heat_flux_component': sensible_heat_flux_s,
-        'sensible_heat_flux_w_m2': round(sensible_heat_flux, 1) if sensible_heat_flux is not None else None,
     }
 
 
@@ -1402,10 +1328,6 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
         cloud_high = float(cloud_high_raw) if cloud_high_raw is not None else None
         blh_raw = _hourly_value(hourly.get("boundary_layer_height"), idx)
         boundary_layer_height = float(blh_raw) if blh_raw is not None else None
-        graupel_raw = _hourly_value(hourly.get("graupel"), idx)
-        graupel = float(graupel_raw) if graupel_raw is not None else None
-        shf_raw = _hourly_value(hourly.get("sensible_heat_flux"), idx)
-        sensible_heat_flux = float(shf_raw) if shf_raw is not None else None
         gusts = float(_hourly_value(hourly.get("wind_gusts_10m"), idx) or 0.0)
         ws10 = float(_hourly_value(hourly.get("wind_speed_10m"), idx) or 0.0)
         wd10 = float(_hourly_value(hourly.get("wind_direction_10m"), idx) or 0.0)
@@ -1429,8 +1351,6 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
             cloud_mid=cloud_mid,
             cloud_high=cloud_high,
             boundary_layer_height_m=boundary_layer_height,
-            graupel_kg_m2_per_h=graupel,
-            sensible_heat_flux_w_m2=sensible_heat_flux,
         )
 
         metrics.append(
@@ -1510,8 +1430,6 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     "surface_trigger_score": metric.get("surface_trigger_component"),
                     "cloud_trigger_score": metric.get("cloud_trigger_component"),
                     "boundary_layer_score": metric.get("boundary_layer_component"),
-                    "graupel_score": metric.get("graupel_component"),
-                    "sensible_heat_flux_score": metric.get("sensible_heat_flux_component"),
                     "clear_sky_penalty_score": metric.get("clear_sky_penalty", 0),
                     "confidence_consistency_score": confidence_diag.get("consistency"),
                     "confidence_temporal_score": confidence_diag.get("temporal_stability"),
@@ -1536,8 +1454,6 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     "convective_cloud_cover": round_optional(metric.get("convective_cloud_cover"), 1),
                     "total_cloud_cover": round_optional(metric.get("total_cloud_cover"), 1),
                     "boundary_layer_height_m": round_optional(metric.get("boundary_layer_height_m"), 0),
-                    "graupel_kg_m2_per_h": round_optional(metric.get("graupel_kg_m2_per_h"), 4),
-                    "sensible_heat_flux_w_m2": round_optional(metric.get("sensible_heat_flux_w_m2"), 1),
                 }
                 category_breakdown = {
                     "probability": {
