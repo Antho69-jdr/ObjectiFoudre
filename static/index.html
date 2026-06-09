@@ -7,14 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="ObjectiFoudre" />
-  <link rel="manifest" href="/manifest.webmanifest?v=1.2.27" />
+  <link rel="manifest" href="/manifest.webmanifest?v=1.2.28" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <title>ObjectiFoudre — Tactile</title>
-  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.2.27"></script>
-  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.2.27" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/css/main.css?v=1.2.27" />
-<link rel="stylesheet" href="/assets/css/components.css?v=1.2.27" />
-<link rel="stylesheet" href="/assets/css/responsive.css?v=1.2.27" />
+  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.2.28"></script>
+  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.2.28" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/main.css?v=1.2.28" />
+<link rel="stylesheet" href="/assets/css/components.css?v=1.2.28" />
+<link rel="stylesheet" href="/assets/css/responsive.css?v=1.2.28" />
 </head>
 <body>
   <div id="mobileBlockScreen" class="mobile-block-screen" hidden>
@@ -217,7 +217,7 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.2.27">Version : v1.2.27 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.2.28">Version : v1.2.28 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
@@ -250,10 +250,16 @@
 
       <section class="drawer-section">
         <div class="small drawer-section-title">Calcul simplifié</div>
-        <p>Le score principal croise CAPE, point de rosée, vapeur d’eau intégrée, rayonnement court, précipitation, nébulosité, rafales, humidité basse couche recalculée, VPD, bulbe humide et timing. Chaque champ demandé est obligatoire et réellement utilisé.</p>
-        <div class="drawer-formula-card">
-          <div class="drawer-formula-line"><strong>Probabilité orage</strong> = déclenchement convectif exploitable sur 0–100</div>
-          <div class="drawer-formula-note"><strong>Confiance</strong> mesure la cohérence des ingrédients et leur stabilité autour de l’heure sélectionnée. Elle n’ajoute pas de requête API dédiée.</div>
+        <p>Le score principal croise l’instabilité (CAPE), l’humidité de basse couche (point de rosée, humidité relative, VPD et bulbe humide recalculés), l’humidité de la colonne (vapeur d’eau intégrée), le chauffage de surface (rayonnement court, hauteur de couche limite, timing), la convection prévue (précipitation, nébulosité, rafales) et la convergence du vent de surface. Chaque champ AROME demandé est obligatoire et réellement utilisé.</p>
+        <div class="drawer-formula-grid">
+          <div class="drawer-formula-card">
+            <div class="drawer-formula-line"><strong>Probabilité orage</strong></div>
+            <div class="drawer-formula-note">Déclenchement convectif exploitable, noté sur 0–100.</div>
+          </div>
+          <div class="drawer-formula-card">
+            <div class="drawer-formula-line"><strong>Confiance</strong></div>
+            <div class="drawer-formula-note">Cohérence des ingrédients et stabilité autour de l’heure choisie. N’ajoute aucune requête API dédiée.</div>
+          </div>
         </div>
       </section>
 
@@ -265,20 +271,24 @@
             <p>Quantifie l’énergie disponible pour les ascendances. Sans CAPE exploitable, le score reste bas.</p>
           </article>
           <article class="drawer-category-card">
-            <h3>Température 2 m</h3>
-            <p>Utilisée avec le point de rosée pour reconstruire humidité, VPD et bulbe humide.</p>
-          </article>
-          <article class="drawer-category-card">
-            <h3>Point de rosée 2 m</h3>
-            <p>Lit l’humidité réellement exploitable en basse couche et les risques de dessèchement.</p>
+            <h3>Température &amp; point de rosée 2 m</h3>
+            <p>Base de l’humidité réellement exploitable en basse couche : humidité relative, VPD et bulbe humide y sont recalculés.</p>
           </article>
           <article class="drawer-category-card">
             <h3>Vapeur d’eau intégrée</h3>
-            <p>Complète l’humidité 2 m avec une lecture de profondeur humide dans la colonne.</p>
+            <p>Complète l’humidité 2 m avec une lecture de profondeur humide dans toute la colonne.</p>
+          </article>
+          <article class="drawer-category-card">
+            <h3>Hauteur de couche limite</h3>
+            <p>Profondeur du mélange convectif : une couche bien développée aide les bulles d’air à atteindre leur niveau de convection libre.</p>
           </article>
           <article class="drawer-category-card">
             <h3>Rayonnement, pluie, nuages, rafales</h3>
-            <p>Ces champs matérialisent le chauffage diurne, l’activité convective prévue et la dynamique de surface.</p>
+            <p>Matérialisent le chauffage diurne, l’activité convective prévue et la dynamique de surface.</p>
+          </article>
+          <article class="drawer-category-card">
+            <h3>Vent de surface</h3>
+            <p>Vitesse et direction 10 m servent à estimer la convergence de basse couche, déclencheur des ascendances.</p>
           </article>
         </div>
       </section>
@@ -321,12 +331,12 @@
       </section>
 
       <section class="drawer-section">
-        <div class="small drawer-section-title">Aides d’interface récentes</div>
+        <div class="small drawer-section-title">Repères d’interface</div>
         <ul class="drawer-bullet-list">
-          <li><strong>AROME France</strong> : la grille nationale devient la source principale ; il n’y a plus de zone locale à choisir.</li>
-          <li><strong>Frise</strong> : le bouton lecture joue les 24 heures du jour une par une ; il fonctionne comme un play/pause rapide.</li>
-          <li><strong>Heures passées</strong> : elles sont teintées en rouge pour distinguer d’un coup d’œil ce qui appartient déjà au passé.</li>
-          <li><strong>Cache</strong> : les heures déjà préchargées sont relues depuis le cache France pour garder une navigation fluide.</li>
+          <li><strong>Frise</strong> : flèches « jour précédent / suivant » à gauche, puis les heures ; le bouton lecture (▶ entouré) enchaîne les 24 heures, et la disquette exporte l’animation de la grille.</li>
+          <li><strong>Heures passées</strong> : teintées en rouge pour repérer d’un coup d’œil ce qui appartient déjà au passé.</li>
+          <li><strong>Prévisions orageuses</strong> : génère une carte de risque journalier (fenêtre AROME 08h–08h) exportable en image.</li>
+          <li><strong>Historique</strong> : rejoue une journée archivée en animation, avec la foudre réellement observée et une note de fidélité de la prévision (auto-calibration).</li>
         </ul>
       </section>
     </aside>
@@ -417,30 +427,30 @@
       </div>
     </section>
   </div>
-  <script src="/assets/js/dom.js?v=1.2.27"></script>
-  <script src="/assets/js/utils.js?v=1.2.27"></script>
-  <script src="/assets/js/panels.js?v=1.2.27"></script>
-  <script src="/assets/js/state.js?v=1.2.27"></script>
-  <script src="/assets/js/core.js?v=1.2.27"></script>
-  <script src="/assets/js/map-ui.js?v=1.2.27"></script>
-  <script src="/assets/js/timeline.js?v=1.2.27"></script>
-  <script src="/assets/js/grid-loader.js?v=1.2.27"></script>
-  <script src="/assets/js/grid-core.js?v=1.2.27"></script>
-  <script src="/assets/js/france-admin-lines.js?v=1.2.27"></script>
-  <script src="/assets/js/france-regions.js?v=1.2.27"></script>
-  <script src="/assets/js/storm-forecast-image.js?v=1.2.27"></script>
-  <script src="/assets/js/grid-layers.js?v=1.2.27"></script>
-  <script src="/assets/js/grid.js?v=1.2.27"></script>
-  <script src="/assets/js/metric-data.js?v=1.2.27"></script>
-  <script src="/assets/js/metric-ui.js?v=1.2.27"></script>
-  <script src="/assets/js/selection.js?v=1.2.27"></script>
-  <script src="/assets/js/data.js?v=1.2.27"></script>
-  <script src="/assets/js/services.js?v=1.2.27"></script>
-  <script src="/assets/js/search-autocomplete.js?v=1.2.27"></script>
-  <script src="/assets/js/controls.js?v=1.2.27"></script>
-  <script src="/assets/js/history.js?v=1.2.27"></script>
-  <script src="/assets/js/bootstrap.js?v=1.2.27"></script>
-  <script src="/assets/js/mobile-block.js?v=1.2.27"></script>
-  <script src="/assets/js/tooltip.js?v=1.2.27"></script>
+  <script src="/assets/js/dom.js?v=1.2.28"></script>
+  <script src="/assets/js/utils.js?v=1.2.28"></script>
+  <script src="/assets/js/panels.js?v=1.2.28"></script>
+  <script src="/assets/js/state.js?v=1.2.28"></script>
+  <script src="/assets/js/core.js?v=1.2.28"></script>
+  <script src="/assets/js/map-ui.js?v=1.2.28"></script>
+  <script src="/assets/js/timeline.js?v=1.2.28"></script>
+  <script src="/assets/js/grid-loader.js?v=1.2.28"></script>
+  <script src="/assets/js/grid-core.js?v=1.2.28"></script>
+  <script src="/assets/js/france-admin-lines.js?v=1.2.28"></script>
+  <script src="/assets/js/france-regions.js?v=1.2.28"></script>
+  <script src="/assets/js/storm-forecast-image.js?v=1.2.28"></script>
+  <script src="/assets/js/grid-layers.js?v=1.2.28"></script>
+  <script src="/assets/js/grid.js?v=1.2.28"></script>
+  <script src="/assets/js/metric-data.js?v=1.2.28"></script>
+  <script src="/assets/js/metric-ui.js?v=1.2.28"></script>
+  <script src="/assets/js/selection.js?v=1.2.28"></script>
+  <script src="/assets/js/data.js?v=1.2.28"></script>
+  <script src="/assets/js/services.js?v=1.2.28"></script>
+  <script src="/assets/js/search-autocomplete.js?v=1.2.28"></script>
+  <script src="/assets/js/controls.js?v=1.2.28"></script>
+  <script src="/assets/js/history.js?v=1.2.28"></script>
+  <script src="/assets/js/bootstrap.js?v=1.2.28"></script>
+  <script src="/assets/js/mobile-block.js?v=1.2.28"></script>
+  <script src="/assets/js/tooltip.js?v=1.2.28"></script>
 </body>
 </html>

@@ -1130,11 +1130,10 @@
   letter-spacing: 0.01em;
 }
 .drawer-scale-grid,
-.drawer-category-list {
+.drawer-category-list,
+.drawer-formula-grid {
   display: grid;
   gap: 10px;
-}
-.drawer-scale-grid {
   grid-template-columns: 1fr 1fr;
 }
 .drawer-scale-card,
@@ -1145,7 +1144,8 @@
   background: rgba(255,255,255,0.035);
   padding: 12px;
 }
-.drawer-scale-card {
+.drawer-scale-card,
+.drawer-formula-card {
   display: grid;
   gap: 4px;
 }

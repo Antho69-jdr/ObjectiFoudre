@@ -769,7 +769,8 @@
     border-radius: 0 !important;
   }
   body.mobile-ui .drawer-scale-grid,
-  body.mobile-ui .drawer-category-list {
+  body.mobile-ui .drawer-category-list,
+  body.mobile-ui .drawer-formula-grid {
     grid-template-columns: 1fr !important;
   }
   body.mobile-ui .drawer-section {
@@ -847,7 +848,8 @@
   body.mobile-ui .details-grid,
   body.mobile-ui .details-grid-score,
   body.mobile-ui .drawer-scale-grid,
-  body.mobile-ui .drawer-category-list {
+  body.mobile-ui .drawer-category-list,
+  body.mobile-ui .drawer-formula-grid {
     grid-template-columns: 1fr !important;
   }
 }
