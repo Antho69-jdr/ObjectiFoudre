@@ -91,4 +91,64 @@
   document.addEventListener('pointerdown', hide, true);
   window.addEventListener('scroll', hide, true);
   window.addEventListener('blur', hide);
+
+  // --- Mode « révéler les info-bulles » (bouton ? tactile, tablette/mobile) ------
+  // Affiche simultanément les info-bulles de tous les éléments [data-tooltip] visibles
+  // à l'écran (sauf les icônes de frise, exclues). Bascule on/off ; se ferme dès qu'on
+  // touche ailleurs, qu'on défile ou qu'on redimensionne.
+  let revealed = [];
+  function clearRevealed() {
+    if (!revealed.length) return;
+    revealed.forEach((el) => el.remove());
+    revealed = [];
+    const btn = document.getElementById('screenTooltipsBtn');
+    if (btn) btn.setAttribute('aria-pressed', 'false');
+  }
+  function revealAll() {
+    clearRevealed();
+    hide();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    document.querySelectorAll('[data-tooltip]').forEach((el) => {
+      if (el.id === 'screenTooltipsBtn') return;
+      if (el.classList.contains('timeline-light-icon') || el.classList.contains('timeline-wheel-light-icon')) return;
+      const text = el.getAttribute('data-tooltip');
+      if (!text) return;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return;                 // caché
+      if (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) return; // hors écran
+      const lbl = document.createElement('div');
+      lbl.className = 'app-tooltip app-tooltip-revealed';
+      lbl.setAttribute('role', 'tooltip');
+      lbl.textContent = text;
+      lbl.hidden = false;
+      document.body.appendChild(lbl);
+      const tw = lbl.offsetWidth, th = lbl.offsetHeight;
+      const left = Math.max(4, Math.min(r.left + r.width / 2 - tw / 2, vw - tw - 4));
+      let top = r.top - th - 6;
+      if (top < 4) top = r.bottom + 6;
+      top = Math.max(4, Math.min(top, vh - th - 4));
+      lbl.style.left = Math.round(left) + 'px';
+      lbl.style.top = Math.round(top) + 'px';
+      lbl.style.opacity = '1';
+      revealed.push(lbl);
+    });
+    const btn = document.getElementById('screenTooltipsBtn');
+    if (btn) btn.setAttribute('aria-pressed', revealed.length ? 'true' : 'false');
+  }
+  // Bouton (délégation : robuste quel que soit l'ordre de chargement).
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest && e.target.closest('#screenTooltipsBtn');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (revealed.length) clearRevealed(); else revealAll();
+  });
+  // Fermer en touchant ailleurs / au défilement / au redimensionnement.
+  document.addEventListener('pointerdown', (e) => {
+    if (!revealed.length) return;
+    if (e.target.closest && e.target.closest('#screenTooltipsBtn')) return;
+    clearRevealed();
+  }, true);
+  window.addEventListener('scroll', clearRevealed, true);
+  window.addEventListener('resize', clearRevealed);
 })();

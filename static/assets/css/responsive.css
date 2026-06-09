@@ -3980,7 +3980,8 @@ body.mobile-ui #detailsModal .details-grid.details-grid-values {
     position: fixed !important;
     top: calc(58px + env(safe-area-inset-top)) !important;
     right: 8px !important;
-    bottom: calc(var(--touch-meta-h) + var(--touch-timeline-h) + env(safe-area-inset-bottom) + 10px) !important;
+    /* +44px (au lieu de +10) pour dégager le bouton d'aide « ? » collé au-dessus de la frise à droite. */
+    bottom: calc(var(--touch-meta-h) + var(--touch-timeline-h) + env(safe-area-inset-bottom) + 44px) !important;
     width: var(--touch-rail-size) !important;
     gap: 8px !important;
     z-index: 35 !important;
@@ -4677,5 +4678,65 @@ body.mobile-ui #timelineDock.timeline-dock,
   .meta-stack .meta-scale::before {
     display: none !important;
     content: none !important;
+  }
+}
+
+/* ===== Bouton d'aide « ? » collé à la frise (tablette + mobile) =====
+   Enfant du dock : il suit la translation (monte/descend avec la frise) et reste
+   visible/cliquable même quand la frise est repliée. Caché sur desktop. */
+.frise-help-btn { display: none; }
+@media (max-width: 1024px) {
+  body.mobile-ui #timelineDock .frise-help-btn,
+  #timelineDock .frise-help-btn,
+  .frise-help-btn {
+    display: grid !important;
+    place-items: center !important;
+    position: absolute !important;
+    right: 6px !important;
+    top: -34px !important;
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border-radius: 999px !important;
+    border: 1px solid rgba(125, 211, 252, 0.42) !important;
+    background: rgba(8, 17, 30, 0.94) !important;
+    color: rgba(226, 238, 252, 0.96) !important;
+    font-size: 15px !important;
+    font-weight: 850 !important;
+    line-height: 1 !important;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35) !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+    pointer-events: auto !important;
+    z-index: 131 !important;
+    cursor: pointer !important;
+  }
+  .frise-help-btn[aria-pressed="true"] {
+    background: rgba(37, 99, 235, 0.94) !important;
+    border-color: rgba(147, 197, 253, 0.9) !important;
+    color: #fff !important;
+  }
+  /* La frise repliée passe en pointer-events:none ; le bouton garde son interactivité. */
+  body.mobile-ui #timelineDock.collapsed .frise-help-btn,
+  #timelineDock.collapsed .frise-help-btn,
+  .timeline-dock.collapsed .frise-help-btn {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+}
+
+/* Info-bulles révélées simultanément par le bouton « ? » : style identique à .app-tooltip,
+   mais persistantes (pas de transition d'apparition). */
+.app-tooltip.app-tooltip-revealed { transition: none !important; }
+
+/* Mobile : retirer le tooltip des icônes de la frise scrollable (jour/nuit), inutile au
+   tactile. On garde le petit tiret repère (::after). */
+@media (max-width: 767px) {
+  body.mobile-ui .timeline-wheel-light-icon::before,
+  body.mobile-ui #slotButtons .timeline-wheel-light-icon::before {
+    content: none !important;
+    display: none !important;
   }
 }
