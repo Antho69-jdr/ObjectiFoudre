@@ -551,9 +551,9 @@
           category: 'Probabilité orage',
           title: 'Humidité',
           formula: scores.precipitable_water_score !== undefined && scores.precipitable_water_score !== null
-            ? `0.45 × point de rosée + 0.15 × humidité relative + 0.18 × VPD + 0.07 × bulbe humide + 0.15 × vapeur colonne. Composants : Td ${formatDetailScore(scores.dewpoint_score)}, HR ${formatDetailScore(scores.humidity_score)}, VPD ${formatDetailScore(scores.vpd_score)}, Tw ${formatDetailScore(scores.wetbulb_score)}, colonne ${formatDetailScore(scores.precipitable_water_score)} (${formatDetailScore(p.precipitable_water, ' kg/m²')}).`
-            : `0.60 × point de rosée + 0.20 × humidité relative + 0.20 × VPD. Composants : Td ${formatDetailScore(scores.dewpoint_score)}, HR ${formatDetailScore(scores.humidity_score)}, VPD ${formatDetailScore(scores.vpd_score)}.`,
-          text: 'Ce bloc lit l’alimentation humide. Avec AROME r67, il tient aussi compte de la vapeur d’eau intégrée dans la colonne, ce qui évite de surestimer une basse couche humide mais trop peu profonde.',
+            ? `0.48 × point de rosée + 0.27 × déficit de saturation + 0.08 × bulbe humide + 0.17 × vapeur colonne, où déficit de saturation = 0.60 × VPD + 0.40 × humidité relative. Composants : Td ${formatDetailScore(scores.dewpoint_score)}, HR ${formatDetailScore(scores.humidity_score)}, VPD ${formatDetailScore(scores.vpd_score)}, Tw ${formatDetailScore(scores.wetbulb_score)}, colonne ${formatDetailScore(scores.precipitable_water_score)} (${formatDetailScore(p.precipitable_water, ' kg/m²')}).`
+            : `0.65 × point de rosée + 0.35 × déficit de saturation, où déficit de saturation = 0.60 × VPD + 0.40 × humidité relative. Composants : Td ${formatDetailScore(scores.dewpoint_score)}, HR ${formatDetailScore(scores.humidity_score)}, VPD ${formatDetailScore(scores.vpd_score)}.`,
+          text: 'Ce bloc lit l’alimentation humide. Le point de rosée domine ; HR et VPD sont fusionnés en un seul axe « déficit de saturation » pour ne pas compter deux fois l’écart à la saturation, et la vapeur d’eau intégrée ajoute la profondeur humide de la colonne.',
         },
         probability_solar: {
           category: 'Probabilité orage',
@@ -582,7 +582,7 @@
         probability_penalty: {
           category: 'Probabilité orage',
           title: 'Freins',
-          formula: 'Somme des freins appliqués après le score pondéré : CAPE faible, point de rosée bas, VPD défavorable ou vrai CIN s’il existe.',
+          formula: 'Somme des freins appliqués après le score pondéré : CAPE faible ou nulle, basse couche sèche (point de rosée bas, VPD défavorable) et soutiens faibles (rayonnement, couche limite). La CIN réelle n’est pas fournie par AROME et n’entre pas dans le calcul.',
           text: 'Une valeur élevée indique un ingrédient limitant. Les freins évitent surtout les faux positifs liés à CAPE faible ou air sec ; les proxys non issus d’un champ AROME réel ne sont plus utilisés.',
         },
         confidence_consistency: {
@@ -600,7 +600,7 @@
         confidence_margin: {
           category: 'Confiance',
           title: 'Marge ingrédients',
-          formula: 'Si probabilité ≥ 20 : 0.65 × plancher ingrédients + 0.35 × moyenne ingrédients. Si probabilité < 20 : lecture du verrou dominant.',
+          formula: 'Si probabilité ≥ 20 : 0.65 × plancher ingrédients + 0.35 × moyenne ingrédients. Si probabilité < 20 : 0.70 × verrou dominant + 0.30 × (100 − probabilité).',
           text: 'La marge est élevée quand l’ingrédient le plus faible n’est pas trop faible. Elle baisse si un seul verrou suffit à rendre la situation fragile.',
         },
         confidence_floor: {
