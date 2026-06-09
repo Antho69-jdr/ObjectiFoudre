@@ -4730,13 +4730,3 @@ body.mobile-ui #timelineDock.timeline-dock,
 /* Info-bulles révélées simultanément par le bouton « ? » : style identique à .app-tooltip,
    mais persistantes (pas de transition d'apparition). */
 .app-tooltip.app-tooltip-revealed { transition: none !important; }
-
-/* Mobile : retirer le tooltip des icônes de la frise scrollable (jour/nuit), inutile au
-   tactile. On garde le petit tiret repère (::after). */
-@media (max-width: 767px) {
-  body.mobile-ui .timeline-wheel-light-icon::before,
-  body.mobile-ui #slotButtons .timeline-wheel-light-icon::before {
-    content: none !important;
-    display: none !important;
-  }
-}

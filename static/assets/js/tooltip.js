@@ -40,12 +40,20 @@
 
   let currentEl = null;
 
+  // Une pastille d'heure de la frise (roue mobile ou rail tablette/desktop).
+  function isHourTarget(el) {
+    return el.classList.contains('timeline-wheel-item') || el.classList.contains('timeline-hour-mark');
+  }
+
   // Cible un porteur de data-tooltip, sauf les icônes de la frise (tooltip CSS dédié).
   function tooltipTarget(node) {
     if (!node || !node.closest) return null;
     const el = node.closest('[data-tooltip]');
     if (!el) return null;
     if (el.classList.contains('timeline-light-icon') || el.classList.contains('timeline-wheel-light-icon')) return null;
+    // Sur tablette/mobile (≤1024px), pas de tooltip d'heure : il masque les info-bulles
+    // des icônes jour/nuit de la frise (qu'on veut justement pouvoir lire).
+    if (window.innerWidth <= 1024 && isHourTarget(el)) return null;
     return el;
   }
 
@@ -111,6 +119,7 @@
     document.querySelectorAll('[data-tooltip]').forEach((el) => {
       if (el.id === 'screenTooltipsBtn') return;
       if (el.classList.contains('timeline-light-icon') || el.classList.contains('timeline-wheel-light-icon')) return;
+      if (isHourTarget(el)) return;  // pas de label par heure : encombrant et redondant
       const text = el.getAttribute('data-tooltip');
       if (!text) return;
       const r = el.getBoundingClientRect();
