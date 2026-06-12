@@ -77,8 +77,15 @@
     requestAnimationFrame(() => { if (currentEl === el) tip.style.opacity = '1'; });
   }
 
+  // Tooltip « collant » (tap sur une icône jour/nuit de la roue mobile) : il résiste au
+  // pointerout/focusout du tap et au recentrage automatique de la roue, et ne se ferme
+  // qu'au tap suivant (ailleurs), à un vrai défilement plus tardif ou au blur.
+  let stickyTooltip = false;
+  let stickyShownAt = 0;
+
   function hide() {
     currentEl = null;
+    stickyTooltip = false;
     tip.hidden = true;
     tip.style.opacity = '0';
   }
@@ -88,17 +95,32 @@
     if (el && el !== currentEl) show(el);
   });
   document.addEventListener('pointerout', (e) => {
-    if (!currentEl) return;
+    if (!currentEl || stickyTooltip) return;
     if (!e.relatedTarget || !currentEl.contains(e.relatedTarget)) hide();
   });
   document.addEventListener('focusin', (e) => {
     const el = tooltipTarget(e.target);
     if (el) show(el);
   });
-  document.addEventListener('focusout', hide);
+  document.addEventListener('focusout', () => { if (!stickyTooltip) hide(); });
   document.addEventListener('pointerdown', hide, true);
-  window.addEventListener('scroll', hide, true);
+  window.addEventListener('scroll', () => {
+    if (stickyTooltip && Date.now() - stickyShownAt < 900) return; // recentrage de la roue
+    hide();
+  }, true);
   window.addEventListener('blur', hide);
+
+  // Icônes jour/nuit de la ROUE mobile : leur tooltip CSS est clippé par le scroller
+  // (overflow-y hidden) → on affiche l'app-tooltip flottant (ancré au <body>, jamais
+  // clippé) au tap. Le hide() en phase capture vient d'effacer l'ancien ; on ré-affiche
+  // ensuite en mode collant.
+  document.addEventListener('pointerdown', (e) => {
+    const icon = e.target.closest && e.target.closest('.timeline-wheel-light-icon');
+    if (!icon || !icon.getAttribute('data-tooltip')) return;
+    show(icon);
+    stickyTooltip = true;
+    stickyShownAt = Date.now();
+  });
 
   // --- Mode « révéler les info-bulles » (bouton ? tactile, tablette/mobile) ------
   // Affiche simultanément les info-bulles de tous les éléments [data-tooltip] visibles

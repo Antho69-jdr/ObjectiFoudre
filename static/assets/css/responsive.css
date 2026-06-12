@@ -4730,3 +4730,14 @@ body.mobile-ui #timelineDock.timeline-dock,
 /* Info-bulles révélées simultanément par le bouton « ? » : style identique à .app-tooltip,
    mais persistantes (pas de transition d'apparition). */
 .app-tooltip.app-tooltip-revealed { transition: none !important; }
+
+/* Roue mobile : la bulle CSS (::before) des icônes jour/nuit est clippée par le scroller
+   (overflow-y hidden) → neutralisée ; tooltip.js affiche à la place l'app-tooltip flottant
+   (ancré au <body>, jamais clippé) au tap. Le tiret repère (::after) est conservé. */
+@media (max-width: 767px) {
+  body.mobile-ui .timeline-wheel-light-icon::before,
+  body.mobile-ui #slotButtons .timeline-wheel-light-icon::before {
+    content: none !important;
+    display: none !important;
+  }
+}
