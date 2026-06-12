@@ -79,12 +79,14 @@
       requestAnimationFrame(tick);
     }
 
+    // Le paint lit d'abord le feature-state (mis à jour à chaque bascule d'heure sans
+    // setData ni re-tessellation), avec repli sur les properties du setData initial.
     function gridFillColorExpression() {
-      return ['get', 'fill_color'];
+      return ['coalesce', ['feature-state', 'fill_color'], ['get', 'fill_color']];
     }
 
     function gridFillOpacityExpression(factor = 1) {
-      return ['*', ['get', 'fill_opacity'], factor];
+      return ['*', ['coalesce', ['feature-state', 'fill_opacity'], ['get', 'fill_opacity']], factor];
     }
 
     function setGridFillFactor(factor) {

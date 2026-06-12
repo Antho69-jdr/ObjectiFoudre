@@ -51,7 +51,7 @@ JS_DIR = ASSETS_DIR / "js"
 CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.32"
+APP_VERSION = "1.2.33"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -1774,7 +1774,7 @@ class MeteoFranceSlotGridRequest(BaseModel):
     label: str = Field(DEFAULT_CENTER_LABEL, min_length=1, max_length=120)
     date: Date
     hour: int = Field(..., ge=0, le=23)
-    detail_level: Literal["core", "advanced"] = METEOFRANCE_SLOT_GRID_CORE_DETAIL
+    detail_level: Literal["core", "advanced", "render"] = METEOFRANCE_SLOT_GRID_CORE_DETAIL
 
 
 class MeteoFranceGribSlotGridRequest(BaseModel):
@@ -1785,7 +1785,7 @@ class MeteoFranceGribSlotGridRequest(BaseModel):
     date: Date
     hour: int = Field(..., ge=0, le=23)
     grid: str | None = Field(None, max_length=24)
-    detail_level: Literal["core", "advanced"] = METEOFRANCE_SLOT_GRID_CORE_DETAIL
+    detail_level: Literal["core", "advanced", "render"] = METEOFRANCE_SLOT_GRID_CORE_DETAIL
     cache_only: bool = False
 
 
@@ -1797,7 +1797,7 @@ class MeteoFranceGribPreloadRequest(BaseModel):
     date: Date
     hour: int = Field(..., ge=0, le=23)
     grid: str | None = Field(None, max_length=24)
-    detail_level: Literal["core", "advanced"] = METEOFRANCE_SLOT_GRID_CORE_DETAIL
+    detail_level: Literal["core", "advanced", "render"] = METEOFRANCE_SLOT_GRID_CORE_DETAIL
     scope: Literal["time_group", "day"] = "time_group"
     max_hours: int = Field(8, ge=1, le=24)
 
@@ -1809,7 +1809,7 @@ class MeteoFranceGribCacheStatusRequest(BaseModel):
     label: str = Field(DEFAULT_CENTER_LABEL, min_length=1, max_length=120)
     date: Date
     grid: str | None = Field(None, max_length=24)
-    detail_level: Literal["core", "advanced"] = METEOFRANCE_SLOT_GRID_CORE_DETAIL
+    detail_level: Literal["core", "advanced", "render"] = METEOFRANCE_SLOT_GRID_CORE_DETAIL
 
 
 class ServerAromeAutomationRequest(BaseModel):
@@ -12125,9 +12125,54 @@ async def meteofrance_grib_france_slot_grid(payload: MeteoFranceGribSlotGridRequ
     }
 
 
+# Niveau « render » : projection allégée pour AFFICHER la grille (couleur/score/sélection).
+# Retire des cellules les champs de détail lourds (~70 % du poids JSON), réservés au modal
+# de détails qui les récupère à la demande via /grib-france-cell-details. Le cache serveur
+# et l'archive restent complets : la projection se fait à la réponse, sans muter le cache.
+METEOFRANCE_SLOT_GRID_RENDER_DETAIL = "render"
+METEOFRANCE_GRIB_RENDER_HEAVY_CELL_FIELDS = frozenset(
+    {"category_breakdown", "diagnostics", "metric_scores", "metrics_used", "summary"}
+)
+
+
+def _project_grib_result_for_render(result: dict[str, Any]) -> dict[str, Any]:
+    payload = result.get("payload")
+    if not isinstance(payload, dict):
+        return result
+    out = dict(result)
+    new_payload = dict(payload)
+    meta = dict(new_payload.get("meta") or {})
+    meta["detail_level"] = METEOFRANCE_SLOT_GRID_RENDER_DETAIL
+    new_payload["meta"] = meta
+    days = []
+    for day in new_payload.get("days") or []:
+        if not isinstance(day, dict):
+            continue
+        new_day = dict(day)
+        slots = []
+        for slot in new_day.get("slots") or []:
+            if not isinstance(slot, dict):
+                continue
+            new_slot = dict(slot)
+            cells = slot.get("cells")
+            if isinstance(cells, list):
+                new_slot["cells"] = [
+                    {k: v for k, v in cell.items() if k not in METEOFRANCE_GRIB_RENDER_HEAVY_CELL_FIELDS}
+                    if isinstance(cell, dict) else cell
+                    for cell in cells
+                ]
+            slots.append(new_slot)
+        new_day["slots"] = slots
+        days.append(new_day)
+    new_payload["days"] = days
+    out["payload"] = new_payload
+    return out
+
+
 @app.post("/api/meteofrance/grib-france-slot-grid-cache")
 async def meteofrance_grib_france_slot_grid_cache(payload: MeteoFranceGribSlotGridRequest) -> dict[str, Any]:
     api_key = _meteofrance_api_key_from_optional_token(payload.token, allow_server_key=True)
+    requested_render = (payload.detail_level or "").strip().lower() == METEOFRANCE_SLOT_GRID_RENDER_DETAIL
     result = await asyncio.to_thread(
         _get_meteofrance_grib_france_slot_grid_cached_sync,
         api_key,
@@ -12136,7 +12181,42 @@ async def meteofrance_grib_france_slot_grid_cache(payload: MeteoFranceGribSlotGr
         payload.grid,
         payload.detail_level,
     )
+    if requested_render and result.get("ok"):
+        result = _project_grib_result_for_render(result)
     return result
+
+
+class MeteoFranceCellDetailsRequest(BaseModel):
+    token: str | None = Field(None, max_length=4096)
+    date: Date
+    hour: int = Field(..., ge=0, le=23)
+    zone: str = Field(..., min_length=1, max_length=128)
+    grid: str | None = Field(None, max_length=32)
+
+
+@app.post("/api/meteofrance/grib-france-cell-details")
+async def meteofrance_grib_france_cell_details(payload: MeteoFranceCellDetailsRequest) -> dict[str, Any]:
+    """Cellule COMPLÈTE (metric_scores, metrics_used, diagnostics…) pour le modal de
+    détails, quand la grille a été chargée en niveau « render » allégé."""
+    api_key = _meteofrance_api_key_from_optional_token(payload.token, allow_server_key=True)
+    result = await asyncio.to_thread(
+        _get_meteofrance_grib_france_slot_grid_cached_sync,
+        api_key,
+        payload.date,
+        payload.hour,
+        payload.grid,
+        METEOFRANCE_SLOT_GRID_CORE_DETAIL,
+    )
+    if not result.get("ok"):
+        return {"ok": False, "status": result.get("status") or 404, "message": result.get("message") or "Grille absente du cache."}
+    days = (result.get("payload") or {}).get("days") or []
+    slots = (days[0].get("slots") or []) if days else []
+    cells = (slots[0].get("cells") or []) if slots else []
+    zone = str(payload.zone)
+    cell = next((c for c in cells if isinstance(c, dict) and str(c.get("zone")) == zone), None)
+    if cell is None:
+        return {"ok": False, "status": 404, "message": f"Cellule {zone} absente du créneau {payload.hour:02d}h."}
+    return {"ok": True, "cell": cell, "date": payload.date.isoformat(), "hour": payload.hour}
 
 
 @app.post("/api/meteofrance/grib-france-day-cache")

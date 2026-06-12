@@ -711,6 +711,39 @@
       });
     }
 
+    // La grille est chargée en niveau « render » allégé (sans metric_scores/metrics_used/
+    // diagnostics/category_breakdown/summary). Au tap d'une cellule, on récupère la
+    // cellule COMPLÈTE à la demande et on l'injecte dans l'objet en mémoire (mutation :
+    // toutes les vues — carte, card, modal — voient les détails arriver).
+    const cellDetailsPending = new Map();
+    async function ensureCellDetails(p) {
+      if (!p || p.metric_scores || !p.zone || !p.slot_key) return false;
+      const hour = Number(String(p.slot_key).slice(1));
+      if (!Number.isFinite(hour)) return false;
+      const dateIso = normalizeDateIso(p.day_key || selectedBaseDate);
+      const key = `${dateIso}|${p.slot_key}|${p.zone}`;
+      if (cellDetailsPending.has(key)) return cellDetailsPending.get(key);
+      const job = (async () => {
+        try {
+          const response = await fetch('/api/meteofrance/grib-france-cell-details', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date: dateIso, hour, zone: String(p.zone) }),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!data?.ok || !data.cell) return false;
+          Object.assign(p, data.cell);
+          return true;
+        } catch (_) {
+          return false;
+        } finally {
+          cellDetailsPending.delete(key);
+        }
+      })();
+      cellDetailsPending.set(key, job);
+      return job;
+    }
+
     function showSelection(p) {
       selectionTitle.textContent = formatSelectionLocation(p);
       if (selectionConfidence) selectionConfidence.textContent = safe(p.confidence_score);
@@ -722,6 +755,9 @@
       if (selectionTriggerHint) selectionTriggerHint.textContent = probabilityHint(p);
       selectionCard.classList.add('visible');
       requestAnimationFrame(positionSelectionCard);
+      if (!p.metric_scores) {
+        ensureCellDetails(p).then((ok) => { if (ok && selectedFeature === p) showSelection(p); });
+      }
     }
 
     function closeSelection() {
@@ -929,6 +965,13 @@
     function openDetails() {
       if (!selectedFeature) return;
       const p = selectedFeature;
+      // Grille « render » allégée : la cellule complète (sous-scores, valeurs, breakdown)
+      // arrive à la demande ; on rend tout de suite avec ce qu'on a, puis on re-rend.
+      if (!p.metric_scores) {
+        ensureCellDetails(p).then((ok) => {
+          if (ok && selectedFeature === p && detailsModal.classList.contains('visible')) openDetails();
+        });
+      }
       hideDetailsCalcInspector();
       detailsSubtitle.textContent = `${formatSelectionLocation(p)} · ${p.selected_hour || p.slot_label || 'heure active'}`;
       if (dConfidence) dConfidence.textContent = safe(p.confidence_score);

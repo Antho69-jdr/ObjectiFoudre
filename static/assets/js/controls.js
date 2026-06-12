@@ -15,6 +15,9 @@
     let mfFranceDayHydrationToken = 0;
     let mfFranceDayHydrationKey = '';
     let mfFranceDayHydrationPromise = null;
+    // generated_at du payload mergé par "date|slotKey" : évite de re-merger un créneau
+    // identique lors de la revalidation réseau d'un hit IndexedDB.
+    const mfAromeSlotGeneratedAt = new Map();
     let mfFranceDayMaterializeToken = 0;
     let mfFranceDayMaterializeKey = '';
     let mfFranceDayMaterializePromise = null;
@@ -2215,7 +2218,14 @@
       const targetKeys = cacheKeys
         .filter((key, index, arr) => arr.indexOf(key) === index)
         .filter((key) => force || !loaded.has(key));
-      if (!targetKeys.length) return true;
+      // Au boot, le statut serveur (meteoFranceGribCachedSlotKeys) n'est pas encore
+      // arrivé : on hydrate quand même depuis IndexedDB (dernier état connu) pour un
+      // affichage instantané ; le réseau revalidera quand le statut sera là.
+      const idbOnly = !targetKeys.length;
+      const idbBootKeys = idbOnly
+        ? Array.from({ length: 24 }, (_, h) => `h${String(h).padStart(2, '0')}`).filter((key) => !loaded.has(key))
+        : [];
+      if (idbOnly && (!idbBootKeys.length || typeof idbGetAromeSlot !== 'function')) return true;
 
       const hydrationToken = ++mfFranceDayHydrationToken;
       const startDate = selectedBaseDate;
@@ -2223,84 +2233,14 @@
       mfFranceDayHydrationKey = hydrateKey;
       mfFranceDayHydrationPromise = (async () => {
         let mergedCount = 0;
-        const fetchDayCache = async () => {
-          const body = withMeteoFranceToken({
-            lat: currentCenter.lat,
-            lon: currentCenter.lon,
-            label: currentCenter.label,
-            date: startDate,
-            detail_level: 'core',
-            cache_only: true,
-          }, token);
-          try {
-            const response = await fetch('/api/meteofrance/grib-france-day-cache', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            });
-            const data = await response.json().catch(() => ({}));
-            if (hydrationToken !== mfFranceDayHydrationToken || startCenterToken !== centerChangeToken || selectedBaseDate !== startDate) return 0;
-            syncMeteoFranceQuotaCooldown(data);
-            if (!data?.ok || !data?.payload) return 0;
-            const merged = mergeMeteoFranceDayPayload(data.payload, new Set(targetKeys));
-            mergedCount += merged;
-            return merged;
-          } catch (_) {
-            return 0;
-          }
-        };
-        const fetchSlot = async (slotKey, endpoint) => {
-          const hour = Number(String(slotKey).slice(1));
-          const body = withMeteoFranceToken({
-            lat: currentCenter.lat,
-            lon: currentCenter.lon,
-            label: currentCenter.label,
-            date: startDate,
-            hour,
-            detail_level: 'core',
-            cache_only: true,
-          }, token);
-          try {
-            const response = await fetch(endpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            });
-            const data = await response.json().catch(() => ({}));
-            if (hydrationToken !== mfFranceDayHydrationToken || startCenterToken !== centerChangeToken || selectedBaseDate !== startDate) return false;
-            syncMeteoFranceQuotaCooldown(data);
-            if (!data?.ok || !data?.payload) return false;
-            if (!mergeMeteoFranceSlotPayload(data.payload, hour)) return false;
-            mergedCount += 1;
-            return true;
-          } catch (_) {
-            return false;
-          }
-        };
-        const runHydrationBatch = async (keys, endpoint, maxWorkers) => {
-          let cursor = 0;
-          const workerCount = Math.min(maxWorkers, keys.length);
-          if (!workerCount) return;
-          const runWorker = async () => {
-            while (cursor < keys.length) {
-              const slotKey = keys[cursor];
-              cursor += 1;
-              await fetchSlot(slotKey, endpoint);
-            }
-          };
-          await Promise.all(Array.from({ length: workerCount }, runWorker));
-        };
+        const startDateIso = normalizeDateIso(startDate);
+        const guard = () => hydrationToken === mfFranceDayHydrationToken && startCenterToken === centerChangeToken && selectedBaseDate === startDate;
+        const slotGenKey = (slotKey) => `${startDateIso}|${slotKey}`;
 
-        await fetchDayCache();
-        const stillMissingKeys = targetKeys.filter((key) => !aromeFranceLoadedSlotKeys().has(key));
-        if (stillMissingKeys.length) {
-          await runHydrationBatch(stillMissingKeys, '/api/meteofrance/grib-france-slot-grid-cache', 4);
-        }
-
-        // Migration paquet complet : le front ne matérialise plus les heures manquantes une par une.
-        // Les slots apparaissent uniquement quand le serveur les a produits depuis les paquets complets.
-        if (hydrationToken === mfFranceDayHydrationToken && startCenterToken === centerChangeToken && selectedBaseDate === startDate) {
-          lastFetchSignature = typeof currentAromeFrancePayloadSignature === 'function' ? currentAromeFrancePayloadSignature(startDate) : lastFetchSignature;
+        // Rafraîchit l'UI dès qu'un lot de créneaux est mergé (rendu progressif : l'heure
+        // active s'affiche sans attendre l'hydratation des 23 autres).
+        const syncGridUi = ({ final = false } = {}) => {
+          if (!guard()) return;
           renderDayButtons();
           renderSlotButtons();
           if (mergedCount > 0 && typeof updateMetaLine === 'function') updateMetaLine();
@@ -2308,8 +2248,107 @@
             shouldAnimateNextGrid = false;
             scheduleLoadedGridSync(centerChangeToken, selectedDayKey, selectedSlotKey);
           }
-          if (typeof maybePrecomputePredictionPageImage === 'function') maybePrecomputePredictionPageImage();
+          if (final) {
+            lastFetchSignature = typeof currentAromeFrancePayloadSignature === 'function' ? currentAromeFrancePayloadSignature(startDate) : lastFetchSignature;
+            if (typeof maybePrecomputePredictionPageImage === 'function') maybePrecomputePredictionPageImage();
+          }
+        };
+
+        // Hydratation instantanée depuis IndexedDB (payloads « render » du dernier état
+        // connu) : zéro réseau, zéro JSON.parse. Revalidé ensuite par le réseau.
+        const hydrateSlotsFromIdb = async (keys) => {
+          if (typeof idbGetAromeSlot !== 'function') return 0;
+          let merged = 0;
+          for (const slotKey of keys) {
+            if (!guard()) return merged;
+            if (mfAromeSlotGeneratedAt.get(slotGenKey(slotKey))) continue;
+            try {
+              const entry = await idbGetAromeSlot(startDateIso, slotKey);
+              const payload = entry?.payload;
+              if (!payload) continue;
+              const hour = Number(String(slotKey).slice(1));
+              if (!mergeMeteoFranceSlotPayload(payload, hour)) continue;
+              mfAromeSlotGeneratedAt.set(slotGenKey(slotKey), String(payload?.meta?.generated_at || '') || 'idb');
+              merged += 1;
+              mergedCount += 1;
+            } catch (_) {}
+          }
+          return merged;
+        };
+
+        // Fetch réseau d'un créneau en niveau « render » (≈70 % plus léger : sans les
+        // champs de détail, récupérés à la demande au tap d'une cellule).
+        const fetchSlot = async (slotKey) => {
+          const hour = Number(String(slotKey).slice(1));
+          const body = withMeteoFranceToken({
+            lat: currentCenter.lat,
+            lon: currentCenter.lon,
+            label: currentCenter.label,
+            date: startDate,
+            hour,
+            detail_level: 'render',
+            cache_only: true,
+          }, token);
+          try {
+            const response = await fetch('/api/meteofrance/grib-france-slot-grid-cache', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!guard()) return false;
+            syncMeteoFranceQuotaCooldown(data);
+            if (!data?.ok || !data?.payload) return false;
+            const generatedAt = String(data.payload?.meta?.generated_at || '');
+            if (typeof idbPutAromeSlot === 'function') idbPutAromeSlot(startDateIso, slotKey, data.payload);
+            // Hit IndexedDB déjà mergé et identique : rien à re-render.
+            if (generatedAt && mfAromeSlotGeneratedAt.get(slotGenKey(slotKey)) === generatedAt) return false;
+            if (!mergeMeteoFranceSlotPayload(data.payload, hour)) return false;
+            mfAromeSlotGeneratedAt.set(slotGenKey(slotKey), generatedAt || 'net');
+            mergedCount += 1;
+            return true;
+          } catch (_) {
+            return false;
+          }
+        };
+        const runHydrationBatch = async (keys, maxWorkers) => {
+          let cursor = 0;
+          const workerCount = Math.min(maxWorkers, keys.length);
+          if (!workerCount) return;
+          const runWorker = async () => {
+            while (cursor < keys.length) {
+              const slotKey = keys[cursor];
+              cursor += 1;
+              await fetchSlot(slotKey);
+            }
+          };
+          await Promise.all(Array.from({ length: workerCount }, runWorker));
+        };
+
+        // Mode boot : IndexedDB seul (pas de réseau tant que le statut serveur des
+        // créneaux n'est pas connu) — affichage instantané du dernier état archivé.
+        if (idbOnly) {
+          const activeBootKey = (/^h\d{2}$/.test(String(selectedSlotKey || '')) && idbBootKeys.includes(selectedSlotKey)) ? selectedSlotKey : idbBootKeys[0];
+          if (await hydrateSlotsFromIdb([activeBootKey])) syncGridUi();
+          if (await hydrateSlotsFromIdb(idbBootKeys.filter((key) => key !== activeBootKey))) syncGridUi();
+          return mergedCount > 0;
         }
+
+        // 1) L'heure ACTIVE d'abord : IndexedDB (instantané) puis réseau, et rendu immédiat.
+        const activeKey = (/^h\d{2}$/.test(String(selectedSlotKey || '')) && targetKeys.includes(selectedSlotKey)) ? selectedSlotKey : targetKeys[0];
+        const restKeys = targetKeys.filter((key) => key !== activeKey);
+        if (await hydrateSlotsFromIdb([activeKey])) syncGridUi();
+        if (await fetchSlot(activeKey)) syncGridUi();
+
+        // 2) Le reste : IndexedDB d'un bloc (affichage immédiat), puis revalidation réseau.
+        const beforeRest = mergedCount;
+        await hydrateSlotsFromIdb(restKeys);
+        if (mergedCount > beforeRest) syncGridUi();
+        await runHydrationBatch(restKeys, 3);
+
+        // Migration paquet complet : le front ne matérialise plus les heures manquantes une par une.
+        // Les slots apparaissent uniquement quand le serveur les a produits depuis les paquets complets.
+        syncGridUi({ final: true });
         return mergedCount > 0;
       })();
       try {

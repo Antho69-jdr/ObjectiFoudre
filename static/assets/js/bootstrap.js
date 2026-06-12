@@ -59,6 +59,11 @@
         if (typeof setMetaRunText === 'function') setMetaRunText('AROME France : en attente');
         setMetaMessage('Chargement AROME France…');
         window.setTimeout(() => {
+          // Affichage instantané du dernier état connu (IndexedDB) pendant que le
+          // statut serveur et le réseau arrivent.
+          if (typeof hydrateMeteoFranceGribFranceDayFromCache === 'function') {
+            hydrateMeteoFranceGribFranceDayFromCache({ force: false });
+          }
           refreshCurrentData(false, 'Chargement AROME France…');
           if (typeof pollMeteoFranceServerAutomationStatus === 'function') {
             pollMeteoFranceServerAutomationStatus({ immediate: true, quiet: true });
