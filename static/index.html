@@ -7,14 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="ObjectiFoudre" />
-  <link rel="manifest" href="/manifest.webmanifest?v=1.2.33" />
+  <link rel="manifest" href="/manifest.webmanifest?v=1.2.86" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <title>ObjectiFoudre — Tactile</title>
-  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.2.33"></script>
-  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.2.33" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/css/main.css?v=1.2.33" />
-<link rel="stylesheet" href="/assets/css/components.css?v=1.2.33" />
-<link rel="stylesheet" href="/assets/css/responsive.css?v=1.2.33" />
+  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.2.86"></script>
+  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.2.86" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/main.css?v=1.2.86" />
+<link rel="stylesheet" href="/assets/css/components.css?v=1.2.86" />
+<link rel="stylesheet" href="/assets/css/responsive.css?v=1.2.86" />
 </head>
 <body>
   <div id="mobileBlockScreen" class="mobile-block-screen" hidden>
@@ -83,6 +83,12 @@
           <path d="M13 3 5 14h6l-1 7 8-11h-6l1-7Z"></path>
         </svg>
       </button>
+      <button id="chasePageBtn" class="grid-focus-btn grid-focus-btn-chase" type="button" aria-label="Mode En chasse (radar + nowcast AROME-PI)" title="En chasse (radar live + AROME-PI)">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a7 7 0 0 1 7 7c0 4.5-7 13-7 13S5 13.5 5 9a7 7 0 0 1 7-7Z"></path>
+          <circle cx="12" cy="9" r="2.3"></circle>
+        </svg>
+      </button>
       <button id="historyPageBtn" class="grid-focus-btn" type="button" aria-label="Ouvrir l'historique des grilles" title="Historique des grilles">
         <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 12a9 9 0 1 0 2.6-6.3L3 8"></path>
@@ -141,17 +147,14 @@
 
     <div class="selection-card" id="selectionCard" aria-live="polite">
       <div class="selection-top">
-        <div class="selection-heading">
-          <h2 class="selection-title" id="selectionTitle">Zone</h2>
-        </div>
+        <h2 class="selection-title" id="selectionTitle">Zone</h2>
+        <div class="selection-score selection-score-trigger"><span>Proba</span><strong id="selectionTrigger">-</strong></div>
         <button class="icon-btn" id="closeSelectionBtn" aria-label="Fermer">×</button>
       </div>
 
-      <div class="selection-kpi-row">
-        <div class="selection-kpi"><span>Probabilité orage</span><strong id="selectionTrigger">-</strong></div>
-        <div class="selection-kpi"><span>Confiance</span><strong id="selectionConfidence">-</strong></div>
+      <div class="selection-meta">
+        <span class="selection-conf">Conf. <strong id="selectionConfidence">-</strong></span><span class="selection-context" id="selectionContext"></span>
       </div>
-      <div class="selection-context" id="selectionContext"></div>
 
       <div class="action-row">
         <button class="primary-btn" id="openDetailsBtn">Détails</button>
@@ -218,7 +221,7 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.2.33">Version : v1.2.33 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.2.86">Version : v1.2.86 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
@@ -304,8 +307,8 @@
       </section>
 
       <section class="drawer-section">
-        <div class="small drawer-section-title">Météo-France AROME GRIB</div>
-        <p>ObjectiFoudre utilise les champs AROME préparés côté serveur, conserve la journée France en cache, puis affiche les heures disponibles depuis ce cache.</p>
+        <div class="small drawer-section-title">Météo-France AROME &amp; ARPEGE GRIB</div>
+        <p>ObjectiFoudre utilise les champs modèle préparés côté serveur, conserve la journée France en cache, puis affiche les heures disponibles depuis ce cache. De la veille à J+2 la grille vient d'<strong>AROME</strong> (maille ~1,3 km, runs toutes les 3 h) ; à <strong>J+3 et J+4</strong> elle bascule sur <strong>ARPEGE</strong> (maille ~10 km, runs toutes les 6 h) — mêmes champs, sans rayonnement ni taux de pluie, donc score un peu moins affûté : traite ces deux jours comme une tendance.</p>
         <div id="mfTestStatus" class="mf-test-status mf-public-status" role="status" aria-live="polite">Cache France en attente.</div>
         <details class="mf-admin-panel">
           <summary>Admin / debug AROME</summary>
@@ -336,7 +339,8 @@
         <ul class="drawer-bullet-list">
           <li><strong>Frise</strong> : flèches « jour précédent / suivant » à gauche, puis les heures ; le bouton lecture (▶ entouré) enchaîne les 24 heures, et la disquette exporte l’animation de la grille.</li>
           <li><strong>Heures passées</strong> : teintées en rouge pour repérer d’un coup d’œil ce qui appartient déjà au passé.</li>
-          <li><strong>Prévisions orageuses</strong> : génère une carte de risque journalier (fenêtre AROME 08h–08h) exportable en image.</li>
+          <li><strong>Prévision &amp; tendance orageuse</strong> : carte de risque en zones lissées, avec son propre sélecteur de date <strong>J0 → J+10</strong> (indépendant de la frise). Jusqu'à J+4, AROME/ARPEGE avec les périodes Matinée/Après-midi/Soirée ; de <strong>J+5 à J+10</strong>, tendance ECMWF (maille ~28 km, un point par jour) — à lire comme « jours / régions à surveiller ». Exportable en image.</li>
+          <li><strong>En chasse</strong> (icône goutte rouge) : carte live pour le terrain — radar observé animé (RainViewer) + nowcast AROME-PI (réflectivité, grêle, rafales, CAPE, MOCON) sur 0–6 h au pas 15 min, géolocalisation et panneau « conditions à ta position ». ⚠ ne pas consulter en conduisant.</li>
           <li><strong>Historique</strong> : rejoue une journée archivée en animation, avec la foudre réellement observée et une note de fidélité de la prévision (auto-calibration).</li>
         </ul>
       </section>
@@ -346,14 +350,15 @@
       <div class="prediction-page-shell">
         <header class="prediction-page-header">
           <div>
-            <div class="prediction-eyebrow">Prévisions orageuses</div>
+            <div class="prediction-eyebrow">Prévision &amp; tendance orageuse</div>
             <h2 id="predictionPageTitle">Carte de risque journalier</h2>
-            <p id="predictionPageSubtitle">Image générée depuis la fenêtre AROME France 08h-08h en cache.</p>
+            <p id="predictionPageSubtitle">Choisis une date : AROME/ARPEGE jusqu'à J+4, tendance ECMWF J+5 → J+10.</p>
           </div>
           <div class="prediction-page-actions">
             <button class="prediction-download-btn" id="predictionDownloadBtn" type="button" disabled>Exporter PNG</button>
             <button class="icon-btn prediction-close-btn" id="predictionPageCloseBtn" aria-label="Fermer">×</button>
           </div>
+          <div class="prediction-date-strip" id="predictionDateStrip" role="tablist" aria-label="Date de prévision"></div>
           <div class="prediction-period-tabs" id="predictionPeriodTabs" role="tablist" aria-label="Période de prévision">
             <button class="prediction-period-tab active" type="button" role="tab" aria-selected="true" data-prediction-period="day">Journée 08-08</button>
             <button class="prediction-period-tab" type="button" role="tab" aria-selected="false" data-prediction-period="morning">Matinée</button>
@@ -427,32 +432,77 @@
         </div>
       </div>
     </section>
+
+    <!-- Mode « En chasse » : badge haut (heure courante / échéance étudiée), rail de couches
+         (gauche, même forme que la barre droite), frise rouge (bas, look frise de base). -->
+    <div class="chase-top-info" id="chaseTopInfo" aria-hidden="true">
+      <span class="chase-now" id="chaseNow">--:--:--</span>
+      <span class="chase-top-sep">·</span>
+      <span class="chase-time-label" id="chaseTimeLabel">--:--</span>
+      <span class="chase-activity" id="chaseActivity"></span>
+      <span class="chase-empty-hint" id="chaseEmptyHint" hidden></span>
+    </div>
+    <div class="chase-layer-rail" id="chaseLayerRail" role="tablist" aria-label="Couche AROME-PI" aria-hidden="true">
+      <button class="grid-focus-btn chase-layer-btn active" type="button" data-chase-layer="reflectivity" aria-selected="true" aria-label="Réflectivité" title="Réflectivité">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12a5 5 0 0 1 5-5"></path><path d="M12 12a9 9 0 0 1 9-9"></path><path d="M12 12l7 0"></path><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"></circle></svg>
+      </button>
+      <button class="grid-focus-btn chase-layer-btn" type="button" data-chase-layer="hail" aria-selected="false" aria-label="Grêle" title="Grêle">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15a4 4 0 0 1 .4-8 5 5 0 0 1 9.5 1.2A3.4 3.4 0 0 1 17 15"></path><circle cx="9" cy="20" r="1" fill="currentColor" stroke="none"></circle><circle cx="13" cy="20.5" r="1" fill="currentColor" stroke="none"></circle><circle cx="16" cy="19.5" r="1" fill="currentColor" stroke="none"></circle></svg>
+      </button>
+      <button class="grid-focus-btn chase-layer-btn" type="button" data-chase-layer="graupel" aria-selected="false" aria-label="Graupel" title="Graupel">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 14a4 4 0 0 1 .4-8 5 5 0 0 1 9.5 1.2A3.4 3.4 0 0 1 17 14"></path><path d="M9 18v3M7.5 19.5h3M14.5 18.5v3M13 20h3"></path></svg>
+      </button>
+      <button class="grid-focus-btn chase-layer-btn" type="button" data-chase-layer="gusts" aria-selected="false" aria-label="Rafales" title="Rafales">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h11a2.5 2.5 0 1 0-2.5-2.5"></path><path d="M3 12h15a2.5 2.5 0 1 1-2.5 2.5"></path><path d="M3 16h8"></path></svg>
+      </button>
+      <button class="grid-focus-btn chase-layer-btn" type="button" data-chase-layer="cape" aria-selected="false" aria-label="CAPE (énergie convective)" title="CAPE (énergie convective)">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2.2 3 4 4.7 4 8a4 4 0 0 1-8 0c0-1.8 1-3 2.2-4 0 1.6 1.8 1.8 1.8 0 .4-1.6-.5-2.7 0-4z"></path></svg>
+      </button>
+      <button class="grid-focus-btn chase-layer-btn" type="button" data-chase-layer="mocon" aria-selected="false" aria-label="MOCON (convergence d'humidité)" title="MOCON (convergence d'humidité)">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h7"></path><path d="M6 8.5 9.5 12 6 15.5"></path><path d="M22 12h-7"></path><path d="M18 8.5 14.5 12 18 15.5"></path></svg>
+      </button>
+    </div>
+    <div class="chase-overlay" id="chaseControls" aria-hidden="true">
+      <div class="chase-frise" id="chaseFrise">
+        <button class="chase-frise-btn chase-play-btn" id="chasePlayBtn" type="button" aria-pressed="false" aria-label="Lecture de l'animation" title="Lecture de l'animation">
+          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M10 8.2 16.3 12 10 15.8Z" fill="currentColor" stroke="none"></path></svg>
+        </button>
+        <div class="chase-rail-wrap" id="chaseSlots" aria-label="Échéances"></div>
+        <button class="chase-frise-btn chase-export-btn" id="chaseExportBtn" type="button" aria-label="Exporter l'animation (vidéo)" title="Exporter l'animation (vidéo WebM)">
+          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"></path><path d="m8 11 4 4 4-4"></path><path d="M5 19h14"></path></svg>
+        </button>
+        <button class="chase-frise-btn chase-geo-btn" id="chaseGeoBtn" type="button" aria-pressed="false" aria-label="Me localiser / me suivre" title="Me suivre">
+          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"></path></svg>
+        </button>
+      </div>
+    </div>
   </div>
-  <script src="/assets/js/idb-cache.js?v=1.2.33"></script>
-  <script src="/assets/js/dom.js?v=1.2.33"></script>
-  <script src="/assets/js/utils.js?v=1.2.33"></script>
-  <script src="/assets/js/panels.js?v=1.2.33"></script>
-  <script src="/assets/js/state.js?v=1.2.33"></script>
-  <script src="/assets/js/core.js?v=1.2.33"></script>
-  <script src="/assets/js/map-ui.js?v=1.2.33"></script>
-  <script src="/assets/js/timeline.js?v=1.2.33"></script>
-  <script src="/assets/js/grid-loader.js?v=1.2.33"></script>
-  <script src="/assets/js/grid-core.js?v=1.2.33"></script>
-  <script src="/assets/js/france-admin-lines.js?v=1.2.33"></script>
-  <script src="/assets/js/france-regions.js?v=1.2.33"></script>
-  <script src="/assets/js/storm-forecast-image.js?v=1.2.33"></script>
-  <script src="/assets/js/grid-layers.js?v=1.2.33"></script>
-  <script src="/assets/js/grid.js?v=1.2.33"></script>
-  <script src="/assets/js/metric-data.js?v=1.2.33"></script>
-  <script src="/assets/js/metric-ui.js?v=1.2.33"></script>
-  <script src="/assets/js/selection.js?v=1.2.33"></script>
-  <script src="/assets/js/data.js?v=1.2.33"></script>
-  <script src="/assets/js/services.js?v=1.2.33"></script>
-  <script src="/assets/js/search-autocomplete.js?v=1.2.33"></script>
-  <script src="/assets/js/controls.js?v=1.2.33"></script>
-  <script src="/assets/js/history.js?v=1.2.33"></script>
-  <script src="/assets/js/bootstrap.js?v=1.2.33"></script>
-  <script src="/assets/js/mobile-block.js?v=1.2.33"></script>
-  <script src="/assets/js/tooltip.js?v=1.2.33"></script>
+  <script src="/assets/js/idb-cache.js?v=1.2.86"></script>
+  <script src="/assets/js/dom.js?v=1.2.86"></script>
+  <script src="/assets/js/utils.js?v=1.2.86"></script>
+  <script src="/assets/js/panels.js?v=1.2.86"></script>
+  <script src="/assets/js/state.js?v=1.2.86"></script>
+  <script src="/assets/js/core.js?v=1.2.86"></script>
+  <script src="/assets/js/map-ui.js?v=1.2.86"></script>
+  <script src="/assets/js/timeline.js?v=1.2.86"></script>
+  <script src="/assets/js/grid-loader.js?v=1.2.86"></script>
+  <script src="/assets/js/grid-core.js?v=1.2.86"></script>
+  <script src="/assets/js/france-admin-lines.js?v=1.2.86"></script>
+  <script src="/assets/js/france-regions.js?v=1.2.86"></script>
+  <script src="/assets/js/storm-forecast-image.js?v=1.2.86"></script>
+  <script src="/assets/js/grid-layers.js?v=1.2.86"></script>
+  <script src="/assets/js/grid.js?v=1.2.86"></script>
+  <script src="/assets/js/metric-data.js?v=1.2.86"></script>
+  <script src="/assets/js/metric-ui.js?v=1.2.86"></script>
+  <script src="/assets/js/selection.js?v=1.2.86"></script>
+  <script src="/assets/js/data.js?v=1.2.86"></script>
+  <script src="/assets/js/services.js?v=1.2.86"></script>
+  <script src="/assets/js/search-autocomplete.js?v=1.2.86"></script>
+  <script src="/assets/js/controls.js?v=1.2.86"></script>
+  <script src="/assets/js/history.js?v=1.2.86"></script>
+  <script src="/assets/js/chase.js?v=1.2.86"></script>
+  <script src="/assets/js/bootstrap.js?v=1.2.86"></script>
+  <script src="/assets/js/mobile-block.js?v=1.2.86"></script>
+  <script src="/assets/js/tooltip.js?v=1.2.86"></script>
 </body>
 </html>

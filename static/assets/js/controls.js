@@ -1867,13 +1867,15 @@
       const selected = normalizeDateIso(dateIso);
       const today = getTodayIsoDate();
       const minDate = allowPreviousDay ? addDaysIso(today, -1) : today;
-      const maxDaysAhead = allowPreviousDay ? 2 : METEOFRANCE_WCS_MAX_DAYS_AHEAD;
+      // J-1..J+2 = AROME ; J+3 = ARPEGE (le serveur choisit le modèle selon la date).
+      // J+4+ n'est PLUS sur la grille de base → tendance ECMWF dans la carte Prévision.
+      const maxDaysAhead = allowPreviousDay ? 3 : METEOFRANCE_WCS_MAX_DAYS_AHEAD;
       const maxDate = addDaysIso(today, maxDaysAhead);
       if (selected < minDate) {
         return {
           ok: false,
           message: allowPreviousDay
-            ? `AROME GRIB France peut être tenté de la veille à J+2 (${minDate} à ${maxDate}). Sélection actuelle : ${selected}.`
+            ? `La grille France peut être tentée de la veille à J+4 (${minDate} à ${maxDate} ; AROME jusqu’à J+2, ARPEGE ensuite). Sélection actuelle : ${selected}.`
             : `La grille AROME WCS directe couvre seulement l’horizon prévisionnel courant (${today} à ${maxDate}). Pour ${selected}, garde la source historique.`,
         };
       }
@@ -1881,7 +1883,7 @@
         return {
           ok: false,
           message: allowPreviousDay
-            ? `AROME GRIB France peut être tenté de la veille à J+2 (${minDate} à ${maxDate}). Sélection actuelle : ${selected}.`
+            ? `La grille France peut être tentée de la veille à J+4 (${minDate} à ${maxDate} ; AROME jusqu’à J+2, ARPEGE ensuite). Sélection actuelle : ${selected}.`
             : `La grille AROME WCS directe est limitée à aujourd’hui et demain (${today} à ${maxDate}). Sélection actuelle : ${selected}.`,
         };
       }
@@ -2035,7 +2037,13 @@
       const meta = slotPayload?.meta || {};
       const provider = meta.provider || meta.source_provider || '';
       if (provider !== 'meteofrance_arome_grib') return true;
-      const requiredFields = ['cape', 'precipitable_water', 'shortwave_radiation', 'precipitation_rate', 'relative_humidity_2m', 'wind_speed_10m', 'wind_direction_10m', 'temperature_2m', 'dew_point_2m', 'cloud_cover_low', 'cloud_cover_mid', 'cloud_cover_high', 'wind_gusts_10m'];
+      // ARPEGE (J+3/J+4) porte le même provider que l'AROME mais a un jeu de champs RÉDUIT :
+      // il ne fournit pas shortwave_radiation ni precipitation_rate. Sans cette distinction,
+      // chaque créneau ARPEGE échouait au contrôle → fusion refusée → grille France vide.
+      const isArpege = String(meta.nwp_model || '').toLowerCase() === 'arpege';
+      const requiredFields = isArpege
+        ? ['cape', 'precipitable_water', 'relative_humidity_2m', 'wind_speed_10m', 'wind_direction_10m', 'temperature_2m', 'dew_point_2m', 'cloud_cover_low', 'cloud_cover_mid', 'cloud_cover_high', 'wind_gusts_10m']
+        : ['cape', 'precipitable_water', 'shortwave_radiation', 'precipitation_rate', 'relative_humidity_2m', 'wind_speed_10m', 'wind_direction_10m', 'temperature_2m', 'dew_point_2m', 'cloud_cover_low', 'cloud_cover_mid', 'cloud_cover_high', 'wind_gusts_10m'];
       const missing = Array.isArray(meta.missing_fields) ? meta.missing_fields.map(String) : [];
       if (requiredFields.some((field) => missing.includes(field))) return false;
       const requests = Array.isArray(meta.field_requests) ? meta.field_requests : [];
@@ -2116,6 +2124,8 @@
         provider: nextProvider,
         source_provider: nextProvider,
         source_label: nextSourceLabel,
+        nwp_model: incomingMeta.nwp_model || previousMeta.nwp_model,
+        nwp_model_label: incomingMeta.nwp_model_label || previousMeta.nwp_model_label,
         time_targets: incomingMeta.time_targets || previousMeta.time_targets,
         arome_run_reference_times: incomingMeta.arome_run_reference_times || previousMeta.arome_run_reference_times,
         arome_run_latest_reference_time: incomingMeta.arome_run_latest_reference_time || previousMeta.arome_run_latest_reference_time,

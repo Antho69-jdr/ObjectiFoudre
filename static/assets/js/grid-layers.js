@@ -124,6 +124,7 @@ function bindGridHandlersOnce() {
   map.on('click', 'grid-fill', onGridClick);
   if (!isCoarsePointerDevice()) {
     map.on('mouseenter', 'grid-fill', onGridEnter);
+    map.on('mousemove', 'grid-fill', onGridMove);
     map.on('mouseleave', 'grid-fill', onGridLeave);
   }
 }
@@ -376,12 +377,53 @@ function addLayers(data, cells = []) {
   return true;
 }
 
+// Bulle de rappel au survol (Desktop uniquement — handlers non liés sur pointeur grossier) :
+// CAPE / Température / Point de rosée de la cellule survolée.
+let gridCellTooltipEl = null;
+function ensureGridCellTooltip() {
+  if (gridCellTooltipEl && gridCellTooltipEl.isConnected) return gridCellTooltipEl;
+  const el = document.createElement('div');
+  el.className = 'grid-cell-tooltip';
+  el.setAttribute('aria-hidden', 'true');
+  (map.getContainer() || document.body).appendChild(el);
+  gridCellTooltipEl = el;
+  return el;
+}
+function fmtGridTip(value, suffix) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n) + suffix : '—';
+}
 function onGridEnter() {
   map.getCanvas().style.cursor = 'pointer';
 }
-
+function onGridMove(e) {
+  const feature = e.features && e.features[0];
+  const p = feature ? currentCellForRenderedFeature(feature.properties) : null;
+  if (!p || (shouldUseFranceGridClip() && e?.lngLat && !pointInFranceGridMask(Number(e.lngLat.lng), Number(e.lngLat.lat)))) {
+    onGridLeave();
+    return;
+  }
+  const el = ensureGridCellTooltip();
+  el.innerHTML =
+    '<span class="gct-row"><b>CAPE</b>' + fmtGridTip(p.mucape, ' J/kg') + '</span>' +
+    '<span class="gct-row"><b>Temp.</b>' + fmtGridTip(p.temp_c, ' °C') + '</span>' +
+    '<span class="gct-row"><b>Pt rosée</b>' + fmtGridTip(p.dewpoint_c, ' °C') + '</span>';
+  const pt = e.point || { x: 0, y: 0 };
+  const cont = map.getContainer();
+  const cw = cont ? cont.clientWidth : 0;
+  const ch = cont ? cont.clientHeight : 0;
+  const tw = el.offsetWidth || 130;
+  const th = el.offsetHeight || 60;
+  // bascule à gauche/au-dessus du curseur si on déborde du bord
+  const left = (pt.x + 16 + tw > cw) ? pt.x - 16 - tw : pt.x + 16;
+  const top = (pt.y + 16 + th > ch) ? pt.y - 16 - th : pt.y + 16;
+  el.style.left = Math.max(4, left) + 'px';
+  el.style.top = Math.max(4, top) + 'px';
+  el.classList.add('is-visible');
+}
 function onGridLeave() {
   map.getCanvas().style.cursor = '';
+  if (gridCellTooltipEl) gridCellTooltipEl.classList.remove('is-visible');
 }
 
 function onGridClick(e) {

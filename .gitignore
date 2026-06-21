@@ -5,6 +5,6 @@ __pycache__/
 history/
 orages_output_horizons.json
 mnt/
-Clef API.txt
+Clef API*.txt
 .env
 .env.*

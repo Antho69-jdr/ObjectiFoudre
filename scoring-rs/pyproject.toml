@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "scoring_rs"
+version = "0.1.0"
+description = "Noyau de scoring ObjectiFoudre en Rust (PyO3), parallèle au Python pour parité + benchmark"
+requires-python = ">=3.9"
+
+[tool.maturin]
+# Le module Python importable s'appelle `scoring_rs`.
+module-name = "scoring_rs"

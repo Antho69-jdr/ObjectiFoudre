@@ -2,16 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import concurrent.futures
+import contextlib
+import contextvars
 import copy
 import gzip
+import multiprocessing
 import hashlib
 import http.client
+import importlib
 import importlib.util
 import json
 import math
 import mimetypes
 import os
 import io
+import re
 import shutil
 import struct
 import tempfile
@@ -51,7 +57,7 @@ JS_DIR = ASSETS_DIR / "js"
 CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.33"
+APP_VERSION = "1.2.86"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -217,7 +223,42 @@ OBJECTIFOUDRE_AROME_RUN_POLL_INTERVAL_SECONDS = _env_int(
 )
 OBJECTIFOUDRE_CACHE_RETENTION_HOURS = _env_int("OBJECTIFOUDRE_CACHE_RETENTION_HOURS", 72, min_value=24)
 OBJECTIFOUDRE_CACHE_CLEANUP_INTERVAL_SECONDS = _env_int("OBJECTIFOUDRE_CACHE_CLEANUP_INTERVAL_SECONDS", 60 * 60, min_value=5 * 60)
-OBJECTIFOUDRE_AUTO_PRELOAD_DAYS = os.environ.get("OBJECTIFOUDRE_AUTO_PRELOAD_DAYS", "yesterday,today,tomorrow,day_after_tomorrow")
+# J-1 n'est PLUS préchargé : il est servi à la demande depuis l'archive (history/),
+# ce qui évite de recalculer/garder en RAM une grille déjà persistée durablement.
+OBJECTIFOUDRE_AUTO_PRELOAD_DAYS = os.environ.get("OBJECTIFOUDRE_AUTO_PRELOAD_DAYS", "today,tomorrow,day_after_tomorrow")
+# Jours préchargés via ARPEGE. J+2 est inclus car le run AROME (~+51 h) ne couvre que
+# le DÉBUT de J+2 → ARPEGE complète l'après-midi/soirée de J+2, puis J+3/J+4. Vide = off.
+OBJECTIFOUDRE_AUTO_PRELOAD_ARPEGE_DAYS = os.environ.get("OBJECTIFOUDRE_AUTO_PRELOAD_ARPEGE_DAYS", "j+2,j+3")
+# Nb de PROCESSUS pour matérialiser les 24 créneaux d'un jour en parallèle (chaque
+# processus a son propre GIL → vrai parallélisme sur le scoring Python pur). Défaut 1 =
+# séquentiel (comportement historique, Render inchangé). En local, mettre p.ex. 6.
+OBJECTIFOUDRE_PRELOAD_WORKERS = _env_int(
+    "OBJECTIFOUDRE_PRELOAD_WORKERS", 1, min_value=1, max_value=max(1, (os.cpu_count() or 1)),
+)
+
+# --- Tendance ECMWF open data (J+5 → J+10) -------------------------------------
+# Open data IFS/HRES, sans clé (licence CC-BY 4.0). Fichiers GRIB2 indexés par champ
+# (.index json-lines avec _offset/_length) → on Range-fetch uniquement les champs utiles.
+# C'est une TENDANCE quotidienne (maille 0,25° ≈ 28 km), pas la grille horaire fine.
+ECMWF_OPEN_DATA_BASE = os.environ.get("OBJECTIFOUDRE_ECMWF_OPEN_DATA_BASE", "https://data.ecmwf.int/forecasts")
+ECMWF_OPEN_DATA_STREAM = "ifs/0p25/oper"   # IFS HRES déterministe 0,25°
+ECMWF_TREND_DAYS_AHEAD = (4, 5, 6, 7, 8, 9, 10)   # J+4 inclus : ARPEGE s'arrête à J+3 (horizon)
+ECMWF_TREND_PEAK_UTC_HOUR = 12             # instant ≈ pic d'instabilité (14h CEST)
+ECMWF_TREND_MAX_STEP_HOURS = 360
+ECMWF_TREND_ATTRIBUTION = "ECMWF IFS open data (CC-BY 4.0)"
+# Champ ObjectiFoudre -> nom de paramètre dans l'index ECMWF. Le vent est reconstruit
+# depuis 10u/10v. Champs absents (rayonnement, taux de pluie, nébulosité, CIN, BLH) :
+# le score les gère en None (comme ARPEGE-moins) → tendance, score un peu moins affûté.
+ECMWF_TREND_FIELD_MAP = {
+    "cape": "mucape",
+    "temperature_2m": "2t",
+    "dew_point_2m": "2d",
+    "precipitable_water": "tcwv",
+    "wind_gusts_10m": "10fg3",
+}
+ECMWF_TREND_WIND_COMPONENTS = ("10u", "10v")
+ECMWF_TREND_CACHE_TTL_SECONDS = int(os.environ.get("OBJECTIFOUDRE_ECMWF_TREND_CACHE_TTL_SECONDS", "43200"))  # 12 h
+ECMWF_TREND_MODEL_NAME = "ecmwf_ifs_trend"
 OBJECTIFOUDRE_AUTO_PRELOAD_GRID = os.environ.get("OBJECTIFOUDRE_AROME_GRID") or None
 OBJECTIFOUDRE_ENABLE_LEGACY_OPEN_METEO = _env_flag("OBJECTIFOUDRE_ENABLE_LEGACY_OPEN_METEO", False)
 OBJECTIFOUDRE_ENABLE_LEGACY_LOCAL_AROME = _env_flag("OBJECTIFOUDRE_ENABLE_LEGACY_LOCAL_AROME", False)
@@ -234,6 +275,100 @@ METEOFRANCE_AROME_PACKAGE_API_BASE = "https://public-api.meteofrance.fr/previnum
 METEOFRANCE_AROME_PACKAGE_MODEL = "AROME"
 METEOFRANCE_AROME_PACKAGE_PREFERRED_GRIDS = ["0.025", "0.01"]
 METEOFRANCE_AROME_SURFACE_PACKAGE_CANDIDATES = ["SP1", "SP2", "SP3"]
+METEOFRANCE_ARPEGE_PACKAGE_API_BASE = "https://public-api.meteofrance.fr/previnum/DPPaquetARPEGE/v1"
+
+# Registre des modèles PNT. Le pipeline paquets (catalogue -> runs -> produits GRIB)
+# est paramétré par ce registre ; "arome" garde un cache_scope_prefix vide pour que
+# ses clés de cache restent strictement identiques à l'existant (ne pas invalider).
+DEFAULT_NWP_MODEL = "arome"
+NWP_MODEL_REGISTRY: dict[str, dict[str, Any]] = {
+    "arome": {
+        "label": "AROME",
+        "package_api_base": METEOFRANCE_AROME_PACKAGE_API_BASE,
+        "package_model": METEOFRANCE_AROME_PACKAGE_MODEL,
+        "preferred_grids": METEOFRANCE_AROME_PACKAGE_PREFERRED_GRIDS,
+        "surface_package_candidates": METEOFRANCE_AROME_SURFACE_PACKAGE_CANDIDATES,
+        "forecast_horizon_hours": METEOFRANCE_AROME_FORECAST_HORIZON_HOURS,
+        "max_days_ahead": 2,
+        "cache_scope_prefix": "",
+        "api_key_env_vars": ("METEOFRANCE_API_KEY", "METEOFRANCE_API_TOKEN", "METEOFRANCE_TOKEN"),
+        "api_key_file": None,
+    },
+    "arpege": {
+        "label": "ARPEGE",
+        "package_api_base": METEOFRANCE_ARPEGE_PACKAGE_API_BASE,
+        "package_model": "ARPEGE",
+        "preferred_grids": ["0.1", "0.25"],
+        "surface_package_candidates": ["SP1", "SP2", "SP3"],
+        "forecast_horizon_hours": 102,
+        "max_days_ahead": 3,
+        "cache_scope_prefix": "arpege:",
+        "api_key_env_vars": ("METEOFRANCE_ARPEGE_API_KEY",),
+        "api_key_file": "Clef API ARPEGE.txt",
+    },
+}
+
+
+def _nwp_model_spec(model: str | None) -> dict[str, Any]:
+    model_id = (model or DEFAULT_NWP_MODEL).strip().lower()
+    spec = NWP_MODEL_REGISTRY.get(model_id)
+    if spec is None:
+        raise ValueError(f"Modèle PNT inconnu : {model!r}")
+    return spec
+
+
+# Modèle PNT « actif » pour le pipeline paquets : les fonctions profondes (URLs
+# catalogue, clés de cache, specs de champs, horizon) le lisent au lieu de recevoir
+# un paramètre supplémentaire sur ~20 signatures. Défaut "arome" → tout code qui ne
+# pose pas explicitement de contexte garde le comportement historique à l'identique.
+# contextvars se propage à asyncio.to_thread ; les threads créés à la main doivent
+# re-poser le contexte (cf. _run_meteofrance_grib_national_day_preload_job).
+_NWP_ACTIVE_MODEL: contextvars.ContextVar[str] = contextvars.ContextVar("nwp_active_model", default=DEFAULT_NWP_MODEL)
+
+
+def _active_nwp_model() -> str:
+    return _NWP_ACTIVE_MODEL.get()
+
+
+def _active_nwp_spec() -> dict[str, Any]:
+    return _nwp_model_spec(_NWP_ACTIVE_MODEL.get())
+
+
+@contextlib.contextmanager
+def _nwp_model_context(model: str | None):
+    model_id = (model or DEFAULT_NWP_MODEL).strip().lower()
+    _nwp_model_spec(model_id)  # validation
+    token = _NWP_ACTIVE_MODEL.set(model_id)
+    try:
+        yield model_id
+    finally:
+        _NWP_ACTIVE_MODEL.reset(token)
+
+
+def _nwp_models_for_date(target_date: Date, today: Date | None = None) -> list[str]:
+    """Modèles applicables pour une date, par ordre de préférence. AROME est préféré
+    là où il a des données ; le run AROME (~+51 h) ne couvre que le DÉBUT de J+2 →
+    ARPEGE prend le relais pour la fin de J+2 (et J+3). J+4+ = [] : géré par le
+    sous-système tendance ECMWF (carte Prévision), pas par la grille de base — ARPEGE
+    (~+102 h) n'atteint pas l'après-midi de J+4. Le service essaie les modèles dans
+    l'ordre et garde le premier qui a le créneau en cache (relais créneau par créneau)."""
+    today_date = today or datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    offset_days = (target_date - today_date).days
+    arome_max = int(_nwp_model_spec("arome").get("max_days_ahead") or 2)
+    arpege_max = int(_nwp_model_spec("arpege").get("max_days_ahead") or 4)
+    if offset_days < arome_max:
+        return ["arome"]                       # J-1, J0, J+1 : AROME couvre toute la journée
+    if offset_days == arome_max:
+        return ["arome", "arpege"]             # J+2 : AROME jusqu'à l'horizon, puis ARPEGE
+    if offset_days <= arpege_max:
+        return ["arpege"]                       # J+3, J+4 : ARPEGE
+    return []                                   # au-delà : ECMWF (sous-système tendance)
+
+
+def _nwp_model_for_date(target_date: Date, today: Date | None = None) -> str:
+    """Modèle PRIMAIRE d'une date (clé API, routage front, contexte par défaut)."""
+    models = _nwp_models_for_date(target_date, today)
+    return models[0] if models else DEFAULT_NWP_MODEL
 METEOFRANCE_AROME025_OBJECTIFOUDRE_GRIB_PLAN = [
     {
         "field": "wind_speed_10m",
@@ -629,6 +764,35 @@ METEOFRANCE_GRIB_SLOT_PACKAGE_INDEX_RETRY_LIMITS = {
     "SP2": 160,
     "SP3": 96,
 }
+# Plan de champs ARPEGE 0.1° (sondé le 2026-06-13 sur run réel : tout est HORAIRE
+# jusqu'à h102). Différences vs AROME : pas de SP3 — la vapeur d'eau colonne est dans
+# SP2 ; « Flux net rayonnement court » et « Taux de précipitations total » n'existent
+# qu'à h0 → absents du plan (weather_logic gère None : chauffage = timing seul,
+# precipitation_available=False).
+METEOFRANCE_ARPEGE_GRIB_SLOT_GRID_SPECS = [
+    {"field": "cape", "package_id": "SP2", "parameter_label": "CAPE", "level_contains": None, "required": True},
+    {"field": "precipitable_water", "package_id": "SP2", "parameter_label": "Vapeur d’eau intégrée colonne", "level_contains": None, "required": True},
+    {"field": "relative_humidity_2m", "package_id": "SP1", "parameter_label": "Humidité relative", "level_contains": "2 m", "required": True},
+    {"field": "wind_speed_10m", "package_id": "SP1", "parameter_label": "Vitesse du vent", "level_contains": "10 m", "required": True},
+    {"field": "wind_direction_10m", "package_id": "SP1", "parameter_label": "Direction du vent", "level_contains": "10 m", "required": True},
+    {"field": "wind_gusts_10m", "package_id": "SP1", "parameter_label": "Rafales", "level_contains": "10 m", "required": True},
+    {"field": "temperature_2m", "package_id": "SP2", "parameter_label": "Température", "level_contains": "2 m", "required": True},
+    {"field": "dew_point_2m", "package_id": "SP2", "parameter_label": "Point de rosée", "level_contains": "2 m", "required": True},
+    {"field": "cloud_cover_low", "package_id": "SP2", "parameter_label": "Nuages bas", "level_contains": None, "required": True},
+    {"field": "cloud_cover_mid", "package_id": "SP2", "parameter_label": "Nuages moyens", "level_contains": None, "required": True},
+    {"field": "cloud_cover_high", "package_id": "SP2", "parameter_label": "Nuages hauts", "level_contains": None, "required": True},
+    {"field": "boundary_layer_height", "package_id": "SP2", "parameter_label": "Hauteur de couche limite", "level_contains": None, "required": True},
+]
+# Paquets ARPEGE : ~325-331 messages par groupe d'échéances (13 h × ~25 paramètres),
+# et le paquet complet est en cache disque → indexer profond est local et peu coûteux.
+METEOFRANCE_ARPEGE_GRIB_SLOT_PACKAGE_INDEX_LIMITS = {"SP1": 400, "SP2": 400}
+METEOFRANCE_ARPEGE_GRIB_SLOT_PACKAGE_INDEX_RETRY_LIMITS = {"SP1": 512, "SP2": 512}
+
+
+def _nwp_slot_grid_specs() -> list[dict[str, Any]]:
+    if _active_nwp_model() == "arpege":
+        return METEOFRANCE_ARPEGE_GRIB_SLOT_GRID_SPECS
+    return METEOFRANCE_GRIB_SLOT_GRID_SPECS
 METEOFRANCE_FRANCE_GRID_CENTER_LAT = 46.65
 METEOFRANCE_FRANCE_GRID_CENTER_LON = 2.45
 METEOFRANCE_FRANCE_GRID_LABEL = "France métropolitaine"
@@ -1907,7 +2071,7 @@ def _slot_payload_cell_count(payload: dict[str, Any], hour: int) -> int:
 def _grib_slot_required_fields(detail_level: str = METEOFRANCE_SLOT_GRID_CORE_DETAIL) -> set[str]:
     return {
         str(spec.get("field"))
-        for spec in METEOFRANCE_GRIB_SLOT_GRID_SPECS
+        for spec in _nwp_slot_grid_specs()
         if spec.get("required") and spec.get("field")
     }
 
@@ -2825,11 +2989,15 @@ def _fetch_mtg_li_flashes_for_date(date_str: str) -> tuple[list[tuple[float, flo
     Retour (flashs|None, status). Ne lève pas."""
     if not (EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET):
         return None, "eumdac_not_configured"
-    try:
-        import h5py  # noqa: F401
-        import numpy  # noqa: F401
-    except Exception:
-        return None, "h5py_not_installed"
+    for module_name in ("h5py", "numpy"):
+        try:
+            importlib.import_module(module_name)
+        except ModuleNotFoundError as exc:
+            if exc.name == module_name:
+                return None, f"{module_name}_not_installed"
+            return None, f"{module_name}_dependency_missing:{exc.name or 'unknown'}"
+        except Exception as exc:
+            return None, f"{module_name}_import_failed:{type(exc).__name__}"
     try:
         if not _eumdac_token():
             return None, "auth_failed"
@@ -2963,11 +3131,31 @@ def _learning_full_day_loader(date_str: str) -> dict[str, Any] | None:
 
 
 def _learning_finalized_dates() -> list[str]:
-    """Dates ayant à la fois une prévision archivée ET une foudre finale."""
+    """Dates RÉVOLUES ET FIGÉES éligibles à l'auto-calibration.
+
+    Un jour n'est utilisé que si SA PRÉVISION et SA FOUDRE sont réellement stables — sinon
+    le held-out bouge entre deux évaluations (cf. instabilité CSI constatée). Deux conditions :
+    - **Prévision figée** : date STRICTEMENT avant le plus ancien jour préchargé
+      (`_server_arome_preload_dates`, par défaut J-1). Le préchargement ré-écrit la grille de
+      score de ces jours à chaque run → on ne touche jamais un jour qu'il peut encore réécrire.
+    - **Foudre complète** : date ≤ aujourd'hui − 2 (≥ 1 jour plein pour que toutes les tranches
+      10 min MTG-LI soient publiées ; déterminisme de la collecte vérifié sur jour figé).
+    Le seuil est DÉRIVÉ de la même fonction que l'automatisation → impossible de se
+    désynchroniser si la fenêtre de préchargement change. Monotone : un jour ne fait qu'ENTRER
+    dans l'ensemble en vieillissant (jamais de va-et-vient)."""
+    today = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    try:
+        preload = _server_arome_preload_dates()
+    except Exception:
+        preload = []
+    earliest_preload = min(preload) if preload else (today - timedelta(days=1))
+    # min() : avant la fenêtre de préchargement ET au moins 1 jour de marge foudre.
+    frozen_cutoff = min(earliest_preload - timedelta(days=1), today - timedelta(days=2))
+    cutoff_iso = frozen_cutoff.isoformat()
     dates: list[str] = []
     for item in _list_history_dates():
         d = item.get("date")
-        if not d:
+        if not d or d > cutoff_iso:    # jour non figé (préchargé/du jour/futur) → exclu
             continue
         light = _read_lightning_archive(d)
         if light and light.get("final"):
@@ -3322,9 +3510,10 @@ def _write_meteofrance_grib_national_field_cache(key: str, payload: dict[str, An
         return
 
 
-def _meteofrance_metadata_cache_key(api_key: str, scope: str) -> str:
+def _meteofrance_metadata_cache_key(api_key: str, scope: str, model: str | None = None) -> str:
     digest = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:20]
-    return f"meteofrance:{digest}:{scope}"
+    prefix = str(_nwp_model_spec(model or _active_nwp_model()).get("cache_scope_prefix") or "")
+    return f"meteofrance:{digest}:{prefix}{scope}"
 
 
 def _meteofrance_slot_grid_cache_key(api_key: str, lat: float, lon: float, label: str, target_date: Date, hour: int, detail_level: str) -> str:
@@ -3377,8 +3566,10 @@ def _meteofrance_grib_national_field_registry_key(
     field: str,
 ) -> str:
     grid_part = requested_grid or "auto"
+    model = _active_nwp_model()
+    model_part = "" if model == DEFAULT_NWP_MODEL else f"model={model}|"
     source = (
-        f"grid={grid_part}|date={target_date.isoformat()}|hour={int(hour):02d}|field={field}|"
+        f"{model_part}grid={grid_part}|date={target_date.isoformat()}|hour={int(hour):02d}|field={field}|"
         f"algo={METEOFRANCE_GRIB_NATIONAL_FIELD_ALGORITHM_VERSION}:slot-algo={METEOFRANCE_GRIB_SLOT_GRID_ALGORITHM_VERSION}"
     )
     return f"meteofrance:grib-national-field-registry:{_stable_cache_hash(source)}"
@@ -3973,7 +4164,10 @@ def _meteofrance_arome_wcs_grid_date_status(
 ) -> dict[str, Any]:
     today_date = today or datetime.now(ZoneInfo("Europe/Paris")).date()
     start = today_date - timedelta(days=1) if allow_previous_day else today_date
-    max_days_ahead = METEOFRANCE_AROME_GRIB_MAX_DAYS_AHEAD if allow_previous_day else METEOFRANCE_AROME_WCS_GRID_MAX_DAYS_AHEAD
+    if allow_previous_day:
+        max_days_ahead = int(_active_nwp_spec().get("max_days_ahead") or METEOFRANCE_AROME_GRIB_MAX_DAYS_AHEAD)
+    else:
+        max_days_ahead = METEOFRANCE_AROME_WCS_GRID_MAX_DAYS_AHEAD
     end = today_date + timedelta(days=max_days_ahead)
     if target_date < start:
         return {
@@ -4127,7 +4321,7 @@ def _meteofrance_package_json_run_is_complete(payload_json: Any) -> bool:
         bounds = _parse_meteofrance_grib_time_group_bounds(group)
         if bounds:
             max_end = max(max_end, bounds[1])
-    return max_end >= METEOFRANCE_AROME_FORECAST_HORIZON_HOURS
+    return max_end >= int(_active_nwp_spec().get("forecast_horizon_hours") or METEOFRANCE_AROME_FORECAST_HORIZON_HOURS)
 
 
 def _effective_package_json_cache_ttl(payload_json: Any) -> int:
@@ -4283,7 +4477,14 @@ def _meteofrance_failure_result(exc: Exception, target: str) -> dict[str, Any]:
 
 
 def _normalize_meteofrance_package_url(url: str) -> str:
-    return url.replace("/previnum/DPPaquetAROME/models/", "/previnum/DPPaquetAROME/v1/models/")
+    # Quirk API Météo-France : les liens HATEOAS omettent le segment /v1 après
+    # DPPaquet<MODELE> ; valable pour tous les modèles paquets (AROME, ARPEGE…).
+    if "/previnum/DPPaquet" not in url or "/models/" not in url:
+        return url
+    head, _, tail = url.partition("/models/")
+    if head.endswith("/v1"):
+        return url
+    return f"{head}/v1/models/{tail}"
 
 
 def _payload_links(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -4596,11 +4797,15 @@ def _test_meteofrance_api_key_sync(api_key: str) -> dict[str, Any]:
     }
 
 
-def _choose_meteofrance_package_grid(grids: list[dict[str, str]], requested_grid: str | None) -> str | None:
+def _choose_meteofrance_package_grid(
+    grids: list[dict[str, str]],
+    requested_grid: str | None,
+    preferred_grids: list[str] | None = None,
+) -> str | None:
     available = {item["id"] for item in grids}
     if requested_grid and requested_grid in available:
         return requested_grid
-    for preferred in METEOFRANCE_AROME_PACKAGE_PREFERRED_GRIDS:
+    for preferred in preferred_grids if preferred_grids is not None else METEOFRANCE_AROME_PACKAGE_PREFERRED_GRIDS:
         if preferred in available:
             return preferred
     return grids[0]["id"] if grids else None
@@ -5079,8 +5284,16 @@ def _resolve_meteofrance_package_product_for_slot_cache_only(
     return result
 
 
-def _resolve_meteofrance_package_base(api_key: str, requested_grid: str | None, *, force_refresh: bool = False) -> dict[str, Any]:
-    cache_key = _meteofrance_metadata_cache_key(api_key, f"package-base:grid={requested_grid or 'auto'}")
+def _resolve_meteofrance_package_base(
+    api_key: str,
+    requested_grid: str | None,
+    *,
+    force_refresh: bool = False,
+    model: str | None = None,
+) -> dict[str, Any]:
+    model = model or _active_nwp_model()
+    spec = _nwp_model_spec(model)
+    cache_key = _meteofrance_metadata_cache_key(api_key, f"package-base:grid={requested_grid or 'auto'}", model)
     if not force_refresh:
         cached = _get_cached_value(cache_key, ttl=METEOFRANCE_METADATA_CACHE_TTL_SECONDS)
         if cached is not None:
@@ -5089,20 +5302,21 @@ def _resolve_meteofrance_package_base(api_key: str, requested_grid: str | None, 
             return result
 
     statuses = []
-    grids_url = f"{METEOFRANCE_AROME_PACKAGE_API_BASE}/models/{METEOFRANCE_AROME_PACKAGE_MODEL}/grids"
+    grids_url = f"{spec['package_api_base']}/models/{spec['package_model']}/grids"
     status, content_type, grids_payload = _fetch_meteofrance_package_json_for_cache_policy(api_key, grids_url, force_refresh)
     statuses.append({"step": "grids", "status": status, "content_type": content_type})
     grids = _catalog_items_from_links(grids_payload, "/grids/")
-    selected_grid = _choose_meteofrance_package_grid(grids, requested_grid)
+    selected_grid = _choose_meteofrance_package_grid(grids, requested_grid, spec["preferred_grids"])
     if not selected_grid:
-        raise ValueError("Aucune grille AROME exploitable trouvée.")
+        raise ValueError(f"Aucune grille {spec['package_model']} exploitable trouvée.")
 
-    packages_url = f"{METEOFRANCE_AROME_PACKAGE_API_BASE}/models/{METEOFRANCE_AROME_PACKAGE_MODEL}/grids/{urllib.parse.quote(selected_grid)}/packages"
+    packages_url = f"{spec['package_api_base']}/models/{spec['package_model']}/grids/{urllib.parse.quote(selected_grid)}/packages"
     status, content_type, packages_payload = _fetch_meteofrance_package_json_for_cache_policy(api_key, packages_url, force_refresh)
     statuses.append({"step": "packages", "status": status, "content_type": content_type})
     packages = _catalog_items_from_links(packages_payload, "/packages/")
     result = {
         "statuses": statuses,
+        "model": spec["package_model"],
         "grid": selected_grid,
         "packages_url": packages_url,
         "packages": packages,
@@ -6912,6 +7126,39 @@ def _select_grib_zero_hour_sequence_message(
     return annotated
 
 
+def _select_grib_nearest_forecast_message(
+    index: dict[str, Any],
+    parameter_label: str,
+    forecast_hour: int | None,
+    level_contains: str | None,
+    max_distance_hours: int,
+) -> dict[str, Any] | None:
+    """Message du paramètre dont l'échéance est la PLUS PROCHE de celle demandée
+    (dans une tolérance). Sert à combler les pas 3-horaires d'ARPEGE au-delà de +48 h :
+    une heure locale sans message exact est calée sur l'échéance voisine."""
+    if forecast_hour is None:
+        return None
+    best = None
+    best_dist = None
+    for message in index.get("messages", []):
+        if not _message_matches_grib_target(message, parameter_label, None, level_contains):
+            continue
+        product = message.get("product") if isinstance(message, dict) else None
+        product_hour = product.get("forecast_hour") if isinstance(product, dict) else None
+        if not isinstance(product_hour, (int, float)):
+            continue
+        dist = abs(int(round(float(product_hour))) - int(forecast_hour))
+        if dist > max_distance_hours:
+            continue
+        if best_dist is None or dist < best_dist:
+            best, best_dist = message, dist
+    if best is None:
+        return None
+    annotated = copy.deepcopy(best)
+    annotated["_snapped_from_forecast_hour"] = int(forecast_hour)
+    return annotated
+
+
 def _select_grib_target_message(
     index: dict[str, Any],
     parameter_label: str,
@@ -6919,6 +7166,7 @@ def _select_grib_target_message(
     level_contains: str | None = None,
     *,
     allow_forecast_fallback: bool = True,
+    nearest_tolerance_hours: int = 0,
 ) -> dict[str, Any] | None:
     selected_message = next(
         (message for message in index.get("messages", []) if _message_matches_grib_target(message, parameter_label, forecast_hour, level_contains)),
@@ -6926,6 +7174,11 @@ def _select_grib_target_message(
     )
     if selected_message is None:
         selected_message = _select_grib_zero_hour_sequence_message(index, parameter_label, forecast_hour, level_contains)
+    # Calage sur l'échéance la plus proche (ARPEGE 3-horaire au-delà de +48 h).
+    if selected_message is None and nearest_tolerance_hours > 0:
+        selected_message = _select_grib_nearest_forecast_message(
+            index, parameter_label, forecast_hour, level_contains, nearest_tolerance_hours,
+        )
     if selected_message is None and forecast_hour is not None and allow_forecast_fallback:
         selected_message = next(
             (message for message in index.get("messages", []) if _message_matches_grib_target(message, parameter_label, None, level_contains)),
@@ -7060,14 +7313,23 @@ def _probe_meteofrance_grib_target_message_sync(
 
 
 def _meteofrance_grib_slot_index_limit(package_id: str) -> int:
-    return int(METEOFRANCE_GRIB_SLOT_PACKAGE_INDEX_LIMITS.get(package_id.strip().upper(), 96))
+    package_id = package_id.strip().upper()
+    if _active_nwp_model() == "arpege":
+        return int(METEOFRANCE_ARPEGE_GRIB_SLOT_PACKAGE_INDEX_LIMITS.get(package_id, 400))
+    return int(METEOFRANCE_GRIB_SLOT_PACKAGE_INDEX_LIMITS.get(package_id, 96))
 
 
 def _meteofrance_grib_slot_index_retry_limit(package_id: str) -> int:
     package_id = package_id.strip().upper()
+    if _active_nwp_model() == "arpege":
+        retry_limits = METEOFRANCE_ARPEGE_GRIB_SLOT_PACKAGE_INDEX_RETRY_LIMITS
+        default_retry = 512
+    else:
+        retry_limits = METEOFRANCE_GRIB_SLOT_PACKAGE_INDEX_RETRY_LIMITS
+        default_retry = 160
     return max(
         _meteofrance_grib_slot_index_limit(package_id),
-        int(METEOFRANCE_GRIB_SLOT_PACKAGE_INDEX_RETRY_LIMITS.get(package_id, 160)),
+        int(retry_limits.get(package_id, default_retry)),
     )
 
 
@@ -7115,12 +7377,16 @@ def _ensure_grib_target_message_indexed(
     cache_only: bool = False,
     package_only: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, int]:
+    # ARPEGE devient 3-horaire au-delà de +48 h → on cale une heure sans message exact
+    # sur l'échéance voisine (≤ 2 h). AROME reste strict (horaire) : frontière nette.
+    nearest_tolerance = 2 if _active_nwp_model() == "arpege" else 0
     selected_message = _select_grib_target_message(
         index,
         parameter_label,
         forecast_hour,
         level_contains,
         allow_forecast_fallback=False,
+        nearest_tolerance_hours=nearest_tolerance,
     )
     if selected_message is not None:
         return index, selected_message, 0
@@ -7143,6 +7409,7 @@ def _ensure_grib_target_message_indexed(
                 forecast_hour,
                 level_contains,
                 allow_forecast_fallback=False,
+                nearest_tolerance_hours=nearest_tolerance,
             )
             if selected_message is not None:
                 return extended_index, selected_message, int(extended_index.get("range_request_count") or 0)
@@ -7184,16 +7451,17 @@ def _build_meteofrance_grib_slot_grid_sync(
     try:
         requested_detail_level = _meteofrance_slot_grid_detail_level(detail_level)
         detail_level = METEOFRANCE_SLOT_GRID_CORE_DETAIL
-        required_specs = [spec for spec in METEOFRANCE_GRIB_SLOT_GRID_SPECS if spec.get("required")]
+        model_slot_specs = _nwp_slot_grid_specs()
+        required_specs = [spec for spec in model_slot_specs if spec.get("required")]
         cache_optional_specs = [
             spec
-            for spec in METEOFRANCE_GRIB_SLOT_GRID_SPECS
+            for spec in model_slot_specs
             if spec.get("cache_only_optional") and not spec.get("required")
         ]
         active_specs = list(required_specs)
         skipped_optional = [
             spec["field"]
-            for spec in METEOFRANCE_GRIB_SLOT_GRID_SPECS
+            for spec in model_slot_specs
             if not spec.get("required")
         ]
         date_status = _meteofrance_arome_wcs_grid_date_status(target_date, allow_previous_day=True)
@@ -7632,6 +7900,8 @@ def _build_meteofrance_grib_slot_grid_sync(
                 "provider": "meteofrance_arome_grib",
                 "source_provider": "meteofrance_arome_grib",
                 "source_label": "Météo-France AROME GRIB cache",
+                "nwp_model": _active_nwp_model(),
+                "nwp_model_label": _active_nwp_spec().get("label"),
                 "migration_probe": True,
                 "requested_hour": hour,
                 "requested_slot": f"h{hour:02d}",
@@ -7723,6 +7993,390 @@ def _build_meteofrance_grib_france_slot_grid_sync(
         force_rebuild=force_rebuild,
         package_only=METEOFRANCE_GRIB_PACKAGE_ONLY_NATIONAL_PRELOAD,
     )
+
+
+# ===================== Tendance ECMWF open data (J+5 → J+10) =====================
+
+def _ecmwf_run_dir_url(run_date: Date, run_hour: int) -> str:
+    return f"{ECMWF_OPEN_DATA_BASE}/{run_date.strftime('%Y%m%d')}/{run_hour:02d}z/{ECMWF_OPEN_DATA_STREAM}"
+
+
+def _ecmwf_product_basename(run_date: Date, run_hour: int, step_hours: int) -> str:
+    return f"{run_date.strftime('%Y%m%d')}{run_hour:02d}0000-{step_hours}h-oper-fc"
+
+
+def _ecmwf_http_get(url: str, range_header: str | None = None, timeout: int = 60) -> tuple[int, bytes]:
+    headers = {"User-Agent": f"ObjectiFoudre/{APP_VERSION}"}
+    if range_header:
+        headers["Range"] = range_header
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return int(getattr(response, "status", 200) or 200), response.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code in {404, 416}:
+                return exc.code, b""
+            last_exc = exc
+        except Exception as exc:  # réseau transitoire
+            last_exc = exc
+        time.sleep(0.6 * (attempt + 1))
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("Lecture ECMWF impossible.")
+
+
+def _ecmwf_fetch_index(run_date: Date, run_hour: int, step_hours: int) -> list[dict[str, Any]] | None:
+    """Liste des messages GRIB du produit (param/levtype/_offset/_length). None si absent."""
+    cache_key = _stable_cache_hash(f"ecmwf-index:{_ecmwf_product_basename(run_date, run_hour, step_hours)}")
+    cached = _get_cached_value(cache_key, ttl=ECMWF_TREND_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return list(cached["payload"])
+    persistent = _read_meteofrance_local_persistent_cache("ecmwf-index", cache_key, ECMWF_TREND_CACHE_TTL_SECONDS)
+    if persistent is not None and isinstance(persistent.get("payload"), list):
+        _set_cached_value(cache_key, persistent["payload"])
+        return list(persistent["payload"])
+    url = f"{_ecmwf_run_dir_url(run_date, run_hour)}/{_ecmwf_product_basename(run_date, run_hour, step_hours)}.index"
+    status, raw = _ecmwf_http_get(url)
+    if status != 200 or not raw:
+        return None
+    messages: list[dict[str, Any]] = []
+    for line in raw.decode("utf-8", "replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            messages.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    if not messages:
+        return None
+    _set_cached_value(cache_key, messages)
+    _write_meteofrance_local_persistent_cache("ecmwf-index", cache_key, messages)
+    return messages
+
+
+def _ecmwf_message_for_param(messages: list[dict[str, Any]], param: str, levtype: str = "sfc") -> dict[str, Any] | None:
+    for msg in messages:
+        if str(msg.get("param")) == param and str(msg.get("levtype") or "sfc") == levtype:
+            return msg
+    # repli : certains paramètres surface n'ont pas de levtype explicite
+    for msg in messages:
+        if str(msg.get("param")) == param:
+            return msg
+    return None
+
+
+def _ecmwf_fetch_message_raw(run_date: Date, run_hour: int, step_hours: int, message: dict[str, Any]) -> bytes | None:
+    try:
+        offset = int(message["_offset"])
+        length = int(message["_length"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    url = f"{_ecmwf_run_dir_url(run_date, run_hour)}/{_ecmwf_product_basename(run_date, run_hour, step_hours)}.grib2"
+    status, raw = _ecmwf_http_get(url, range_header=f"bytes={offset}-{offset + length - 1}")
+    if status not in {200, 206} or len(raw) < 16 or not raw.startswith(b"GRIB"):
+        return None
+    return raw
+
+
+def _ecmwf_decode_grid_values(raw: bytes) -> tuple[dict[str, Any], Any] | None:
+    """Décode un message GRIB ECMWF : (métadonnées de grille, tableau 1D des valeurs).
+    On échantillonne ensuite par index analytique (grille lat/lon régulière) plutôt que
+    par find_nearest, beaucoup trop lent sur la grille globale ECMWF (~1 M points)."""
+    try:
+        import eccodes  # type: ignore
+    except Exception:
+        return None
+    handle = None
+    try:
+        handle = eccodes.codes_new_from_message(raw)
+        meta_keys = (
+            "Ni", "Nj", "units", "missingValue",
+            "latitudeOfFirstGridPointInDegrees", "longitudeOfFirstGridPointInDegrees",
+            "iDirectionIncrementInDegrees", "jDirectionIncrementInDegrees",
+            "iScansNegatively", "jScansPositively",
+        )
+        meta = {key: _safe_eccodes_get(handle, key) for key in meta_keys}
+        values = eccodes.codes_get_values(handle)
+        return meta, values
+    except Exception:
+        return None
+    finally:
+        if handle is not None:
+            try:
+                eccodes.codes_release(handle)
+            except Exception:
+                pass
+
+
+def _ecmwf_point_grid_indices(meta: dict[str, Any], points: list[Any]) -> list[int | None]:
+    try:
+        ni = int(meta["Ni"]); nj = int(meta["Nj"])
+        lat0 = float(meta["latitudeOfFirstGridPointInDegrees"])
+        lon0 = float(meta["longitudeOfFirstGridPointInDegrees"])
+        di = abs(float(meta["iDirectionIncrementInDegrees"]))
+        dj = abs(float(meta["jDirectionIncrementInDegrees"]))
+    except (KeyError, TypeError, ValueError, ZeroDivisionError):
+        return [None] * len(points)
+    if di <= 0 or dj <= 0:
+        return [None] * len(points)
+    i_neg = bool(meta.get("iScansNegatively"))
+    j_pos = bool(meta.get("jScansPositively"))
+    indices: list[int | None] = []
+    for point in points:
+        lat = float(point.lat); lon = float(point.lon)
+        lon_rel = (lon - lon0)
+        if i_neg:
+            lon_rel = -lon_rel
+        lon_rel %= 360.0
+        i = int(round(lon_rel / di)) % ni
+        if j_pos:
+            j = int(round((lat - lat0) / dj))
+        else:
+            j = int(round((lat0 - lat) / dj))
+        if 0 <= j < nj and 0 <= i < ni:
+            indices.append(j * ni + i)
+        else:
+            indices.append(None)
+    return indices
+
+
+def _ecmwf_sample_param(run_date: Date, run_hour: int, step_hours: int, messages: list[dict[str, Any]], param: str, field: str, points: list[Any], indices_cache: dict[str, Any]) -> dict[str, float] | None:
+    message = _ecmwf_message_for_param(messages, param)
+    if message is None:
+        return None
+    raw = _ecmwf_fetch_message_raw(run_date, run_hour, step_hours, message)
+    if raw is None:
+        return None
+    decoded = _ecmwf_decode_grid_values(raw)
+    if decoded is None:
+        return None
+    meta, values = decoded
+    # Index par point calculé une seule fois (même grille pour tous les champs du run/step)
+    indices = indices_cache.get("indices")
+    if indices is None:
+        indices = _ecmwf_point_grid_indices(meta, points)
+        indices_cache["indices"] = indices
+        indices_cache["meta"] = meta
+    n = len(values)
+    out: dict[str, float] = {}
+    for point, idx in zip(points, indices):
+        if idx is None or idx >= n:
+            continue
+        converted = _convert_meteofrance_grib_field_value(field, float(values[idx]), meta)
+        if converted is not None:
+            out[str(point.zone)] = converted
+    return out or None
+
+
+def _ecmwf_step_for_day(run_date: Date, run_hour: int, target_date: Date) -> int:
+    target_utc = datetime.combine(target_date, Time(hour=ECMWF_TREND_PEAK_UTC_HOUR), tzinfo=timezone.utc)
+    run_dt = datetime.combine(run_date, Time(hour=run_hour), tzinfo=timezone.utc)
+    return int(round((target_utc - run_dt).total_seconds() / 3600.0))
+
+
+def _ecmwf_latest_trend_run(reference_date: Date | None = None) -> tuple[Date, int] | None:
+    """Run 00z/12z le plus récent dont l'échéance J+10 (12 UTC) est déjà publiée."""
+    now = datetime.now(timezone.utc)
+    today = reference_date or now.date()
+    max_target = today + timedelta(days=max(ECMWF_TREND_DAYS_AHEAD))
+    candidates: list[tuple[Date, int]] = []
+    for back in range(0, 3):
+        run_date = now.date() - timedelta(days=back)
+        for run_hour in (12, 0):
+            candidates.append((run_date, run_hour))
+    candidates.sort(key=lambda rc: datetime.combine(rc[0], Time(hour=rc[1]), tzinfo=timezone.utc), reverse=True)
+    for run_date, run_hour in candidates:
+        run_dt = datetime.combine(run_date, Time(hour=run_hour), tzinfo=timezone.utc)
+        if run_dt > now:
+            continue
+        far_step = _ecmwf_step_for_day(run_date, run_hour, max_target)
+        if far_step <= 0 or far_step > ECMWF_TREND_MAX_STEP_HOURS:
+            continue
+        if _ecmwf_fetch_index(run_date, run_hour, far_step) is not None:
+            return run_date, run_hour
+    return None
+
+
+def _ecmwf_trend_day_cache_key(run_date: Date, run_hour: int, target_date: Date) -> str:
+    return _stable_cache_hash(
+        f"ecmwf-trend-day:run={run_date.isoformat()}T{run_hour:02d}:date={target_date.isoformat()}:"
+        f"peak={ECMWF_TREND_PEAK_UTC_HOUR}:algo={METEOFRANCE_GRIB_SLOT_GRID_ALGORITHM_VERSION}"
+    )
+
+
+def _ecmwf_build_trend_day_sync(target_date: Date, run_date: Date, run_hour: int) -> dict[str, Any]:
+    """Construit la grille tendance ECMWF d'un jour (CAPE ≈ pic d'instabilité), scorée
+    avec le même assemblage que la grille AROME/ARPEGE, projetée en niveau « render »."""
+    cache_key = _ecmwf_trend_day_cache_key(run_date, run_hour, target_date)
+    cached = _get_cached_value(cache_key, ttl=ECMWF_TREND_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return copy.deepcopy(cached["payload"])
+    persistent = _read_meteofrance_local_persistent_cache("ecmwf-trend-day", cache_key, ECMWF_TREND_CACHE_TTL_SECONDS)
+    if persistent is not None and isinstance(persistent.get("payload"), dict):
+        _set_cached_value(cache_key, persistent["payload"])
+        return copy.deepcopy(persistent["payload"])
+
+    step_hours = _ecmwf_step_for_day(run_date, run_hour, target_date)
+    if step_hours <= 0 or step_hours > ECMWF_TREND_MAX_STEP_HOURS:
+        return {"ok": False, "status": 400, "message": f"Échéance ECMWF hors horizon pour {target_date.isoformat()}."}
+    messages = _ecmwf_fetch_index(run_date, run_hour, step_hours)
+    if messages is None:
+        return {"ok": False, "status": 404, "message": f"Produit ECMWF {step_hours}h indisponible pour {target_date.isoformat()}."}
+
+    points = _build_meteofrance_france_grid_points()
+    indices_cache: dict[str, Any] = {}
+    field_values: dict[str, dict[str, float]] = {}
+    for field, param in ECMWF_TREND_FIELD_MAP.items():
+        values = _ecmwf_sample_param(run_date, run_hour, step_hours, messages, param, field, points, indices_cache)
+        if values:
+            field_values[field] = values
+    # Vent : reconstruit depuis 10u/10v (vitesse + direction météo)
+    u_vals = _ecmwf_sample_param(run_date, run_hour, step_hours, messages, ECMWF_TREND_WIND_COMPONENTS[0], "wind_u_10m", points, indices_cache)
+    v_vals = _ecmwf_sample_param(run_date, run_hour, step_hours, messages, ECMWF_TREND_WIND_COMPONENTS[1], "wind_v_10m", points, indices_cache)
+    if u_vals and v_vals:
+        speed: dict[str, float] = {}
+        direction: dict[str, float] = {}
+        for zone, u in u_vals.items():
+            v = v_vals.get(zone)
+            if u is None or v is None:
+                continue
+            speed[zone] = round(math.hypot(float(u), float(v)), 3)
+            direction[zone] = round((math.degrees(math.atan2(-float(u), -float(v))) + 360.0) % 360.0, 1)
+        if speed:
+            field_values["wind_speed_10m"] = speed
+            field_values["wind_direction_10m"] = direction
+
+    if "cape" not in field_values:
+        return {"ok": False, "status": 502, "message": f"CAPE ECMWF illisible pour {target_date.isoformat()}."}
+
+    valid_utc = datetime.combine(run_date, Time(hour=run_hour), tzinfo=timezone.utc) + timedelta(hours=step_hours)
+    slot_local = valid_utc.astimezone(ZoneInfo("Europe/Paris"))
+    grid_locations = []
+    for point in points:
+        zone = point.zone
+        temp_c = field_values.get("temperature_2m", {}).get(zone)
+        dewpoint_c = field_values.get("dew_point_2m", {}).get(zone)
+        rh2m = _relative_humidity_from_dewpoint_c(temp_c, dewpoint_c)
+        wind_speed = field_values.get("wind_speed_10m", {}).get(zone)
+        wind_dir = field_values.get("wind_direction_10m", {}).get(zone)
+        hourly = {
+            "time": [slot_local.isoformat()],
+            "cape": [field_values.get("cape", {}).get(zone) or 0.0],
+            "precipitable_water": [field_values.get("precipitable_water", {}).get(zone)],
+            "shortwave_radiation": [None],
+            "precipitation_rate": [None],
+            "temperature_2m": [temp_c if temp_c is not None else 0.0],
+            "dew_point_2m": [dewpoint_c if dewpoint_c is not None else 0.0],
+            "convective_inhibition": [None],
+            "relative_humidity_2m": [rh2m if rh2m is not None else 0.0],
+            "vapour_pressure_deficit": [_vapour_pressure_deficit_kpa(float(temp_c or 0.0), float(dewpoint_c or 0.0))],
+            "wet_bulb_temperature_2m": [_wet_bulb_stull_c(float(temp_c or 0.0), float(rh2m or 0.0))],
+            "cloud_cover_low": [None],
+            "cloud_cover_mid": [None],
+            "cloud_cover_high": [None],
+            "boundary_layer_height": [None],
+            "wind_gusts_10m": [field_values.get("wind_gusts_10m", {}).get(zone) or 0.0],
+            "wind_speed_10m": [wind_speed if wind_speed is not None else 0.0],
+            "wind_direction_10m": [wind_dir if wind_dir is not None else 0.0],
+            "wind_direction_10m_available": [wind_speed is not None and wind_dir is not None],
+        }
+        grid_locations.append({"hourly": hourly, "models": ECMWF_TREND_MODEL_NAME})
+
+    rows = rows_for_grid_locations(points, grid_locations)
+    payload = group_for_output(
+        rows,
+        METEOFRANCE_FRANCE_GRID_CENTER_LAT,
+        METEOFRANCE_FRANCE_GRID_CENTER_LON,
+        METEOFRANCE_FRANCE_GRID_LABEL,
+        target_date=target_date,
+        model_name=ECMWF_TREND_MODEL_NAME,
+    )
+    for day in payload.get("days", []):
+        for slot in day.get("slots", []):
+            slot["grid_scope"] = "france"
+            slot["france_grid"] = True
+            for cell in slot.get("cells", []):
+                cell["source_provider"] = ECMWF_TREND_MODEL_NAME
+                cell["source_label"] = "ECMWF IFS tendance"
+    run_iso = datetime.combine(run_date, Time(hour=run_hour), tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    meta = dict(payload.get("meta") or {})
+    meta.update({
+        "provider": ECMWF_TREND_MODEL_NAME,
+        "source_provider": ECMWF_TREND_MODEL_NAME,
+        "source_label": "ECMWF IFS tendance",
+        "nwp_model": "ecmwf",
+        "nwp_model_label": "ECMWF",
+        "trend": True,
+        "attribution": ECMWF_TREND_ATTRIBUTION,
+        "grid_scope": "france",
+        "france_grid": True,
+        "ecmwf_run_reference_time": run_iso,
+        "ecmwf_step_hours": step_hours,
+        "valid_time": valid_utc.isoformat().replace("+00:00", "Z"),
+        "valid_time_local": slot_local.isoformat(),
+        "resolution_label": "0,25° (~28 km)",
+        "fields_available": sorted(field_values.keys()),
+    })
+    payload["meta"] = meta
+    result = _project_grib_result_for_render({"ok": True, "payload": payload})
+    result.update({
+        "ok": True,
+        "status": 200,
+        "date": target_date.isoformat(),
+        "run_reference_time": run_iso,
+        "step_hours": step_hours,
+        "message": f"Tendance ECMWF {target_date.isoformat()} (échéance {step_hours}h) : {len(points)} cellules.",
+    })
+    _set_cached_value(cache_key, result)
+    _write_meteofrance_local_persistent_cache("ecmwf-trend-day", cache_key, result)
+    return copy.deepcopy(result)
+
+
+def _ecmwf_trend_dates(reference_date: Date | None = None) -> list[Date]:
+    today = reference_date or datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    return [today + timedelta(days=offset) for offset in ECMWF_TREND_DAYS_AHEAD]
+
+
+def _ecmwf_trend_status_sync(reference_date: Date | None = None) -> dict[str, Any]:
+    today = reference_date or datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    run = _ecmwf_latest_trend_run(today)
+    dates = _ecmwf_trend_dates(today)
+    if run is None:
+        return {
+            "ok": False,
+            "available": False,
+            "message": "Aucun run ECMWF open data disponible pour la tendance J+5 → J+10.",
+            "dates": [d.isoformat() for d in dates],
+            "attribution": ECMWF_TREND_ATTRIBUTION,
+        }
+    run_date, run_hour = run
+    run_iso = datetime.combine(run_date, Time(hour=run_hour), tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    days = []
+    for d, offset in zip(dates, ECMWF_TREND_DAYS_AHEAD):
+        cache_key = _ecmwf_trend_day_cache_key(run_date, run_hour, d)
+        cached = _get_cached_value(cache_key, ttl=ECMWF_TREND_CACHE_TTL_SECONDS) or _read_meteofrance_local_persistent_cache(
+            "ecmwf-trend-day", cache_key, ECMWF_TREND_CACHE_TTL_SECONDS
+        )
+        days.append({
+            "date": d.isoformat(),
+            "day_offset": offset,
+            "label": f"J+{offset}",
+            "step_hours": _ecmwf_step_for_day(run_date, run_hour, d),
+            "cached": cached is not None,
+        })
+    return {
+        "ok": True,
+        "available": True,
+        "run_reference_time": run_iso,
+        "resolution_label": "0,25° (~28 km)",
+        "attribution": ECMWF_TREND_ATTRIBUTION,
+        "peak_utc_hour": ECMWF_TREND_PEAK_UTC_HOUR,
+        "dates": [d.isoformat() for d in dates],
+        "days": days,
+    }
 
 
 def _preload_meteofrance_grib_slot_grids_sync(
@@ -7951,11 +8605,12 @@ def _preload_meteofrance_grib_national_day_sync(
         else:
             hours = [int(hour) for hour in hours_override if 0 <= int(hour) <= 23]
             hours = list(dict.fromkeys(hours))[:max_hours]
+        model_slot_specs = _nwp_slot_grid_specs()
         if field_names is None:
-            active_specs = [spec for spec in METEOFRANCE_GRIB_SLOT_GRID_SPECS if spec.get("required")]
+            active_specs = [spec for spec in model_slot_specs if spec.get("required")]
         else:
             requested_fields = {str(item) for item in field_names}
-            active_specs = [spec for spec in METEOFRANCE_GRIB_SLOT_GRID_SPECS if str(spec.get("field")) in requested_fields]
+            active_specs = [spec for spec in model_slot_specs if str(spec.get("field")) in requested_fields]
         unit_count = len(hours) * len(active_specs)
         active_package_only = bool(METEOFRANCE_GRIB_PACKAGE_ONLY_NATIONAL_PRELOAD)
         if progress_callback:
@@ -8687,6 +9342,75 @@ def _precipitation_enrichment_candidate_hours(materialization_result: dict[str, 
     return selected
 
 
+def _preload_worker_materialize_slot(
+    date_iso: str, hour: int, api_key: str, requested_grid: str | None, force_rebuild: bool,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Exécuté dans un PROCESSUS worker (forkserver). Construit un créneau France depuis les
+    champs nationaux déjà persistés sur disque (`cache_only`), écrit le résultat dans le cache
+    disque + l'archive (effets de bord persistants), et ne renvoie qu'un RÉSUMÉ léger — pas le
+    payload, trop gros pour l'IPC. Le worker réimporte `app` SANS déclencher les events startup
+    (pas de uvicorn) → aucun thread d'automatisation ni serveur n'est lancé.
+    Le modèle actif (AROME/ARPEGE) est un `contextvar` qui NE traverse PAS les processus : on le
+    REDONNE explicitement ici, sinon un créneau ARPEGE chercherait le cache AROME et échouerait."""
+    target_date = Date.fromisoformat(date_iso)
+    with _nwp_model_context(model):
+        result = _build_meteofrance_grib_france_slot_grid_sync(
+            api_key, target_date, hour,
+            requested_grid=requested_grid,
+            detail_level=METEOFRANCE_SLOT_GRID_CORE_DETAIL,
+            cache_only=True, force_rebuild=force_rebuild,
+        )
+    payload_data = result.get("payload") if isinstance(result.get("payload"), dict) else {}
+    meta = payload_data.get("meta", {}) if isinstance(payload_data, dict) else {}
+    return {
+        "hour": hour,
+        "ok": bool(result.get("ok")),
+        "status": result.get("status"),
+        "message": result.get("message"),
+        "cache_hit": bool(result.get("cache_hit")),
+        "total_range_request_count": int(meta.get("total_range_request_count") or result.get("total_range_request_count") or 0),
+        "cached_total_range_request_count": int(meta.get("cached_total_range_request_count") or result.get("cached_total_range_request_count") or 0),
+        "national_field_cache_hit_count": int(meta.get("national_field_cache_hit_count") or 0),
+        "max_trigger_score": _max_trigger_score_from_grib_payload(payload_data),
+    }
+
+
+_preload_process_pool: "concurrent.futures.ProcessPoolExecutor | None" = None
+_preload_process_pool_lock = threading.Lock()
+
+
+def _get_preload_process_pool() -> "concurrent.futures.ProcessPoolExecutor | None":
+    """Pool de processus (forkserver) partagé pour matérialiser les créneaux en parallèle.
+    None si OBJECTIFOUDRE_PRELOAD_WORKERS <= 1 (séquentiel). forkserver = process neuf (pas un
+    fork du parent multi-thread) → évite les deadlocks ; workers réutilisés entre les jours."""
+    global _preload_process_pool
+    if OBJECTIFOUDRE_PRELOAD_WORKERS <= 1:
+        return None
+    with _preload_process_pool_lock:
+        if _preload_process_pool is None:
+            try:
+                _preload_process_pool = concurrent.futures.ProcessPoolExecutor(
+                    max_workers=OBJECTIFOUDRE_PRELOAD_WORKERS,
+                    mp_context=multiprocessing.get_context("forkserver"),
+                )
+            except Exception:
+                _preload_process_pool = None
+    return _preload_process_pool
+
+
+def _reset_preload_process_pool() -> None:
+    """Réinitialise le pool (ex. après un BrokenProcessPool) ; il sera recréé à la demande."""
+    global _preload_process_pool
+    with _preload_process_pool_lock:
+        pool, _preload_process_pool = _preload_process_pool, None
+    if pool is not None:
+        try:
+            pool.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+
+
 def _materialize_meteofrance_grib_france_slot_grids_from_cache_sync(
     api_key: str,
     target_date: Date,
@@ -8718,39 +9442,94 @@ def _materialize_meteofrance_grib_france_slot_grids_from_cache_sync(
             }
         )
 
-    for hour in target_hours:
-        push_progress(hour)
+    def _accumulate(item: dict[str, Any]) -> None:
+        nonlocal ok_count, failed_count, total_range, cached_range, national_hits
+        total_range += int(item.get("total_range_request_count") or 0)
+        cached_range += int(item.get("cached_total_range_request_count") or 0)
+        national_hits += int(item.get("national_field_cache_hit_count") or 0)
+        results.append({
+            "hour": item.get("hour"),
+            "ok": bool(item.get("ok")),
+            "status": item.get("status"),
+            "message": item.get("message"),
+            "cache_hit": bool(item.get("cache_hit")),
+            "total_range_request_count": int(item.get("total_range_request_count") or 0),
+            "national_field_cache_hit_count": int(item.get("national_field_cache_hit_count") or 0),
+            "max_trigger_score": item.get("max_trigger_score"),
+        })
+        if item.get("ok"):
+            ok_count += 1
+        else:
+            failed_count += 1
+
+    def _materialize_one_sync(hour: int) -> dict[str, Any]:
         result = _build_meteofrance_grib_france_slot_grid_sync(
-            api_key,
-            target_date,
-            hour,
+            api_key, target_date, hour,
             requested_grid=requested_grid,
             detail_level=METEOFRANCE_SLOT_GRID_CORE_DETAIL,
-            cache_only=True,
-            force_rebuild=force_rebuild,
+            cache_only=True, force_rebuild=force_rebuild,
         )
         payload_data = result.get("payload") if isinstance(result.get("payload"), dict) else {}
         meta = payload_data.get("meta", {}) if isinstance(payload_data, dict) else {}
-        max_trigger_score = _max_trigger_score_from_grib_payload(payload_data)
-        total_range += int(meta.get("total_range_request_count") or result.get("total_range_request_count") or 0)
-        cached_range += int(meta.get("cached_total_range_request_count") or result.get("cached_total_range_request_count") or 0)
-        national_hits += int(meta.get("national_field_cache_hit_count") or 0)
-        item = {
+        return {
             "hour": hour,
             "ok": bool(result.get("ok")),
             "status": result.get("status"),
             "message": result.get("message"),
             "cache_hit": bool(result.get("cache_hit")),
-            "total_range_request_count": int(meta.get("total_range_request_count") or 0),
+            "total_range_request_count": int(meta.get("total_range_request_count") or result.get("total_range_request_count") or 0),
+            "cached_total_range_request_count": int(meta.get("cached_total_range_request_count") or result.get("cached_total_range_request_count") or 0),
             "national_field_cache_hit_count": int(meta.get("national_field_cache_hit_count") or 0),
-            "max_trigger_score": max_trigger_score,
+            "max_trigger_score": _max_trigger_score_from_grib_payload(payload_data),
         }
-        results.append(item)
-        if result.get("ok"):
-            ok_count += 1
-        else:
-            failed_count += 1
-        push_progress(hour)
+
+    # Parallèle (un processus par créneau, réutilisés) si OBJECTIFOUDRE_PRELOAD_WORKERS > 1 ;
+    # sinon séquentiel. Tout échec d'infrastructure du pool → repli séquentiel propre.
+    pool = _get_preload_process_pool() if len(target_hours) > 1 else None
+    done_parallel = False
+    if pool is not None:
+        # Le modèle actif (contextvar) ne se propage pas aux processus → on le capture ici
+        # pour le redonner à chaque worker (sinon ARPEGE échouerait en cherchant le cache AROME).
+        active_model = _active_nwp_model()
+        try:
+            future_to_hour = {
+                pool.submit(
+                    _preload_worker_materialize_slot,
+                    target_date.isoformat(), hour, api_key, requested_grid, force_rebuild, active_model,
+                ): hour
+                for hour in target_hours
+            }
+            retry_hours: list[int] = []
+            for future in concurrent.futures.as_completed(future_to_hour):
+                hour = future_to_hour[future]
+                try:
+                    item = future.result()
+                except Exception:
+                    item = None
+                if item and item.get("ok"):
+                    _accumulate(item)
+                    push_progress(item.get("hour"))
+                else:
+                    retry_hours.append(hour)
+            # Filet de sécurité : tout créneau non produit par un worker est réessayé EN
+            # SÉQUENTIEL dans le parent (contexte modèle + caches mémoire corrects) → le
+            # parallèle ne peut jamais faire pire que le séquentiel.
+            for hour in sorted(retry_hours):
+                push_progress(hour)
+                _accumulate(_materialize_one_sync(hour))
+                push_progress(hour)
+            done_parallel = True
+        except Exception:
+            # Pool indisponible/cassé : on le réinitialise et on repart en séquentiel.
+            _reset_preload_process_pool()
+            results.clear()
+            ok_count = failed_count = total_range = cached_range = national_hits = 0
+
+    if not done_parallel:
+        for hour in target_hours:
+            push_progress(hour)
+            _accumulate(_materialize_one_sync(hour))
+            push_progress(hour)
 
     elapsed_ms = int((time.time() - started) * 1000)
     if ok_count == len(target_hours):
@@ -8782,6 +9561,7 @@ def _run_meteofrance_grib_national_day_preload_job(
     max_hours: int = 24,
     hours: list[int] | None = None,
     force_rebuild: bool = False,
+    model: str = DEFAULT_NWP_MODEL,
 ) -> None:
     def update_progress(update: dict[str, Any]) -> None:
         progress = copy.deepcopy(update)
@@ -8790,6 +9570,24 @@ def _run_meteofrance_grib_national_day_preload_job(
             job = _grib_auto_preload_jobs.setdefault(job_key, {})
             job.update(progress)
 
+    # Le job tourne dans un thread créé à la main : les contextvars ne se propagent
+    # pas, on re-pose explicitement le modèle capturé au moment du scheduling.
+    with _nwp_model_context(model):
+        _run_meteofrance_grib_national_day_preload_job_inner(
+            job_key, api_key, target_date, requested_grid, max_hours, hours, force_rebuild, update_progress
+        )
+
+
+def _run_meteofrance_grib_national_day_preload_job_inner(
+    job_key: str,
+    api_key: str,
+    target_date: Date,
+    requested_grid: str | None,
+    max_hours: int,
+    hours: list[int] | None,
+    force_rebuild: bool,
+    update_progress: Callable[[dict[str, Any]], None],
+) -> None:
     try:
         result = _preload_meteofrance_grib_national_day_sync(
             api_key,
@@ -8943,7 +9741,7 @@ def _schedule_meteofrance_grib_national_day_preload(
     allowed_hours: list[int] | None = None,
 ) -> dict[str, Any]:
     all_hours = sorted({int(item) for item in (allowed_hours if allowed_hours is not None else list(range(24))) if 0 <= int(item) <= 23})
-    active_specs = [spec for spec in METEOFRANCE_GRIB_SLOT_GRID_SPECS if spec.get("required")]
+    active_specs = [spec for spec in _nwp_slot_grid_specs() if spec.get("required")]
     if not all_hours:
         return {
             "scheduled": False,
@@ -9132,6 +9930,7 @@ def _schedule_meteofrance_grib_national_day_preload(
             "results": [],
         }
         progress = _format_grib_auto_preload_job(job_key, _grib_auto_preload_jobs[job_key])
+    job_model = _active_nwp_model()
     if background_tasks is not None:
         background_tasks.add_task(
             _run_meteofrance_grib_national_day_preload_job,
@@ -9142,13 +9941,14 @@ def _schedule_meteofrance_grib_national_day_preload(
             max_hours,
             hours,
             force_rebuild,
+            job_model,
         )
     else:
         thread = threading.Thread(
             target=_run_meteofrance_grib_national_day_preload_job,
-            args=(job_key, api_key, target_date, requested_grid, max_hours, hours, force_rebuild),
+            args=(job_key, api_key, target_date, requested_grid, max_hours, hours, force_rebuild, job_model),
             daemon=True,
-            name=f"objectifoudre-arome-france-{target_date.isoformat()}",
+            name=f"objectifoudre-{job_model}-france-{target_date.isoformat()}",
         )
         thread.start()
     return {
@@ -9480,6 +10280,50 @@ def _server_meteofrance_api_key_required() -> str:
     return api_key
 
 
+def _server_nwp_api_key(model: str = DEFAULT_NWP_MODEL) -> str | None:
+    """Clé API serveur pour un modèle du registre : variables d'environnement du
+    modèle d'abord, puis fichier local à côté d'app.py (dev) si déclaré. AROME
+    reste env-only (comportement historique inchangé)."""
+    spec = _nwp_model_spec(model)
+    for env_name in spec.get("api_key_env_vars") or ():
+        raw_key = os.environ.get(env_name)
+        if raw_key:
+            try:
+                return _clean_meteofrance_api_key(raw_key)
+            except HTTPException:
+                continue
+    file_name = spec.get("api_key_file")
+    if file_name:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), file_name)
+        try:
+            with open(path, encoding="utf-8") as handle:
+                raw_key = handle.read().strip()
+        except OSError:
+            return None
+        if raw_key:
+            try:
+                return _clean_meteofrance_api_key(raw_key)
+            except HTTPException:
+                return None
+    return None
+
+
+def _nwp_api_key_for_request(model: str, token: str | None) -> str:
+    """Clé API pour une requête front : le token explicite du client gagne, sinon la
+    clé serveur du modèle (les clés de cache d'un modèle sont dérivées de SA clé)."""
+    if token and token.strip():
+        return _clean_meteofrance_api_key(token)
+    api_key = _server_nwp_api_key(model)
+    if api_key:
+        return api_key
+    if model == DEFAULT_NWP_MODEL:
+        return _server_meteofrance_api_key_required()
+    raise HTTPException(
+        status_code=400,
+        detail=f"Clé API Météo-France serveur absente pour le modèle {model.upper()}.",
+    )
+
+
 def _validate_server_preload_secret(secret: str | None) -> None:
     expected = os.environ.get("OBJECTIFOUDRE_PRELOAD_SECRET")
     if expected and secret != expected:
@@ -9498,9 +10342,10 @@ def _validate_server_admin_secret(secret: str) -> None:
         raise HTTPException(status_code=403, detail='Secret de prechargement serveur invalide.')
 
 
-def _server_arome_preload_dates(reference_date: Date | None = None) -> list[Date]:
+def _server_arome_preload_dates(reference_date: Date | None = None, raw_value: str | None = None) -> list[Date]:
     today = reference_date or datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
-    raw_tokens = [item.strip() for item in OBJECTIFOUDRE_AUTO_PRELOAD_DAYS.split(",") if item.strip()]
+    source = raw_value if raw_value is not None else OBJECTIFOUDRE_AUTO_PRELOAD_DAYS
+    raw_tokens = [item.strip() for item in source.split(",") if item.strip()]
     if not raw_tokens:
         raw_tokens = ["today", "tomorrow"]
     aliases = {
@@ -9518,6 +10363,10 @@ def _server_arome_preload_dates(reference_date: Date | None = None) -> list[Date
         "apresdemain": 2,
         "j+2": 2,
         "j2": 2,
+        "j+3": 3,
+        "j3": 3,
+        "j+4": 4,
+        "j4": 4,
     }
     dates: list[Date] = []
     seen: set[str] = set()
@@ -9536,6 +10385,26 @@ def _server_arome_preload_dates(reference_date: Date | None = None) -> list[Date
             seen.add(key)
             dates.append(target_date)
     return dates
+
+
+def _server_arpege_preload_dates(reference_date: Date | None = None) -> list[Date]:
+    """Jours préchargés via ARPEGE : à partir de J+2 (offset == horizon AROME), là où
+    AROME ne couvre plus toute la journée. On exclut J-1..J+1 (AROME complet)."""
+    raw = OBJECTIFOUDRE_AUTO_PRELOAD_ARPEGE_DAYS.strip()
+    if not raw:
+        return []
+    today = reference_date or datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    arome_max = int(_nwp_model_spec("arome").get("max_days_ahead") or 2)
+    out: list[Date] = []
+    seen: set[str] = set()
+    for item in _server_arome_preload_dates(reference_date, raw_value=raw):
+        if (item - today).days < arome_max:
+            continue
+        key = item.isoformat()
+        if key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out
 
 
 def _server_arome_cache_coverage(
@@ -9693,12 +10562,13 @@ def _server_arome_available_hours_for_date(
     all_hours = list(range(24))
     today = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
     cached = sorted({int(item) for item in (cached_hours or []) if 0 <= int(item) <= 23})
+    horizon_hours = int(_active_nwp_spec().get("forecast_horizon_hours") or METEOFRANCE_AROME_FORECAST_HORIZON_HOURS)
     if target_date <= today:
         return {
             "available_hours": all_hours,
             "unavailable_hours": [],
             "reference_time": reference_time,
-            "forecast_horizon_hours": METEOFRANCE_AROME_FORECAST_HORIZON_HOURS,
+            "forecast_horizon_hours": horizon_hours,
             "source": "past_or_current_runs",
         }
     ref_dt = _parse_meteofrance_datetime(reference_time or "")
@@ -9707,11 +10577,11 @@ def _server_arome_available_hours_for_date(
             "available_hours": sorted(set(all_hours) | set(cached)),
             "unavailable_hours": [],
             "reference_time": None,
-            "forecast_horizon_hours": METEOFRANCE_AROME_FORECAST_HORIZON_HOURS,
+            "forecast_horizon_hours": horizon_hours,
             "source": "unknown_reference",
         }
     start_utc = ref_dt.astimezone(timezone.utc)
-    end_utc = start_utc + timedelta(hours=METEOFRANCE_AROME_FORECAST_HORIZON_HOURS)
+    end_utc = start_utc + timedelta(hours=horizon_hours)
     available: set[int] = set(cached)
     for hour in all_hours:
         slot_utc = datetime.combine(target_date, Time(hour=hour), tzinfo=OBJECTIFOUDRE_SERVER_TIMEZONE).astimezone(timezone.utc)
@@ -9723,7 +10593,7 @@ def _server_arome_available_hours_for_date(
         "unavailable_hours": [hour for hour in all_hours if hour not in available],
         "reference_time": start_utc.isoformat(timespec="seconds").replace("+00:00", "Z"),
         "available_until": end_utc.isoformat(timespec="seconds").replace("+00:00", "Z"),
-        "forecast_horizon_hours": METEOFRANCE_AROME_FORECAST_HORIZON_HOURS,
+        "forecast_horizon_hours": horizon_hours,
         "source": "run_horizon_plus_cache",
     }
 
@@ -9783,7 +10653,9 @@ def _server_arome_latest_api_run_sync(api_key: str, requested_grid: str | None =
                     latest_max_end = max(latest_max_end, _bounds[1])
             latest["available_time_groups"] = latest_groups
             latest["max_forecast_hour"] = latest_max_end
-            latest["complete"] = (not latest_groups) or latest_max_end >= METEOFRANCE_AROME_FORECAST_HORIZON_HOURS
+            latest["complete"] = (not latest_groups) or latest_max_end >= int(
+                _active_nwp_spec().get("forecast_horizon_hours") or METEOFRANCE_AROME_FORECAST_HORIZON_HOURS
+            )
         except Exception:
             latest["complete"] = True  # en cas de doute, ne pas bloquer le rattrapage
         return {
@@ -9928,6 +10800,8 @@ def _server_arome_automation_config() -> dict[str, Any]:
         'cache_dir_status': _server_arome_cache_dir_status(),
         'grid': OBJECTIFOUDRE_AUTO_PRELOAD_GRID,
         'days': [item.isoformat() for item in _server_arome_preload_dates()],
+        'arpege_days': [item.isoformat() for item in _server_arpege_preload_dates()],
+        'arpege_server_key_configured': bool(_server_nwp_api_key('arpege')),
         'interval_seconds': OBJECTIFOUDRE_AUTO_PRELOAD_INTERVAL_SECONDS,
         'arome_run_update_interval_seconds': OBJECTIFOUDRE_AROME_RUN_UPDATE_INTERVAL_SECONDS,
         'arome_run_availability_delay_seconds': OBJECTIFOUDRE_AROME_RUN_AVAILABILITY_DELAY_SECONDS,
@@ -9952,12 +10826,65 @@ def _server_arome_automation_status() -> dict[str, Any]:
     with _server_arome_automation_lock:
         state = copy.deepcopy(_server_arome_automation_state)
     availability_reference_time, availability_reference_source = _server_arome_availability_reference(state, run_schedule)
-    coverage = []
+    # Couverture FUSIONNÉE par date : un jour mixte (ex. J+2 = AROME le matin, ARPEGE
+    # l'après-midi) renvoie l'union des heures disponibles/en cache des deux modèles,
+    # avec le détail par modèle. Le front lit une seule entrée par date.
+    today = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    arpege_key = _server_nwp_api_key("arpege")
+    arpege_ref = str(state.get("last_arpege_api_run_reference_time") or "") or None
+    by_date: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+
+    def _hour_set(values: Any) -> set[int]:
+        return {int(x) for x in (values or []) if 0 <= int(x) <= 23}
+
+    def _add_model_coverage(item_date: Date, cov: dict[str, Any], model: str) -> None:
+        key = item_date.isoformat()
+        if key not in by_date:
+            by_date[key] = {
+                "date": key,
+                "available_hours": set(),
+                "cached_hours": set(),
+                "by_model": {},
+                "nwp_model": model,
+            }
+            order.append(key)
+        entry = by_date[key]
+        entry["available_hours"] |= _hour_set(cov.get("available_hours"))
+        entry["cached_hours"] |= _hour_set(cov.get("cached_hours"))
+        entry["by_model"][model] = cov
+
     if api_key:
-        coverage = [
-            _server_arome_cache_coverage(api_key, item, OBJECTIFOUDRE_AUTO_PRELOAD_GRID, availability_reference_time)
-            for item in dates
-        ]
+        for item in dates:
+            cov = _server_arome_cache_coverage(api_key, item, OBJECTIFOUDRE_AUTO_PRELOAD_GRID, availability_reference_time)
+            cov["nwp_model"] = "arome"
+            _add_model_coverage(item, cov, "arome")
+    if arpege_key:
+        with _nwp_model_context("arpege"):
+            for item_date in _server_arpege_preload_dates():
+                cov = _server_arome_cache_coverage(arpege_key, item_date, None, arpege_ref)
+                cov["nwp_model"] = "arpege"
+                _add_model_coverage(item_date, cov, "arpege")
+
+    coverage = []
+    for key in order:
+        entry = by_date[key]
+        available = sorted(entry["available_hours"])
+        cached = sorted(entry["cached_hours"])
+        missing = [h for h in available if h not in entry["cached_hours"]]
+        models = list(entry["by_model"].keys())
+        coverage.append({
+            "date": key,
+            "nwp_model": entry["nwp_model"],
+            "models": models,
+            "available_hours": available,
+            "cached_hours": cached,
+            "missing_hours": missing,
+            "ok_count": len(cached),
+            "hour_count": len(available),
+            "complete": bool(available) and not missing,
+            "by_model": entry["by_model"],
+        })
     return {
         "ok": True,
         "config": _server_arome_automation_config(),
@@ -10015,6 +10942,36 @@ def _server_arome_clear_rebuild_marker(date_iso: str) -> None:
             _server_arome_automation_state["rebuild_markers"] = markers
 
 
+# Marqueur « meilleur effort » : pour un jour qui reste INCOMPLET avec le run courant
+# (heures restantes hors données du modèle — ex. ARPEGE 3-horaire au bord de l'horizon
+# à J+4), on mémorise le nombre d'heures atteint pour ce run afin de NE PAS re-matérialiser
+# en boucle (sinon le serveur reste saturé et tout le front rame). On ne retente que si
+# le run change ou si le cache a pu grandir.
+def _server_arome_best_effort_marker(key: str) -> dict[str, Any] | None:
+    with _server_arome_automation_lock:
+        markers = _server_arome_automation_state.get("best_effort_markers")
+        if isinstance(markers, dict):
+            entry = markers.get(key)
+            return dict(entry) if isinstance(entry, dict) else None
+    return None
+
+
+def _server_arome_set_best_effort_marker(key: str, run_ref: str | None, cached_count: int) -> None:
+    with _server_arome_automation_lock:
+        markers = dict(_server_arome_automation_state.get("best_effort_markers") or {})
+        markers[key] = {"run_ref": run_ref, "cached_count": int(cached_count), "at": time.time()}
+        _server_arome_automation_state["best_effort_markers"] = markers
+
+
+def _server_arome_clear_best_effort_marker(key: str) -> None:
+    with _server_arome_automation_lock:
+        markers = _server_arome_automation_state.get("best_effort_markers")
+        if isinstance(markers, dict) and key in markers:
+            markers = dict(markers)
+            markers.pop(key, None)
+            _server_arome_automation_state["best_effort_markers"] = markers
+
+
 def _server_arome_automation_loop() -> None:
     _update_server_arome_automation_state(
         enabled=True,
@@ -10040,6 +10997,8 @@ def _server_arome_automation_loop() -> None:
 
             requested_grid = OBJECTIFOUDRE_AUTO_PRELOAD_GRID
             target_dates = _server_arome_preload_dates()
+            arpege_dates = _server_arpege_preload_dates()
+            arpege_api_key = _server_nwp_api_key("arpege") if arpege_dates else None
             run_schedule = _server_arome_run_schedule()
             if not target_dates:
                 _update_server_arome_automation_state(
@@ -10122,16 +11081,53 @@ def _server_arome_automation_loop() -> None:
                 _server_arome_automation_stop.wait(wait_seconds)
                 continue
 
+            # Run ARPEGE du cycle (une seule découverte catalogue, sous contexte arpege).
+            arpege_api_ref = None
+            arpege_api_run_max_forecast_hour = None
+            if arpege_dates and arpege_api_key:
+                try:
+                    with _nwp_model_context("arpege"):
+                        arpege_api_run = _server_arome_latest_api_run_sync(arpege_api_key, None)
+                    if arpege_api_run.get("ok"):
+                        arpege_api_ref = _server_arome_normalize_reference_time(str(arpege_api_run.get("reference_time") or ""))
+                        arpege_api_run_max_forecast_hour = arpege_api_run.get("max_forecast_hour")
+                    _update_server_arome_automation_state(
+                        running=True,
+                        last_arpege_api_run_reference_time=arpege_api_ref,
+                        last_arpege_api_run_max_forecast_hour=arpege_api_run_max_forecast_hour,
+                    )
+                except Exception as exc:
+                    _update_server_arome_automation_state(running=True, last_arpege_api_run_error=str(exc))
+
             launched_job = False
             launched_incomplete_rebuild = False
             blocked_by_pending_run = False
             blocked_by_stale_rebuild = False
             last_schedule = None
-            for target_date in target_dates:
+            # Sauvegarde des paramètres AROME : la boucle les permute par modèle, la
+            # logique d'attente après la boucle doit retrouver les valeurs AROME.
+            arome_loop_params = (api_key, api_ref, api_run_is_expected, api_run_max_forecast_hour, expected_ref, requested_grid)
+            target_items = [("arome", item) for item in target_dates]
+            if arpege_api_key and arpege_api_ref:
+                target_items.extend(("arpege", item) for item in arpege_dates)
+            for nwp_model_id, target_date in target_items:
                 if _server_arome_automation_stop.is_set():
                     break
+                if nwp_model_id == "arome":
+                    api_key, api_ref, api_run_is_expected, api_run_max_forecast_hour, expected_ref, requested_grid = arome_loop_params
+                else:
+                    # ARPEGE : pas de cadence « run attendu » gérée (runs toutes les 6 h),
+                    # on reconstruit dès qu'un nouveau run est visible au catalogue.
+                    api_key = arpege_api_key
+                    api_ref = arpege_api_ref
+                    api_run_is_expected = True
+                    api_run_max_forecast_hour = arpege_api_run_max_forecast_hour
+                    expected_ref = ""
+                    requested_grid = None
+                marker_key = target_date.isoformat() if nwp_model_id == "arome" else f"{nwp_model_id}:{target_date.isoformat()}"
                 availability_ref_for_date = api_ref or expected_ref or None
-                coverage = _server_arome_cache_coverage(api_key, target_date, requested_grid, availability_ref_for_date)
+                with _nwp_model_context(nwp_model_id):
+                    coverage = _server_arome_cache_coverage(api_key, target_date, requested_grid, availability_ref_for_date)
                 cached_hours = [int(item) for item in (coverage.get("cached_hours") or []) if 0 <= int(item) <= 23]
                 cached_ref = coverage.get("cached_api_run_reference_time")
                 cache_complete = bool(coverage.get("complete"))
@@ -10141,6 +11137,7 @@ def _server_arome_automation_loop() -> None:
                 coverage_status = dict(coverage)
                 coverage_status.update(
                     {
+                        "nwp_model": nwp_model_id,
                         "api_run_reference_time": api_ref,
                         "expected_api_run_reference_time": expected_ref or None,
                         "api_run_is_expected": api_run_is_expected,
@@ -10150,7 +11147,7 @@ def _server_arome_automation_loop() -> None:
                 )
                 _update_server_arome_automation_state(
                     running=True,
-                    message=f"Vérification du cache AROME France {target_date.isoformat()} avec run API {api_ref or 'inconnu'}.",
+                    message=f"Vérification du cache {nwp_model_id.upper()} France {target_date.isoformat()} avec run API {api_ref or 'inconnu'}.",
                     last_coverage=coverage_status,
                     quota_cooldown_seconds=0,
                 )
@@ -10164,6 +11161,24 @@ def _server_arome_automation_loop() -> None:
                     blocked_by_pending_run = True
                     continue
 
+                # Garde-fou « meilleur effort » : jour INCOMPLET déjà matérialisé au mieux
+                # pour ce run (les heures restantes ne sont pas dans les données du modèle —
+                # ex. ARPEGE 3-horaire au bord de l'horizon à J+4). On ne re-matérialise pas
+                # à chaque cycle (évite la boucle perpétuelle qui sature le serveur).
+                if not run_changed:
+                    be = _server_arome_best_effort_marker(marker_key)
+                    if be and be.get("run_ref") == api_ref and len(cached_hours) <= int(be.get("cached_count") or -1):
+                        blocked_by_stale_rebuild = True
+                        _update_server_arome_automation_state(
+                            running=True,
+                            message=(
+                                f"{nwp_model_id.upper()} {target_date.isoformat()} : couverture déjà au mieux pour ce run "
+                                f"({len(cached_hours)} h ; heures restantes hors données du modèle) ; attente d'un nouveau run."
+                            ),
+                            last_coverage=coverage_status,
+                        )
+                        continue
+
                 # Garde-fou anti-boucle : si on a déjà fait le meilleur effort pour ce jour
                 # avec ce run (même run_ref ET pas de nouveaux groupes), et que la dernière
                 # reconstruction n'a pas pu adopter le dernier run, on ne reconstruit pas à
@@ -10171,7 +11186,7 @@ def _server_arome_automation_loop() -> None:
                 # manquants), et jour courant dont les heures passées ne sont pas couvrables
                 # par le dernier run. On relance seulement si le run change ou s'enrichit.
                 if run_changed and cache_complete:
-                    marker = _server_arome_rebuild_marker(target_date.isoformat())
+                    marker = _server_arome_rebuild_marker(marker_key)
                     already_best_effort = bool(
                         marker
                         and marker.get("run_ref") == api_ref
@@ -10184,21 +11199,22 @@ def _server_arome_automation_loop() -> None:
                         _update_server_arome_automation_state(
                             running=True,
                             message=(
-                                f"Run AROME {api_ref} : couverture {target_date.isoformat()} déjà au mieux "
+                                f"Run {nwp_model_id.upper()} {api_ref} : couverture {target_date.isoformat()} déjà au mieux "
                                 f"(heures restantes non couvrables par ce run) ; attente d'un nouveau run/groupe."
                             ),
                             last_coverage=coverage_status,
                         )
                         continue
 
-                schedule = _schedule_meteofrance_grib_national_day_preload(
-                    None,
-                    api_key,
-                    target_date,
-                    requested_grid,
-                    force_rebuild=run_changed,
-                    allowed_hours=available_hours,
-                )
+                with _nwp_model_context(nwp_model_id):
+                    schedule = _schedule_meteofrance_grib_national_day_preload(
+                        None,
+                        api_key,
+                        target_date,
+                        requested_grid,
+                        force_rebuild=run_changed,
+                        allowed_hours=available_hours,
+                    )
                 last_schedule = schedule
                 launched_job = bool(schedule.get("scheduled") or schedule.get("already_running"))
                 job_key = schedule.get("job_key")
@@ -10263,16 +11279,34 @@ def _server_arome_automation_loop() -> None:
                     # partiel, ou heures passées non couvrables) -> on mémorise ce meilleur
                     # effort pour ne pas refaire la même reconstruction au prochain cycle.
                     if run_changed and final_status.get("ok"):
-                        cached_ref_after = _server_arome_normalize_reference_time(
-                            _server_arome_cached_run_reference(api_key, target_date, requested_grid)
-                        )
+                        with _nwp_model_context(nwp_model_id):
+                            cached_ref_after = _server_arome_normalize_reference_time(
+                                _server_arome_cached_run_reference(api_key, target_date, requested_grid)
+                            )
                         if cached_ref_after == api_ref:
-                            _server_arome_clear_rebuild_marker(target_date.isoformat())
+                            _server_arome_clear_rebuild_marker(marker_key)
                         else:
                             launched_incomplete_rebuild = True
                             _server_arome_set_rebuild_marker(
-                                target_date.isoformat(), api_ref, api_run_max_forecast_hour, cached_ref_after
+                                marker_key, api_ref, api_run_max_forecast_hour, cached_ref_after
                             )
+
+                    # Meilleur effort : après le job, si le jour reste INCOMPLET (heures hors
+                    # données du modèle), on mémorise le niveau atteint pour ce run et on
+                    # n'y retouche plus avant un nouveau run (sinon boucle perpétuelle).
+                    if final_status.get("ok"):
+                        with _nwp_model_context(nwp_model_id):
+                            cov_after = _server_arome_cache_coverage(api_key, target_date, requested_grid, availability_ref_for_date)
+                        cached_after = [int(x) for x in (cov_after.get("cached_hours") or []) if 0 <= int(x) <= 23]
+                        if cov_after.get("complete"):
+                            _server_arome_clear_best_effort_marker(marker_key)
+                        else:
+                            _server_arome_set_best_effort_marker(marker_key, api_ref, len(cached_after))
+                            blocked_by_stale_rebuild = True
+
+            # Restaure les paramètres AROME (la boucle a pu les permuter sur un jour ARPEGE)
+            # pour que la logique d'attente ci-dessous raisonne sur le run AROME.
+            api_key, api_ref, api_run_is_expected, api_run_max_forecast_hour, expected_ref, requested_grid = arome_loop_params
 
             if cooldown > 0:
                 wait_seconds = min(cooldown, 60)
@@ -10376,6 +11410,7 @@ def _startup_server_arome_automation() -> None:
 def _shutdown_server_arome_automation() -> None:
     _stop_server_arome_automation_thread()
     _lightning_automation_stop.set()
+    _reset_preload_process_pool()
 
 
 def _probe_meteofrance_grib_profile_sync(
@@ -12169,17 +13204,120 @@ def _project_grib_result_for_render(result: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _serve_france_slot_from_archive(target_date: Date, hour: int) -> dict[str, Any] | None:
+    """Repli durable pour un créneau France d'un jour PASSÉ absent du cache live :
+    on relit le créneau archivé (history/, rétention 180 j) plutôt que de le préchauffer.
+    L'archive brute garde les cellules COMPLÈTES → la frise ET les détails de cellule
+    fonctionnent. Le payload a la même forme qu'un résultat live ; le rendu l'accepte déjà."""
+    if not OBJECTIFOUDRE_HISTORY_ENABLED:
+        return None
+    path = _history_slot_path(target_date.isoformat(), hour)
+    if not path.exists():
+        return None
+    try:
+        record = _read_history_gzip(path)
+    except Exception:
+        return None
+    payload = record.get("payload") if isinstance(record, dict) else None
+    if not isinstance(payload, dict):
+        return None
+    base_meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    payload = {**payload, "meta": {**base_meta, "history": True, "source_label": "Historique ObjectiFoudre (archive)"}}
+    return {"ok": True, "status": 200, "history": True, "cache_hit": True, "payload": payload}
+
+
+def _serve_france_slot_models_sync(target_date: Date, hour: int, grid: str | None, detail_level: str, token: str | None) -> dict[str, Any]:
+    """Sert un créneau France en essayant les modèles applicables dans l'ordre
+    (AROME puis ARPEGE) et en gardant le PREMIER qui a le créneau en cache. Réalise
+    le relais AROME→ARPEGE créneau par créneau (ex. J+2 12h+ non couvert par AROME).
+    Pour un jour PASSÉ absent du cache live (ex. J-1, plus préchargé), repli sur l'archive."""
+    models = _nwp_models_for_date(target_date) or [DEFAULT_NWP_MODEL]
+    last_result: dict[str, Any] | None = None
+    for model in models:
+        try:
+            api_key = _nwp_api_key_for_request(model, token)
+        except HTTPException:
+            continue
+        with _nwp_model_context(model):
+            result = _get_meteofrance_grib_france_slot_grid_cached_sync(
+                api_key, target_date, hour, requested_grid=grid, detail_level=detail_level,
+            )
+        last_result = result
+        if result.get("ok"):
+            return result
+    today = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    if target_date < today:
+        archived = _serve_france_slot_from_archive(target_date, hour)
+        if archived:
+            return archived
+    return last_result or {"ok": False, "status": 404, "message": "Aucune grille France en cache pour ce créneau."}
+
+
+def _serve_france_day_models_sync(target_date: Date, grid: str | None, detail_level: str, token: str | None) -> dict[str, Any]:
+    """Lot des 24 h d'un jour, chaque créneau servi par le meilleur modèle disponible
+    (AROME puis ARPEGE). Permet à un jour mixte (AROME le matin, ARPEGE l'après-midi)
+    d'être servi en un lot cohérent."""
+    slots: list[dict[str, Any]] = []
+    cached_hours: list[int] = []
+    missing_hours: list[int] = []
+    first_meta: dict[str, Any] = {}
+    for hour in range(24):
+        res = _serve_france_slot_models_sync(target_date, hour, grid, detail_level, token)
+        payload = res.get("payload") if isinstance(res.get("payload"), dict) else {}
+        days = payload.get("days") if isinstance(payload, dict) else []
+        day = days[0] if isinstance(days, list) and days else {}
+        day_slots = day.get("slots") if isinstance(day, dict) else []
+        slot = day_slots[0] if isinstance(day_slots, list) and day_slots else None
+        if res.get("ok") and isinstance(slot, dict):
+            slots.append(slot)
+            cached_hours.append(hour)
+            if not first_meta:
+                first_meta = copy.deepcopy(payload.get("meta") if isinstance(payload.get("meta"), dict) else {})
+        else:
+            missing_hours.append(hour)
+    meta = {
+        **first_meta,
+        "provider": "meteofrance_arome_grib",
+        "source_provider": "meteofrance_arome_grib",
+        "source_label": "Météo-France AROME/ARPEGE GRIB cache",
+        "requested_date": target_date.isoformat(),
+        "detail_level": detail_level,
+        "cache_only": True,
+        "batch_cache": True,
+        "grid_scope": "france",
+        "france_grid": True,
+        "country_mask": "france",
+        "cached_hours": cached_hours,
+        "missing_hours": missing_hours,
+    }
+    payload = {
+        "meta": meta,
+        "days": [{"day_key": target_date.isoformat(), "day_label": target_date.isoformat(), "day_index": 0, "slots": slots}],
+    }
+    return {
+        "ok": bool(slots),
+        "status": 200 if slots else 404,
+        "cache_only": True,
+        "grid_scope": "france",
+        "france_grid": True,
+        "date": target_date.isoformat(),
+        "detail_level": detail_level,
+        "cached_hours": cached_hours,
+        "cached_slot_keys": [f"h{hour:02d}" for hour in cached_hours],
+        "payload": payload,
+    }
+
+
 @app.post("/api/meteofrance/grib-france-slot-grid-cache")
 async def meteofrance_grib_france_slot_grid_cache(payload: MeteoFranceGribSlotGridRequest) -> dict[str, Any]:
-    api_key = _meteofrance_api_key_from_optional_token(payload.token, allow_server_key=True)
     requested_render = (payload.detail_level or "").strip().lower() == METEOFRANCE_SLOT_GRID_RENDER_DETAIL
     result = await asyncio.to_thread(
-        _get_meteofrance_grib_france_slot_grid_cached_sync,
-        api_key,
+        _serve_france_slot_models_sync,
         payload.date,
         payload.hour,
         payload.grid,
         payload.detail_level,
+        payload.token,
     )
     if requested_render and result.get("ok"):
         result = _project_grib_result_for_render(result)
@@ -12198,14 +13336,13 @@ class MeteoFranceCellDetailsRequest(BaseModel):
 async def meteofrance_grib_france_cell_details(payload: MeteoFranceCellDetailsRequest) -> dict[str, Any]:
     """Cellule COMPLÈTE (metric_scores, metrics_used, diagnostics…) pour le modal de
     détails, quand la grille a été chargée en niveau « render » allégé."""
-    api_key = _meteofrance_api_key_from_optional_token(payload.token, allow_server_key=True)
     result = await asyncio.to_thread(
-        _get_meteofrance_grib_france_slot_grid_cached_sync,
-        api_key,
+        _serve_france_slot_models_sync,
         payload.date,
         payload.hour,
         payload.grid,
         METEOFRANCE_SLOT_GRID_CORE_DETAIL,
+        payload.token,
     )
     if not result.get("ok"):
         return {"ok": False, "status": result.get("status") or 404, "message": result.get("message") or "Grille absente du cache."}
@@ -12221,14 +13358,18 @@ async def meteofrance_grib_france_cell_details(payload: MeteoFranceCellDetailsRe
 
 @app.post("/api/meteofrance/grib-france-day-cache")
 async def meteofrance_grib_france_day_cache(payload: MeteoFranceGribCacheStatusRequest) -> dict[str, Any]:
-    api_key = _meteofrance_api_key_from_optional_token(payload.token, allow_server_key=True)
+    requested_render = (payload.detail_level or "").strip().lower() == METEOFRANCE_SLOT_GRID_RENDER_DETAIL
     result = await asyncio.to_thread(
-        _get_meteofrance_grib_france_day_cached_sync,
-        api_key,
+        _serve_france_day_models_sync,
         payload.date,
         payload.grid,
         payload.detail_level,
+        payload.token,
     )
+    # Projection « render » : lot des 24 h allégé (sans les champs lourds par cellule)
+    # pour le préchargement multi-jours de la page Prévision/Tendance.
+    if requested_render and result.get("ok"):
+        result = _project_grib_result_for_render(result)
     return result
 
 
@@ -12392,17 +13533,53 @@ async def meteofrance_grib_cache_status(payload: MeteoFranceGribCacheStatusReque
     return result
 
 
+def _meteofrance_grib_france_cache_status_models_sync(target_date: Date, grid: str | None, detail_level: str, token: str | None) -> dict[str, Any]:
+    """Statut de cache FUSIONNÉ sur les modèles applicables (AROME ∪ ARPEGE) : un jour
+    mixte (J+2) renvoie l'union des heures en cache/disponibles des deux modèles."""
+    models = _nwp_models_for_date(target_date) or [DEFAULT_NWP_MODEL]
+    base: dict[str, Any] | None = None
+    cached: set[int] = set()
+    available: set[int] = set()
+    for model in models:
+        try:
+            api_key = _nwp_api_key_for_request(model, token)
+        except HTTPException:
+            continue
+        with _nwp_model_context(model):
+            res = _meteofrance_grib_france_slot_grid_cache_status_sync(api_key, target_date, grid, detail_level)
+        if not isinstance(res, dict) or not res.get("ok"):
+            continue
+        base = res if base is None else base
+        cached |= {int(h) for h in (res.get("cached_hours") or []) if 0 <= int(h) <= 23}
+        available |= {int(h) for h in (res.get("available_hours") or []) if 0 <= int(h) <= 23}
+    if base is None:
+        return {"ok": False, "status": 404, "date": target_date.isoformat(), "message": "Aucun statut de cache disponible."}
+    cached_hours = sorted(cached)
+    available_hours = sorted(available)
+    unavailable_hours = [h for h in range(24) if h not in available]
+    out = dict(base)
+    out.update({
+        "models": models,
+        "cached_hours": cached_hours,
+        "cached_slot_keys": [f"h{h:02d}" for h in cached_hours],
+        "available_hours": available_hours,
+        "available_slot_keys": [f"h{h:02d}" for h in available_hours],
+        "unavailable_hours": unavailable_hours,
+        "unavailable_slot_keys": [f"h{h:02d}" for h in unavailable_hours],
+        "partial_availability": len(available_hours) < 24,
+    })
+    return out
+
+
 @app.post("/api/meteofrance/grib-france-cache-status")
 async def meteofrance_grib_france_cache_status(payload: MeteoFranceGribCacheStatusRequest) -> dict[str, Any]:
-    api_key = _meteofrance_api_key_from_optional_token(payload.token, allow_server_key=True)
-    result = await asyncio.to_thread(
-        _meteofrance_grib_france_slot_grid_cache_status_sync,
-        api_key,
+    return await asyncio.to_thread(
+        _meteofrance_grib_france_cache_status_models_sync,
         payload.date,
         payload.grid,
         payload.detail_level,
+        payload.token,
     )
-    return result
 
 
 @app.post("/api/meteofrance/grib-preload")
@@ -12468,6 +13645,758 @@ async def meteofrance_grib_preload_status(job_key: str = Query(..., min_length=8
 @app.get("/api/server/arome-automation-status")
 async def server_arome_automation_status() -> dict[str, Any]:
     return await asyncio.to_thread(_server_arome_automation_status)
+
+
+def _server_nwp_models_overview_sync(probe: bool) -> dict[str, Any]:
+    models = []
+    for model_id, spec in NWP_MODEL_REGISTRY.items():
+        api_key = _server_nwp_api_key(model_id)
+        entry: dict[str, Any] = {
+            "id": model_id,
+            "label": spec["label"],
+            "package_api_base": spec["package_api_base"],
+            "package_model": spec["package_model"],
+            "preferred_grids": list(spec["preferred_grids"]),
+            "surface_package_candidates": list(spec["surface_package_candidates"]),
+            "forecast_horizon_hours": spec["forecast_horizon_hours"],
+            "max_days_ahead": spec["max_days_ahead"],
+            "cache_scope_prefix": spec["cache_scope_prefix"],
+            "api_key_env_vars": list(spec["api_key_env_vars"]),
+            "api_key_file": spec["api_key_file"],
+            "server_key_configured": bool(api_key),
+        }
+        if probe:
+            if not api_key:
+                entry["probe"] = {"ok": False, "error": "Clé API serveur absente pour ce modèle."}
+            else:
+                try:
+                    context = _resolve_meteofrance_package_base(api_key, None, model=model_id)
+                    package_ids = [str(item.get("id") or "") for item in context.get("packages") or []]
+                    probe_info: dict[str, Any] = {
+                        "ok": True,
+                        "grid": context.get("grid"),
+                        "packages": package_ids,
+                        "metadata_cache_hit": bool(context.get("metadata_cache_hit")),
+                    }
+                    surface_candidates = [item for item in spec["surface_package_candidates"] if item in set(package_ids)]
+                    if surface_candidates:
+                        package_url = f"{context['packages_url']}/{urllib.parse.quote(surface_candidates[0])}"
+                        _, _, package_payload = _fetch_meteofrance_package_json(api_key, package_url)
+                        run_links = _package_run_links(package_payload)
+                        probe_info["package_probed"] = surface_candidates[0]
+                        probe_info["runs"] = [item["reference_time"] for item in run_links[:4]]
+                        if run_links:
+                            _, _, run_payload = _fetch_meteofrance_package_json(api_key, run_links[0]["href"])
+                            probe_info["latest_run_time_groups"] = [
+                                str(item.get("time") or "") for item in _package_product_links(run_payload)
+                            ]
+                    entry["probe"] = probe_info
+                except Exception as exc:
+                    entry["probe"] = {"ok": False, "error": str(exc)}
+        models.append(entry)
+    return {"ok": True, "default_model": DEFAULT_NWP_MODEL, "models": models}
+
+
+@app.get("/api/server/nwp-models")
+async def server_nwp_models(probe: bool = False) -> dict[str, Any]:
+    """Registre des modèles PNT + sonde optionnelle du catalogue paquets de chaque
+    modèle (grilles, paquets, runs, groupes d'échéances) avec sa clé serveur."""
+    return await asyncio.to_thread(_server_nwp_models_overview_sync, probe)
+
+
+class EcmwfTrendDayRequest(BaseModel):
+    date: Date
+
+
+@app.get("/api/ecmwf/trend-status")
+async def ecmwf_trend_status() -> dict[str, Any]:
+    """Run ECMWF open data disponible + liste des 6 jours de tendance J+5 → J+10
+    (avec l'état de cache de chacun)."""
+    return await asyncio.to_thread(_ecmwf_trend_status_sync)
+
+
+@app.post("/api/ecmwf/trend-day")
+async def ecmwf_trend_day(payload: EcmwfTrendDayRequest) -> dict[str, Any]:
+    """Grille tendance ECMWF d'un jour (J+5 → J+10), scorée et projetée « render ».
+    Construit à la demande puis mise en cache pour la durée de vie du run."""
+    today = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    offset = (payload.date - today).days
+    if offset < min(ECMWF_TREND_DAYS_AHEAD) or offset > max(ECMWF_TREND_DAYS_AHEAD):
+        return {
+            "ok": False,
+            "status": 400,
+            "message": f"La tendance ECMWF couvre J+{min(ECMWF_TREND_DAYS_AHEAD)} → J+{max(ECMWF_TREND_DAYS_AHEAD)}. Sélection : {payload.date.isoformat()}.",
+        }
+    run = await asyncio.to_thread(_ecmwf_latest_trend_run, today)
+    if run is None:
+        return {"ok": False, "status": 503, "message": "Aucun run ECMWF open data disponible."}
+    run_date, run_hour = run
+    return await asyncio.to_thread(_ecmwf_build_trend_day_sync, payload.date, run_date, run_hour)
+
+
+# ============== Mode « En chasse » — AROME-PI (prévision immédiate) ==============
+# AROME-PI = nowcasting Météo-France (maille ~1,3 km, pas 15 min, ~H+15min → +6h,
+# run horaire). API WMS (tuiles rendues, EPSG:4326 seulement) + WCS (valeurs au point,
+# GeoTIFF). Clé dédiée (abonnement séparé). Le radar OBSERVÉ vient de RainViewer côté
+# front (gratuit, sans clé). Le WMS exige la clé → proxy serveur obligatoire (la clé ne
+# doit jamais atteindre le navigateur).
+METEOFRANCE_AROMEPI_WMS_URL = "https://public-api.meteofrance.fr/public/aromepi/1.0/wms/MF-NWP-HIGHRES-AROMEPI-001-FRANCE-WMS"
+# PNG 256×256 transparent renvoyé quand une tuile WMS échoue (évite les 502 et l'erreur
+# MapLibre « source image could not be decoded » : la tuile doit faire la taille attendue,
+# pas 1×1). Généré via Pillow ; repli 1×1 si Pillow absent.
+def _aromepi_make_transparent_png() -> bytes:
+    try:
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new("RGBA", (256, 256), (0, 0, 0, 0)).save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMCAQDhUkXkAAAAAElFTkSuQmCC"
+        )
+
+
+AROMEPI_TRANSPARENT_PNG = _aromepi_make_transparent_png()
+METEOFRANCE_AROMEPI_WCS_URL = "https://public-api.meteofrance.fr/public/aromepi/1.0/wcs/MF-NWP-HIGHRES-AROMEPI-001-FRANCE-WCS"
+AROMEPI_NOWCAST_HORIZON_HOURS = 6
+AROMEPI_CAPABILITIES_TTL_SECONDS = 300
+# clé -> couche WMS / préfixe WCS (= même nom) / libellé / unité. La réflectivité est la
+# couche maîtresse (radar simulé). styles WMS = défaut (vide) → rendu ombré officiel.
+# Par couche : nom WMS, libellé, unité, et options de requête WCS au point :
+#  - wcs_accum : suffixe d'accumulation du coverageId (rafales/graupel sont des max sur
+#    une période ; `_PT15M` = sur les 15 min de l'échéance) ;
+#  - wcs_height : niveau (m) requis pour les coverages SPECIFIC_HEIGHT (rafales 10 m) ;
+#  - wcs_scale : facteur d'échelle appliqué à la valeur (rafales m/s → km/h) ;
+#  - point : False = pas de valeur au point (MOCON est analyse-seule en WCS), couche carte
+#    seulement.
+AROMEPI_LAYERS = {
+    "reflectivity": {"layer": "REFLECTIVITY_MAX_DBZ__GROUND_OR_WATER_SURFACE", "label": "Réflectivité", "unit": "dBZ", "primary": True},
+    "hail": {"layer": "DIAG_GRELE__GROUND_OR_WATER_SURFACE", "label": "Grêle", "unit": ""},
+    "graupel": {"layer": "GRAUPEL__GROUND_OR_WATER_SURFACE", "label": "Graupel", "unit": "kg/m²", "wcs_accum": "_PT15M"},
+    "gusts": {"layer": "WIND_SPEED_GUST_15MIN__SPECIFIC_HEIGHT_LEVEL_ABOVE_GROUND", "label": "Rafales 15 min", "unit": "km/h", "wcs_accum": "_PT15M", "wcs_height": 10, "wcs_scale": 3.6},
+    "cape": {"layer": "CONVECTIVE_AVAILABLE_POTENTIAL_ENERGY__GROUND_OR_WATER_SURFACE", "label": "CAPE", "unit": "J/kg"},
+    "mocon": {"layer": "MOCON__GROUND_OR_WATER_SURFACE", "label": "MOCON", "unit": "g/kg/s", "point": False},
+}
+
+# Emprise des données AROME-PI (lat 37.5–55.4, lon -12–16). Sert de bbox unique pour
+# l'image plein-domaine et de coins pour la source MapLibre `image`.
+AROMEPI_DOMAIN = {"min_lat": 37.5, "min_lon": -12.0, "max_lat": 55.4, "max_lon": 16.0}
+
+
+def _aromepi_api_key() -> str | None:
+    raw = os.environ.get("METEOFRANCE_AROME_PI_API_KEY") or os.environ.get("METEOFRANCE_AROMEPI_API_KEY")
+    if not raw:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Clef API AROME PI.txt")
+        try:
+            with open(path, encoding="utf-8") as handle:
+                raw = handle.read().strip()
+        except OSError:
+            return None
+    if not raw:
+        return None
+    try:
+        return _clean_meteofrance_api_key(raw)
+    except HTTPException:
+        return None
+
+
+def _aromepi_http_get(url: str, api_key: str, timeout: int = 40) -> tuple[int, str, bytes]:
+    request = urllib.request.Request(url, headers={"apikey": api_key, "User-Agent": f"ObjectiFoudre/{APP_VERSION}"}, method="GET")
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return int(getattr(response, "status", 200) or 200), str(response.headers.get("Content-Type") or ""), response.read()
+        except urllib.error.HTTPError as exc:
+            return exc.code, str(exc.headers.get("Content-Type") or ""), exc.read()
+        except Exception as exc:
+            last_exc = exc
+            time.sleep(0.5 * (attempt + 1))
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("Lecture AROME-PI impossible.")
+
+
+def _aromepi_capabilities_sync(api_key: str) -> dict[str, Any]:
+    """Dernier run (reference_time) + échéances 15 min disponibles pour ce run."""
+    cache_key = _meteofrance_metadata_cache_key(api_key, "aromepi:wms-capabilities")
+    cached = _get_cached_value(cache_key, ttl=AROMEPI_CAPABILITIES_TTL_SECONDS)
+    if cached is not None:
+        return dict(cached["payload"])
+    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.0&language=eng"
+    status, _ct, raw = _aromepi_http_get(url, api_key)
+    if status != 200 or not raw:
+        return {"ok": False, "status": status}
+    body = raw.decode("utf-8", "replace")
+    i = body.find("<Name>REFLECTIVITY_MAX_DBZ__GROUND_OR_WATER_SURFACE</Name>")
+    seg = body[i:body.find("</Layer>", i)] if i >= 0 else body
+    run = None
+    # l'ordre des attributs varie (default peut précéder name) → on isole la balise
+    # Dimension reference_time puis on extrait default depuis ses attributs.
+    m_ref = re.search(r'<Dimension\b([^>]*\bname="reference_time"[^>]*)>', seg)
+    if m_ref:
+        md = re.search(r'\bdefault="([^"]+)"', m_ref.group(1))
+        run = md.group(1) if md else None
+    times: list[str] = []
+    m_time = re.search(r'<Dimension\b[^>]*\bname="time"[^>]*>(.*?)</Dimension>', seg, re.S)
+    if m_time:
+        times = [t.strip() for t in m_time.group(1).replace("\n", "").split(",") if t.strip()]
+    # ne garder que les échéances du dernier run (run → run+6h)
+    run_dt = _parse_meteofrance_datetime(run or "")
+    forecast_times: list[str] = []
+    if run_dt is not None:
+        end_dt = run_dt + timedelta(hours=AROMEPI_NOWCAST_HORIZON_HOURS)
+        for t in times:
+            tdt = _parse_meteofrance_datetime(t)
+            # le WMS ne sert qu'à partir de run+15min (l'instant du run lui-même → 502)
+            if tdt is not None and run_dt < tdt <= end_dt:
+                forecast_times.append(t)
+    forecast_times = sorted(set(forecast_times))
+    result = {"ok": bool(run and forecast_times), "run": run, "forecast_times": forecast_times}
+    _set_cached_value(cache_key, result)
+    return result
+
+
+def _aromepi_mercator_to_lonlat(x: float, y: float) -> tuple[float, float]:
+    R = 20037508.342789244
+    lon = (x / R) * 180.0
+    lat = math.degrees(2.0 * math.atan(math.exp((y / R) * 180.0 * math.pi / 180.0)) - math.pi / 2.0)
+    return lon, lat
+
+
+def _aromepi_reproject_tile(png_bytes: bytes, miny: float, maxy: float, min_lat: float, max_lat: float, size: int) -> bytes:
+    """Reprojette une tuile WMS plate-carrée (EPSG:4326) vers Web Mercator (EPSG:3857).
+    La longitude est linéaire dans les deux → seul un ré-échantillonnage VERTICAL des
+    lignes est nécessaire (rapide, vectorisé). Repli : tuile d'origine si Pillow/numpy
+    indisponibles (affichage légèrement décalé mais fonctionnel)."""
+    try:
+        from PIL import Image
+        import numpy as np
+        img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+        src = np.asarray(img)
+        src_h = src.shape[0]
+        r_earth = 6378137.0
+        rows = np.arange(size)
+        merc_y = maxy - (rows + 0.5) / size * (maxy - miny)
+        lat = np.degrees(2.0 * np.arctan(np.exp(merc_y / r_earth)) - np.pi / 2.0)
+        denom = (max_lat - min_lat) or 1e-9
+        src_rows = np.clip(((max_lat - lat) / denom * src_h).astype(np.int64), 0, src_h - 1)
+        out = src[src_rows, :, :]
+        buf = io.BytesIO()
+        Image.fromarray(out, "RGBA").save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return png_bytes
+
+
+def _aromepi_wms_tile_sync(api_key: str, layer_key: str, time_iso: str, run_iso: str | None, bbox3857: str, width: int, height: int) -> tuple[int, bytes]:
+    spec = AROMEPI_LAYERS.get(layer_key)
+    if spec is None:
+        return 404, b""
+    try:
+        minx, miny, maxx, maxy = (float(v) for v in bbox3857.split(","))
+    except (ValueError, TypeError):
+        return 400, b""
+    min_lon, min_lat = _aromepi_mercator_to_lonlat(minx, miny)
+    max_lon, max_lat = _aromepi_mercator_to_lonlat(maxx, maxy)
+    # WMS 1.3.0 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
+    # Web Mercator → on reprojette la tuile rendue (plate carrée) en sortie.
+    params = [
+        ("service", "WMS"), ("version", "1.3.0"), ("request", "GetMap"),
+        ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
+        ("bbox", f"{min_lat:.6f},{min_lon:.6f},{max_lat:.6f},{max_lon:.6f}"),
+        ("width", str(int(width))), ("height", str(int(height))),
+        ("format", "image/png"), ("transparent", "true"), ("time", time_iso),
+    ]
+    if run_iso:
+        params.append(("dim_reference_time", run_iso))
+    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetMap?" + urllib.parse.urlencode(params)
+    status, _ct, raw = _aromepi_http_get(url, api_key, timeout=30)
+    if status == 200 and raw[:4] == b"\x89PNG":
+        return 200, _aromepi_reproject_tile(raw, miny, maxy, min_lat, max_lat, int(height))
+    return (status if status != 200 else 502), b""
+
+
+def _aromepi_reproject_domain(png_bytes: bytes, dom: dict, out_width: int) -> bytes | None:
+    """Reprojette l'image plein-domaine plate-carrée (lignes ∝ latitude) vers une image
+    dont les lignes sont ∝ Mercator-y entre merc(max_lat) et merc(min_lat). Posée en
+    source `image` calée sur les 4 coins du domaine, MapLibre l'interpole linéairement en
+    Mercator → alignement exact à tous les zooms. Colonnes inchangées (lon linéaire en
+    Mercator-x). None si Pillow/numpy indisponibles (le proxy renvoie alors le transparent)."""
+    try:
+        from PIL import Image
+        import numpy as np
+        r = 6378137.0
+        min_lat, max_lat = dom["min_lat"], dom["max_lat"]
+        min_lon, max_lon = dom["min_lon"], dom["max_lon"]
+        src = np.asarray(Image.open(io.BytesIO(png_bytes)).convert("RGBA"))
+        src_h = src.shape[0]
+        merc_top = r * math.log(math.tan(math.pi / 4 + math.radians(max_lat) / 2))
+        merc_bot = r * math.log(math.tan(math.pi / 4 + math.radians(min_lat) / 2))
+        merc_x_span = r * math.radians(max_lon - min_lon)
+        out_h = max(1, round(out_width * (merc_top - merc_bot) / merc_x_span))
+        rows = np.arange(out_h)
+        merc_y = merc_top - (rows + 0.5) / out_h * (merc_top - merc_bot)
+        lat = np.degrees(2.0 * np.arctan(np.exp(merc_y / r)) - np.pi / 2.0)
+        denom = (max_lat - min_lat) or 1e-9
+        src_rows = np.clip(((max_lat - lat) / denom * src_h).astype(np.int64), 0, src_h - 1)
+        out = src[src_rows, :, :]
+        buf = io.BytesIO()
+        Image.fromarray(out, "RGBA").save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_iso: str | None) -> bytes | None:
+    """Image AROME-PI couvrant tout le domaine, reprojetée plate-carrée→Web Mercator.
+
+    Pourquoi pas des tuiles : la passerelle WMS Météo-France PRÉSERVE le ratio géographique
+    du bbox au lieu de l'étirer sur width×height (non conforme WMS). Demander des tuiles
+    carrées 256×256 pour des bbox non-carrées en degrés décale la donnée verticalement,
+    d'un montant variable selon le zoom (= le « radar qui se déplace au zoom »). En
+    demandant UNE image plein-domaine au ratio EXACT des degrés, le rendu est fidèle
+    (vérifié vs WCS) ; la reprojection verticale suffit (longitude linéaire en Mercator-x)."""
+    spec = AROMEPI_LAYERS.get(layer_key)
+    if spec is None:
+        return None
+    cache_key = f"aromepi:image:{layer_key}:{time_iso}:{run_iso}"
+    # Image immuable pour un (couche, échéance, run) donné → cache long (le run change
+    # chaque heure, la clé inclut le run). Évite de re-rendre lors de la navigation /
+    # préchargement (clé API limitée à 50 req/min).
+    cached = _get_cached_value(cache_key, ttl=2700)
+    if cached is not None:
+        return cached.get("payload")
+    d = AROMEPI_DOMAIN
+    # 2400 px sur ~28° de longitude ≈ 1,16 km/px → proche de la maille native AROME-PI
+    # (~1,3 km) : au-delà, pas de détail supplémentaire (donnée limitée). Image immuable et
+    # mise en cache long (cf. plus bas) → coût de rendu/reprojection payé une seule fois.
+    out_width = 2400
+    # largeur:hauteur = ratio des degrés → le WMS rend une plate-carrée fidèle.
+    src_height = max(1, round(out_width * (d["max_lat"] - d["min_lat"]) / (d["max_lon"] - d["min_lon"])))
+    params = [
+        ("service", "WMS"), ("version", "1.3.0"), ("request", "GetMap"),
+        ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
+        ("bbox", f'{d["min_lat"]},{d["min_lon"]},{d["max_lat"]},{d["max_lon"]}'),
+        ("width", str(out_width)), ("height", str(src_height)),
+        ("format", "image/png"), ("transparent", "true"), ("time", time_iso),
+    ]
+    if run_iso:
+        params.append(("dim_reference_time", run_iso))
+    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetMap?" + urllib.parse.urlencode(params)
+    status, _ct, raw = _aromepi_http_get(url, api_key, timeout=35)
+    if status != 200 or raw[:4] != b"\x89PNG":
+        return None
+    png = _aromepi_reproject_domain(raw, d, out_width)
+    if png:
+        _set_cached_value(cache_key, png)
+    return png
+
+
+def _aromepi_wcs_coverage_ids(api_key: str) -> dict[str, list[str]]:
+    """Map {nom de couche → liste de coverageId WCS}. La structure varie selon le
+    paramètre : certains ont UN coverage par run (subset time), d'autres un coverage
+    par échéance (datetime = temps valide) ou des accumulations (`_PT3H`/`_PT6H`).
+    On lit tout dans le GetCapabilities WCS et on choisit au moment de la requête."""
+    cache_key = _meteofrance_metadata_cache_key(api_key, "aromepi:wcs-coverages")
+    cached = _get_cached_value(cache_key, ttl=AROMEPI_CAPABILITIES_TTL_SECONDS)
+    if cached is not None:
+        return {k: list(v) for k, v in cached["payload"].items()}
+    url = METEOFRANCE_AROMEPI_WCS_URL + "/GetCapabilities?service=WCS&version=2.0.1&language=eng"
+    try:
+        status, _ct, raw = _aromepi_http_get(url, api_key, timeout=45)
+    except Exception:
+        return {}
+    if status != 200 or not raw:
+        return {}
+    by_prefix: dict[str, list[str]] = {}
+    for cid in re.findall(r"CoverageId>([^<]+)<", raw.decode("utf-8", "replace")):
+        if "___" not in cid:
+            continue
+        by_prefix.setdefault(cid.split("___", 1)[0], []).append(cid)
+    if by_prefix:
+        _set_cached_value(cache_key, by_prefix)
+    return by_prefix
+
+
+def _aromepi_pick_coverage(ids: list[str], time_iso: str) -> tuple[str | None, bool]:
+    """Choisit le coverageId pour une échéance. (coverage, besoin_subset_time).
+    1) coverage dont le datetime == temps valide (par-échéance) → sans subset time ;
+    2) sinon coverage de série SANS suffixe d'accumulation (`_PT`) → avec subset time ;
+    3) sinon le plus récent (au pire)."""
+    if not ids:
+        return None, True
+    t_dot = "___" + time_iso.replace(":", ".")
+    exact = [c for c in ids if c.endswith(t_dot)]
+    if exact:
+        return exact[0], False
+    series = sorted([c for c in ids if "_PT" not in c.split("___", 1)[1]])
+    if series:
+        return series[-1], True
+    return sorted(ids)[-1], True
+
+
+def _aromepi_point_sync(api_key: str, lat: float, lon: float, time_iso: str, run_iso: str | None, layer_keys: list[str]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    d = 0.02
+    coverage_ids = _aromepi_wcs_coverage_ids(api_key)
+    ref_dot = (run_iso or "").replace(":", ".")
+    for key in layer_keys:
+        spec = AROMEPI_LAYERS.get(key)
+        if spec is None or spec.get("point") is False:
+            out[key] = None
+            continue
+        accum = spec.get("wcs_accum")
+        if accum and ref_dot:
+            # coverage d'accumulation (rafale/graupel max sur la période de l'échéance)
+            coverage_id, need_time = f"{spec['layer']}___{ref_dot}{accum}", True
+        else:
+            ids = coverage_ids.get(spec["layer"]) or ([f"{spec['layer']}___{ref_dot}"] if ref_dot else [])
+            coverage_id, need_time = _aromepi_pick_coverage(ids, time_iso)
+        if not coverage_id:
+            out[key] = None
+            continue
+        params = [("service", "WCS"), ("version", "2.0.1"), ("coverageid", coverage_id)]
+        if need_time:
+            params.append(("subset", f"time({time_iso})"))
+        if spec.get("wcs_height") is not None:
+            params.append(("subset", f"height({int(spec['wcs_height'])})"))
+        params += [
+            ("subset", f"lat({lat - d:.5f},{lat + d:.5f})"),
+            ("subset", f"long({lon - d:.5f},{lon + d:.5f})"),
+            ("format", "image/tiff"),
+        ]
+        url = METEOFRANCE_AROMEPI_WCS_URL + "/GetCoverage?" + urllib.parse.urlencode(params)
+        try:
+            status, _ct, raw = _aromepi_http_get(url, api_key, timeout=30)
+            if status != 200 or raw[:2] not in (b"II", b"MM"):
+                out[key] = None
+                continue
+            sample = _extract_geotiff_center_sample(raw)
+            value = sample.get("center_value") if sample.get("readable") else None
+            if value is not None and spec.get("wcs_scale"):
+                value = round(float(value) * float(spec["wcs_scale"]), 2)
+            out[key] = value
+        except Exception:
+            out[key] = None
+    return out
+
+
+def _aromepi_status_sync() -> dict[str, Any]:
+    api_key = _aromepi_api_key()
+    if not api_key:
+        return {"ok": False, "available": False, "message": "Clé API AROME-PI absente côté serveur."}
+    caps = _aromepi_capabilities_sync(api_key)
+    if not caps.get("ok"):
+        return {"ok": False, "available": False, "message": "Catalogue AROME-PI indisponible."}
+    return {
+        "ok": True,
+        "available": True,
+        "run": caps.get("run"),
+        "forecast_times": caps.get("forecast_times"),
+        "horizon_hours": AROMEPI_NOWCAST_HORIZON_HOURS,
+        "layers": [{"key": k, "label": v["label"], "unit": v["unit"], "primary": bool(v.get("primary"))} for k, v in AROMEPI_LAYERS.items()],
+        "attribution": "Météo-France AROME-PI",
+    }
+
+
+def _aromepi_activity_sync(layer_key: str, time_iso: str, run_iso: str | None) -> dict[str, Any]:
+    """Fraction du domaine AROME-PI qui porte une donnée (pixels opaques) pour une
+    couche/échéance — permet d'indiquer « aucune / faible / modérée / forte » activité
+    (rassure : carte sobre = temps calme, pas un bug). Domaine WMS = lat 37.5–55.4,
+    lon -12–16."""
+    api_key = _aromepi_api_key()
+    spec = AROMEPI_LAYERS.get(layer_key)
+    if not api_key or spec is None:
+        return {"ok": False}
+    params = [
+        ("service", "WMS"), ("version", "1.3.0"), ("request", "GetMap"),
+        ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
+        ("bbox", "37.5,-12,55.4,16"), ("width", "300"), ("height", "300"),
+        ("format", "image/png"), ("transparent", "true"), ("time", time_iso),
+    ]
+    if run_iso:
+        params.append(("dim_reference_time", run_iso))
+    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetMap?" + urllib.parse.urlencode(params)
+    try:
+        status, _ct, raw = _aromepi_http_get(url, api_key, timeout=25)
+        if status != 200 or raw[:4] != b"\x89PNG":
+            return {"ok": False}
+        from PIL import Image
+        import numpy as np
+        alpha = np.asarray(Image.open(io.BytesIO(raw)).convert("RGBA"))[:, :, 3]
+        fraction = float((alpha > 10).sum()) / float(alpha.size or 1)
+    except Exception:
+        return {"ok": False}
+    if fraction < 0.004:
+        level = "none"
+    elif fraction < 0.04:
+        level = "low"
+    elif fraction < 0.18:
+        level = "moderate"
+    else:
+        level = "high"
+    return {"ok": True, "fraction": round(fraction, 4), "level": level}
+
+
+@app.get("/api/aromepi/activity")
+async def aromepi_activity(
+    layer: str = Query(..., min_length=1, max_length=40),
+    time: str = Query(..., min_length=10, max_length=40),
+    run: str | None = Query(None, max_length=40),
+) -> dict[str, Any]:
+    return await asyncio.to_thread(_aromepi_activity_sync, layer, time, run)
+
+
+class AromepiPointRequest(BaseModel):
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
+    time: str = Field(..., min_length=10, max_length=40)
+    run: str | None = Field(None, max_length=40)
+    layers: list[str] | None = None
+
+
+@app.get("/api/aromepi/status")
+async def aromepi_status() -> dict[str, Any]:
+    """Mode En chasse : dernier run AROME-PI + échéances 15 min disponibles + couches."""
+    return await asyncio.to_thread(_aromepi_status_sync)
+
+
+@app.get("/api/aromepi/wms")
+async def aromepi_wms(
+    layer: str = Query(..., min_length=1, max_length=40),
+    time: str = Query(..., min_length=10, max_length=40),
+    bbox: str = Query(..., min_length=8, max_length=120),
+    run: str | None = Query(None, max_length=40),
+    width: int = Query(256, ge=64, le=1024),
+    height: int = Query(256, ge=64, le=1024),
+) -> Response:
+    """Proxy de tuiles WMS AROME-PI (clé serveur). bbox attendu en EPSG:3857
+    (MapLibre `{bbox-epsg-3857}`), converti en 4326 côté serveur."""
+    api_key = _aromepi_api_key()
+    if not api_key:
+        return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png")
+    status, png = await asyncio.to_thread(_aromepi_wms_tile_sync, api_key, layer, time, run, bbox, width, height)
+    if status != 200 or not png:
+        # tuile transparente plutôt qu'une erreur : la carte reste propre (échéance ou
+        # secteur sans donnée AROME-PI).
+        return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=30"})
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=120"})
+
+
+@app.get("/api/aromepi/image")
+async def aromepi_image(
+    layer: str = Query(..., min_length=1, max_length=40),
+    time: str = Query(..., min_length=10, max_length=40),
+    run: str | None = Query(None, max_length=40),
+) -> Response:
+    """Image AROME-PI plein-domaine reprojetée Web Mercator (source MapLibre `image`).
+    Remplace le proxy de tuiles : la passerelle WMS MF préserve le ratio géographique du
+    bbox, donc des tuiles carrées décalent la donnée selon le zoom. Une image unique au bon
+    ratio reste calée exactement (coins = domaine AROME-PI)."""
+    api_key = _aromepi_api_key()
+    if not api_key:
+        return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png")
+    png = await asyncio.to_thread(_aromepi_domain_image_sync, api_key, layer, time, run)
+    if not png:
+        return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=30"})
+    # immuable pour ce (couche, échéance, run) → cache navigateur long : la navigation
+    # (frise / onglets) ne refait aucune requête.
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=900"})
+
+
+@app.post("/api/aromepi/point")
+async def aromepi_point(payload: AromepiPointRequest) -> dict[str, Any]:
+    """Valeurs AROME-PI à une position (réflectivité, grêle, rafales, CAPE, MOCON…)
+    pour l'échéance demandée — alimente le panneau « conditions à ta position »."""
+    api_key = _aromepi_api_key()
+    if not api_key:
+        return {"ok": False, "message": "Clé API AROME-PI absente côté serveur."}
+    keys = [k for k in (payload.layers or list(AROMEPI_LAYERS.keys())) if k in AROMEPI_LAYERS]
+    run = payload.run
+    if not run:
+        caps = await asyncio.to_thread(_aromepi_capabilities_sync, api_key)
+        run = caps.get("run")
+    values = await asyncio.to_thread(_aromepi_point_sync, api_key, payload.lat, payload.lon, payload.time, run, keys)
+    return {"ok": True, "lat": payload.lat, "lon": payload.lon, "time": payload.time, "run": run, "values": values}
+
+
+# ── Radar observé Météo-France (paquet DPPaquetRadar) ───────────────────────────
+# Mosaïque « lame d'eau » (cumul de pluie 5 min, quantité ODIM ACRR) métropole, fichier
+# HDF5 ODIM `T_IPRN20…h5` dans le paquet `/mosaique/paquet` (.tar.gz, dernier 1/4h = 3
+# échéances à 5 min). Officiel MF, 500 m. Sert de radar observé sur la France ; RainViewer
+# reste le repli mondial (boucle plus longue). Réflectivité dBZ = BUFR à tables locales MF,
+# non retenue (déploiement trop lourd). Reprojection stéréographique polaire → Web Mercator
+# (pyproj) pour la source MapLibre `image`, calée sur MF_RADAR_DOMAIN.
+METEOFRANCE_RADAR_PACKAGE_URL = "https://public-api.meteofrance.fr/public/DPPaquetRadar/v1/mosaique/paquet"
+MF_RADAR_PROJDEF = "+proj=stere +lat_0=90 +lon_0=0 +lat_ts=45 +ellps=WGS84 +x_0=619652.07 +y_0=5262818.34 +datum=WGS84"
+MF_RADAR_GRID_EXTENT_M = 1736000.0   # 3472 px × 500 m
+MF_RADAR_GRID_SIZE = 3472
+MF_RADAR_PIXEL_M = 500.0
+MF_RADAR_DOMAIN = {"min_lon": -10.0, "max_lon": 17.6, "min_lat": 37.4, "max_lat": 53.7}
+# 2400 px sur ~27,6° ≈ 1,15 km/px (vs 500 m natif) : ~2× la résolution précédente, lisible
+# au zoom France. Carte d'indices calculée une fois (par blocs, cf. _mf_radar_index_map).
+MF_RADAR_OUT_WIDTH = 2400
+MF_RADAR_CACHE_TTL = 150
+# Bandes de cumul 5 min (mm) → couleurs type radar (croissant ; <0.03 mm = transparent).
+# Seuil d'entrée abaissé (0.05→0.03) + opacités relevées : MF moins « discret » que RainViewer
+# (qui est dessous) là où il pleut, tout en restant lisible.
+_MF_RADAR_BANDS = [0.03, 0.1, 0.3, 0.7, 1.5, 3.0, 6.0, 12.0]
+_MF_RADAR_COLORS = [
+    (90, 150, 250, 205), (60, 180, 255, 220), (30, 210, 170, 230), (130, 225, 70, 238),
+    (245, 225, 50, 244), (250, 150, 30, 248), (240, 70, 45, 252), (185, 50, 175, 255),
+]
+_MF_RADAR_INDEX = None  # carte d'indices sortie(Mercator)→grille(stéréo), calculée une fois
+
+
+def _mf_radar_api_key() -> str | None:
+    raw = os.environ.get("METEOFRANCE_RADAR_API_KEY")
+    if not raw:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Clef API RADAR.txt")
+        try:
+            with open(path, encoding="utf-8") as handle:
+                raw = handle.read().strip()
+        except OSError:
+            return None
+    if not raw:
+        return None
+    try:
+        return _clean_meteofrance_api_key(raw)
+    except HTTPException:
+        return None
+
+
+def _mf_radar_index_map():
+    """(row, col, in_bounds, OW, OH) : pour chaque pixel de l'image de sortie (grille Web
+    Mercator sur MF_RADAR_DOMAIN), l'indice du pixel source dans la grille stéréographique.
+    Géométrie pure (indépendante de la donnée) → calculée une seule fois."""
+    global _MF_RADAR_INDEX
+    if _MF_RADAR_INDEX is not None:
+        return _MF_RADAR_INDEX
+    import numpy as np
+    import pyproj
+    d = MF_RADAR_DOMAIN
+    r_earth = 6378137.0
+    mx0 = r_earth * math.radians(d["min_lon"]); mx1 = r_earth * math.radians(d["max_lon"])
+    my0 = r_earth * math.log(math.tan(math.pi / 4 + math.radians(d["min_lat"]) / 2))
+    my1 = r_earth * math.log(math.tan(math.pi / 4 + math.radians(d["max_lat"]) / 2))
+    ow = MF_RADAR_OUT_WIDTH
+    oh = int(round(ow * (my1 - my0) / (mx1 - mx0)))
+    xs = mx0 + (np.arange(ow) + 0.5) / ow * (mx1 - mx0)
+    lon = np.degrees(xs / r_earth)                                  # (ow,) — colonnes
+    ys = my1 - (np.arange(oh) + 0.5) / oh * (my1 - my0)
+    lat = np.degrees(2.0 * np.arctan(np.exp(ys / r_earth)) - np.pi / 2.0)   # (oh,) — lignes
+    transformer = pyproj.Transformer.from_crs("EPSG:4326", pyproj.CRS.from_proj4(MF_RADAR_PROJDEF), always_xy=True)
+    # Reprojection par BLOCS de lignes : seuls row/col/inb (int) sont conservés (~45 Mo à
+    # 2400 px) ; le transitoire flottant est borné à un bloc (~30 Mo) → sûr en mémoire.
+    row = np.empty(oh * ow, np.int32)
+    col = np.empty(oh * ow, np.int32)
+    inb = np.empty(oh * ow, bool)
+    block = max(1, 1_000_000 // ow)
+    for r0 in range(0, oh, block):
+        r1 = min(oh, r0 + block)
+        lon2d = np.broadcast_to(lon, (r1 - r0, ow)).ravel()
+        lat2d = np.repeat(lat[r0:r1], ow)
+        px, py = transformer.transform(lon2d, lat2d)
+        c = (np.asarray(px) / MF_RADAR_PIXEL_M).astype(np.int32)
+        rr = ((MF_RADAR_GRID_EXTENT_M - np.asarray(py)) / MF_RADAR_PIXEL_M).astype(np.int32)
+        sl = slice(r0 * ow, r1 * ow)
+        col[sl] = c; row[sl] = rr
+        inb[sl] = (c >= 0) & (c < MF_RADAR_GRID_SIZE) & (rr >= 0) & (rr < MF_RADAR_GRID_SIZE)
+    _MF_RADAR_INDEX = (row, col, inb, ow, oh)
+    return _MF_RADAR_INDEX
+
+
+def _mf_radar_render_h5(h5_bytes: bytes) -> bytes | None:
+    """Décode un HDF5 ODIM (lame d'eau ACRR), ré-échantillonne sur la grille Mercator via la
+    carte d'indices, colorise (bandes mm) → PNG RGBA transparent hors pluie/hors couverture."""
+    try:
+        import numpy as np
+        import h5py
+        from PIL import Image
+        with h5py.File(io.BytesIO(h5_bytes), "r") as h:
+            dw = h["dataset1"]["data1"]["what"].attrs
+            gain = float(dw["gain"]); offset = float(dw["offset"])
+            nodata = float(dw["nodata"]); undetect = float(dw["undetect"])
+            grid = h["dataset1"]["data1"]["data"][:]
+        row, col, inb, ow, oh = _mf_radar_index_map()
+        samp = np.full(row.shape, nodata, np.float32)
+        samp[inb] = grid[row[inb], col[inb]]
+        valid = (samp != nodata) & (samp != undetect)
+        mm = np.where(valid, samp * gain + offset, 0.0)
+        palette = np.array([(0, 0, 0, 0)] + _MF_RADAR_COLORS, np.uint8)
+        idx = np.digitize(mm, np.array(_MF_RADAR_BANDS))
+        out = palette[idx].reshape(oh, ow, 4)
+        buf = io.BytesIO()
+        Image.fromarray(out, "RGBA").save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _mf_radar_refresh_sync(api_key: str) -> dict[str, Any]:
+    """Télécharge le paquet radar (cache court), extrait les 3 mosaïques lame d'eau
+    métropole, les rend en PNG Mercator. Renvoie {ok, times[], frames{iso:png}}."""
+    cache_key = "mfradar:bundle"
+    cached = _get_cached_value(cache_key, ttl=MF_RADAR_CACHE_TTL)
+    if cached is not None:
+        return cached["payload"]
+    import tarfile
+    status, _ct, raw = _aromepi_http_get(METEOFRANCE_RADAR_PACKAGE_URL, api_key, timeout=90)
+    if status != 200 or not raw or raw[:2] != b"\x1f\x8b":
+        result = {"ok": False, "times": [], "frames": {}}
+        _set_cached_value(cache_key, result)
+        return result
+    frames: dict[str, bytes] = {}
+    try:
+        tf = tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz")
+        for member in tf.getmembers():
+            name = member.name
+            if "IPRN20" not in name or not name.endswith(".h5"):
+                continue
+            stamp = re.search(r"_(\d{14})\.h5", name)
+            if not stamp:
+                continue
+            s = stamp.group(1)
+            iso = f"{s[0:4]}-{s[4:6]}-{s[6:8]}T{s[8:10]}:{s[10:12]}:{s[12:14]}Z"
+            data = tf.extractfile(member).read()
+            png = _mf_radar_render_h5(data)
+            if png:
+                frames[iso] = png
+    except Exception:
+        pass
+    result = {"ok": bool(frames), "times": sorted(frames), "frames": frames}
+    _set_cached_value(cache_key, result)
+    return result
+
+
+@app.get("/api/radar/mf/status")
+async def mf_radar_status() -> dict[str, Any]:
+    """Échéances radar observé Météo-France (lame d'eau) du dernier 1/4h + domaine (coins)."""
+    api_key = _mf_radar_api_key()
+    if not api_key:
+        return {"ok": False, "reason": "no_key"}
+    bundle = await asyncio.to_thread(_mf_radar_refresh_sync, api_key)
+    return {
+        "ok": bool(bundle.get("ok")),
+        "times": bundle.get("times", []),
+        "domain": MF_RADAR_DOMAIN,
+        "attribution": "Météo-France — radar lame d'eau",
+    }
+
+
+@app.get("/api/radar/mf/image")
+async def mf_radar_image(time: str = Query(..., min_length=10, max_length=40)) -> Response:
+    """Image radar observé MF (lame d'eau) reprojetée Web Mercator pour une échéance,
+    source MapLibre `image` calée sur MF_RADAR_DOMAIN."""
+    api_key = _mf_radar_api_key()
+    if not api_key:
+        return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png")
+    bundle = await asyncio.to_thread(_mf_radar_refresh_sync, api_key)
+    png = bundle.get("frames", {}).get(time)
+    if not png:
+        return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=30"})
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=120"})
 
 
 @app.post('/api/server/arome-automation-start')

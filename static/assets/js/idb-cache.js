@@ -8,7 +8,7 @@
 
   const DB_NAME = 'objectifoudre-arome';
   const STORE = 'slots';
-  const MAX_DATES = 4; // on garde les 4 dernières dates (4 × 24 créneaux max)
+  const MAX_DATES = 6; // on garde les 6 dernières dates (J-1..J+4, 6 × 24 créneaux max)
 
   let dbPromise = null;
   function openDb() {

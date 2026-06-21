@@ -1,4 +1,4 @@
-const PREDICTION_IMAGE_RENDER_VERSION = 'iso-contour-atlas-v53';
+const PREDICTION_IMAGE_RENDER_VERSION = 'iso-contour-atlas-v54';
 
 const PREDICTION_IMAGE_CACHE = new Map();
 const PREDICTION_IMAGE_PREWARMING = new Set();
@@ -14,13 +14,181 @@ const PREDICTION_PERIODS = Object.freeze([
 let selectedPredictionPeriodKey = 'day';
 let currentPredictionPageResult = null;
 
+// --- Page Prévision/Tendance unifiée : sélecteur de date propre (J0 → J+10) ---
+// La page ne dépend plus de la date de la grille de base. Elle a son propre store de
+// jours hydratés (AROME/ARPEGE horaire J0→J+3 via day-cache ; ECMWF tendance J+4→J+10
+// via trend-day). Le rendu reste les « zones lissées », y compris pour ECMWF.
+const PREDICTION_TREND_MIN_OFFSET = 4;   // J+4 et au-delà = tendance ECMWF (quotidienne ;
+                                         // ARPEGE ~+102 h ne couvre pas l'après-midi de J+4)
+const PREDICTION_MAX_OFFSET = 10;        // J+10
+const PREDICTION_TREND_PROVIDER = 'ecmwf_ifs_trend';
+const PREDICTION_DAY_STORE = new Map();  // dateIso -> objet jour (hydraté pour cette page)
+const PREDICTION_DAY_PENDING = new Map(); // dateIso -> Promise (déduplication fetch)
+let predictionSelectedDate = null;       // dateIso affichée (indépendante de la grille)
+let predictionPrewarmStarted = false;
+
+function predictionTodayIso() {
+  return (typeof getTodayIsoDate === 'function') ? getTodayIsoDate() : normalizeDateIso(new Date().toISOString().slice(0, 10));
+}
+
+function predictionDateOffset(dateIso) {
+  const today = new Date(predictionTodayIso() + 'T12:00:00');
+  const target = new Date(normalizeDateIso(dateIso) + 'T12:00:00');
+  return Math.round((target - today) / 86400000);
+}
+
+function predictionDateIsTrend(dateIso) {
+  return predictionDateOffset(dateIso) >= PREDICTION_TREND_MIN_OFFSET;
+}
+
+function predictionSelectableDates() {
+  const today = predictionTodayIso();
+  const dates = [];
+  for (let offset = 0; offset <= PREDICTION_MAX_OFFSET; offset += 1) {
+    dates.push(predictionDateAddDays(today, offset));
+  }
+  return dates;
+}
+
+function predictionDateChipLabel(dateIso) {
+  const offset = predictionDateOffset(dateIso);
+  if (offset === 0) return "Auj.";
+  return 'J+' + offset;
+}
+
+function predictionDayIsTrend(day) {
+  if (!day) return false;
+  if (day.__trend) return true;
+  const slot = Array.isArray(day.slots) ? day.slots[0] : null;
+  return Array.isArray(slot?.cells) && slot.cells.some((cell) => cell?.source_provider === PREDICTION_TREND_PROVIDER);
+}
+
+function predictionActiveDay() {
+  if (!predictionSelectedDate) return null;
+  return PREDICTION_DAY_STORE.get(predictionSelectedDate) || null;
+}
+
+// Cellules quotidiennes pour un jour de tendance ECMWF (un seul créneau / jour) :
+// même forme que collectPredictionDailyCells, mais sans logique de période.
+function predictionTrendDailyCells(day) {
+  const slot = Array.isArray(day?.slots) ? day.slots[0] : null;
+  const cells = Array.isArray(slot?.cells) ? slot.cells : [];
+  const out = [];
+  for (const cell of cells) {
+    if (cell?.source_provider !== PREDICTION_TREND_PROVIDER) continue;
+    const lat = Number(cell.lat);
+    const lon = Number(cell.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const score = clampScore(predictionCellScore(cell));
+    const cape = Number(cell.mucape);
+    const temperature = Number(cell.temp_c);
+    const dewpoint = Number(cell.dewpoint_c);
+    const gusts = Number(cell.wind_gusts_10m);
+    out.push({
+      id: predictionCellId(cell),
+      zone: cell.zone || predictionCellId(cell),
+      lat,
+      lon,
+      cellHeightDeg: Number(cell.cell_height_deg) || 0.18,
+      cellWidthDeg: Number(cell.cell_width_deg) || 0.18,
+      scores: [score],
+      score,
+      peak: score,
+      topMean: score,
+      mean: score,
+      confidenceMean: Number.isFinite(Number(cell.confidence_score)) ? clampScore(Number(cell.confidence_score)) : 0,
+      activeCount: score >= 60 ? 1 : 0,
+      bestHours: [],
+      meanCape: Number.isFinite(cape) ? cape : 0,
+      meanTemperature: Number.isFinite(temperature) ? temperature : 0,
+      meanDewpoint: Number.isFinite(dewpoint) ? dewpoint : 0,
+      maxGusts: Number.isFinite(gusts) ? gusts : 0,
+    });
+  }
+  return out;
+}
+
+async function predictionFetchHourlyDay(dateIso) {
+  const iso = normalizeDateIso(dateIso);
+  const baseBody = {
+    lat: currentCenter?.lat ?? 46.65,
+    lon: currentCenter?.lon ?? 2.45,
+    label: currentCenter?.label || 'France entière',
+    date: iso,
+    detail_level: 'render',
+    cache_only: true,
+  };
+  const body = typeof withMeteoFranceToken === 'function' ? withMeteoFranceToken(baseBody, '') : baseBody;
+  try {
+    const response = await fetch('/api/meteofrance/grib-france-day-cache', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (typeof syncMeteoFranceQuotaCooldown === 'function') syncMeteoFranceQuotaCooldown(data);
+    const day = data?.payload?.days?.[0];
+    if (!data?.ok || !day) return null;
+    day.meta = data.payload.meta || {};
+    PREDICTION_DAY_STORE.set(iso, day);
+    return day;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function predictionFetchTrendDay(dateIso) {
+  const iso = normalizeDateIso(dateIso);
+  try {
+    const response = await fetch('/api/ecmwf/trend-day', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: iso }),
+    });
+    const data = await response.json().catch(() => ({}));
+    const day = data?.payload?.days?.[0];
+    if (!data?.ok || !day) return null;
+    day.__trend = true;
+    day.meta = data.payload.meta || {};
+    day.trend_step_hours = data.step_hours;
+    PREDICTION_DAY_STORE.set(iso, day);
+    return day;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Hydrate (et met en cache) le jour demandé. Pour un jour horaire, hydrate aussi le
+// lendemain (la fenêtre 08h-08h tire ses heures 0-7h du jour suivant).
+async function predictionEnsureDay(dateIso) {
+  const iso = normalizeDateIso(dateIso);
+  if (PREDICTION_DAY_STORE.has(iso)) return PREDICTION_DAY_STORE.get(iso);
+  if (PREDICTION_DAY_PENDING.has(iso)) return PREDICTION_DAY_PENDING.get(iso);
+  const task = (async () => {
+    if (predictionDateIsTrend(iso)) return predictionFetchTrendDay(iso);
+    const day = await predictionFetchHourlyDay(iso);
+    const nextIso = predictionDateAddDays(iso, 1);
+    if (!predictionDateIsTrend(nextIso) && predictionDateOffset(nextIso) <= PREDICTION_MAX_OFFSET
+      && !PREDICTION_DAY_STORE.has(nextIso) && !PREDICTION_DAY_PENDING.has(nextIso)) {
+      await predictionFetchHourlyDay(nextIso);
+    }
+    return day;
+  })();
+  PREDICTION_DAY_PENDING.set(iso, task);
+  try {
+    return await task;
+  } finally {
+    PREDICTION_DAY_PENDING.delete(iso);
+  }
+}
+
 const PREDICTION_RISK_LEVELS = Object.freeze([
   { key: 'below-threshold', label: 'Sous seuil', range: '0-59', min: 0, color: '#e7edf1', stroke: '#586b7a', text: 'signal inférieur au seuil cartographié' },
   { key: 'low', label: 'Faible', range: '60-70', min: 60, color: '#4da6b4', stroke: '#123a42', text: 'signal faible, à surveiller localement' },
   { key: 'medium', label: 'Moyen', range: '71-80', min: 71, color: '#75a96d', stroke: '#253b25', text: 'signal moyen, environnement à suivre' },
   { key: 'elevated', label: 'Élevé', range: '81-89', min: 81, color: '#bf7d57', stroke: '#482b1a', text: 'signal élevé à surveiller sérieusement' },
   { key: 'very-high', label: 'Très élevé', range: '90-95', min: 90, color: '#bd5d66', stroke: '#4d1f27', text: 'signal très élevé, à contrôler finement' },
-  { key: 'certain', label: 'Certain', range: '96-100', min: 96, color: '#9a72c8', stroke: '#33224d', text: 'signal maximal ou quasi maximal' },
+  { key: 'certain', label: 'Extrême', range: '96-100', min: 96, color: '#9a72c8', stroke: '#33224d', text: 'signal maximal ou quasi maximal' },
 ]);
 
 function predictionPeriodConfig(periodKey = selectedPredictionPeriodKey) {
@@ -146,6 +314,8 @@ function predictionAllDaySlotKeys() {
 
 function predictionDayByKey(dayKey, preferredDay = getCurrentDay()) {
   const normalized = normalizeDateIso(dayKey);
+  // Le store de la page Prévision (jours hydratés indépendamment de la grille) gagne.
+  if (PREDICTION_DAY_STORE.has(normalized)) return PREDICTION_DAY_STORE.get(normalized);
   if (preferredDay?.day_key === normalized) return preferredDay;
   const payloadDay = typeof getDays === 'function'
     ? getDays().find((item) => normalizeDateIso(item?.day_key) === normalized)
@@ -187,7 +357,11 @@ function predictionPeriodLoadedSlots(day = getCurrentDay(), periodKey = selected
 }
 
 function predictionPeriodStatus(day = getCurrentDay(), periodKey = selectedPredictionPeriodKey) {
-  const expectedKeys = predictionPeriodSlotKeys(periodKey);
+  if (predictionDayIsTrend(day)) {
+    const ready = predictionTrendDailyCells(day).length > 0;
+    return { ready, loadedCount: ready ? 1 : 0, totalCount: 1, missingKeys: [] };
+  }
+  const expectedKeys = predictionRequiredSlotKeys(predictionPeriodSlotKeys(periodKey), day);
   const loadedKeys = new Set(predictionPeriodLoadedSlots(day, periodKey).map((slot) => slot.slot_key));
   return {
     ready: expectedKeys.every((key) => loadedKeys.has(key)),
@@ -197,8 +371,26 @@ function predictionPeriodStatus(day = getCurrentDay(), periodKey = selectedPredi
   };
 }
 
+// La fenêtre 08h-08h tire ses heures 0-7h du lendemain. Si le lendemain n'a pas de
+// données horaires (jour de tendance ECMWF, ou au-delà de l'horizon), on ne peut pas
+// compléter ce tail nocturne : on le rend optionnel pour que le jour reste affichable
+// (ex. J+4, dont la nuit retombe sur J+5 ECMWF).
+function predictionNextTailAvailable(day = getCurrentDay()) {
+  const nextIso = predictionDateAddDays(predictionDayKey(day), 1);
+  return !predictionDateIsTrend(nextIso) && predictionDateOffset(nextIso) <= PREDICTION_MAX_OFFSET;
+}
+
+function predictionRequiredSlotKeys(slotKeys, day = getCurrentDay()) {
+  if (predictionNextTailAvailable(day)) return slotKeys;
+  return slotKeys.filter((key) => predictionSlotHour(key) >= PREDICTION_DAY_START_HOUR);
+}
+
 function predictionDayStatus(day = getCurrentDay()) {
-  const expectedKeys = predictionAllDaySlotKeys();
+  if (predictionDayIsTrend(day)) {
+    const ready = predictionTrendDailyCells(day).length > 0;
+    return { ready, loadedCount: ready ? 1 : 0, totalCount: 1, missingKeys: [] };
+  }
+  const expectedKeys = predictionRequiredSlotKeys(predictionAllDaySlotKeys(), day);
   const loadedKeys = new Set(predictionLoadedSlots(day).map((slot) => slot.slot_key));
   return {
     ready: expectedKeys.every((key) => loadedKeys.has(key)),
@@ -297,6 +489,8 @@ function predictionDayCellsFromPeriods(day) {
 }
 
 function collectPredictionDailyCells(day = getCurrentDay(), periodKey = 'day') {
+  // Tendance ECMWF : un seul créneau quotidien, pas de logique de période.
+  if (predictionDayIsTrend(day)) return predictionTrendDailyCells(day);
   if (periodKey === 'day') return predictionDayCellsFromPeriods(day);
   const grouped = new Map();
   const period = predictionPeriodConfig(periodKey);
@@ -959,9 +1153,11 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
   const project = metrics.project;
   const francePath = predictionFranceSvgPath(project);
   const period = predictionPeriodConfig(periodKey);
-  const titleDate = period.key === 'day'
-    ? predictionWindowDateLabel(day)
-    : (typeof formatTimelineDateLabel === 'function' ? formatTimelineDateLabel(predictionDayKey(day)) : predictionDayKey(day));
+  const titleDate = predictionDayIsTrend(day)
+    ? ((typeof formatTimelineDateLabel === 'function' ? formatTimelineDateLabel(predictionDayKey(day)) : predictionDayKey(day)) + ' · tendance ECMWF')
+    : (period.key === 'day'
+      ? predictionWindowDateLabel(day)
+      : (typeof formatTimelineDateLabel === 'function' ? formatTimelineDateLabel(predictionDayKey(day)) : predictionDayKey(day)));
   const levels = predictionLevelConfigs(cells);
   const field = predictionBuildScalarField(cells);
   const shapeMarkup = levels.map((level) => predictionContourLevelMarkup(field, project, level, cells)).join('');
@@ -989,17 +1185,17 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
     legendY = height - 28;
   } else {
     legendMarkup = predictionExportLegendLevels().map((level, index) => {
-      const x = index * 88;
-      return `<g transform="translate(${x} 22)">
-        <rect x="0" y="0" width="24" height="10" rx="5" fill="${level.color}" fill-opacity="0.92" stroke="#e2e8f0" stroke-opacity="0.16"/>
-        <text x="31" y="9" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="10.4" font-weight="800">${predictionEscapeXml(level.label)}</text>
+      const x = index * 104;
+      return `<g transform="translate(${x} 24)">
+        <rect x="0" y="0" width="36" height="15" rx="7" fill="${level.color}" fill-opacity="0.92" stroke="#e2e8f0" stroke-opacity="0.16"/>
+        <text x="45" y="12.5" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="12.5" font-weight="800">${predictionEscapeXml(level.label)}</text>
       </g>`;
     }).join('');
     svgHeight = height;
-    legendY = height - 62;
+    legendY = height - 66;
   }
 
-  const legendTitleSize = isMobileSvg ? 24 : 11;
+  const legendTitleSize = isMobileSvg ? 24 : 12;
   const label = predictionEscapeXml(`${period.label} · ${titleDate}`);
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${svgHeight}" width="${width}" height="${svgHeight}" role="img" aria-label="Prévision orageuse ${label}" shape-rendering="geometricPrecision">
@@ -1093,6 +1289,41 @@ function predictionBuildSectorSummary(cells) {
     });
 }
 
+// Synthèse « Zones à surveiller » à la maille DÉPARTEMENT (et non région) : un point
+// chaud localisé (ex. Haute-Saône en « Très élevé ») doit apparaître nommément, comme
+// sur la carte. On n'agrège que les cellules cartographiées (score ≥ 60) — moins de
+// recherches point-dans-polygone et un score qui reflète bien le foyer local.
+function predictionBuildDepartmentSummary(cells) {
+  const map = new Map();
+  cells.forEach((cell) => {
+    if (predictionLayerScore(cell) < 60) return;
+    const info = predictionAdministrativeInfoForCell(cell);
+    const name = info?.department;
+    if (!name || name === 'Département') return;
+    const entry = map.get(name) || { name, cells: [], scores: [], cape: [], temperature: [], dewpoint: [], gusts: [], hours: [] };
+    entry.cells.push(cell);
+    entry.scores.push(predictionLayerScore(cell));
+    if (Number.isFinite(cell.meanCape)) entry.cape.push(cell.meanCape);
+    if (Number.isFinite(cell.meanTemperature)) entry.temperature.push(cell.meanTemperature);
+    if (Number.isFinite(cell.meanDewpoint)) entry.dewpoint.push(cell.meanDewpoint);
+    if (Number.isFinite(cell.maxGusts)) entry.gusts.push(cell.maxGusts);
+    entry.hours.push(...(cell.bestHours || []));
+    map.set(name, entry);
+  });
+  return Array.from(map.values())
+    .map((entry) => predictionAreaEntrySummary(entry, 0.34))
+    .sort((a, b) => b.score - a.score);
+}
+
+// Date mise en avant, format « 21 Juin 2026 » (mois capitalisé).
+function predictionLongDateLabel(dateIso) {
+  const d = new Date(`${String(dateIso || '').slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return String(dateIso || '');
+  const parts = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).split(' ');
+  if (parts.length >= 2 && parts[1]) parts[1] = parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
+  return parts.join(' ');
+}
+
 function predictionHoursText(hours) {
   const sortedHours = predictionSortWindowHours(hours);
   if (!sortedHours.length) return 'horaire diffus';
@@ -1111,12 +1342,16 @@ function predictionAreaIngredientText(area) {
 
 function predictionBuildAnalysisHtml(day, cells, periodKey = selectedPredictionPeriodKey) {
   const period = predictionPeriodConfig(periodKey);
-  const sectors = predictionBuildSectorSummary(cells);
+  const isTrend = predictionDayIsTrend(day);
+  const sectors = predictionBuildDepartmentSummary(cells);
   const maxScore = Math.round(Math.max(...cells.map((cell) => predictionLayerScore(cell)), 0));
   const activeLevel = predictionRiskLevel(maxScore);
-  const baseDateText = typeof formatTimelineDateLabel === 'function' ? formatTimelineDateLabel(predictionDayKey(day)) : predictionDayKey(day);
-  const dateText = period.key === 'day' ? predictionWindowDateLabel(day) : baseDateText;
-  const activeSectors = sectors.filter((area) => area.score >= 60).slice(0, 4);
+  const longDate = predictionLongDateLabel(predictionDayKey(day));
+  const kickerText = isTrend ? 'Tendance ECMWF' : period.label;
+  const disclaimerText = isTrend
+    ? 'Tendance ECMWF (open data, maille ~28 km), informative et non officielle. À cette échéance (J+5 à J+10), à lire comme « jours / régions à surveiller » — pas une localisation précise des orages.'
+    : 'Synthèse automatique AROME / ARPEGE France, informative et non officielle. La couleur traduit la probabilité orageuse agrégée sur la période sélectionnée.';
+  const activeSectors = sectors.filter((area) => area.score >= 60).slice(0, 6);
   const quietText = !activeSectors.length
     ? 'Aucun secteur ne dépasse le seuil cartographié. La carte reste en fond très faible.'
     : activeSectors.map((area) => {
@@ -1130,9 +1365,10 @@ function predictionBuildAnalysisHtml(day, cells, periodKey = selectedPredictionP
           </div>
         </div>`;
       }).join('');
-  return `<div class="prediction-summary-hero" style="--risk-color:${activeLevel.color};--risk-stroke:${activeLevel.stroke}">
+  return `<div class="prediction-summary-date">${predictionEscapeXml(longDate)}</div>
+  <div class="prediction-summary-hero" style="--risk-color:${activeLevel.color};--risk-stroke:${activeLevel.stroke}">
     <div>
-      <span class="prediction-summary-kicker">${predictionEscapeXml(period.label)}</span>
+      <span class="prediction-summary-kicker">${predictionEscapeXml(kickerText)}</span>
       <strong>${predictionEscapeXml(activeLevel.label)}</strong>
       <em>${predictionEscapeXml(activeLevel.text)}</em>
     </div>
@@ -1141,7 +1377,7 @@ function predictionBuildAnalysisHtml(day, cells, periodKey = selectedPredictionP
     <div class="prediction-analysis-block-title">Zones à surveiller</div>
     <div class="prediction-sector-list">${quietText}</div>
   </div>
-  <p class="prediction-analysis-disclaimer">Synthèse automatique AROME France, informative et non officielle. La couleur traduit la probabilité orageuse agrégée sur la période sélectionnée.</p>`;
+  <p class="prediction-analysis-disclaimer">${predictionEscapeXml(disclaimerText)}</p>`;
 }
 
 function generatePredictionPageImage(day = getCurrentDay(), periodKey = selectedPredictionPeriodKey) {
@@ -1458,19 +1694,37 @@ function renderPredictionPageResult(result) {
     predictionImageStatus.classList.toggle('is-ready', !!result?.ok);
     predictionImageStatus.classList.toggle('is-waiting', !result?.ok);
   }
+  const activeDay = predictionActiveDay();
+  const activeIsTrend = predictionDayIsTrend(activeDay) || predictionDateIsTrend(predictionSelectedDate || predictionTodayIso());
+  const activeDateLabel = (typeof formatShortDateLabel === 'function')
+    ? formatShortDateLabel(predictionSelectedDate || predictionTodayIso())
+    : (predictionSelectedDate || predictionTodayIso());
   if (typeof predictionPageTitle !== 'undefined' && predictionPageTitle) {
-    predictionPageTitle.textContent = period.key === 'day'
-      ? 'Carte de risque journalier'
-      : `Carte de risque · ${period.label}`;
+    if (activeIsTrend) {
+      predictionPageTitle.textContent = 'Tendance orageuse · ' + activeDateLabel;
+    } else {
+      predictionPageTitle.textContent = period.key === 'day'
+        ? 'Carte de risque journalier'
+        : `Carte de risque · ${period.label}`;
+    }
   }
   if (predictionPageSubtitle) {
-    const dateText = period.key === 'day'
-      ? predictionWindowDateLabel(getCurrentDay())
-      : (typeof formatTimelineDateLabel === 'function' ? formatTimelineDateLabel(predictionDayKey(getCurrentDay())) : predictionDayKey(getCurrentDay()));
-    const periodText = period.key === 'day' ? 'fenêtre 08h-08h AROME France' : 'grilles ' + period.rangeLabel + ' AROME France';
-    predictionPageSubtitle.textContent = result?.ok
-      ? 'Image générée depuis la ' + periodText + ' en cache · ' + dateText
-      : 'En attente des grilles AROME France · ' + dateText;
+    if (activeIsTrend) {
+      const meta = activeDay?.meta || {};
+      const reso = meta.resolution_label || '0,25° (~28 km)';
+      predictionPageSubtitle.textContent = result?.ok
+        ? `Tendance ECMWF · maille ${reso} · pic d'instabilité du jour · ${activeDateLabel}`
+        : `Tendance ECMWF (maille ${reso}) · ${activeDateLabel}`;
+    } else {
+      const dateText = period.key === 'day'
+        ? predictionWindowDateLabel(activeDay || getCurrentDay())
+        : (typeof formatTimelineDateLabel === 'function' ? formatTimelineDateLabel(predictionDayKey(activeDay || getCurrentDay())) : predictionDayKey(activeDay || getCurrentDay()));
+      const periodText = period.key === 'day' ? 'fenêtre 08h-08h' : 'grilles ' + period.rangeLabel;
+      const modelText = predictionDateOffset(predictionSelectedDate || predictionTodayIso()) >= 3 ? 'ARPEGE France' : 'AROME France';
+      predictionPageSubtitle.textContent = result?.ok
+        ? 'Image générée depuis la ' + periodText + ' ' + modelText + ' en cache · ' + dateText
+        : 'En attente des grilles ' + modelText + ' · ' + dateText;
+    }
   }
   if (result?.ok && result.dataUrl) {
     predictionImage.src = result.dataUrl;
@@ -1553,16 +1807,16 @@ function predictionCanvasWrapText(ctx, text, x, y, maxWidth, lineHeight, maxLine
 function predictionExportSummary(result) {
   const period = predictionPeriodConfig(result?.periodKey || selectedPredictionPeriodKey);
   const day = predictionDayByKey(result?.dayKey || predictionDayKey(getCurrentDay())) || getCurrentDay();
-  const titleDate = period.key === 'day'
-    ? predictionWindowDateLabel(day)
-    : (typeof formatTimelineDateLabel === 'function' ? formatTimelineDateLabel(result?.dayKey || predictionDayKey(day)) : (result?.dayKey || predictionDayKey(day)));
+  const dayKey = result?.dayKey || predictionDayKey(day);
+  const longDate = predictionLongDateLabel(dayKey);
+  const isTrend = predictionDayIsTrend(day) || predictionDateIsTrend(dayKey);
   const cells = Array.isArray(result?.cells) ? result.cells : [];
   const maxScore = Math.round(Number(result?.maxScore ?? Math.max(...cells.map((cell) => predictionLayerScore(cell)), 0)) || 0);
   const level = predictionRiskLevel(maxScore);
-  const sectors = predictionBuildSectorSummary(cells);
+  const sectors = predictionBuildDepartmentSummary(cells);
   const lead = sectors[0] || null;
-  const watchSectors = sectors.filter((area) => area.score >= 60).slice(0, 4);
-  return { period, titleDate, maxScore, level, sectors, lead, watchSectors };
+  const watchSectors = sectors.filter((area) => area.score >= 60).slice(0, 6);
+  return { period, longDate, isTrend, maxScore, level, sectors, lead, watchSectors };
 }
 
 async function predictionBuildCompositePngBlob(result) {
@@ -1586,9 +1840,15 @@ async function predictionBuildCompositePngBlob(result) {
   ctx.fillStyle = '#a7f3d0';
   ctx.font = '800 12px Inter, Arial, sans-serif';
   ctx.fillText('PRÉVISIONS ORAGEUSES', 36, 66);
-  ctx.fillStyle = 'rgba(226, 232, 240, 0.78)';
-  ctx.font = '600 16px Inter, Arial, sans-serif';
-  ctx.fillText(`${summary.period.label} · ${summary.titleDate}`, 214, 66);
+  // Date mise en avant (à droite), format direct « 29 Juin 2026 » — sans le créneau verbeux.
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(167, 243, 208, 0.92)';
+  ctx.font = '800 12px Inter, Arial, sans-serif';
+  ctx.fillText((summary.isTrend ? 'Tendance ECMWF' : summary.period.label).toUpperCase(), width - 36, 34);
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = '900 32px Inter, Arial, sans-serif';
+  ctx.fillText(summary.longDate, width - 36, 68);
+  ctx.textAlign = 'left';
 
   const mapPanel = { x: 32, y: 92, w: 900, h: 760 };
   const sidePanel = { x: 956, y: 92, w: 452, h: 760 };
@@ -1630,7 +1890,7 @@ async function predictionBuildCompositePngBlob(result) {
   ctx.fillText('ZONES À SURVEILLER', sx, y);
   y += 18;
   const sectors = summary.watchSectors;
-  sectors.slice(0, 4).forEach((area) => {
+  sectors.slice(0, 6).forEach((area) => {
     const level = predictionRiskLevel(area.score);
     const ingredients = predictionAreaIngredientText(area);
     predictionCanvasPanel(ctx, sx, y, sw, 72, 12, predictionHexToRgba(level.color, 0.13), predictionHexToRgba(level.stroke, 0.62));
@@ -1660,7 +1920,9 @@ async function predictionBuildCompositePngBlob(result) {
 
   ctx.fillStyle = 'rgba(148, 163, 184, 0.72)';
   ctx.font = '600 11px Inter, Arial, sans-serif';
-  ctx.fillText('Synthèse automatique AROME France, informative et non officielle.', sx, sidePanel.y + sidePanel.h - 14);
+  ctx.fillText(summary.isTrend
+    ? 'Tendance ECMWF (open data, ~28 km), informative et non officielle.'
+    : 'Synthèse automatique AROME / ARPEGE France, informative et non officielle.', sx, sidePanel.y + sidePanel.h - 14);
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('png export failed')), 'image/png', 0.96);
@@ -1741,25 +2003,128 @@ async function hydratePredictionPeriodFromServerCache(day = getCurrentDay(), per
   return period.key === 'day' ? predictionDayStatus(day) : predictionPeriodStatus(day, period.key);
 }
 
+// Les périodes infra-journalières n'ont de sens que pour les jours horaires
+// (AROME/ARPEGE). Un jour de tendance ECMWF = un seul point quotidien → seul
+// l'onglet « Journée » est actif.
+function predictionUpdatePeriodTabAvailability() {
+  if (typeof predictionPeriodButtons === 'undefined' || !predictionPeriodButtons) return;
+  const isTrend = predictionDateIsTrend(predictionSelectedDate || predictionTodayIso());
+  // En tendance ECMWF (1 point par jour), les onglets de période n'ont aucun sens : on
+  // masque tout le bloc plutôt que de les désactiver.
+  if (typeof predictionPeriodTabs !== 'undefined' && predictionPeriodTabs) {
+    predictionPeriodTabs.style.display = isTrend ? 'none' : '';
+  }
+  predictionPeriodButtons.forEach((button) => {
+    const key = button.dataset.predictionPeriod || 'day';
+    const disabled = isTrend && key !== 'day';
+    button.disabled = disabled;
+    button.classList.toggle('is-unavailable', disabled);
+    button.title = disabled ? 'Indisponible en tendance ECMWF (un point par jour)' : '';
+  });
+}
+
+function predictionDateStripEl() {
+  return document.getElementById('predictionDateStrip');
+}
+
+function buildPredictionDateStrip() {
+  const strip = predictionDateStripEl();
+  if (!strip) return;
+  strip.innerHTML = '';
+  predictionSelectableDates().forEach((dateIso) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'prediction-date-chip';
+    btn.dataset.predictionDate = dateIso;
+    const trend = predictionDateIsTrend(dateIso);
+    if (trend) btn.classList.add('is-trend');
+    const shortDate = (typeof formatShortDateLabel === 'function') ? formatShortDateLabel(dateIso) : dateIso;
+    btn.innerHTML = `<span class="prediction-chip-jx">${predictionDateChipLabel(dateIso)}</span><span class="prediction-chip-date">${shortDate}</span>`;
+    btn.addEventListener('click', () => selectPredictionDate(dateIso));
+    strip.appendChild(btn);
+  });
+  highlightPredictionDateChip();
+}
+
+function highlightPredictionDateChip() {
+  const strip = predictionDateStripEl();
+  if (!strip) return;
+  strip.querySelectorAll('.prediction-date-chip').forEach((btn) => {
+    const active = btn.dataset.predictionDate === predictionSelectedDate;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-current', active ? 'date' : 'false');
+  });
+}
+
+async function renderActivePrediction() {
+  const dateIso = predictionSelectedDate;
+  if (!dateIso) return;
+  const isTrend = predictionDateIsTrend(dateIso);
+  if (isTrend && selectedPredictionPeriodKey !== 'day') {
+    selectedPredictionPeriodKey = 'day';
+    updatePredictionPeriodTabs('day');
+  }
+  predictionUpdatePeriodTabAvailability();
+  const period = predictionPeriodConfig(selectedPredictionPeriodKey);
+  renderPredictionPageResult({ ok: false, periodKey: period.key, message: (isTrend ? 'Chargement de la tendance ' : 'Chargement de la prévision ') + (typeof formatShortDateLabel === 'function' ? formatShortDateLabel(dateIso) : dateIso) + '…' });
+  await predictionEnsureDay(dateIso);
+  if (predictionSelectedDate !== dateIso) return; // l'utilisateur a changé de date entre-temps
+  const day = predictionActiveDay();
+  if (!day) {
+    renderPredictionPageResult({
+      ok: false,
+      periodKey: selectedPredictionPeriodKey,
+      message: isTrend
+        ? 'Tendance ECMWF indisponible pour ce jour (run open data pas encore publié).'
+        : 'Grille indisponible pour ce jour : aucune donnée en cache serveur.',
+    });
+    return;
+  }
+  renderPredictionPageResult(ensurePredictionPageImage(day, { periodKey: selectedPredictionPeriodKey }));
+}
+
+async function selectPredictionDate(dateIso) {
+  predictionSelectedDate = normalizeDateIso(dateIso);
+  highlightPredictionDateChip();
+  await renderActivePrediction();
+}
+
 async function setPredictionPeriod(periodKey = 'day') {
-  const period = predictionPeriodConfig(periodKey);
+  const isTrend = predictionDateIsTrend(predictionSelectedDate || predictionTodayIso());
+  const period = predictionPeriodConfig(isTrend ? 'day' : periodKey);
   selectedPredictionPeriodKey = period.key;
   updatePredictionPeriodTabs(period.key);
   if (predictionPage?.getAttribute('aria-hidden') === 'false') {
-    let day = getCurrentDay();
-    renderPredictionPageResult({ ok: false, periodKey: period.key, message: 'Préparation de la synthèse ' + period.label.toLowerCase() + '…' });
-    await hydratePredictionPeriodFromServerCache(day, period.key);
-    day = getCurrentDay();
-    renderPredictionPageResult(ensurePredictionPageImage(day, { periodKey: period.key }));
+    await renderActivePrediction();
   }
 }
 
 function initPredictionPeriodTabs() {
   if (typeof predictionPeriodButtons === 'undefined' || !predictionPeriodButtons) return;
   predictionPeriodButtons.forEach((button) => {
-    button.addEventListener('click', () => setPredictionPeriod(button.dataset.predictionPeriod || 'day'));
+    button.addEventListener('click', () => {
+      if (button.disabled) return;
+      setPredictionPeriod(button.dataset.predictionPeriod || 'day');
+    });
   });
   updatePredictionPeriodTabs(selectedPredictionPeriodKey);
+}
+
+// Préchargement : hydrate en arrière-plan tous les jours sélectionnables (et calcule
+// l'image « Journée »), pour que le changement de date soit quasi instantané.
+async function prewarmPredictionDates() {
+  if (predictionPrewarmStarted) return;
+  predictionPrewarmStarted = true;
+  for (const dateIso of predictionSelectableDates()) {
+    if (predictionPage?.getAttribute('aria-hidden') !== 'false') break; // page fermée → on arrête
+    if (PREDICTION_DAY_STORE.has(dateIso)) continue;
+    try {
+      await predictionEnsureDay(dateIso);
+      const day = PREDICTION_DAY_STORE.get(dateIso);
+      if (day) ensurePredictionPageImage(day, { periodKey: 'day' });
+    } catch (_) {}
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
 }
 
 initPredictionPeriodTabs();
@@ -1768,28 +2133,22 @@ if (typeof predictionDownloadBtn !== 'undefined' && predictionDownloadBtn) {
   predictionDownloadBtn.addEventListener('click', downloadPredictionPageImage);
 }
 
-async function openPredictionPage() {
+async function openPredictionPage(initialDate = null) {
   if (!predictionPage) return;
   predictionPage.setAttribute('aria-hidden', 'false');
-  renderPredictionPageResult({ ok: false, periodKey: selectedPredictionPeriodKey, message: 'Préparation de la synthèse Prédictions…' });
-  let day = getCurrentDay();
-  let status = predictionDayStatus(day);
-  if (!status.ready && typeof materializeMeteoFranceGribFranceDayFromNationalCache === 'function') {
-    renderPredictionPageResult({ ok: false, periodKey: selectedPredictionPeriodKey, message: 'Hydratation des grilles déjà en cache : ' + status.loadedCount + '/' + status.totalCount + ' prêtes…' });
-    try { await materializeMeteoFranceGribFranceDayFromNationalCache({ force: false, quiet: true }); } catch (_) {}
-    day = getCurrentDay();
-    status = predictionDayStatus(day);
+  buildPredictionDateStrip();
+  // Date par défaut : celle demandée si dans la plage, sinon la date de la grille si
+  // elle est dans J0→J+10, sinon aujourd'hui.
+  let target = initialDate ? normalizeDateIso(initialDate) : null;
+  if (!target) {
+    const gridDate = normalizeDateIso(selectedBaseDate);
+    const gridOffset = predictionDateOffset(gridDate);
+    target = (gridOffset >= 0 && gridOffset <= PREDICTION_MAX_OFFSET) ? gridDate : predictionTodayIso();
   }
-  if (!predictionPeriodStatus(day, selectedPredictionPeriodKey).ready) {
-    const period = predictionPeriodConfig(selectedPredictionPeriodKey);
-    const periodStatus = predictionPeriodStatus(day, period.key);
-    renderPredictionPageResult({ ok: false, periodKey: period.key, message: 'Hydratation cache serveur ' + period.rangeLabel + ' : ' + periodStatus.loadedCount + '/' + periodStatus.totalCount + ' prêtes…' });
-    await hydratePredictionPeriodFromServerCache(day, period.key);
-    day = getCurrentDay();
-  }
-  const result = ensurePredictionPageImage(day, { periodKey: selectedPredictionPeriodKey });
-  renderPredictionPageResult(result);
-
+  predictionSelectedDate = target;
+  highlightPredictionDateChip();
+  await renderActivePrediction();
+  prewarmPredictionDates();
 }
 
 function closePredictionPage() {

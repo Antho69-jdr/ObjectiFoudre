@@ -242,7 +242,8 @@
           if (typeof maybeLoadCachedMeteoFranceGribForSelectedSlot === 'function') {
             const loaded = await maybeLoadCachedMeteoFranceGribForSelectedSlot({ quiet: true, force: true });
             if (!loaded) {
-              setMetaMessage('AROME France prêt : attente de la grille horaire matérialisée côté serveur.');
+              const modelLabel = (typeof activeNwpModelLabel === 'function') ? activeNwpModelLabel() : 'AROME';
+              setMetaMessage(`${modelLabel} France prêt : attente de la grille horaire matérialisée côté serveur.`);
             }
           }
         }, memoryPayload ? 0 : 20);

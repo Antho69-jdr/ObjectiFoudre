@@ -71,17 +71,40 @@
       currentTimeBadgeTimer = window.setInterval(updateCurrentTimeBadge, 1000);
     }
 
+    // Au-delà de J+2 la grille vient d'ARPEGE : badge basé sur le meta serveur
+    // (payload.meta.nwp_model_label) avec repli sur la même règle de date que le
+    // serveur (date sélectionnée > J+2 → ARPEGE), pour les caches d'avant le tag.
+    function activeNwpModelLabel() {
+      const fromMeta = String(payload?.meta?.nwp_model_label || '').toUpperCase();
+      if (fromMeta) return fromMeta;
+      try {
+        const maxAromeDate = addDaysIso(getTodayIsoDate(), 2);
+        if (normalizeDateIso(selectedBaseDate) > maxAromeDate) return 'ARPEGE';
+      } catch (_) {}
+      return 'AROME';
+    }
+
+    function applyNwpModelLabel(ui) {
+      const modelLabel = activeNwpModelLabel();
+      if (!modelLabel || modelLabel === 'AROME') return ui;
+      return {
+        ...ui,
+        badge: ui.badge.replace('AROME', modelLabel),
+        lineLabel: ui.lineLabel.replace('AROME', modelLabel),
+        title: ui.title.replace('AROME', modelLabel),
+      };
+    }
+
     function currentSlotSourceInfo() {
       const slot = typeof getCurrentSlot === 'function' ? getCurrentSlot() : null;
       const cells = Array.isArray(slot?.cells) ? slot.cells : [];
       if (cells.length) {
         const providers = Array.from(new Set(cells.map((cell) => cell?.source_provider).filter(Boolean)));
-        if (providers.length === 1) return sourceProviderUi(providers[0]);
-        if (providers.length > 1) return sourceProviderUi('meteofrance_arome_grib');
-        return sourceProviderUi('meteofrance_arome_grib');
+        if (providers.length === 1) return applyNwpModelLabel(sourceProviderUi(providers[0]));
+        return applyNwpModelLabel(sourceProviderUi('meteofrance_arome_grib'));
       }
       const provider = payload?.meta?.provider || payload?.meta?.source_provider || 'meteofrance_arome_grib';
-      return sourceProviderUi(provider);
+      return applyNwpModelLabel(sourceProviderUi(provider));
     }
 
     function updateGridSourceBadge() {
@@ -178,11 +201,12 @@
     function formatAromeApiRunInfo(meta = payload?.meta || {}) {
       const refs = collectAromeApiReferenceTimes(meta);
       if (!refs.length) return '';
+      const modelLabel = String(meta?.nwp_model_label || '').toUpperCase() || activeNwpModelLabel();
       const latest = refs[refs.length - 1];
       const runLabels = Array.from(new Set(refs.map(formatAromeRunZulu).filter(Boolean)));
       const runText = runLabels.length > 1
-        ? `Runs AROME ${runLabels.join('/')}`
-        : `Run AROME ${runLabels[0] || formatAromeRunZulu(latest)}`;
+        ? `Runs ${modelLabel} ${runLabels.join('/')}`
+        : `Run ${modelLabel} ${runLabels[0] || formatAromeRunZulu(latest)}`;
       const updateTime = formatAromeApiLocalTime(latest);
       return `${runText} · MAJ API ${updateTime}`;
     }
@@ -195,7 +219,7 @@
       const gribSlots = Array.isArray(payload?.meta?.meteofrance_grib?.slots) ? payload.meta.meteofrance_grib.slots.length : 0;
       const wcsText = '';
       const gribText = gribSlots ? ' · ' + gribSlots + ' créneau' + (gribSlots > 1 ? 'x' : '') + ' GRIB' : '';
-      const runText = runInfo || 'run AROME API en attente';
+      const runText = runInfo || `run ${activeNwpModelLabel()} API en attente`;
       if (metaRun) setMetaRunText(slotSource.lineLabel + ' : ' + runText + ' · ' + sourceIndicator + gribText + wcsText);
       updateGridSourceBadge();
     }

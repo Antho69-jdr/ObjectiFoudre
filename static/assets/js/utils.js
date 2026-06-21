@@ -29,11 +29,15 @@
 
     function getAromeSelectableDates(todayIso = getTodayIsoDate()) {
       const today = normalizeDateIso(todayIso);
+      // J-1 n'est PLUS proposé dans la frise : la veille se consulte uniquement dans les
+      // Archives (la grille du jour passé y est servie depuis l'archive durable).
       return [
-        { value: addDaysIso(today, -1), kind: 'previous', label: 'Hier' },
         { value: today, kind: 'today', label: 'Aujourd’hui' },
         { value: addDaysIso(today, 1), kind: 'next', label: 'Demain' },
         { value: addDaysIso(today, 2), kind: 'day_after_tomorrow', label: 'Après-demain' },
+        // J+3 : grille servie par ARPEGE (le serveur choisit le modèle selon la date).
+        // J+4+ = tendance ECMWF, accessible dans la carte Prévision (pas sur la grille de base).
+        { value: addDaysIso(today, 3), kind: 'j3_arpege', label: 'J+3 (ARPEGE)' },
       ];
     }
 
@@ -77,7 +81,7 @@
         minDate,
         maxDate,
         clampedDate,
-        message: 'Jour non disponible en AROME France : ' + selected + '. Choisis hier, aujourd’hui, demain ou après-demain.',
+        message: 'Jour non disponible : ' + selected + '. Choisis entre aujourd’hui et J+3 (AROME jusqu’à J+2, ARPEGE ensuite). La veille est dans les Archives.',
       };
     }
 
@@ -88,11 +92,11 @@
       const maxDate = dates[dates.length - 1].value;
       if (prevDayBtn) {
         prevDayBtn.disabled = selected <= minDate;
-        prevDayBtn.title = prevDayBtn.disabled ? 'La veille est la date AROME la plus ancienne disponible' : 'Jour précédent';
+        prevDayBtn.title = prevDayBtn.disabled ? 'Aujourd’hui est le jour le plus ancien (la veille est dans les Archives)' : 'Jour précédent';
       }
       if (nextDayBtn) {
         nextDayBtn.disabled = selected >= maxDate;
-        nextDayBtn.title = nextDayBtn.disabled ? 'Après-demain est la date AROME la plus lointaine disponible' : 'Jour suivant';
+        nextDayBtn.title = nextDayBtn.disabled ? 'J+4 (ARPEGE) est la date la plus lointaine disponible' : 'Jour suivant';
       }
       if (todayBtn) {
         todayBtn.disabled = selected === getTodayIsoDate();
@@ -125,7 +129,7 @@
           dateInput.max = dates[dates.length - 1].value;
         }
         dateInput.value = nextDate;
-        dateInput.title = 'Jours AROME disponibles : hier, aujourd’hui, demain, après-demain';
+        dateInput.title = 'Jours disponibles : d’aujourd’hui à J+3 (AROME jusqu’à J+2, ARPEGE ensuite). La veille est dans les Archives.';
       }
       syncDateNavButtons(nextDate);
     }

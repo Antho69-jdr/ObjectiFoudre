@@ -4692,31 +4692,38 @@ body.mobile-ui #timelineDock.timeline-dock,
     display: grid !important;
     place-items: center !important;
     position: absolute !important;
-    right: 6px !important;
-    top: -34px !important;
-    width: 28px !important;
-    height: 28px !important;
-    min-width: 28px !important;
+    right: 8px !important;
+    top: -36px !important;
+    /* cercle PARFAIT : largeur = hauteur, max bornés, aspect-ratio en filet de sécurité */
+    width: 30px !important;
+    height: 30px !important;
+    min-width: 30px !important;
+    max-width: 30px !important;
+    min-height: 30px !important;
+    max-height: 30px !important;
+    aspect-ratio: 1 / 1 !important;
     padding: 0 !important;
     margin: 0 !important;
-    border-radius: 999px !important;
-    border: 1px solid rgba(125, 211, 252, 0.42) !important;
-    background: rgba(8, 17, 30, 0.94) !important;
-    color: rgba(226, 238, 252, 0.96) !important;
+    border-radius: 50% !important;
+    /* même couleur/transparence que les boutons de la barre latérale (verre sombre, filet blanc) */
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    background: rgba(10, 20, 35, 0.72) !important;
+    color: #e5edf9 !important;
     font-size: 15px !important;
-    font-weight: 850 !important;
+    font-weight: 800 !important;
     line-height: 1 !important;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35) !important;
-    backdrop-filter: blur(6px) !important;
-    -webkit-backdrop-filter: blur(6px) !important;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28) !important;
+    backdrop-filter: var(--glass-blur, blur(8px)) !important;
+    -webkit-backdrop-filter: var(--glass-blur, blur(8px)) !important;
     pointer-events: auto !important;
     z-index: 131 !important;
     cursor: pointer !important;
   }
+  .frise-help-btn:hover { background: rgba(17, 31, 54, 0.9) !important; border-color: rgba(255, 255, 255, 0.2) !important; }
   .frise-help-btn[aria-pressed="true"] {
-    background: rgba(37, 99, 235, 0.94) !important;
-    border-color: rgba(147, 197, 253, 0.9) !important;
-    color: #fff !important;
+    background: rgba(37, 99, 235, 0.32) !important;
+    border-color: rgba(96, 165, 250, 0.6) !important;
+    color: #bfdbfe !important;
   }
   /* La frise repliée passe en pointer-events:none ; le bouton garde son interactivité. */
   body.mobile-ui #timelineDock.collapsed .frise-help-btn,
@@ -4739,5 +4746,72 @@ body.mobile-ui #timelineDock.timeline-dock,
   body.mobile-ui #slotButtons .timeline-wheel-light-icon::before {
     content: none !important;
     display: none !important;
+  }
+}
+
+/* ===== Téléphone PAYSAGE (paysage + écran court) : la barre de boutons de droite est COLLÉE
+   au bord supérieur et grandit quand la frise est repliée. Placé en FIN de fichier pour battre
+   la règle mobile portrait (top:58px, bloc ~3987). max-height:600px = signal robuste « paysage
+   téléphone » quelle que soit la largeur (couvre les écrans 760-1100px de large). ===== */
+@media (orientation: landscape) and (max-height: 600px) {
+  body.mobile-ui .right-rail-scroll,
+  .right-rail-scroll {
+    top: max(2px, env(safe-area-inset-top)) !important;
+    bottom: calc(var(--touch-meta-h, 30px) + var(--touch-timeline-h, 72px) + env(safe-area-inset-bottom) + 8px) !important;
+  }
+  /* frise REPLIÉE → la barre récupère la hauteur libérée par la frise masquée */
+  body.mobile-ui:has(#timelineDock.collapsed) .right-rail-scroll,
+  body:has(#timelineDock.collapsed) .right-rail-scroll {
+    bottom: calc(var(--touch-meta-h, 30px) + env(safe-area-inset-bottom) + 8px) !important;
+  }
+}
+
+/* ===== Item 2 — selectionCard affinée : surcharges smartphone (sheet repensé,
+   plus fin, contexte CAPE rendu visible). Bat le bloc mobile plus haut (display:none
+   du contexte, max-height) car même média + source plus tardive. ===== */
+@media (max-width: 767px) {
+  #selectionCard.selection-card {
+    padding: 10px 12px !important;
+    max-height: none !important;
+  }
+  #selectionCard .selection-top {
+    align-items: center !important;
+    gap: 8px !important;
+    margin-bottom: 8px !important;
+  }
+  #selectionCard .selection-title {
+    font-size: 14px !important;
+  }
+  #selectionCard .selection-scores {
+    gap: 6px !important;
+  }
+  #selectionCard .selection-score {
+    padding: 3px 8px !important;
+    border-radius: 9px !important;
+  }
+  #selectionCard .selection-score span {
+    font-size: 9px !important;
+    line-height: 1 !important;
+  }
+  #selectionCard .selection-score strong {
+    margin-top: 0 !important;
+    font-size: 16px !important;
+    line-height: 1 !important;
+  }
+  #selectionCard .selection-meta {
+    margin: 0 0 8px !important;
+    font-size: 10.5px !important;
+    line-height: 1.32 !important;
+  }
+  #selectionCard .selection-context {
+    display: inline !important;
+    margin: 0 !important;
+    font-size: 10.5px !important;
+  }
+  #selectionCard #openDetailsBtn {
+    min-height: 34px !important;
+    height: 34px !important;
+    border-radius: 11px !important;
+    font-size: 13px !important;
   }
 }

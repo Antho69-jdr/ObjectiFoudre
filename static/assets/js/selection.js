@@ -744,10 +744,21 @@
       return job;
     }
 
+    function selectionContextSummary(p) {
+      const bits = [];
+      const cape = detailNumeric(p.mucape);
+      if (cape !== null) bits.push(`CAPE ${Math.round(cape)} J/kg`);
+      const dew = detailNumeric(p.dewpoint_c);
+      if (dew !== null) bits.push(`Pt rosée ${Math.round(dew)} °C`);
+      const conv = detailNumeric(p.surface_convergence_1e4s);
+      if (conv !== null) bits.push(`Conv. ${conv.toFixed(1)}`);
+      return bits.join(' · ');
+    }
+
     function showSelection(p) {
       selectionTitle.textContent = formatSelectionLocation(p);
       if (selectionConfidence) selectionConfidence.textContent = safe(p.confidence_score);
-      if (selectionContext) selectionContext.textContent = '';
+      if (selectionContext) selectionContext.textContent = selectionContextSummary(p);
       if (selectionTrigger) selectionTrigger.textContent = safe(p.trigger_score);
       if (selectionConfidence) applyMetricTone(selectionConfidence, 'confidence_score', p.confidence_score);
       if (selectionTrigger) applyMetricTone(selectionTrigger, 'trigger_score', p.trigger_score);

@@ -73,7 +73,13 @@
     try {
       const response = await fetch('/api/history/dates');
       const data = await response.json().catch(() => ({}));
-      renderDateList(Array.isArray(data?.dates) ? data.dates : []);
+      const all = Array.isArray(data?.dates) ? data.dates : [];
+      // Archives = jours RÉVOLUS uniquement (strictement passés). Aujourd'hui (en cours)
+      // et le futur sont des prévisions vivantes, pas des archives → on les exclut.
+      const todayIso = (typeof getTodayIsoDate === 'function')
+        ? getTodayIsoDate()
+        : new Date().toISOString().slice(0, 10);
+      renderDateList(all.filter((item) => String(item?.date || '') < todayIso));
     } catch (_) {
       dateListEl.innerHTML = '<div class="history-dates-empty">Historique indisponible.</div>';
     }
