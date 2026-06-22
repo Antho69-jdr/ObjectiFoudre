@@ -7,14 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="ObjectiFoudre" />
-  <link rel="manifest" href="/manifest.webmanifest?v=1.2.87" />
+  <link rel="manifest" href="/manifest.webmanifest?v=1.2.100" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <title>ObjectiFoudre — Tactile</title>
-  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.2.87"></script>
-  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.2.87" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/css/main.css?v=1.2.87" />
-<link rel="stylesheet" href="/assets/css/components.css?v=1.2.87" />
-<link rel="stylesheet" href="/assets/css/responsive.css?v=1.2.87" />
+  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.2.100"></script>
+  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.2.100" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/main.css?v=1.2.100" />
+<link rel="stylesheet" href="/assets/css/components.css?v=1.2.100" />
+<link rel="stylesheet" href="/assets/css/responsive.css?v=1.2.100" />
 </head>
 <body>
   <div id="mobileBlockScreen" class="mobile-block-screen" hidden>
@@ -221,7 +221,7 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.2.87">Version : v1.2.87 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.2.100">Version : v1.2.100 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
@@ -394,8 +394,12 @@
         </header>
         <div class="prediction-page-body history-page-body">
           <aside class="history-dates-panel">
-            <div class="history-dates-title">Dates archivées</div>
-            <div class="history-dates-list" id="historyDateList">
+            <button class="history-cal-toggle" id="historyCalToggle" type="button" aria-expanded="true" aria-controls="historyDateList">
+              <span class="history-cal-toggle-title">Dates archivées</span>
+              <span class="history-cal-toggle-current" id="historyCalCurrent"></span>
+              <span class="history-cal-toggle-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div class="history-calendar" id="historyDateList">
               <div class="history-dates-empty">Chargement…</div>
             </div>
           </aside>
@@ -477,32 +481,32 @@
       </div>
     </div>
   </div>
-  <script src="/assets/js/idb-cache.js?v=1.2.87"></script>
-  <script src="/assets/js/dom.js?v=1.2.87"></script>
-  <script src="/assets/js/utils.js?v=1.2.87"></script>
-  <script src="/assets/js/panels.js?v=1.2.87"></script>
-  <script src="/assets/js/state.js?v=1.2.87"></script>
-  <script src="/assets/js/core.js?v=1.2.87"></script>
-  <script src="/assets/js/map-ui.js?v=1.2.87"></script>
-  <script src="/assets/js/timeline.js?v=1.2.87"></script>
-  <script src="/assets/js/grid-loader.js?v=1.2.87"></script>
-  <script src="/assets/js/grid-core.js?v=1.2.87"></script>
-  <script src="/assets/js/france-admin-lines.js?v=1.2.87"></script>
-  <script src="/assets/js/france-regions.js?v=1.2.87"></script>
-  <script src="/assets/js/storm-forecast-image.js?v=1.2.87"></script>
-  <script src="/assets/js/grid-layers.js?v=1.2.87"></script>
-  <script src="/assets/js/grid.js?v=1.2.87"></script>
-  <script src="/assets/js/metric-data.js?v=1.2.87"></script>
-  <script src="/assets/js/metric-ui.js?v=1.2.87"></script>
-  <script src="/assets/js/selection.js?v=1.2.87"></script>
-  <script src="/assets/js/data.js?v=1.2.87"></script>
-  <script src="/assets/js/services.js?v=1.2.87"></script>
-  <script src="/assets/js/search-autocomplete.js?v=1.2.87"></script>
-  <script src="/assets/js/controls.js?v=1.2.87"></script>
-  <script src="/assets/js/history.js?v=1.2.87"></script>
-  <script src="/assets/js/chase.js?v=1.2.87"></script>
-  <script src="/assets/js/bootstrap.js?v=1.2.87"></script>
-  <script src="/assets/js/mobile-block.js?v=1.2.87"></script>
-  <script src="/assets/js/tooltip.js?v=1.2.87"></script>
+  <script src="/assets/js/idb-cache.js?v=1.2.100"></script>
+  <script src="/assets/js/dom.js?v=1.2.100"></script>
+  <script src="/assets/js/utils.js?v=1.2.100"></script>
+  <script src="/assets/js/panels.js?v=1.2.100"></script>
+  <script src="/assets/js/state.js?v=1.2.100"></script>
+  <script src="/assets/js/core.js?v=1.2.100"></script>
+  <script src="/assets/js/map-ui.js?v=1.2.100"></script>
+  <script src="/assets/js/timeline.js?v=1.2.100"></script>
+  <script src="/assets/js/grid-loader.js?v=1.2.100"></script>
+  <script src="/assets/js/grid-core.js?v=1.2.100"></script>
+  <script src="/assets/js/france-admin-lines.js?v=1.2.100"></script>
+  <script src="/assets/js/france-regions.js?v=1.2.100"></script>
+  <script src="/assets/js/storm-forecast-image.js?v=1.2.100"></script>
+  <script src="/assets/js/grid-layers.js?v=1.2.100"></script>
+  <script src="/assets/js/grid.js?v=1.2.100"></script>
+  <script src="/assets/js/metric-data.js?v=1.2.100"></script>
+  <script src="/assets/js/metric-ui.js?v=1.2.100"></script>
+  <script src="/assets/js/selection.js?v=1.2.100"></script>
+  <script src="/assets/js/data.js?v=1.2.100"></script>
+  <script src="/assets/js/services.js?v=1.2.100"></script>
+  <script src="/assets/js/search-autocomplete.js?v=1.2.100"></script>
+  <script src="/assets/js/controls.js?v=1.2.100"></script>
+  <script src="/assets/js/history.js?v=1.2.100"></script>
+  <script src="/assets/js/chase.js?v=1.2.100"></script>
+  <script src="/assets/js/bootstrap.js?v=1.2.100"></script>
+  <script src="/assets/js/mobile-block.js?v=1.2.100"></script>
+  <script src="/assets/js/tooltip.js?v=1.2.100"></script>
 </body>
 </html>

@@ -4942,3 +4942,96 @@ body.chase-mode .chase-frise .chase-frise-btn:not(.active):hover {
   background: rgba(59, 130, 246, 0.26);
   border-color: rgba(59, 130, 246, 0.5);
 }
+
+/* ===== Archives — sélection de date en CALENDRIER mensuel (les jours archivés
+   s'allument au fil des préchargements) + bouton afficher/masquer. Remplace la
+   liste/strip de dates. ===== */
+.history-cal-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.history-cal-toggle:hover { background: rgba(255, 255, 255, 0.07); }
+.history-cal-toggle-title {
+  flex: 0 0 auto;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.7;
+}
+.history-cal-toggle-current {
+  flex: 1 1 auto;
+  text-align: right;
+  font-weight: 600;
+  font-size: 13px;
+  color: #cfe0fb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-cal-toggle-chevron { flex: 0 0 auto; opacity: 0.6; transition: transform 0.18s ease; }
+.history-dates-panel.cal-collapsed .history-cal-toggle-chevron { transform: rotate(-90deg); }
+.history-dates-panel.cal-collapsed .history-calendar { display: none; }
+
+.history-calendar { margin-top: 10px; min-height: 0; }
+.history-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.history-cal-month { flex: 1 1 auto; text-align: center; font-weight: 700; font-size: 12.5px; white-space: nowrap; }
+.history-cal-nav {
+  flex: 0 0 auto;
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.history-cal-nav:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
+.history-cal-nav:disabled { opacity: 0.3; cursor: default; }
+.history-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.history-cal-wd { text-align: center; font-size: 10px; font-weight: 700; opacity: 0.5; padding-bottom: 2px; }
+.history-cal-day {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.history-cal-day.is-blank { visibility: hidden; }
+.history-cal-day.is-empty { color: rgba(226, 232, 240, 0.26); }
+.history-cal-day.has-archive {
+  cursor: pointer;
+  color: #e7eefb;
+  background: rgba(90, 140, 210, 0.16);
+  border: 1px solid rgba(120, 170, 230, 0.28);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.history-cal-day.has-archive:hover { background: rgba(90, 140, 210, 0.30); }
+.history-cal-day.has-archive.active {
+  background: rgba(90, 140, 210, 0.5);
+  border-color: rgba(150, 190, 240, 0.8);
+  font-weight: 700;
+}
+.history-cal-day.has-archive:focus-visible { outline: 2px solid rgba(150, 190, 240, 0.85); outline-offset: 1px; }
+
+/* La date courante dans le toggle n'est utile que QUAND le calendrier est replié
+   (le calendrier déplié montre déjà la sélection). */
+.history-dates-panel:not(.cal-collapsed) .history-cal-toggle-current { display: none; }

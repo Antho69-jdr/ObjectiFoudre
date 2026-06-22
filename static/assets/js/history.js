@@ -85,43 +85,116 @@
     }
   }
 
+  // --- Sélection de date sous forme de CALENDRIER mensuel : les jours archivés
+  // s'« allument » (cliquables) au fil des préchargements ; un bouton montre/masque
+  // le calendrier (replié par défaut sur mobile pour rester compact). --------------
+  const CAL_MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+  const CAL_WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+  let archivedDates = [];
+  let calArchiveSet = new Map();   // dateIso -> slot_count
+  let calMonth = null;             // Date au 1er du mois affiché
+
+  function isMobileHistory() {
+    try { return matchMedia('(max-width: 920px), (max-height: 600px)').matches; } catch (_) { return false; }
+  }
+  function datesPanelEl() { return dateListEl ? dateListEl.closest('.history-dates-panel') : null; }
+  function updateCalToggleCurrent() {
+    const cur = document.getElementById('historyCalCurrent');
+    if (cur) cur.textContent = historyDate ? formatDateLabel(historyDate) : 'Aucune date';
+  }
+
   function renderDateList(dates) {
     if (!dateListEl) return;
-    if (!dates.length) {
+    archivedDates = Array.isArray(dates) ? dates : [];
+    calArchiveSet = new Map(archivedDates.map((i) => [i.date, i.slot_count]));
+    if (!archivedDates.length) {
       dateListEl.innerHTML = '<div class="history-dates-empty">Aucune date archivée pour l’instant.</div>';
       slotFrames = [];
       setHint('L’historique se remplira au fil des préchargements AROME.');
       if (analysisEl) analysisEl.textContent = 'Aucune grille archivée pour l’instant.';
+      updateCalToggleCurrent();
       return;
     }
-    dateListEl.innerHTML = '';
-    dates.forEach((item) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'history-date-btn';
-      btn.dataset.date = item.date;
-      const day = document.createElement('span');
-      day.className = 'history-date-day';
-      day.textContent = formatDateLabel(item.date);
-      const count = document.createElement('span');
-      count.className = 'history-date-count';
-      count.textContent = `${item.slot_count}/24`;
-      btn.append(day, count);
-      btn.addEventListener('click', () => selectDate(item.date));
-      dateListEl.appendChild(btn);
-    });
-    if (!historyDate || !dates.some((item) => item.date === historyDate)) {
-      selectDate(dates[0].date);
-    } else {
-      highlightActiveDate();
+    const needSelect = !historyDate || !archivedDates.some((i) => i.date === historyDate);
+    if (!calMonth) {
+      const a = new Date(`${(needSelect ? archivedDates[0].date : historyDate)}T12:00:00`);
+      calMonth = new Date(a.getFullYear(), a.getMonth(), 1);
     }
+    renderCalendar();
+    if (needSelect) selectDate(archivedDates[0].date);
+    else highlightActiveDate();
+  }
+
+  function renderCalendar() {
+    if (!dateListEl || !calMonth) return;
+    const y = calMonth.getFullYear();
+    const m = calMonth.getMonth();
+    const isoList = archivedDates.map((i) => i.date).sort();
+    const minIso = isoList[0];
+    const maxIso = isoList[isoList.length - 1];
+    const canPrev = !!minIso && new Date(`${minIso}T12:00:00`) < new Date(y, m, 1);
+    const canNext = !!maxIso && new Date(`${maxIso}T12:00:00`) >= new Date(y, m + 1, 1);
+    const startOffset = (new Date(y, m, 1).getDay() + 6) % 7; // lundi = 0
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    let cells = '';
+    for (let i = 0; i < startOffset; i += 1) cells += '<div class="history-cal-day is-blank"></div>';
+    for (let d = 1; d <= daysInMonth; d += 1) {
+      const iso = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const has = calArchiveSet.has(iso);
+      const cls = ['history-cal-day', has ? 'has-archive' : 'is-empty'];
+      if (iso === historyDate) cls.push('active');
+      const attrs = has ? ` data-date="${iso}" role="button" tabindex="0" title="${formatDateLabel(iso)} · ${calArchiveSet.get(iso)}/24"` : '';
+      cells += `<div class="${cls.join(' ')}"${attrs}><span class="cal-num">${d}</span></div>`;
+    }
+    dateListEl.innerHTML = `
+      <div class="history-cal-head">
+        <button class="history-cal-nav" type="button" data-cal-prev aria-label="Mois précédent"${canPrev ? '' : ' disabled'}>‹</button>
+        <span class="history-cal-month">${CAL_MONTHS[m]} ${y}</span>
+        <button class="history-cal-nav" type="button" data-cal-next aria-label="Mois suivant"${canNext ? '' : ' disabled'}>›</button>
+      </div>
+      <div class="history-cal-grid">
+        ${CAL_WEEKDAYS.map((w) => `<div class="history-cal-wd">${w}</div>`).join('')}
+        ${cells}
+      </div>`;
+    const prev = dateListEl.querySelector('[data-cal-prev]');
+    const next = dateListEl.querySelector('[data-cal-next]');
+    if (prev) prev.addEventListener('click', () => calShiftMonth(-1));
+    if (next) next.addEventListener('click', () => calShiftMonth(1));
+    dateListEl.querySelectorAll('.history-cal-day.has-archive').forEach((cell) => {
+      const pick = () => {
+        selectDate(cell.dataset.date);
+        if (isMobileHistory()) {   // sur mobile : on referme le calendrier après le choix
+          const p = datesPanelEl();
+          if (p) p.classList.add('cal-collapsed');
+          const t = document.getElementById('historyCalToggle');
+          if (t) t.setAttribute('aria-expanded', 'false');
+        }
+      };
+      cell.addEventListener('click', pick);
+      cell.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+    });
+  }
+
+  function calShiftMonth(delta) {
+    if (!calMonth) return;
+    calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + delta, 1);
+    renderCalendar();
   }
 
   function highlightActiveDate() {
-    if (!dateListEl) return;
-    dateListEl.querySelectorAll('.history-date-btn').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.date === historyDate);
-    });
+    if (dateListEl) {
+      if (historyDate && calMonth) {   // si la date active est dans un autre mois, on y saute
+        const a = new Date(`${historyDate}T12:00:00`);
+        if (a.getFullYear() !== calMonth.getFullYear() || a.getMonth() !== calMonth.getMonth()) {
+          calMonth = new Date(a.getFullYear(), a.getMonth(), 1);
+          renderCalendar();
+        }
+      }
+      dateListEl.querySelectorAll('.history-cal-day').forEach((c) => {
+        c.classList.toggle('active', c.dataset.date === historyDate);
+      });
+    }
+    updateCalToggleCurrent();
   }
 
   // L'app live peut saturer les connexions du navigateur pendant un préchargement
@@ -725,9 +798,26 @@
   if (learningRetrainBtn) learningRetrainBtn.addEventListener('click', retrainLearning);
   if (learningRevertBtn) learningRevertBtn.addEventListener('click', revertLearning);
 
+  const calToggleBtn = document.getElementById('historyCalToggle');
+  if (calToggleBtn) {
+    calToggleBtn.addEventListener('click', () => {
+      const panel = datesPanelEl();
+      if (!panel) return;
+      const collapsed = panel.classList.toggle('cal-collapsed');
+      calToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    });
+  }
+
   function openHistoryPage() {
     historyPage.setAttribute('aria-hidden', 'false');
     document.body.classList.add('history-open');
+    // calendrier replié par défaut sur mobile (compact), déplié sur desktop.
+    const panel = datesPanelEl();
+    if (panel) {
+      const collapsed = isMobileHistory();
+      panel.classList.toggle('cal-collapsed', collapsed);
+      if (calToggleBtn) calToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    }
     resetZoom();
     loadDates();
     loadLearningStatus();
