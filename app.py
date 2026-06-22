@@ -57,7 +57,7 @@ JS_DIR = ASSETS_DIR / "js"
 CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.86"
+APP_VERSION = "1.2.87"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -221,7 +221,11 @@ OBJECTIFOUDRE_AROME_RUN_POLL_INTERVAL_SECONDS = _env_int(
     min_value=60,
     max_value=60 * 60,
 )
-OBJECTIFOUDRE_CACHE_RETENTION_HOURS = _env_int("OBJECTIFOUDRE_CACHE_RETENTION_HOURS", 72, min_value=24)
+OBJECTIFOUDRE_CACHE_RETENTION_HOURS = _env_int("OBJECTIFOUDRE_CACHE_RETENTION_HOURS", 24, min_value=24)
+# Rétention DÉDIÉE, plus courte, pour les paquets GRIB bruts complets (`grib-full-package`,
+# le plus gros poste). Une fois les messages/champs nationaux extraits et la grille archivée,
+# le paquet complet est redondant → on le purge bien avant les caches encore utiles.
+OBJECTIFOUDRE_FULL_PACKAGE_RETENTION_HOURS = _env_int("OBJECTIFOUDRE_FULL_PACKAGE_RETENTION_HOURS", 12, min_value=1)
 OBJECTIFOUDRE_CACHE_CLEANUP_INTERVAL_SECONDS = _env_int("OBJECTIFOUDRE_CACHE_CLEANUP_INTERVAL_SECONDS", 60 * 60, min_value=5 * 60)
 # J-1 n'est PLUS préchargé : il est servi à la demande depuis l'archive (history/),
 # ce qui évite de recalculer/garder en RAM une grille déjà persistée durablement.
@@ -10759,6 +10763,9 @@ def _cleanup_server_arome_cache_dir(*, force: bool = False) -> dict[str, Any]:
         result["reason"] = "missing_cache_dir"
         return result
     cutoff = now - (OBJECTIFOUDRE_CACHE_RETENTION_HOURS * 60 * 60)
+    full_pkg_cutoff = now - (OBJECTIFOUDRE_FULL_PACKAGE_RETENTION_HOURS * 60 * 60)
+    full_pkg_dir = path / "grib-full-package"
+    result["full_package_retention_hours"] = OBJECTIFOUDRE_FULL_PACKAGE_RETENTION_HOURS
     try:
         files = [item for item in path.rglob("*") if item.is_file()]
         for item in files:
@@ -10766,7 +10773,9 @@ def _cleanup_server_arome_cache_dir(*, force: bool = False) -> dict[str, Any]:
                 stat = item.stat()
             except OSError:
                 continue
-            if stat.st_mtime >= cutoff:
+            # Les paquets GRIB bruts complets ont une rétention dédiée plus courte.
+            item_cutoff = full_pkg_cutoff if full_pkg_dir in item.parents else cutoff
+            if stat.st_mtime >= item_cutoff:
                 continue
             try:
                 item.unlink()
