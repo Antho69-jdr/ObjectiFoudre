@@ -49,6 +49,10 @@ from weather_logic import DEFAULT_CENTER_LABEL, CELL_SIZE_KM, Point, build_histo
 import weather_logic
 import verification
 import learning
+try:
+    import wcs_client  # client WCS GetCoverage (CIN/MLCAPE/cisaillement) — enrichissement non-fatal
+except Exception:  # pragma: no cover - eccodes/deps absents -> enrichissement simplement désactivé
+    wcs_client = None
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -57,7 +61,7 @@ JS_DIR = ASSETS_DIR / "js"
 CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.100"
+APP_VERSION = "1.2.101"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -7436,6 +7440,52 @@ def _ensure_grib_target_message_indexed(
     return index, fallback, 0
 
 
+def _enrich_field_values_with_wcs(field_values: dict[str, Any], slot_dt: datetime, points: list[Point]) -> None:
+    """Enrichit la grille France via le WCS Météo-France — NON-FATAL.
+
+    Ajoute CIN (convective_inhibition) et MLCAPE (mucape) — absents des paquets GRIB —
+    par GetCoverage (cf. wcs_client / mémoire project_wcs_solution). En cas d'échec
+    (WCS indispo, run manquant, quota), on log sur stderr et on continue : la grille
+    reste celle des paquets (non-régression stricte).
+    """
+    if wcs_client is None:
+        return
+    try:
+        valid_iso = slot_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        return
+    for field_key in ("convective_inhibition", "mucape"):
+        try:
+            vals = wcs_client.fetch_france_field(field_key, valid_iso, points)
+            if vals:
+                field_values[field_key] = vals
+        except Exception as exc:  # noqa: BLE001
+            print(f"[wcs] {field_key} indisponible pour {valid_iso}: {exc}", file=sys.stderr)
+
+    # Cisaillement profond 0-6 km = |V(500 hPa) - V(10 m)| : u/v 500 hPa (ARPEGE WCS
+    # isobare) moins le vent 10 m déjà extrait des paquets SP. Non-fatal.
+    try:
+        wind_spd = field_values.get("wind_speed_10m") or {}
+        wind_dir = field_values.get("wind_direction_10m") or {}
+        if wind_spd and wind_dir:
+            u500 = wcs_client.fetch_france_field("u_500hpa", valid_iso, points)
+            v500 = wcs_client.fetch_france_field("v_500hpa", valid_iso, points)
+            shear: dict[str, float] = {}
+            for p in points:
+                z = p.zone
+                spd, drc = wind_spd.get(z), wind_dir.get(z)
+                u5, v5 = u500.get(z), v500.get(z)
+                if spd is None or drc is None or u5 is None or v5 is None:
+                    continue
+                dr = math.radians(drc)
+                u10, v10 = -spd * math.sin(dr), -spd * math.cos(dr)  # convention météo (dir = provenance)
+                shear[z] = round(math.hypot(u5 - u10, v5 - v10), 2)
+            if shear:
+                field_values["shear_ms"] = shear
+    except Exception as exc:  # noqa: BLE001
+        print(f"[wcs] shear indisponible pour {valid_iso}: {exc}", file=sys.stderr)
+
+
 def _build_meteofrance_grib_slot_grid_sync(
     api_key: str,
     lat: float,
@@ -7842,6 +7892,8 @@ def _build_meteofrance_grib_slot_grid_sync(
             }
 
         slot_dt = datetime.combine(target_date, Time(hour=hour), tzinfo=ZoneInfo("Europe/Paris"))
+        if normalized_grid_scope == "france":
+            _enrich_field_values_with_wcs(field_values, slot_dt, points)
         grid_locations = []
         for point in points:
             zone = point.zone
@@ -7855,13 +7907,14 @@ def _build_meteofrance_grib_slot_grid_sync(
             wind_direction_10m_available = wind_speed_10m is not None and wind_direction_10m is not None
             hourly = {
                 "time": [slot_dt.isoformat()],
-                "cape": [field_values.get("cape", {}).get(zone) or 0.0],
+                "cape": [field_values.get("mucape", {}).get(zone) or field_values.get("cape", {}).get(zone) or 0.0],
                 "precipitable_water": [field_values.get("precipitable_water", {}).get(zone)],
                 "shortwave_radiation": [field_values.get("shortwave_radiation", {}).get(zone)],
                 "precipitation_rate": [field_values.get("precipitation_rate", {}).get(zone)],
                 "temperature_2m": [temp_c or 0.0],
                 "dew_point_2m": [dewpoint_c or 0.0],
-                "convective_inhibition": [None],
+                "convective_inhibition": [field_values.get("convective_inhibition", {}).get(zone)],
+                "shear_ms": [field_values.get("shear_ms", {}).get(zone)],
                 "relative_humidity_2m": [rh2m or 0.0],
                 "vapour_pressure_deficit": [_vapour_pressure_deficit_kpa(float(temp_c or 0.0), float(dewpoint_c or 0.0))],
                 "wet_bulb_temperature_2m": [_wet_bulb_stull_c(float(temp_c or 0.0), float(rh2m or 0.0))],

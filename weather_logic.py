@@ -702,6 +702,17 @@ def _apply_cape_moisture_gates(
     return score, penalty
 
 
+def score_shear(shear_ms: float | None) -> int | None:
+    """Cisaillement de vent profond 0-6 km (|V(500 hPa) - V(10 m)|, m/s). Indice
+    d'ORGANISATION des orages (pas de l'initiation) : faible = pulse/désorganisé,
+    fort = multicellulaire/supercellulaire. Source : ARPEGE WCS isobare (cf. wcs_client)."""
+    if shear_ms is None or not math.isfinite(shear_ms):
+        return None
+    return piecewise_score(float(shear_ms), [
+        (0.0, 0), (8.0, 12), (12.0, 35), (15.0, 60), (18.0, 80), (22.0, 100),
+    ])
+
+
 def _apply_environment_modifiers(
     score: float,
     penalty: float,
@@ -716,6 +727,7 @@ def _apply_environment_modifiers(
     shortwave_s: int | None,
     convective_activity_s: int | None,
     boundary_layer_s: int | None = None,
+    shear_s: int | None = None,
 ) -> tuple[float, float]:
     """Modificateurs secondaires : CIN, convergence de surface, eau précipitable,
     rayonnement court, couche limite et activité convective observée. Ordre conservé."""
@@ -764,6 +776,16 @@ def _apply_environment_modifiers(
             activity_score *= 0.75
             penalty += 3
         score = max(score, activity_score)
+    if shear_s is not None and cape_s >= 25:
+        # Cisaillement profond = organisation. Gated sur l'instabilité (sans CAPE,
+        # pas d'orage quel que soit le shear). Bonus si fort, légère pénalité si quasi nul.
+        if shear_s >= 70:
+            score += 6
+        elif shear_s >= 50:
+            score += 3
+        elif shear_s < 20:
+            score *= 0.93
+            penalty += 4
     return score, penalty
 
 
@@ -785,6 +807,7 @@ def compute_initiation(
     cloud_mid: float | None = None,
     cloud_high: float | None = None,
     boundary_layer_height_m: float | None = None,
+    shear_ms: float | None = None,
 ) -> tuple[int, dict[str, float | int | None]]:
     cape_s = score_cape(cape)
     dew_s = score_dewpoint(dewpoint_c)
@@ -828,6 +851,12 @@ def compute_initiation(
     boundary_layer_height = (
         max(0.0, float(boundary_layer_height_m))
         if boundary_layer_height_m is not None and math.isfinite(float(boundary_layer_height_m))
+        else None
+    )
+    shear_s = score_shear(shear_ms)
+    deep_layer_shear = (
+        max(0.0, float(shear_ms))
+        if shear_ms is not None and math.isfinite(float(shear_ms))
         else None
     )
 
@@ -907,6 +936,7 @@ def compute_initiation(
         shortwave_s=shortwave_s,
         convective_activity_s=convective_activity_s,
         boundary_layer_s=boundary_layer_s,
+        shear_s=shear_s,
     )
 
     # Cloud cover is diagnostic only here: a clear pre-convective sky can
@@ -945,6 +975,8 @@ def compute_initiation(
         'total_cloud_cover': total_cloud_cover,
         'boundary_layer_component': boundary_layer_s,
         'boundary_layer_height_m': round(boundary_layer_height, 0) if boundary_layer_height is not None else None,
+        'shear_component': shear_s,
+        'deep_layer_shear_ms': round(deep_layer_shear, 1) if deep_layer_shear is not None else None,
     }
 
 
@@ -1318,6 +1350,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
         wet_raw = _hourly_value(hourly.get("wet_bulb_temperature_2m"), idx)
         wetbulb = float(wet_raw) if wet_raw is not None else float(_wet_bulb_stull_c(temp, rh2m) or 0.0)
         cin = optional_hourly_float(hourly, ["convective_inhibition", "cin", "cin_jkg"], idx)
+        shear_input = optional_hourly_float(hourly, ["shear_ms", "shear"], idx)
         cloud_low_raw = _hourly_value(hourly.get("cloud_cover_low"), idx)
         cloud_mid_raw = _hourly_value(hourly.get("cloud_cover_mid"), idx)
         cloud_high_raw = _hourly_value(hourly.get("cloud_cover_high"), idx)
@@ -1351,6 +1384,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
             cloud_mid=cloud_mid,
             cloud_high=cloud_high,
             boundary_layer_height_m=boundary_layer_height,
+            shear_ms=shear_input,
         )
 
         metrics.append(
@@ -1374,7 +1408,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                 "gusts": gusts,
                 "ws10": ws10,
                 "wd10": wd10,
-                "shear": 0.0,
+                "shear": shear_input if shear_input is not None else 0.0,
                 "trigger": trigger,
                 **initiation_diag,
             }
@@ -1447,6 +1481,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     "precipitation_rate_mm_h": round_optional(metric.get("precipitation_rate"), 3),
                     "wind_gusts_10m_ms": round_optional(metric.get("gusts"), 1),
                     "convective_inhibition_jkg": round_optional(metric.get("cin"), 1),
+                    "deep_layer_shear_ms": round_optional(metric.get("deep_layer_shear_ms"), 1),
                     "surface_convergence_1e4s": round_optional(metric.get("surface_convergence_1e4s"), 2),
                     "cloud_cover_low": round_optional(metric.get("cloud_low"), 1),
                     "cloud_cover_mid": round_optional(metric.get("cloud_mid"), 1),
@@ -1470,6 +1505,8 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                         "precipitation": metric.get("precipitation_component"),
                         "precipitation_rate_mm_h": metric.get("precipitation_rate"),
                         "gust_potential": metric.get("gust_potential_component"),
+                        "deep_layer_shear": metric.get("shear_component"),
+                        "deep_layer_shear_ms": metric.get("deep_layer_shear_ms"),
                         "convective_activity": metric.get("convective_activity_component"),
                         "timing": metric["timing"],
                         "inhibition_penalty": metric["inhibition_penalty"],
@@ -1526,7 +1563,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     wind_speed_10m=round(metric.get("ws10", 0.0), 1),
                     wind_direction_10m=round(metric.get("wd10", 0.0), 0),
                     surface_convergence_1e4s=round_optional(metric.get("surface_convergence_1e4s"), 2),
-                    shear_ms=0.0,
+                    shear_ms=round(metric.get("deep_layer_shear_ms") or metric.get("shear") or 0.0, 1),
                     temp_c=round(metric["temp"], 1),
                     dewpoint_c=round(metric["dew"], 1),
                     analysis_mode="historical" if point and metric["dt"].date() < local_today() else "forecast",
