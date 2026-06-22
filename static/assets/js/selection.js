@@ -744,6 +744,55 @@
       return job;
     }
 
+    // --- Profil vertical de vent (10 m + niveaux isobares, ARPEGE WCS à la demande) ---
+    function windDirCardinal(deg) {
+      const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
+      return dirs[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
+    }
+    function windProfileRowsHtml(p, levels) {
+      const rows = [];
+      const s10 = detailNumeric(p.wind_speed_10m);
+      const d10 = detailNumeric(p.wind_direction_10m);
+      if (s10 !== null) rows.push({ label: '10 m', speed: s10, dir: d10 });
+      (levels || []).forEach((l) => rows.push({ label: l.level + ' hPa', speed: l.speed_ms, dir: l.dir_deg }));
+      return rows.map((r) => {
+        const speed = (r.speed === null || r.speed === undefined) ? '—' : Math.round(r.speed * 3.6) + ' km/h';
+        const dir = (r.dir === null || r.dir === undefined) ? '—'
+          : '<span class="wp-arrow" style="display:inline-block;transform:rotate(' + Math.round(r.dir) + 'deg)">↑</span> ' + Math.round(r.dir) + '° ' + windDirCardinal(r.dir);
+        return '<div class="wp-row"><span class="wp-level">' + r.label + '</span><span class="wp-speed">' + speed + '</span><span class="wp-dir">' + dir + '</span></div>';
+      }).join('');
+    }
+    const windProfilePending = new Map();
+    async function loadWindProfile(p) {
+      const section = document.getElementById('dWindProfileSection');
+      const body = document.getElementById('dWindProfile');
+      if (!section || !body || !p || !p.slot_key) return;
+      const hour = Number(String(p.slot_key).slice(1));
+      const dateIso = normalizeDateIso(p.day_key || selectedBaseDate);
+      if (!Number.isFinite(hour) || p.lat === null || p.lon === undefined || p.lat === undefined || p.lon === null) { section.hidden = true; return; }
+      section.hidden = false;
+      body.innerHTML = windProfileRowsHtml(p, []) + '<div class="wp-loading">Niveaux d’altitude…</div>';
+      const key = dateIso + '|' + hour + '|' + Number(p.lat).toFixed(1) + '|' + Number(p.lon).toFixed(1);
+      try {
+        let job = windProfilePending.get(key);
+        if (!job) {
+          job = fetch('/api/meteofrance/grib-france-wind-profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date: dateIso, hour, lat: Number(p.lat), lon: Number(p.lon) }),
+          }).then((r) => r.json()).catch(() => ({}));
+          windProfilePending.set(key, job);
+        }
+        const data = await job;
+        windProfilePending.delete(key);
+        if (selectedFeature === p && data && data.ok) {
+          body.innerHTML = windProfileRowsHtml(p, data.profile || []);
+        }
+      } catch (_) {
+        body.innerHTML = windProfileRowsHtml(p, []);
+      }
+    }
+
     function selectionContextSummary(p) {
       const bits = [];
       const cape = detailNumeric(p.mucape);
@@ -988,6 +1037,9 @@
       if (dConfidence) dConfidence.textContent = safe(p.confidence_score);
       if (dTrigger) dTrigger.textContent = safe(p.trigger_score);
       if (dCape) dCape.textContent = safe(p.mucape);
+      if (dCin) dCin.textContent = safe(p.convective_inhibition, ' J/kg');
+      if (dShear) dShear.textContent = safe(p.shear_ms, ' m/s');
+      loadWindProfile(p);
       if (dRh) dRh.textContent = safe(p.relative_humidity_2m, ' %');
       if (dPrecipitableWater) dPrecipitableWater.textContent = safe(p.precipitable_water, ' kg/m²');
       if (dShortwave) dShortwave.textContent = safe(p.shortwave_radiation, ' W/m²');

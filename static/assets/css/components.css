@@ -5035,3 +5035,15 @@ body.chase-mode .chase-frise .chase-frise-btn:not(.active):hover {
 /* La date courante dans le toggle n'est utile que QUAND le calendrier est replié
    (le calendrier déplié montre déjà la sélection). */
 .history-dates-panel:not(.cal-collapsed) .history-cal-toggle-current { display: none; }
+
+/* Profil vertical de vent dans le modal de détails (10 m + niveaux isobares, WCS). */
+.details-wind-profile { margin-top: 10px; padding: 10px 12px; background: rgba(10,18,32,0.5); border: 1px solid rgba(148,163,184,0.18); border-radius: 12px; }
+.details-wind-profile-title { font-size: 12px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px; letter-spacing: 0.02em; }
+.details-wind-profile-rows { display: flex; flex-direction: column; gap: 2px; }
+.wp-row { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 10px; font-size: 13px; padding: 3px 0; border-bottom: 1px solid rgba(148,163,184,0.08); }
+.wp-row:last-child { border-bottom: 0; }
+.wp-level { color: #94a3b8; font-variant-numeric: tabular-nums; }
+.wp-speed { color: #e2e8f0; font-variant-numeric: tabular-nums; }
+.wp-dir { color: #cbd5e1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wp-arrow { color: #60a5fa; font-weight: 700; }
+.wp-loading { font-size: 12px; color: #64748b; padding: 4px 0; }

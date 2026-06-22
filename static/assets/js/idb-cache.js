@@ -16,8 +16,16 @@
     dbPromise = new Promise((resolve) => {
       try {
         if (!('indexedDB' in window)) { resolve(null); return; }
-        const req = indexedDB.open(DB_NAME, 1);
-        req.onupgradeneeded = () => { try { req.result.createObjectStore(STORE); } catch (_) {} };
+        // v2 : le schéma de cellule a gagné CIN/MLCAPE/cisaillement (WCS). On wipe le
+        // store à la montée de version pour ne pas servir d'anciennes cellules sans ces champs.
+        const req = indexedDB.open(DB_NAME, 2);
+        req.onupgradeneeded = () => {
+          try {
+            const db = req.result;
+            if (db.objectStoreNames.contains(STORE)) db.deleteObjectStore(STORE);
+            db.createObjectStore(STORE);
+          } catch (_) {}
+        };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => resolve(null);
         req.onblocked = () => resolve(null);

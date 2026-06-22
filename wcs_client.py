@@ -197,6 +197,55 @@ def fetch_france_field(
     return sample_at_points(raw, list(points))
 
 
+_ARPEGE_U_ISO = "U_COMPONENT_OF_WIND__ISOBARIC_SURFACE"
+_ARPEGE_V_ISO = "V_COMPONENT_OF_WIND__ISOBARIC_SURFACE"
+PROFILE_LEVELS = (925, 850, 700, 500, 300)
+
+
+def _sample_isobaric(coverage: str, level: int, lat: float, lon: float, valid_iso: str, run_iso: str, key: str) -> float | None:
+    d = 0.25  # mini-bbox autour du point (ARPEGE 0,1° -> quelques points)
+    subsets = [f"time({valid_iso})", f"pressure({level})", f"long({lon - d},{lon + d})", f"lat({lat - d},{lat + d})"]
+    raw = get_coverage("arpege", f"{coverage}___{run_iso}", subsets=subsets, key=key, timeout=30.0)
+    return sample_at_points(raw, [{"zone": "pt", "lat": lat, "lon": lon}]).get("pt")
+
+
+def fetch_wind_profile(
+    lat: float,
+    lon: float,
+    valid_iso: str,
+    *,
+    levels: tuple[int, ...] = PROFILE_LEVELS,
+    keys: dict[str, str] | None = None,
+    run_iso: str | None = None,
+) -> list[dict[str, float]]:
+    """Profil vertical de vent (force + direction) aux niveaux isobares donnés, au point
+    (lat, lon), pour l'échéance valid_iso. ARPEGE WCS. Une requête u + une v par niveau,
+    parallélisées. Renvoie [{level, speed_ms, dir_deg}, ...] (niveaux trouvés seulement)."""
+    key = (keys or {}).get("arpege") or default_key("arpege")
+    if run_iso is None:
+        valid_dt = datetime.strptime(valid_iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        run_iso = run_for_valid("arpege", valid_dt, key)
+        if run_iso is None:
+            raise WcsError(f"aucun run ARPEGE ne couvre {valid_iso}")
+
+    def _one(level: int) -> dict[str, float] | None:
+        try:
+            u = _sample_isobaric(_ARPEGE_U_ISO, level, lat, lon, valid_iso, run_iso, key)
+            v = _sample_isobaric(_ARPEGE_V_ISO, level, lat, lon, valid_iso, run_iso, key)
+        except Exception:  # noqa: BLE001 - un niveau qui échoue ne casse pas le profil
+            return None
+        if u is None or v is None:
+            return None
+        speed = math.hypot(u, v)
+        direction = (math.degrees(math.atan2(-u, -v)) + 360.0) % 360.0
+        return {"level": int(level), "speed_ms": round(speed, 1), "dir_deg": round(direction)}
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(5, len(levels))) as ex:
+        results = list(ex.map(_one, levels))
+    return [r for r in results if r]
+
+
 # --- self-test standalone ---------------------------------------------------
 if __name__ == "__main__":
     import sys

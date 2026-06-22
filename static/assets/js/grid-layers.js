@@ -405,7 +405,9 @@ function onGridMove(e) {
   }
   const el = ensureGridCellTooltip();
   el.innerHTML =
-    '<span class="gct-row"><b>CAPE</b>' + fmtGridTip(p.mucape, ' J/kg') + '</span>' +
+    '<span class="gct-row"><b>MLCAPE</b>' + fmtGridTip(p.mucape, ' J/kg') + '</span>' +
+    '<span class="gct-row"><b>CIN</b>' + fmtGridTip(p.convective_inhibition, ' J/kg') + '</span>' +
+    '<span class="gct-row"><b>Cisaill. 0-6km</b>' + fmtGridTip(p.shear_ms, ' m/s') + '</span>' +
     '<span class="gct-row"><b>Temp.</b>' + fmtGridTip(p.temp_c, ' °C') + '</span>' +
     '<span class="gct-row"><b>Pt rosée</b>' + fmtGridTip(p.dewpoint_c, ' °C') + '</span>';
   const pt = e.point || { x: 0, y: 0 };

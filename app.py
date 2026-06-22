@@ -61,7 +61,7 @@ JS_DIR = ASSETS_DIR / "js"
 CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.101"
+APP_VERSION = "1.2.105"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -13416,6 +13416,47 @@ async def meteofrance_grib_france_cell_details(payload: MeteoFranceCellDetailsRe
     if cell is None:
         return {"ok": False, "status": 404, "message": f"Cellule {zone} absente du créneau {payload.hour:02d}h."}
     return {"ok": True, "cell": cell, "date": payload.date.isoformat(), "hour": payload.hour}
+
+
+class MeteoFranceWindProfileRequest(BaseModel):
+    date: Date
+    hour: int = Field(..., ge=0, le=23)
+    lat: float = Field(..., ge=37.5, le=55.4)
+    lon: float = Field(..., ge=-16.0, le=16.0)
+
+
+# Profil vertical de vent (ARPEGE WCS isobare) à la demande. Caché par (échéance, lat/lon
+# arrondis 0,1° = maille ARPEGE) → les cellules voisines et les re-clics partagent le résultat.
+_WIND_PROFILE_CACHE: dict[tuple[str, float, float], list[dict[str, float]]] = {}
+_WIND_PROFILE_CACHE_MAX = 4000
+
+
+def _wind_profile_sync(target_date: Date, hour: int, lat: float, lon: float) -> list[dict[str, float]]:
+    if wcs_client is None:
+        return []
+    slot_dt = datetime.combine(target_date, Time(hour=hour), tzinfo=ZoneInfo("Europe/Paris"))
+    valid_iso = slot_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rlat, rlon = round(lat, 1), round(lon, 1)
+    ckey = (valid_iso, rlat, rlon)
+    if ckey in _WIND_PROFILE_CACHE:
+        return _WIND_PROFILE_CACHE[ckey]
+    try:
+        prof = wcs_client.fetch_wind_profile(rlat, rlon, valid_iso)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[wcs] profil vent indisponible {valid_iso} {rlat},{rlon}: {exc}", file=sys.stderr)
+        prof = []
+    if len(_WIND_PROFILE_CACHE) > _WIND_PROFILE_CACHE_MAX:
+        _WIND_PROFILE_CACHE.clear()
+    _WIND_PROFILE_CACHE[ckey] = prof
+    return prof
+
+
+@app.post("/api/meteofrance/grib-france-wind-profile")
+async def meteofrance_grib_france_wind_profile(payload: MeteoFranceWindProfileRequest) -> dict[str, Any]:
+    """Profil vertical de vent (force + direction) à plusieurs niveaux de pression au point
+    de la cellule, pour le modal de détails. À la demande, non-fatal."""
+    profile = await asyncio.to_thread(_wind_profile_sync, payload.date, payload.hour, payload.lat, payload.lon)
+    return {"ok": True, "profile": profile}
 
 
 @app.post("/api/meteofrance/grib-france-day-cache")
