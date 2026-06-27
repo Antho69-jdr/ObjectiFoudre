@@ -1,0 +1,151 @@
+/* ============================================================================
+   theme.css — STAGING DA : recoloration de l'app via les tokens legacy.
+   ----------------------------------------------------------------------------
+   Chargé EN DERNIER dans index.html, après les 3 CSS legacy. Ne redéfinit
+   QUE les tokens de couleur/apparence que le legacy lit en var(). On ne touche
+   PAS aux variables structurelles (--rail-*, --right-rail-*, --timeline-*,
+   --shell-radius) que responsive.css fait varier par breakpoint, sinon on
+   écraserait ces overrides responsifs.
+
+   But : appliquer la nouvelle direction artistique (ink profond, cyan
+   électrique) dans toute l'app sans rien changer au layout. La refonte
+   structurelle (Phase 2 complète) suivra surface par surface.
+   ============================================================================ */
+
+/* Tokens du design system (couleurs/spacing/rayons/ombres) — requis pour que
+   les components branchés ci-dessous résolvent leurs var() live. Les dims
+   structurelles rail/timeline ont été sorties vers layout.css (cf. tokens.css). */
+@import "./tokens.css";
+
+/* Component timeline PROPRE (rail desktop + molette mobile, 0 !important).
+   Remplace les ~150 règles timeline legacy purgées de components/responsive.css. */
+@import "./components/timeline.css";
+
+/* Component rail droit : chrome verre des boutons icône (cohérent avec la frise).
+   Remplace les règles look legacy purgées (la POSITION reste legacy). */
+@import "./components/rail.css";
+
+/* Component recherche : LOOK de la barre/champ/boutons/autocomplétion (la
+   position du dock + le champ date restent legacy). */
+@import "./components/search.css";
+
+/* Component sélection : LOOK de la carte de cellule (la POSITION absolute +
+   le placement JS restent legacy). Scopé #selectionCard. */
+@import "./components/selection.css";
+
+/* Component modale de détails : LOOK + layout du CONTENU (header, inspecteur,
+   grille, cards, chips, profil de vent). Le CONTENEUR (position/taille/radius/
+   carte flottante mobile) reste legacy. Scopé #detailsModal. */
+@import "./components/details-modal.css";
+
+/* Component badges carte : overlays horloge / date / quota (LOOK + position).
+   La barre meta-stack (bas) reste legacy (desktop-only, très responsive). */
+@import "./components/badges.css";
+
+/* Component bouton : primitive of-btn (DS) + reset `button` générique live +
+   conteneurs .button-row/.action-row + chrome verre des contrôles maplibre.
+   Parité stricte avec le legacy (purgé). */
+@import "./components/button.css";
+
+/* Component echelles : primitives DS of-prob / of-sev + legende proba LIVE
+   (legend-wrap, legend-gradient, legend-scale ; gradient hex = couleurs cellules,
+   parite stricte avec le legacy purge). */
+@import "./components/forecast-scales.css";
+
+/* Component ecrans systeme : splash/loader d'ouverture + ecran de blocage mobile
+   (parite stricte avec le legacy purge). */
+@import "./components/system-screens.css";
+
+/* Component coquille PARTAGEE des pages plein ecran (prevision + historique +
+   chase) : LOOK du chrome (header, onglets, chips date, panneaux). Le plein-ecran
+   !important (responsive desktop+mobile) et le chase restent legacy. Chunk 1. */
+@import "./components/prediction-page.css";
+
+:root {
+  /* Fond & surfaces */
+  --bg: #070d18;
+  --panel: rgba(13, 21, 36, 0.60);
+  --panel-2: rgba(16, 26, 44, 0.74);
+
+  /* Texte */
+  --text: #eaf1fc;
+  --muted: #a3b5d0;
+
+  /* Filets & ombres */
+  --border: rgba(255, 255, 255, 0.10);
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.30);
+
+  /* Accent (cyan électrique). --accent-2 garde son rôle de fond accent doux,
+     remappé sur la teinte cyan pour rester cohérent (et non sur l'ambre). */
+  --accent: #38bdf8;
+  --accent-2: rgba(56, 189, 248, 0.18);
+
+  /* Verre */
+  --glass-blur: blur(16px) saturate(1.2);
+}
+
+/* ============================================================================
+   Reciblage des bleus codés EN DUR dans le legacy → cyan électrique.
+   Le legacy passe peu par var(--accent) (couleurs en dur partout), donc sans
+   ces règles le changement de DA est imperceptible. Mêmes sélecteurs que le
+   legacy, chargés en dernier → on gagne sans !important (sauf 1 cas legacy).
+   Color-only : aucune propriété de layout touchée.
+   ============================================================================ */
+
+/* États actifs des boutons du rail + bascule recherche */
+.right-rail-stack .grid-focus-btn.active,
+#toggleSearchBtn.active,
+.search-dock.show-search #toggleSearchBtn {
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.96), rgba(14, 165, 233, 0.92));
+  border-color: rgba(186, 230, 253, 0.5);
+  color: #04121f;
+}
+
+/* Boutons actifs génériques + bouton primaire */
+button.active { background: rgba(56, 189, 248, 0.95); border-color: rgba(186, 230, 253, 0.5); color: #04121f; }
+.primary-btn { background: rgba(56, 189, 248, 0.95); border-color: rgba(186, 230, 253, 0.5); color: #04121f; }
+.primary-btn:hover { background: rgba(14, 165, 233, 0.98); }
+
+/* Recherche */
+.search-panel #searchCityBtn { background: rgba(56, 189, 248, 0.24); border-color: rgba(56, 189, 248, 0.4); }
+.search-panel #searchCityBtn:hover { background: rgba(56, 189, 248, 0.32); border-color: rgba(56, 189, 248, 0.55); }
+
+/* Encarts & hover accentués */
+.summary-box { background: rgba(56, 189, 248, 0.10); border-color: rgba(56, 189, 248, 0.26); }
+.metric-btn:hover,
+.metric-btn:focus-visible { background: rgba(56, 189, 248, 0.12); border-color: rgba(56, 189, 248, 0.48); }
+
+/* Curseur/lecture timeline */
+.timeline-play-btn.active { box-shadow: 0 10px 24px rgba(56, 189, 248, 0.30); }
+
+/* Badge source WCS (bleu → cyan) */
+.grid-source-badge.source-wcs {
+  border-color: rgba(56, 189, 248, 0.7);
+  color: #cffafe;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28), 0 0 0 3px rgba(56, 189, 248, 0.14);
+}
+
+/* Pastilles AROME en cache/chargées (liseré bleu → cyan) */
+.timeline-slot-strip .slot-pill.is-arome-cached,
+.timeline-slot-strip .slot-pill.is-arome-loaded {
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+/* Focus des champs (anneau bleu → cyan) */
+.location-input:focus,
+.date-input:focus,
+.search-autocomplete-item:hover,
+.search-autocomplete-item.active {
+  border-color: rgba(56, 189, 248, 0.62);
+}
+
+/* ============================================================================
+   Barre meta du bas (Version · Source · taille cellule) masquée sur tablette
+   et mobile (≤1024). Le legacy force son display en !important → on doit aussi
+   passer en !important pour gagner. Sur desktop (≥1025) elle reste affichée.
+   ============================================================================ */
+@media (max-width: 1024px) {
+  body.mobile-ui .meta-stack,
+  .meta-stack,
+  #meta-stack { display: none !important; }
+}

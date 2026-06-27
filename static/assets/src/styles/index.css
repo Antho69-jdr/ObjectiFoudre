@@ -1,0 +1,24 @@
+/* Bundle CSS ObjectiFoudre — ordre des couches (ITCSS-ish).
+   tokens → base → layout → components. Une seule source de cascade. */
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./layout.css";
+
+/* Primitives du design system (of-*) */
+@import "./components/button.css";
+@import "./components/panel.css";
+@import "./components/input.css";
+@import "./components/chip.css";
+@import "./components/modal.css";
+@import "./components/forecast-scales.css";
+
+/* Surfaces de l'app (cible le DOM legacy, thémé sur les tokens) */
+@import "./components/rail.css";
+@import "./components/search.css";
+@import "./components/timeline.css";
+@import "./components/badges.css";
+@import "./components/selection.css";
+@import "./components/details-modal.css";
+@import "./components/controls-base.css";
+@import "./components/system-screens.css";

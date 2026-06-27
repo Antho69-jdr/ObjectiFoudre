@@ -1,0 +1,73 @@
+/* ============================================================================
+   of-modal — fenêtre modale + voile. Pilotée par l'attribut [hidden] / .is-open.
+   ============================================================================ */
+
+.of-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal-backdrop);
+  background: rgba(3, 7, 14, 0.62);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-slow) var(--ease);
+}
+.of-modal-backdrop.is-open { opacity: 1; pointer-events: auto; }
+
+.of-modal {
+  position: fixed;
+  z-index: var(--z-modal);
+  top: 50%;
+  left: 50%;
+  width: min(560px, calc(100vw - var(--sp-8)));
+  max-height: min(82vh, 900px);
+  transform: translate(-50%, -48%) scale(0.98);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-3);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-slow) var(--ease), transform var(--dur-slow) var(--ease-out);
+}
+.of-modal.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.of-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-5) var(--sp-5) var(--sp-3);
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.of-modal__title { font-size: var(--fs-xl); }
+.of-modal__subtitle { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-1); }
+
+.of-modal__body {
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+  overflow-y: auto;
+}
+
+.of-modal__close {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.of-modal__close:hover { color: var(--text); border-color: var(--border-strong); }

@@ -17,9 +17,11 @@ import math
 import mimetypes
 import os
 import io
+import functools
 import re
 import shutil
 import struct
+import sys
 import tempfile
 import threading
 import zipfile
@@ -60,8 +62,9 @@ ASSETS_DIR = STATIC_DIR / "assets"
 JS_DIR = ASSETS_DIR / "js"
 CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
+DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.105"
+APP_VERSION = "1.2.144"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -2618,16 +2621,32 @@ def _archive_france_slot_grid(result: dict[str, Any]) -> None:
         slot = day_slots[0] if isinstance(day_slots, list) and day_slots else None
         if not isinstance(slot, dict) or not slot.get("cells"):
             return  # no real grid -> nothing worth archiving
+        new_cell_count = len(slot.get("cells") or [])
         run_ref = str(meta.get("arome_run_latest_reference_time") or "")
         path = _history_slot_path(date_str, hour)
-        if path.exists() and run_ref:
+        # Garde-fou anti-grille dégénérée : une grille France complète ≈ 2636 cellules. Un
+        # build tronqué (ex. 13×13 = 169 cellules d'un carré central) ne doit JAMAIS être
+        # archivé ni écraser une grille plus riche, même avec un run plus récent — c'est la
+        # cause du « trou carré » observé dans l'archive.
+        MIN_FRANCE_GRID_CELLS = 800
+        if path.exists():
             try:
                 existing = _read_history_gzip(path)
-                existing_run = str((existing or {}).get("run_reference_time") or "")
-                if existing_run and run_ref < existing_run:
-                    return  # incoming AROME run is older than the archived one
             except Exception:
-                pass
+                existing = None
+            if isinstance(existing, dict):
+                existing_run = str(existing.get("run_reference_time") or "")
+                if existing_run and run_ref and run_ref < existing_run:
+                    return  # incoming AROME run is older than the archived one
+                try:
+                    existing_slot = (((existing.get("payload") or {}).get("days") or [{}])[0].get("slots") or [{}])[0]
+                    existing_cell_count = len(existing_slot.get("cells") or [])
+                except Exception:
+                    existing_cell_count = 0
+                if existing_cell_count and new_cell_count < max(MIN_FRANCE_GRID_CELLS, existing_cell_count // 2):
+                    return  # grille entrante anormalement pauvre -> on garde l'existante
+        if new_cell_count < MIN_FRANCE_GRID_CELLS:
+            return  # grille dégénérée -> ne pas archiver du tout
         record = {
             "schema": HISTORY_SCHEMA_VERSION,
             "date": date_str,
@@ -3720,6 +3739,12 @@ def _is_meteofrance_france_grid_cell(lat: float, lon: float, cell_height_deg: fl
     )
 
 
+# Mémoïsé : le masque grille France ne dépend que du préfixe de zone, de la taille
+# de cellule et de constantes (polygones 817+157 sommets, bornes). Sans cache il était
+# reconstruit à CHAQUE heure matérialisée (24×/jour), à ~45 M opérations point-dans-
+# polygone par construction. La liste renvoyée est PARTAGÉE et doit rester en lecture
+# seule (tous les appelants la passent en points_override sans la muter).
+@functools.lru_cache(maxsize=8)
 def _build_meteofrance_france_grid_points(zone_prefix: str = METEOFRANCE_FRANCE_GRID_LABEL, cell_size_km: float = CELL_SIZE_KM) -> list[Point]:
     bounds = METEOFRANCE_FRANCE_GRID_BOUNDS
     step_lat = km_to_deg_lat(cell_size_km)
@@ -6693,6 +6718,68 @@ def _convert_meteofrance_grib_field_value(field: str, value: float | None, metad
     return round(converted, 3)
 
 
+def _grib_nearest_samples(handle: Any, in_lats: list[float], in_lons: list[float]) -> list[dict[str, Any] | None]:
+    """Plus proche voisin pour une liste de points, renvoyé aligné sur l'entrée.
+
+    Sur grille régulière (regular_ll — cas AROME/ARPEGE/WCS), l'indice se calcule par
+    simple arithmétique vectorisée numpy (arrondi lat/lon → indice), O(1) par point, au
+    lieu de la recherche eccodes O(taille de grille) par point qui dominait la
+    matérialisation (~5500 points × ~14 champs × 24 h). Équivalence exacte vérifiée vs
+    codes_grib_find_nearest (0 écart d'index/valeur). Repli eccodes multi-points pour
+    toute grille non régulière ou en cas d'imprévu.
+    """
+    import eccodes  # type: ignore
+
+    n = len(in_lats)
+    if not n:
+        return []
+    try:
+        if str(_safe_eccodes_get(handle, "gridType") or "") == "regular_ll":
+            import numpy as np
+
+            ni = int(eccodes.codes_get(handle, "Ni"))
+            nj = int(eccodes.codes_get(handle, "Nj"))
+            j_consecutive = int(eccodes.codes_get(handle, "jPointsAreConsecutive"))
+            dlat = np.asarray(eccodes.codes_get_array(handle, "distinctLatitudes"), dtype=float)
+            dlon = np.asarray(eccodes.codes_get_array(handle, "distinctLongitudes"), dtype=float)
+            if dlat.size == nj and dlon.size == ni and dlat.size >= 2 and dlon.size >= 2:
+                lat0 = dlat[0]
+                lon0 = dlon[0]
+                lat_step = dlat[1] - dlat[0]
+                lon_step = dlon[1] - dlon[0]
+                qlat = np.asarray(in_lats, dtype=float)
+                qlon = np.asarray(in_lons, dtype=float)
+                jj = np.clip(np.rint((qlat - lat0) / lat_step).astype(int), 0, nj - 1)
+                ii = np.clip(np.rint((qlon - lon0) / lon_step).astype(int), 0, ni - 1)
+                flat = (ii * nj + jj) if j_consecutive else (jj * ni + ii)
+                values = np.asarray(eccodes.codes_get_values(handle), dtype=float)
+                grid_lats = dlat[jj]
+                grid_lons = dlon[ii]
+                # Distance grand-cercle (km) — diagnostique, calculée vectoriellement.
+                phi1 = np.radians(qlat)
+                phi2 = np.radians(grid_lats)
+                dphi = np.radians(grid_lats - qlat)
+                dlmb = np.radians(grid_lons - qlon)
+                hav = np.sin(dphi / 2.0) ** 2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlmb / 2.0) ** 2
+                dist_km = 2.0 * 6371.0 * np.arcsin(np.minimum(1.0, np.sqrt(hav)))
+                return [
+                    {
+                        "lat": float(grid_lats[k]),
+                        "lon": float(grid_lons[k]),
+                        "value": float(values[flat[k]]),
+                        "distance": float(dist_km[k]),
+                        "index": int(flat[k]),
+                    }
+                    for k in range(n)
+                ]
+    except Exception:
+        pass
+
+    # Repli : recherche eccodes multi-points (grille non régulière, ou clé manquante).
+    nearest = eccodes.codes_grib_find_nearest_multiple(handle, False, list(in_lats), list(in_lons))
+    return [_normalize_eccodes_nearest_point(item) for item in nearest]
+
+
 def _sample_grib_field_nearest_with_eccodes(raw: bytes, field: str, points: list[Any]) -> dict[str, Any]:
     try:
         import eccodes  # type: ignore
@@ -6708,30 +6795,34 @@ def _sample_grib_field_nearest_with_eccodes(raw: bytes, field: str, points: list
             "units": _safe_eccodes_get(handle, "units"),
             "missingValue": _safe_eccodes_get(handle, "missingValue"),
         }
+        # Échantillonnage du plus proche voisin vectorisé (cf. _grib_nearest_samples) :
+        # calcul d'indice O(1)/point sur grille régulière au lieu d'une recherche eccodes
+        # O(grille)/point — c'était le goulot dominant de la matérialisation.
+        point_list = list(points)
         samples = []
         valid_samples = []
-        for point in points:
-            nearest_points = eccodes.codes_grib_find_nearest(handle, float(point.lat), float(point.lon), False, 1)
-            if not nearest_points:
-                continue
-            normalized = _normalize_eccodes_nearest_point(nearest_points[0])
-            if normalized is None:
-                continue
-            converted = _convert_meteofrance_grib_field_value(field, normalized["value"], metadata)
-            sample = {
-                "zone": getattr(point, "zone", ""),
-                "lat": float(point.lat),
-                "lon": float(point.lon),
-                "grid_lat": round(normalized["lat"], 5),
-                "grid_lon": round(normalized["lon"], 5),
-                "raw_value": round(normalized["value"], 3),
-                "value": converted,
-                "distance_km": round(normalized["distance"], 3),
-                "grid_index": normalized["index"],
-            }
-            samples.append(sample)
-            if converted is not None:
-                valid_samples.append(sample)
+        if point_list:
+            in_lats = [float(point.lat) for point in point_list]
+            in_lons = [float(point.lon) for point in point_list]
+            nearest_points = _grib_nearest_samples(handle, in_lats, in_lons)
+            for point, normalized in zip(point_list, nearest_points):
+                if normalized is None:
+                    continue
+                converted = _convert_meteofrance_grib_field_value(field, normalized["value"], metadata)
+                sample = {
+                    "zone": getattr(point, "zone", ""),
+                    "lat": float(point.lat),
+                    "lon": float(point.lon),
+                    "grid_lat": round(normalized["lat"], 5),
+                    "grid_lon": round(normalized["lon"], 5),
+                    "raw_value": round(normalized["value"], 3),
+                    "value": converted,
+                    "distance_km": round(normalized["distance"], 3),
+                    "grid_index": normalized["index"],
+                }
+                samples.append(sample)
+                if converted is not None:
+                    valid_samples.append(sample)
         return {
             "ok": True,
             "message": f"{len(valid_samples)}/{len(samples)} point(s) GRIB valides échantillonnés pour {field}.",
@@ -6782,30 +6873,55 @@ def _decode_meteofrance_grib_national_field(raw: bytes, field: str) -> dict[str,
             "missingValue",
         ]
         metadata = {key: _safe_eccodes_get(handle, key) for key in metadata_keys}
-        raw_values = eccodes.codes_get_values(handle)
-        values = array("f")
-        valid_count = 0
-        valid_min = None
-        valid_max = None
-        sample: list[float] = []
-        for raw_value in raw_values:
+        # Décodage vectorisé numpy : les conversions de _convert_meteofrance_grib_field_value
+        # sont toutes élémentaires (K→°C, ×100 nuages, %360 vent, max(0), ×3600 pluie,
+        # arrondi). Sur ~1,5 M points × ~14 champs × 24 h, la boucle Python par valeur était
+        # le goulot dominant du préchargement (≈40 min). Équivalence numérique vérifiée
+        # (NaN/missing/arrondi/float32 identiques à la version scalaire conservée pour
+        # l'échantillonnage ponctuel).
+        import numpy as np
+
+        arr = np.asarray(eccodes.codes_get_values(handle), dtype=np.float64)
+        valid = np.isfinite(arr)
+        missing_value = metadata.get("missingValue")
+        if missing_value is not None:
             try:
-                converted = _convert_meteofrance_grib_field_value(field, float(raw_value), metadata)
+                valid &= ~np.isclose(arr, float(missing_value), rtol=0.0, atol=1e-6)
             except Exception:
-                converted = None
-            if converted is None:
-                values.append(float("nan"))
-                continue
-            converted = float(converted)
-            values.append(converted)
-            valid_count += 1
-            valid_min = converted if valid_min is None else min(valid_min, converted)
-            valid_max = converted if valid_max is None else max(valid_max, converted)
-            if len(sample) < 8:
-                sample.append(round(converted, 3))
+                pass
+        out = arr.copy()
+        with np.errstate(invalid="ignore", divide="ignore"):
+            if field in {"temperature_2m", "dew_point_2m"}:
+                mask = out > 170
+                out[mask] = out[mask] - 273.15
+            if field in {"cloud_cover_low", "cloud_cover_mid", "cloud_cover_high"}:
+                mask = (out >= 0) & (out <= 1.5)
+                out[mask] = out[mask] * 100.0
+            if field.startswith("wind_direction_"):
+                out = np.mod(out, 360.0)
+            if field in {"cape", "precipitable_water", "shortwave_radiation"}:
+                out = np.maximum(0.0, out)
+            if field == "precipitation_rate":
+                units = str(metadata.get("units") or "").lower()
+                out = np.maximum(0.0, out)
+                if "s" in units and ("kg" in units or "m" in units):
+                    out = out * 3600.0
+        out = np.round(out, 3)
+        out[~valid] = np.nan
+        values = out.astype(np.float32)
+        valid_count = int(np.count_nonzero(valid))
+        if valid_count:
+            valid_values = out[valid]
+            valid_min = float(np.min(valid_values))
+            valid_max = float(np.max(valid_values))
+            sample = [round(float(v), 3) for v in valid_values[:8]]
+        else:
+            valid_min = None
+            valid_max = None
+            sample = []
         raw_bytes = values.tobytes()
         compressed_values = zlib.compress(raw_bytes, level=1)
-        value_count = len(values)
+        value_count = int(values.size)
         payload = {
             "ok": True,
             "message": f"Champ national {field} décodé et compressé.",
@@ -7454,22 +7570,41 @@ def _enrich_field_values_with_wcs(field_values: dict[str, Any], slot_dt: datetim
         valid_iso = slot_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     except Exception:
         return
-    for field_key in ("convective_inhibition", "mucape"):
+
+    wind_spd = field_values.get("wind_speed_10m") or {}
+    wind_dir = field_values.get("wind_direction_10m") or {}
+    want_shear = bool(wind_spd and wind_dir)
+
+    # Les champs WCS sont des téléchargements GetCoverage indépendants → récupérés EN
+    # PARALLÈLE (I/O réseau dominant ; le GIL est relâché pendant urllib et les appels
+    # eccodes). Avant : 4 requêtes séquentielles par heure. Chaque champ reste NON-FATAL.
+    field_keys = ["convective_inhibition", "mucape"]
+    if want_shear:
+        field_keys += ["u_500hpa", "v_500hpa"]
+
+    def _fetch_one(field_key: str) -> tuple[str, dict[str, float] | None]:
         try:
-            vals = wcs_client.fetch_france_field(field_key, valid_iso, points)
-            if vals:
-                field_values[field_key] = vals
+            return field_key, wcs_client.fetch_france_field(field_key, valid_iso, points)
         except Exception as exc:  # noqa: BLE001
             print(f"[wcs] {field_key} indisponible pour {valid_iso}: {exc}", file=sys.stderr)
+            return field_key, None
+
+    results: dict[str, dict[str, float] | None] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(field_keys)) as executor:
+        for field_key, vals in executor.map(_fetch_one, field_keys):
+            results[field_key] = vals
+
+    if results.get("convective_inhibition"):
+        field_values["convective_inhibition"] = results["convective_inhibition"]
+    if results.get("mucape"):
+        field_values["mucape"] = results["mucape"]
 
     # Cisaillement profond 0-6 km = |V(500 hPa) - V(10 m)| : u/v 500 hPa (ARPEGE WCS
     # isobare) moins le vent 10 m déjà extrait des paquets SP. Non-fatal.
-    try:
-        wind_spd = field_values.get("wind_speed_10m") or {}
-        wind_dir = field_values.get("wind_direction_10m") or {}
-        if wind_spd and wind_dir:
-            u500 = wcs_client.fetch_france_field("u_500hpa", valid_iso, points)
-            v500 = wcs_client.fetch_france_field("v_500hpa", valid_iso, points)
+    if want_shear:
+        u500 = results.get("u_500hpa") or {}
+        v500 = results.get("v_500hpa") or {}
+        if u500 and v500:
             shear: dict[str, float] = {}
             for p in points:
                 z = p.zone
@@ -7482,8 +7617,6 @@ def _enrich_field_values_with_wcs(field_values: dict[str, Any], slot_dt: datetim
                 shear[z] = round(math.hypot(u5 - u10, v5 - v10), 2)
             if shear:
                 field_values["shear_ms"] = shear
-    except Exception as exc:  # noqa: BLE001
-        print(f"[wcs] shear indisponible pour {valid_iso}: {exc}", file=sys.stderr)
 
 
 def _build_meteofrance_grib_slot_grid_sync(
@@ -7574,7 +7707,16 @@ def _build_meteofrance_grib_slot_grid_sync(
                 "decoder": decoder,
             }
 
-        points = list(points_override) if points_override is not None else build_grid(center_lat=lat, center_lon=lon, zone_prefix=label)
+        if points_override is not None:
+            points = list(points_override)
+        elif normalized_grid_scope == "france":
+            # Sécurité racine du « trou carré » : un build France sans points fournis DOIT
+            # utiliser la grille nationale (~2636 cellules), jamais build_grid (grille locale
+            # 13×13 = 169 cellules / 195 km autour du centre). Sinon on produit — et on
+            # archive (grid_scope='france') — un carré central tagué France au lieu du pays.
+            points = _build_meteofrance_france_grid_points()
+        else:
+            points = build_grid(center_lat=lat, center_lon=lon, zone_prefix=label)
         contexts: dict[str, dict[str, Any]] = {}
         indexes: dict[tuple[str, str, int], dict[str, Any]] = {}
         field_values: dict[str, dict[str, float]] = {}
@@ -8026,6 +8168,7 @@ def _build_meteofrance_grib_france_slot_grid_sync(
     detail_level: str = METEOFRANCE_SLOT_GRID_CORE_DETAIL,
     cache_only: bool = False,
     force_rebuild: bool = False,
+    package_only: bool | None = None,
 ) -> dict[str, Any]:
     points = _build_meteofrance_france_grid_points()
     if not points:
@@ -8048,7 +8191,7 @@ def _build_meteofrance_grib_france_slot_grid_sync(
         grid_scope="france",
         cache_only=cache_only,
         force_rebuild=force_rebuild,
-        package_only=METEOFRANCE_GRIB_PACKAGE_ONLY_NATIONAL_PRELOAD,
+        package_only=(METEOFRANCE_GRIB_PACKAGE_ONLY_NATIONAL_PRELOAD if package_only is None else package_only),
     )
 
 
@@ -9526,6 +9669,26 @@ def _materialize_meteofrance_grib_france_slot_grids_from_cache_sync(
             detail_level=METEOFRANCE_SLOT_GRID_CORE_DETAIL,
             cache_only=True, force_rebuild=force_rebuild,
         )
+        # Repli Range ciblé : si la matérialisation cache_only échoue car des messages GRIB
+        # REQUIS ne sont pas dans les paquets téléchargés (package_only_miss — cause des ~19
+        # échecs à froid quand les paquets ne sont que partiellement présents), on retente
+        # CETTE heure en autorisant les requêtes Range ciblées (cache_only=False,
+        # package_only=False) → ne récupère que les messages manquants. Sauté si le quota
+        # AROME est en cooldown (le build gère aussi le cooldown en interne, double sécurité).
+        if (
+            not result.get("ok")
+            and result.get("missing_fields")
+            and _meteofrance_quota_cooldown_remaining(api_key, METEOFRANCE_GRIB_PACKAGE_QUOTA_SCOPE) <= 0
+        ):
+            range_result = _build_meteofrance_grib_france_slot_grid_sync(
+                api_key, target_date, hour,
+                requested_grid=requested_grid,
+                detail_level=METEOFRANCE_SLOT_GRID_CORE_DETAIL,
+                cache_only=False, force_rebuild=force_rebuild,
+                package_only=False,
+            )
+            if range_result.get("ok"):
+                result = range_result
         payload_data = result.get("payload") if isinstance(result.get("payload"), dict) else {}
         meta = payload_data.get("meta", {}) if isinstance(payload_data, dict) else {}
         return {
@@ -12989,6 +13152,21 @@ def asset_css(filename: str) -> FileResponse:
     if not target.is_file() or CSS_DIR.resolve() not in target.parents:
         raise HTTPException(status_code=404, detail="Stylesheet not found")
     return FileResponse(target, media_type="text/css", headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/styleguide")
+def styleguide() -> FileResponse:
+    # Page de validation visuelle du design system (dev). Charge /assets/dist/app.css.
+    return FileResponse(STATIC_DIR / "styleguide.html", headers={"Cache-Control": "no-store, max-age=0"})
+
+
+@app.get("/assets/dist/{filename:path}")
+def asset_dist(filename: str) -> FileResponse:
+    target = (DIST_DIR / filename).resolve()
+    if not target.is_file() or DIST_DIR.resolve() not in target.parents:
+        raise HTTPException(status_code=404, detail="Bundle asset not found")
+    media_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+    return FileResponse(target, media_type=media_type, headers={"Cache-Control": "public, max-age=300"})
 
 
 @app.get("/assets/vendor/{filename:path}")

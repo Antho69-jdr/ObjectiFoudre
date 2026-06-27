@@ -1,0 +1,14 @@
+{
+  "name": "objectifoudre-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build local du frontend ObjectiFoudre (esbuild). Render ne lance JAMAIS ce build : dist/ est committé.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

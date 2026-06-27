@@ -1,0 +1,89 @@
+/* ============================================================================
+   rail — boutons icône (rail droit + barres de bascule mobile + fab + recherche).
+   MÊME chrome « verre dégradé » que les boutons de la frise → cohérence visuelle.
+   Cible les classes legacy (.grid-focus-btn, .fab, .icon-only-btn,
+   .mobile-toggle-btn) + #toggleSearchBtn. La POSITION du rail (right-rail-scroll /
+   right-rail-stack / fab-stack / mobile-toggle-bar) reste gérée par le legacy.
+   Sizing via --rail-btn-size (défini par main.css, varié en responsive). 0 !important.
+   ============================================================================ */
+
+.mobile-toggle-btn,
+.icon-only-btn,
+.grid-focus-btn,
+.fab {
+  box-sizing: border-box;
+  width: var(--rail-btn-size);
+  min-width: var(--rail-btn-size);
+  height: var(--rail-btn-size);
+  min-height: var(--rail-btn-size);
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  font-size: 0;            /* masque le texte ; l'icône passe par .icon-svg */
+  line-height: 1;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  background: linear-gradient(180deg, rgba(10, 20, 35, 0.90), rgba(7, 14, 25, 0.78));
+  color: #e5edf9;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  cursor: pointer;
+  transition: background var(--dur-base) var(--ease),
+              border-color var(--dur-base) var(--ease),
+              color var(--dur-base) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+
+.icon-svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+  color: currentColor;
+  pointer-events: none;
+}
+
+.mobile-toggle-btn:hover,
+.icon-only-btn:hover,
+.grid-focus-btn:hover,
+.fab:hover,
+#toggleSearchBtn:hover {
+  background: linear-gradient(180deg, rgba(16, 30, 50, 0.94), rgba(9, 18, 31, 0.88));
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #f8fafc;
+}
+
+.mobile-toggle-btn:active,
+.icon-only-btn:active,
+.grid-focus-btn:active,
+.fab:active,
+#toggleSearchBtn:active { transform: translateY(1px); }
+
+.grid-focus-btn:disabled,
+.fab:disabled { cursor: wait; opacity: 0.62; }
+
+/* État actif/enclenché → cyan dégradé (accent). */
+.right-rail-stack .grid-focus-btn.active,
+.icon-only-btn.active,
+.fab.active,
+#toggleSearchBtn.active,
+.search-dock.show-search #toggleSearchBtn,
+[aria-pressed="true"].grid-focus-btn,
+[aria-pressed="true"].fab {
+  background: linear-gradient(180deg, rgba(14, 165, 233, 0.94), rgba(2, 132, 199, 0.90));
+  border-color: rgba(186, 230, 253, 0.42);
+  color: #cffafe;
+}
+
+/* Boutons dans le panneau de recherche : plus discrets (pas de verre dégradé). */
+.search-panel .icon-only-btn {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.search-panel .icon-only-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: var(--border);
+}

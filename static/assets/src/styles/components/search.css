@@ -1,0 +1,93 @@
+/* ============================================================================
+   search — LOOK de la recherche : barre de localité, champ, date, boutons,
+   autocomplétion. La POSITION/structure du dock (.search-dock / .search-panel /
+   .panel-card / bascule .show-search) reste gérée par le legacy.
+   ============================================================================ */
+
+/* Barre de localité */
+.location-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--sp-2);
+  align-items: center;
+  padding: 7px;
+  border-radius: var(--r-lg);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-2), var(--shadow-inset);
+  min-height: calc(var(--rail-btn-size) + 6px);
+}
+.search-panel .location-bar { position: relative; }
+.location-bar.arome-search-only { grid-template-columns: minmax(0, 1fr) auto; }
+
+.location-input {
+  width: 100%;
+  min-height: 44px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 0 14px;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  outline: none;
+  box-shadow: var(--shadow-inset);
+  transition: border-color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease), background var(--dur-base) var(--ease);
+}
+.location-input::placeholder { color: var(--text-dim); }
+.location-input:hover { background: rgba(255, 255, 255, 0.06); }
+.location-input:focus {
+  border-color: var(--accent-ring);
+  background: var(--surface-3);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-inset);
+}
+
+/* (Le champ date `.date-input`/`.date-bar` reste géré par le legacy : partagé
+   avec la page Prévision → on ne le branche pas ici pour éviter la contamination.) */
+
+/* Bouton « rechercher la ville » */
+.search-panel #searchCityBtn {
+  background: var(--accent-soft);
+  border-color: var(--accent-ring);
+  box-shadow: var(--shadow-inset);
+}
+.search-panel #searchCityBtn:hover { background: rgba(56, 189, 248, 0.28); border-color: var(--accent); }
+.search-panel #aroundMeBtn { background: rgba(255, 255, 255, 0.035); }
+
+/* Autocomplétion */
+.search-autocomplete {
+  position: absolute;
+  top: calc(100% + var(--sp-2));
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow-2);
+  z-index: 60;
+}
+.search-autocomplete[hidden] { display: none; }
+.search-autocomplete-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.search-autocomplete-item:hover,
+.search-autocomplete-item.active { background: var(--accent-soft); }
+.search-autocomplete-primary { font-size: 0.95rem; font-weight: var(--fw-semibold); line-height: 1.2; }
+.search-autocomplete-secondary { font-size: 0.78rem; color: var(--text-muted); line-height: 1.2; }

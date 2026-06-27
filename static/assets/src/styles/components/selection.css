@@ -1,0 +1,176 @@
+/* ============================================================================
+   selection — carte de cellule sélectionnée (flottante au-dessus de la carte).
+   LOOK uniquement. La POSITION (absolute/z-index/left/top/right/bottom/transform,
+   display none↔visible, classes .desktop-outside-grid / .tablet-follow-grid) reste
+   pilotée par le legacy + le JS (selection-card.js positionne en inline).
+
+   Scopé sous #selectionCard pour battre le legacy ID-spécifique par l'ordre de
+   chargement (theme.css est chargé en dernier), sans !important.
+   ============================================================================ */
+
+#selectionCard.selection-card {
+  width: min(322px, calc(100vw - 28px));
+  padding: 12px 13px;
+  border-radius: 16px;
+  background: rgba(8, 17, 30, 0.8);
+  border: 1px solid var(--border);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.28);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+#selectionCard .selection-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 9px;
+}
+#selectionCard .selection-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Pastilles de score (Proba / Conf) */
+#selectionCard .selection-scores {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+}
+#selectionCard .selection-score {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+#selectionCard .selection-score span {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+#selectionCard .selection-score strong {
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* Bouton fermer (rond, discret) */
+#selectionCard .icon-btn,
+#selectionCard #closeSelectionBtn {
+  flex: 0 0 auto;
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  max-height: 36px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+}
+#selectionCard .icon-btn:hover,
+#selectionCard #closeSelectionBtn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* Méta : confiance + contexte CAPE */
+#selectionCard .selection-meta {
+  margin: 0 0 9px;
+  color: #c2d2ea;
+  font-size: 11px;
+  line-height: 1.4;
+}
+#selectionCard .selection-conf {
+  font-weight: var(--fw-bold);
+  color: #dbe6f7;
+}
+#selectionCard .selection-conf strong {
+  font-weight: 800;
+}
+#selectionCard .selection-context:not(:empty)::before {
+  content: "·";
+  margin: 0 6px;
+  opacity: 0.5;
+}
+
+/* Action : bouton Détails pleine largeur (cyan discret) */
+#selectionCard .action-row {
+  margin: 0;
+}
+#selectionCard #openDetailsBtn {
+  width: 100%;
+  min-height: 34px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: var(--fw-bold);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-ring);
+  color: #cfe0fb;
+  box-shadow: none;
+}
+#selectionCard #openDetailsBtn:hover {
+  background: rgba(56, 189, 248, 0.26);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+/* ── Smartphone : sheet plus fin, contexte CAPE rendu visible ── */
+@media (max-width: 767px) {
+  #selectionCard.selection-card {
+    padding: 10px 12px;
+  }
+  #selectionCard .selection-top {
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  #selectionCard .selection-title {
+    font-size: 14px;
+  }
+  #selectionCard .selection-scores {
+    gap: 6px;
+  }
+  #selectionCard .selection-score {
+    padding: 3px 8px;
+    border-radius: 9px;
+  }
+  #selectionCard .selection-score strong {
+    font-size: 16px;
+  }
+  #selectionCard .selection-meta {
+    margin: 0 0 8px;
+    font-size: 10.5px;
+    line-height: 1.32;
+  }
+  #selectionCard .selection-context {
+    display: inline;
+    margin: 0;
+    font-size: 10.5px;
+  }
+  #selectionCard #openDetailsBtn {
+    min-height: 34px;
+    height: 34px;
+    border-radius: 11px;
+    font-size: 13px;
+  }
+}

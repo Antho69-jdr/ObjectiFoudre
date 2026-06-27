@@ -233,18 +233,24 @@
         scheduleLoadedGridSync(centerToken, selectedDayKey, selectedSlotKey);
         window.setTimeout(async () => {
           if (centerToken !== centerChangeToken) return;
-          if (typeof refreshMeteoFranceGribCacheStatus === 'function') {
-            await refreshMeteoFranceGribCacheStatus({ force: true });
-          }
-          if (typeof materializeMeteoFranceGribFranceDayFromNationalCache === 'function') {
-            materializeMeteoFranceGribFranceDayFromNationalCache({ quiet: true });
-          }
-          if (typeof maybeLoadCachedMeteoFranceGribForSelectedSlot === 'function') {
-            const loaded = await maybeLoadCachedMeteoFranceGribForSelectedSlot({ quiet: true, force: true });
-            if (!loaded) {
-              const modelLabel = (typeof activeNwpModelLabel === 'function') ? activeNwpModelLabel() : 'AROME';
-              setMetaMessage(`${modelLabel} France prêt : attente de la grille horaire matérialisée côté serveur.`);
+          try {
+            if (typeof refreshMeteoFranceGribCacheStatus === 'function') {
+              await refreshMeteoFranceGribCacheStatus({ force: true });
             }
+            if (typeof materializeMeteoFranceGribFranceDayFromNationalCache === 'function') {
+              materializeMeteoFranceGribFranceDayFromNationalCache({ quiet: true });
+            }
+            if (typeof maybeLoadCachedMeteoFranceGribForSelectedSlot === 'function') {
+              const loaded = await maybeLoadCachedMeteoFranceGribForSelectedSlot({ quiet: true, force: true });
+              if (!loaded) {
+                const modelLabel = (typeof activeNwpModelLabel === 'function') ? activeNwpModelLabel() : 'AROME';
+                setMetaMessage(`${modelLabel} France prêt : attente de la grille horaire matérialisée côté serveur.`);
+              }
+            }
+          } finally {
+            // Journée hydratée (créneaux en cache chargés) : on ferme le loader
+            // d'ouverture. Idempotent — sans effet sur les rafraîchissements ultérieurs.
+            if (centerToken === centerChangeToken) hideAppLoader();
           }
         }, memoryPayload ? 0 : 20);
         return payload;

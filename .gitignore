@@ -8,3 +8,6 @@ mnt/
 Clef API*.txt
 .env
 .env.*
+node_modules/
+static/node_modules/
+*.prepurge

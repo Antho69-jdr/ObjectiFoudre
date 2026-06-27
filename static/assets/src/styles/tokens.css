@@ -1,0 +1,156 @@
+/* ============================================================================
+   tokens.css — SOURCE UNIQUE de la direction artistique ObjectiFoudre
+   ----------------------------------------------------------------------------
+   DA « orage » rafraîchie : ink profond + verre discipliné, accent cyan
+   électrique + ambre éclair, rampe de sévérité promue en tokens de 1er ordre.
+   Un seul :root. Toute couleur/espacement/rayon/ombre/typo/z-index part d'ici.
+   ============================================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Échelle de gris « ink » (fond → surfaces) ------------------------- */
+  --ink-900: #050a12;   /* fond le plus profond */
+  --ink-800: #070d18;   /* fond app */
+  --ink-700: #0b1322;
+  --ink-600: #0f1a2c;
+  --ink-500: #15233a;
+  --ink-400: #1d3050;
+
+  /* --- Fond & surfaces (verre, 3 niveaux d'élévation) -------------------- */
+  --bg: var(--ink-800);
+  --surface-1: rgba(13, 21, 36, 0.60);   /* panneaux flottants légers */
+  --surface-2: rgba(16, 26, 44, 0.74);   /* cartes, docks */
+  --surface-3: rgba(20, 32, 52, 0.88);   /* modales, popovers */
+  --surface-solid: #0d1626;              /* surface opaque (mobile, fallback) */
+
+  /* --- Texte ------------------------------------------------------------- */
+  --text: #eaf1fc;
+  --text-muted: #a3b5d0;
+  --text-dim: #6f819d;
+  --text-inverse: #07111f;
+
+  /* --- Bordures & filets ------------------------------------------------- */
+  --border: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-faint: rgba(255, 255, 255, 0.06);
+
+  /* --- Accent primaire : cyan électrique --------------------------------- */
+  --accent: #38bdf8;
+  --accent-strong: #0ea5e9;
+  --accent-press: #0284c7;
+  --accent-soft: rgba(56, 189, 248, 0.16);
+  --accent-ring: rgba(56, 189, 248, 0.40);
+  --on-accent: #04121f;
+
+  /* --- Accent secondaire : ambre éclair (cohérent hachure sévérité) ------ */
+  --accent-2: #fbbf24;
+  --accent-2-strong: #f59e0b;
+  --accent-2-soft: rgba(251, 191, 36, 0.16);
+
+  /* --- Rampe de PROBABILITÉ orageuse (faible → très élevée) -------------- */
+  /* Couleurs dont les cellules de la carte sont remplies (score/probabilité). */
+  --prob-0: #22c55e;   /* très faible */
+  --prob-1: #a3e635;   /* faible */
+  --prob-2: #facc15;   /* modérée */
+  --prob-3: #fb923c;   /* élevée */
+  --prob-4: #ef4444;   /* très élevée */
+
+  /* --- SÉVÉRITÉ : hachure « orage potentiellement violent » -------------- */
+  /* Calque distinct superposé à la probabilité sur la carte de prévision. */
+  --sev-hatch: #fde68a;
+
+  /* --- Couleurs de statut ------------------------------------------------ */
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: var(--accent);
+
+  /* --- Espacement (base 4 px) ------------------------------------------- */
+  --sp-0: 0;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+
+  /* --- Rayons ------------------------------------------------------------ */
+  --r-xs: 6px;
+  --r-sm: 9px;
+  --r-md: 13px;
+  --r-lg: 18px;
+  --r-xl: 24px;
+  --r-pill: 999px;
+
+  /* --- Ombres / élévation (3 tiers) ------------------------------------- */
+  --shadow-1: 0 4px 14px rgba(0, 0, 0, 0.24);
+  --shadow-2: 0 14px 34px rgba(0, 0, 0, 0.30);
+  --shadow-3: 0 24px 60px rgba(0, 0, 0, 0.42);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --shadow: var(--shadow-2);   /* alias par défaut */
+
+  /* --- Verre ------------------------------------------------------------- */
+  --glass-blur: blur(16px) saturate(1.2);
+
+  /* --- Typographie ------------------------------------------------------- */
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 26px;
+  --fs-3xl: 34px;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  --lh-tight: 1.15;
+  --lh-normal: 1.45;
+
+  /* --- Mouvement --------------------------------------------------------- */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 0.12s;
+  --dur-base: 0.18s;
+  --dur-slow: 0.30s;
+
+  /* --- Couches z-index (carte → loader) --------------------------------- */
+  --z-map: 1;
+  --z-overlay: 10;
+  --z-rail: 19;
+  --z-dock: 20;
+  --z-popover: 30;
+  --z-modal-backdrop: 40;
+  --z-modal: 50;
+  --z-toast: 80;
+  --z-loader: 100;
+
+  /* --- Dimensions de structure ------------------------------------------- */
+  /* NB : les dims rail/timeline (--rail-btn-size, --right-rail-width,
+     --right-rail-gap, --rail-right, --timeline-height) vivent dans layout.css :
+     le responsive les fait VARIER par breakpoint. Les figer ici écraserait ces
+     overrides, car tokens.css est importé globalement par theme.css (chargé EN
+     DERNIER). Seul --shell-radius (constant) reste ici. */
+  --shell-radius: var(--r-lg);
+
+  /* ======================================================================
+     ALIAS DE COMPATIBILITÉ (legacy)
+     Le CSS legacy (components.css / responsive.css) référence ces anciens
+     noms. On les mappe sur les nouveaux tokens pour une migration sans
+     rupture pendant la Phase 2. À retirer une fois le legacy supprimé.
+     ====================================================================== */
+  --panel: var(--surface-1);
+  --panel-2: var(--surface-2);
+  --muted: var(--text-muted);
+  --overlay-backdrop: rgba(0, 0, 0, 0);
+}

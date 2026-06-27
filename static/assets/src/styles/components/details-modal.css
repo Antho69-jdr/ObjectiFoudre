@@ -1,0 +1,516 @@
+/* =============================================================================
+   Component : modale de détails de cellule (#detailsModal)
+   -----------------------------------------------------------------------------
+   Porte le LOOK + le layout DU CONTENU (header, inspecteur de calcul, grille de
+   contenu, score-cards, value-cards, calc-chips, profil de vent).
+   Le CONTENEUR #detailsModal lui-même (position fixed/inset, taille, padding,
+   radius, fond, grid-template-rows, carte flottante mobile via vars tactiles)
+   reste géré par le legacy (responsive.css) — trop intriqué au positionnement.
+
+   Valeurs calées sur le computed live mesuré aux breakpoints 1440 / 1024 / 390.
+   Régimes : ≥1181px (large) · 621–1180px (tablette) · ≤620px (compact mobile).
+   Chargé via theme.css APRÈS le legacy → gagne à spécificité égale (1,1,0) une
+   fois les !important legacy purgés. Aucun !important ici (objectif DS propre).
+   Réécrit scopé #detailsModal (l'ancien brouillon DS non scopé est périmé).
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- Header --- */
+#detailsModal .details-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  position: sticky;
+  top: calc(-18px - env(safe-area-inset-top));
+  z-index: 2;
+  margin: calc(-18px - env(safe-area-inset-top)) -24px 14px;
+  padding: calc(18px + env(safe-area-inset-top)) 24px 14px;
+  background: linear-gradient(180deg, rgba(8, 17, 30, 0.96), rgba(8, 17, 30, 0.88));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px) saturate(1.04);
+  -webkit-backdrop-filter: blur(18px) saturate(1.04);
+}
+
+#detailsModal .details-heading {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+
+#detailsModal .details-heading .title {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #eaf1fc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#detailsModal .details-heading .small {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.15;
+  color: #a3b5d0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Placement du bouton fermer dans la grille du header (le CHROME du bouton —
+   taille 36/34, rond, fond verre — reste partagé via #closeDetailsBtn legacy). */
+#detailsModal #closeDetailsBtn {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+}
+
+/* ----------------------------------------------- Inspecteur de calcul --- */
+/* Bande pleine largeur SOUS le header (2e rangée de la grille modale, sibling).
+   Bi-mode : vide (.is-empty) ou peuplé avec tone-color sur la valeur. */
+#detailsModal .details-calc-inspector,
+#detailsModal .details-calc-inspector:not([hidden]) {
+  position: relative;
+  inset: auto; /* neutralise la base flottante legacy (top:86; right:16; absolute) */
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto;
+  column-gap: 10px;
+  row-gap: 1px;
+  width: 100%; /* neutralise la base legacy `width: min(410px, ...)` */
+  min-height: 88px;
+  height: auto;
+  margin: 0 0 10px;
+  padding: 9px 38px 9px 12px;
+  border-radius: 12px;
+  background: rgba(10, 24, 43, 0.88);
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  box-shadow: none;
+  overflow: visible;
+  color: #d9e7f7;
+}
+
+#detailsModal .details-calc-inspector[hidden] {
+  display: none;
+}
+
+#detailsModal .details-calc-inspector.is-empty {
+  background: rgba(10, 24, 43, 0.48);
+  border-color: rgba(148, 163, 184, 0.14);
+}
+#detailsModal .details-calc-inspector.is-empty .details-calc-inspector-close {
+  opacity: 0;
+  pointer-events: none;
+}
+#detailsModal .details-calc-inspector.is-empty .details-calc-inspector-title,
+#detailsModal .details-calc-inspector.is-empty .details-calc-inspector-formula {
+  color: rgba(203, 213, 225, 0.62);
+}
+
+/* Bouton vider — position dans l'inspecteur (taille 22/font14 partagée legacy). */
+#detailsModal .details-calc-inspector-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  color: #e5edf8;
+  line-height: 1;
+}
+
+#detailsModal .details-calc-inspector-eyebrow {
+  grid-column: 1;
+  margin: 0;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #67e8f9;
+}
+
+#detailsModal .details-calc-inspector-title {
+  grid-column: 1;
+  margin: 1px 0 0;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.12;
+  color: #f8fbff;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#detailsModal .details-calc-inspector-value {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  margin: 0 4px 0 0;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+  color: #cffafe;
+}
+#detailsModal .details-calc-inspector.tone-empty .details-calc-inspector-value { color: rgba(203, 213, 225, 0.62); }
+#detailsModal .details-calc-inspector.tone-negative .details-calc-inspector-value { color: #fb7185; }
+#detailsModal .details-calc-inspector.tone-warning .details-calc-inspector-value { color: #f59e0b; }
+#detailsModal .details-calc-inspector.tone-neutral .details-calc-inspector-value { color: #cffafe; }
+#detailsModal .details-calc-inspector.tone-positive .details-calc-inspector-value { color: #4ade80; }
+
+#detailsModal .details-calc-inspector-formula,
+#detailsModal .details-calc-inspector-text {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: block;
+  font-size: 11px;
+  line-height: 1.25;
+}
+#detailsModal .details-calc-inspector-formula { color: #cffafe; }
+#detailsModal .details-calc-inspector-text { color: rgba(218, 230, 246, 0.78); }
+
+/* ------------------------------------------------------- Contenu (grid) --- */
+/* 2 colonnes (probabilité | confiance) puis « valeurs » pleine largeur.
+   Mesuré gagnant ≥621 = 2 cols gap 14 ; ≤620 = 1 col empilée. */
+#detailsModal .details-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "probability confidence"
+    "values values";
+  gap: 14px;
+  width: 100%;
+  max-width: none; /* neutralise la base legacy `.details-content { max-width: min(100%, 780px) }` */
+  margin: 0;
+  align-items: start;
+  align-content: start;
+}
+
+#detailsModal .details-score-category-probability { grid-area: probability; }
+#detailsModal .details-score-category-confidence { grid-area: confidence; }
+#detailsModal .details-value-category { grid-area: values; }
+
+/* Groupes : titre + corps empilés, calés en haut. */
+#detailsModal .details-group,
+#detailsModal .details-score-category,
+#detailsModal .details-value-category {
+  display: grid;
+  grid-template-rows: auto min-content;
+  gap: 7px;
+  min-width: 0;
+  align-self: start;
+  align-content: start;
+  align-items: start;
+}
+
+#detailsModal .details-group-title {
+  display: flex;
+  align-items: center;
+  min-height: 10px;
+  margin: 0;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #eef4ff;
+}
+
+/* Bloc score : carte « score final » + grille de calc-chips côte à côte. */
+#detailsModal .details-score-layout {
+  display: grid;
+  grid-template-columns: minmax(104px, 0.28fr) minmax(0, 1fr);
+  gap: 7px;
+  align-self: start;
+  align-content: start;
+  align-items: start;
+}
+
+#detailsModal .details-calculation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  align-self: start;
+  align-content: start;
+  align-items: start;
+}
+
+#detailsModal .details-grid.details-grid-values {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0; /* neutralise la base legacy `.details-grid { margin-top: 14px }` */
+  align-items: start;
+  align-content: start;
+}
+
+/* ------------------------------------------------------------- Cartes --- */
+/* Base commune des cartes (score + valeur) : compactes, centrées verticalement. */
+#detailsModal .metric-card,
+#detailsModal .metric-card-score {
+  height: auto;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  min-height: 44px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Carte de score (Probabilité / Confiance) : verre cyan, plus haute. */
+#detailsModal .details-score-category .metric-card-score {
+  min-height: 90px;
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(125, 211, 252, 0.22);
+}
+/* (1,3,0) pour battre `#detailsModal .metric-btn .value` (la carte score est aussi .metric-btn) */
+#detailsModal .details-score-category .metric-card-score .value { font-size: 18px; }
+
+#detailsModal .metric-btn .label {
+  display: block;
+  font-size: 9px;
+  line-height: 1.08;
+  color: #a3b5d0;
+}
+#detailsModal .metric-btn .value {
+  display: block;
+  margin-top: 3px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  color: #eaf1fc;
+}
+#detailsModal .metric-btn .hint {
+  display: none;
+  margin-top: 3px;
+  font-size: 8.5px;
+  line-height: 1.08;
+  color: #a3b5d0;
+}
+#detailsModal .metric-value-positive { color: #4ade80; }
+#detailsModal .metric-value-negative { color: #f87171; }
+#detailsModal .metric-value-neutral { color: var(--text); }
+
+/* Value-cards cliquables (catégorie « valeurs météo »). */
+#detailsModal .details-value-category .metric-card {
+  cursor: pointer;
+  pointer-events: auto;
+}
+#detailsModal .details-value-category .metric-card:hover,
+#detailsModal .details-value-category .metric-card:focus-visible,
+#detailsModal .details-value-category .metric-card.is-active {
+  border-color: rgba(103, 232, 249, 0.78);
+  background: rgba(20, 184, 166, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(103, 232, 249, 0.18);
+  outline: none;
+}
+#detailsModal .details-value-category .metric-card.is-related {
+  border-color: rgba(250, 204, 21, 0.78);
+  background: linear-gradient(180deg, rgba(250, 204, 21, 0.14), rgba(20, 184, 166, 0.07));
+  box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.22), 0 0 0 1px rgba(250, 204, 21, 0.16);
+}
+
+/* --------------------------------------------------------- Calc-chips --- */
+#detailsModal .details-calc-chip {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 6px 7px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  appearance: none;
+  -webkit-appearance: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#detailsModal .details-calc-chip:hover,
+#detailsModal .details-calc-chip:focus-visible {
+  border-color: rgba(125, 211, 252, 0.45);
+  background: rgba(56, 189, 248, 0.10);
+  outline: none;
+}
+#detailsModal .details-calc-chip.is-active {
+  border-color: rgba(103, 232, 249, 0.62);
+  background: rgba(20, 184, 166, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(103, 232, 249, 0.10);
+}
+#detailsModal .details-calc-chip-negative {
+  border-color: rgba(248, 113, 113, 0.26);
+  background: rgba(248, 113, 113, 0.075);
+}
+#detailsModal .details-calc-chip .calc-label {
+  display: block;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.08;
+  color: #8fa4bf;
+}
+#detailsModal .details-calc-chip .calc-value {
+  display: block;
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+  color: #eef4ff;
+}
+#detailsModal .details-calc-chip-negative .calc-value { color: #fca5a5; }
+#detailsModal .details-calc-chip .calc-hint {
+  display: none;
+  margin-top: 3px;
+  font-size: 8.4px;
+  line-height: 1.08;
+  color: rgba(200, 213, 234, 0.76);
+}
+
+/* ----------------------------------------------------- Profil de vent --- */
+#detailsModal .details-wind-profile {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(10, 18, 32, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+#detailsModal .details-wind-profile-title {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #cbd5e1;
+}
+#detailsModal .details-wind-profile-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+#detailsModal .wp-row {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+}
+#detailsModal .wp-row:last-child { border-bottom: 0; }
+#detailsModal .wp-level { color: #94a3b8; font-variant-numeric: tabular-nums; }
+#detailsModal .wp-speed { color: #e2e8f0; font-variant-numeric: tabular-nums; }
+#detailsModal .wp-dir { color: #cbd5e1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#detailsModal .wp-arrow { color: #7dd3fc; font-weight: 700; }
+#detailsModal .wp-loading { font-size: 12px; color: #64748b; padding: 4px 0; }
+
+/* =========================================================================
+   Tablette : 621–1180px — grilles resserrées (calc 2 col, valeurs 4 col).
+   ========================================================================= */
+@media (max-width: 1180px) {
+  #detailsModal .details-calculation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  #detailsModal .details-grid.details-grid-values {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Band 621–900 : l'inspecteur masque son texte secondaire (place réduite). */
+@media (min-width: 621px) and (max-width: 900px) {
+  #detailsModal .details-calc-inspector-text { display: none; }
+}
+
+/* =========================================================================
+   Compact mobile : ≤620px — colonne unique, cartes/inspecteur déployés.
+   ========================================================================= */
+@media (max-width: 620px) {
+  #detailsModal .details-header {
+    top: calc(-14px - env(safe-area-inset-top));
+    margin: calc(-14px - env(safe-area-inset-top)) -14px 12px;
+    padding: calc(14px + env(safe-area-inset-top)) 14px 12px;
+  }
+  #detailsModal .details-heading .small { font-size: 12px; }
+
+  #detailsModal .details-calc-inspector,
+  #detailsModal .details-calc-inspector:not([hidden]) {
+    row-gap: 2px;
+    padding: 8px 34px 8px 10px;
+    overflow: hidden;
+  }
+  #detailsModal .details-calc-inspector-title { white-space: nowrap; }
+  /* clamp pour garder la bande inspecteur compacte (~88px) comme le legacy mobile */
+  #detailsModal .details-calc-inspector-formula,
+  #detailsModal .details-calc-inspector-text {
+    font-size: 10.5px;
+    line-height: 1.18;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  #detailsModal .details-calc-inspector-formula { -webkit-line-clamp: 2; }
+  #detailsModal .details-calc-inspector-text { -webkit-line-clamp: 1; }
+
+  #detailsModal .details-content {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "probability"
+      "confidence"
+      "values";
+    gap: 14px;
+  }
+
+  #detailsModal .details-group,
+  #detailsModal .details-score-category,
+  #detailsModal .details-value-category { gap: 8px; }
+
+  #detailsModal .details-group-title {
+    min-height: 13px;
+    font-size: 12px;
+  }
+
+  #detailsModal .details-score-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  #detailsModal .details-calculation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  #detailsModal .details-grid.details-grid-values {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  /* Cartes : régime confortable (non compacté) — voir baseline 390. */
+  #detailsModal .metric-card,
+  #detailsModal .metric-card-score {
+    display: block;
+    min-height: 70px;
+    padding: 10px;
+    border-radius: 12px;
+  }
+  #detailsModal .details-score-category .metric-card-score { min-height: 72px; }
+  #detailsModal .details-value-category .metric-card { cursor: default; }
+
+  #detailsModal .metric-btn .label { font-size: 10px; }
+  #detailsModal .metric-btn .value { font-size: 13px; }
+  #detailsModal .details-score-category .metric-card-score .value { font-size: 13px; }
+  #detailsModal .metric-btn .hint { display: block; font-size: 10px; }
+
+  #detailsModal .details-calc-chip {
+    min-height: 46px;
+    padding: 7px 8px;
+    border-radius: 10px;
+  }
+  #detailsModal .details-calc-chip .calc-label { font-size: 10px; }
+  #detailsModal .details-calc-chip .calc-value { font-size: 15px; }
+  #detailsModal .details-calc-chip .calc-hint { display: block; margin-top: 4px; font-size: 9.5px; }
+}

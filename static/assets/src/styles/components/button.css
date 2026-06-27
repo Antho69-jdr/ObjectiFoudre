@@ -1,0 +1,163 @@
+/* ============================================================================
+   of-btn — bouton (primitive). Variantes : primary / secondary / ghost / danger.
+   Tailles : sm / (défaut) / lg. Modificateur : of-btn--icon (carré, icône seule).
+   ============================================================================ */
+
+.of-btn {
+  --_bg: var(--surface-2);
+  --_fg: var(--text);
+  --_bd: var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 40px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-md);
+  border: 1px solid var(--_bd);
+  background: var(--_bg);
+  color: var(--_fg);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+  transition: background var(--dur-base) var(--ease),
+              border-color var(--dur-base) var(--ease),
+              transform var(--dur-fast) var(--ease),
+              box-shadow var(--dur-base) var(--ease);
+}
+
+.of-btn:hover { border-color: var(--border-strong); }
+.of-btn:active { transform: translateY(1px); }
+.of-btn:disabled { opacity: 0.5; pointer-events: none; }
+
+/* Variantes */
+.of-btn--primary {
+  --_bg: var(--accent);
+  --_fg: var(--on-accent);
+  --_bd: transparent;
+  box-shadow: 0 6px 18px var(--accent-soft);
+}
+.of-btn--primary:hover { --_bg: var(--accent-strong); }
+.of-btn--primary:active { --_bg: var(--accent-press); }
+
+.of-btn--secondary {
+  --_bg: var(--surface-2);
+  --_bd: var(--border-strong);
+}
+.of-btn--secondary:hover { --_bg: var(--surface-3); }
+
+.of-btn--ghost {
+  --_bg: transparent;
+  --_bd: transparent;
+  --_fg: var(--text-muted);
+}
+.of-btn--ghost:hover { --_bg: var(--surface-1); --_fg: var(--text); }
+
+.of-btn--danger {
+  --_bg: rgba(248, 113, 113, 0.14);
+  --_fg: var(--danger);
+  --_bd: rgba(248, 113, 113, 0.34);
+}
+.of-btn--danger:hover { --_bg: rgba(248, 113, 113, 0.22); }
+
+/* Tailles */
+.of-btn--sm { min-height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-sm); }
+.of-btn--lg { min-height: 48px; padding: 0 var(--sp-6); font-size: var(--fs-lg); }
+
+/* Icône seule (carré) */
+.of-btn--icon {
+  width: var(--rail-btn-size);
+  height: var(--rail-btn-size);
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--r-md);
+}
+.of-btn--icon.of-btn--sm { width: 36px; height: 36px; }
+
+/* État actif (toggle enclenché) */
+.of-btn.is-active {
+  --_bg: var(--accent-soft);
+  --_fg: var(--accent);
+  --_bd: var(--accent-ring);
+}
+
+/* =============================================================================
+   Boutons génériques LIVE (legacy migré, parité stricte)
+   -----------------------------------------------------------------------------
+   La primitive `.of-btn` ci-dessus est le DS (styleguide / pages à venir) et
+   n'est pas câblée au markup live. Ci-dessous : le reset `button` générique +
+   les conteneurs `.button-row`/`.action-row` + le chrome verre des contrôles
+   maplibre (zoom), repris VERBATIM du legacy (composants/responsive). Valeurs
+   identiques → aucun changement visuel ; theme.css chargé en dernier gagne à
+   spécificité égale une fois le legacy purgé (cf. cluster `button`).
+   NB : les boutons spécialisés déjà migrés (.timeline-icon-btn, .grid-focus-btn,
+   #close*, .metric-btn, .selection-card .action-row…) ont une spécificité
+   supérieure et ne sont PAS affectés par ce reset.
+   ========================================================================== */
+
+button {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 42px;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+button:active { transform: scale(0.985); }
+button.active {
+  background: rgba(56, 189, 248, 0.95);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+/* Conteneurs d'actions (layout) */
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-start;
+}
+.action-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.action-row button { flex: 1; }
+.action-row-export button { font-size: 12px; }
+
+/* Tactile : barre d'actions scrollable + cible élargie (body.mobile-ui toujours posé) */
+body.mobile-ui .button-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  justify-content: flex-start;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+body.mobile-ui .button-row::-webkit-scrollbar { display: none; }
+body.mobile-ui button { flex: 0 0 auto; min-width: 88px; min-height: 46px; }
+body.mobile-ui .action-row { flex-direction: column; }
+
+/* Contrôles maplibre (zoom +/−) : chrome verre, comme le rail. */
+.maplibregl-ctrl-group button {
+  width: var(--rail-btn-size) !important;
+  height: var(--rail-btn-size) !important;
+  min-width: var(--rail-btn-size) !important;
+  min-height: var(--rail-btn-size) !important;
+  background: rgba(10, 18, 32, 0.92) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--shadow) !important;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  margin: 0 !important;
+  padding: 0 !important;
+}
+.maplibregl-ctrl-group button span {
+  filter: brightness(0) invert(1);
+  opacity: 0.92;
+}

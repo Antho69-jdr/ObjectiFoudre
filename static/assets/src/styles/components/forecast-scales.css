@@ -1,0 +1,107 @@
+/* ============================================================================
+   forecast-scales — échelles de la carte de prévision :
+     • of-prob-* : PROBABILITÉ orageuse (remplissage des cellules, faible → très élevée)
+     • of-sev-*  : SÉVÉRITÉ (hachure « orage potentiellement violent », calque distinct)
+   Réutilisable par la légende carte, les badges et le styleguide.
+   ============================================================================ */
+
+/* --- Probabilité orageuse ---------------------------------------------- */
+.of-prob-scale {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  height: 14px;
+}
+.of-prob-scale > span { flex: 1; }
+.of-prob-scale > span:nth-child(1) { background: var(--prob-0); }
+.of-prob-scale > span:nth-child(2) { background: var(--prob-1); }
+.of-prob-scale > span:nth-child(3) { background: var(--prob-2); }
+.of-prob-scale > span:nth-child(4) { background: var(--prob-3); }
+.of-prob-scale > span:nth-child(5) { background: var(--prob-4); }
+
+.of-prob-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--r-pill);
+}
+.of-prob-dot[data-level="0"] { background: var(--prob-0); }
+.of-prob-dot[data-level="1"] { background: var(--prob-1); }
+.of-prob-dot[data-level="2"] { background: var(--prob-2); }
+.of-prob-dot[data-level="3"] { background: var(--prob-3); }
+.of-prob-dot[data-level="4"] { background: var(--prob-4); }
+
+/* --- Sévérité (hachure) ------------------------------------------------ */
+.of-sev-hatch {
+  width: 40px;
+  height: 22px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  background-color: rgba(253, 230, 138, 0.10);
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--sev-hatch) 0,
+    var(--sev-hatch) 2.2px,
+    transparent 2.2px,
+    transparent 7px
+  );
+}
+
+/* --- Légende commune --------------------------------------------------- */
+.of-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* =============================================================================
+   Légende probabilité orage LIVE (legacy migré, parité stricte)
+   -----------------------------------------------------------------------------
+   La rampe `.legend-gradient` (échelle proba dans le guide de lecture / info-drawer)
+   reprend EXACTEMENT les couleurs des cellules de la carte → hex littéraux conservés
+   (PAS de tokens --prob-* qui pourraient diverger du remplissage des cellules).
+   Les primitives DS `of-prob-*`/`of-sev-*` ci-dessus restent pour le styleguide /
+   pages à venir (non câblées au markup live). theme.css chargé en dernier → gagne
+   à spécificité égale une fois le legacy purgé (cluster `legend`).
+   ========================================================================== */
+.legend-wrap {
+  display: grid;
+  gap: 6px;
+}
+.info-drawer .legend-wrap { margin-top: 12px; }
+
+.legend-gradient {
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: linear-gradient(
+    90deg,
+    #e7edf1 0%,
+    #e7edf1 64%,
+    #4da6b4 65%,
+    #4da6b4 74%,
+    #75a96d 75%,
+    #75a96d 84%,
+    #bf7d57 85%,
+    #bf7d57 89%,
+    #bd5d66 90%,
+    #bd5d66 94%,
+    #9a72c8 95%,
+    #9a72c8 100%
+  );
+  overflow: hidden;
+}
+
+.legend-scale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 2px;
+}

@@ -134,9 +134,10 @@
         animateGridReveal(cells, () => {
           clearGridRevealFailsafe();
           shouldAnimateNextGrid = false;
+          // Loader d'ouverture fermé après l'hydratation de la journée, pas au
+          // premier créneau rendu (cf. loadAromeFranceData).
           if (!hasCompletedInitialLoad) {
             hasCompletedInitialLoad = true;
-            hideAppLoader();
           }
         });
       } else {

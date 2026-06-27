@@ -1,0 +1,100 @@
+/* ============================================================================
+   layout.css — ossature de l'app + SYSTÈME DE BREAKPOINTS unifié
+   ----------------------------------------------------------------------------
+   Remplace les ~18 media-queries qui se chevauchaient dans responsive.css.
+   Système documenté, 3 paliers + modificateurs :
+
+     • Mobile     : (max-width: 600px)
+     • Tablette   : (min-width: 601px) and (max-width: 1024px)
+     • Desktop    : (min-width: 1025px)
+     Modificateurs : (orientation: landscape), (pointer: coarse),
+                     (max-height: 600px) pour les écrans bas.
+
+   On cible le DOM existant (mêmes ids/classes) pour permettre une bascule
+   surface par surface sans toucher au HTML. Zéro !important : la cascade est
+   maîtrisée parce que ces règles remplacent (et non surchargent) le legacy.
+   ============================================================================ */
+
+/* --- Dimensions de structure (base) -----------------------------------
+   Déplacées de tokens.css : le responsive ci-dessous les fait varier par
+   breakpoint, donc elles ne doivent PAS être figées dans le :root global
+   importé par theme.css (sinon écrasement des overrides responsifs). */
+:root {
+  --rail-btn-size: 46px;
+  --right-rail-width: 46px;
+  --right-rail-gap: 10px;
+  --rail-right: 12px;
+  --timeline-height: 88px;
+}
+
+/* --- Shell ------------------------------------------------------------- */
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-map);
+}
+
+/* ============================================================================
+   Positionnement du rail droit. Modèle legacy conservé :
+   .right-rail-scroll = display:contents (pas de boîte), enfants en fixed ;
+   le bouton de recherche (.search-dock) est en haut, la pile .right-rail-stack
+   juste en dessous. Le LOOK des boutons est dans components/rail.css.
+   ============================================================================ */
+.right-rail-scroll {
+  position: fixed;
+  z-index: var(--z-rail);
+  top: var(--rail-top-topbar);
+  right: var(--rail-right);
+  display: contents;
+  pointer-events: none;
+}
+
+.right-rail-stack {
+  position: fixed;
+  top: calc(var(--rail-top-topbar) + var(--rail-btn-size) + var(--right-rail-gap));
+  right: var(--rail-right);
+  width: var(--right-rail-width);
+  display: grid;
+  gap: var(--right-rail-gap);
+  justify-items: stretch;
+  pointer-events: none;
+}
+.right-rail-stack > * { pointer-events: auto; }
+
+.mobile-toggle-bar {
+  display: grid;
+  gap: var(--right-rail-gap);
+  justify-items: stretch;
+  width: var(--right-rail-width);
+  pointer-events: auto;
+}
+
+/* --- Modificateurs responsive du rail --------------------------------- */
+
+/* Tablette : rail un peu plus compact */
+@media (min-width: 601px) and (max-width: 1024px) {
+  :root { --rail-btn-size: 44px; --right-rail-width: 44px; }
+}
+
+/* Mobile : rail compact, collé au bord, espacement resserré */
+@media (max-width: 600px) {
+  :root {
+    --rail-btn-size: 42px;
+    --right-rail-width: 42px;
+    --right-rail-gap: 8px;
+    --rail-right: 10px;
+  }
+}
+
+/* Écrans bas en paysage : on resserre encore pour ne pas déborder */
+@media (orientation: landscape) and (max-height: 600px) {
+  :root { --right-rail-gap: 6px; }
+}

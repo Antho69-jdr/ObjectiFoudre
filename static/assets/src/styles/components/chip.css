@@ -1,0 +1,58 @@
+/* ============================================================================
+   of-chip / of-badge — petites étiquettes d'état & d'info.
+   ============================================================================ */
+
+.of-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 26px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.of-chip--accent {
+  color: var(--accent);
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+}
+
+.of-chip--amber {
+  color: var(--accent-2);
+  border-color: rgba(251, 191, 36, 0.34);
+  background: var(--accent-2-soft);
+}
+
+/* Badge plein (pastille de comptage / statut) */
+.of-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  line-height: 1;
+}
+
+.of-badge--danger { background: var(--danger); color: #2a0606; }
+.of-badge--amber { background: var(--accent-2); color: #2a1c00; }
+
+/* Point de statut */
+.of-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--text-dim);
+}
+.of-dot--live { background: var(--success); box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.22); }

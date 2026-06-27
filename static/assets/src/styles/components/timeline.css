@@ -1,0 +1,608 @@
+/* ============================================================================
+   timeline — dock bas : navigation jour/heure + molette de créneaux (rail).
+   Consolide les valeurs GAGNANTES des ~10 couches d'override legacy
+   (base + v1.0.111/117/118/119 + v1.1.x) en un seul jeu de règles, sans
+   !important. Structure « molette » : rail + track + fill + curseur + repères
+   horaires, le tout aligné sur 44 px de haut.
+   ============================================================================ */
+
+/* Accent PARAMÉTRABLE : cyan par défaut (frise de base), rouge en mode chasse.
+   Défini sur le dock ET sur #chaseSlots (qui réutilise rail/molette hors dock) →
+   le rail/curseur/pastille héritent. Le mode chasse override plus bas. Plus de
+   hue-rotate : couleurs propres. */
+.timeline-dock,
+#chaseSlots {
+  --tl-accent: 56, 189, 248;     /* cyan #38bdf8 */
+  --tl-accent-2: 45, 212, 191;   /* teal #2dd4bf */
+  --tl-bright: 224, 242, 254;    /* rgb(var(--tl-bright)) */
+  --tl-cursor: var(--tl-cursor);
+  --tl-ring: var(--tl-ring);
+}
+body.chase-mode #chaseSlots {
+  --tl-accent: 248, 113, 113;    /* rouge #f87171 */
+  --tl-accent-2: 251, 146, 60;   /* orange #fb923c */
+  --tl-bright: 254, 226, 226;    /* #fee2e2 */
+  --tl-cursor: #fca5a5;
+  --tl-ring: #f87171;
+}
+
+.timeline-dock {
+  position: fixed;
+  z-index: 18;
+  left: 50%;
+  bottom: max(var(--sp-3), env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: grid;
+  gap: var(--sp-2);
+  width: min(1180px, calc(100vw - 136px));
+  max-width: calc(100vw - 136px);
+  padding: 7px var(--sp-4);
+  border-radius: var(--r-xl);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-2);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  overflow: visible;
+  transition: transform var(--dur-slow) var(--ease), opacity var(--dur-base) var(--ease);
+}
+.timeline-dock[hidden] { display: none; }
+.timeline-dock .button-row[hidden] { display: none; }
+
+.timeline-content { display: grid; gap: var(--sp-2); min-width: 0; justify-items: center; align-items: center; }
+
+/* --- Poignée de repli (grip) ----------------------------------------------
+   Barre blanche posée AU-DESSUS du dock (le dock est en overflow:visible). Au
+   survol/focus à la souris, un chevron la remplace. En tactile, c'est toujours
+   une poignée (geste de swipe vertical). Cliquer/swiper → bascule .collapsed. */
+.timeline-toggle-btn {
+  position: absolute;
+  left: 50%;
+  top: -30px;
+  transform: translateX(-50%);
+  width: 72px;
+  min-width: 72px;
+  height: 22px;
+  padding: 0;
+  display: block;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  cursor: pointer;
+  z-index: 30;
+}
+.timeline-toggle-btn::before {
+  content: "";
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 40px; height: 8px;
+  transform: translate(-50%, -50%);
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.28);
+  opacity: 1;
+  transition: opacity var(--dur-base) var(--ease);
+  pointer-events: none;
+}
+.timeline-toggle-icon {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 22px; height: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 21px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.98);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.42);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease);
+  pointer-events: none;
+}
+.timeline-toggle-btn:hover::before,
+.timeline-toggle-btn:focus-visible::before,
+.timeline-dock.collapsed .timeline-toggle-btn::before { opacity: 0; }
+.timeline-toggle-btn:hover .timeline-toggle-icon,
+.timeline-toggle-btn:focus-visible .timeline-toggle-icon,
+.timeline-dock.collapsed .timeline-toggle-icon { opacity: 1; }
+.timeline-toggle-btn:focus-visible { outline: none; }
+@media (hover: none), (pointer: coarse) {
+  .timeline-toggle-btn { cursor: ns-resize; touch-action: none; }
+  .timeline-toggle-btn::before,
+  .timeline-dock.collapsed .timeline-toggle-btn::before { opacity: 1; }
+  .timeline-toggle-icon,
+  .timeline-dock.collapsed .timeline-toggle-icon { opacity: 0; }
+}
+
+/* --- Repli « réduire à une poignée » --------------------------------------
+   Le contenu disparaît et le dock glisse vers le bas : seule la poignée reste
+   en bord d'écran (clic/swipe pour redéployer). Transform de base = dock
+   FLOTTANT (translateX-50%) ; le desktop pleine largeur l'override en translateY
+   pur (cf. plus bas). */
+.timeline-dock.collapsed { transform: translate(-50%, calc(100% + 8px)); }
+.timeline-dock.collapsed .timeline-content { opacity: 0; pointer-events: none; }
+
+/* Barre frise : prev | next | molette | play */
+.timeline-bar.timeline-bar-frise {
+  display: grid;
+  grid-template-columns: 40px 40px minmax(280px, 1fr) 40px 40px;
+  grid-template-areas: "prev next slots play export";
+  align-items: center;
+  justify-content: center;
+  width: min(100%, 1120px);
+  max-width: calc(100vw - 28px);
+  gap: var(--sp-2);
+  margin: 0 auto;
+}
+#prevDayBtn { grid-area: prev; }
+#nextDayBtn { grid-area: next; }
+#slotButtons.timeline-slot-strip { grid-area: slots; width: 100%; min-width: 0; }
+#playTimelineBtn { grid-area: play; }
+#exportGifBtn { grid-area: export; }
+
+.timeline-nav-btn { width: 40px; min-width: 40px; height: 40px; min-height: 40px; border-radius: var(--r-md); padding: 0; font-size: 17px; font-weight: var(--fw-bold); }
+.timeline-today-btn,
+.timeline-play-btn { min-height: 40px; border-radius: var(--r-md); padding: 0 var(--sp-3); white-space: nowrap; font-weight: var(--fw-bold); font-size: var(--fs-sm); }
+.timeline-play-btn.active { box-shadow: 0 10px 24px var(--accent-soft); }
+.timeline-play-btn:disabled { opacity: 0.46; cursor: not-allowed; }
+
+/* --- Chrome commun des boutons icône (prev/next/play/export) --------------
+   Look « verre » : fond transparent (laisse voir le dock), filet + ombre. La
+   géométrie de base vient de .timeline-nav-btn/-play-btn ; ici le LOOK + états.
+   Consolidé depuis le legacy (icon-btn), 0 !important. */
+.timeline-dock .timeline-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(10, 20, 35, 0.90), rgba(7, 14, 25, 0.78));
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  color: #e5edf9;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  transition: transform var(--dur-fast) var(--ease), background var(--dur-base) var(--ease),
+              border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease);
+}
+.timeline-dock .timeline-icon-btn:hover {
+  background: rgba(17, 31, 54, 0.96);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #f8fafc;
+  transform: translateY(-1px);
+}
+.timeline-dock .timeline-icon-btn:active { transform: translateY(0); }
+.timeline-dock .timeline-icon-btn .icon-svg { width: 17px; height: 17px; display: block; }
+.timeline-nav-btn .icon-svg { filter: drop-shadow(0 0 5px rgba(var(--tl-accent), 0.18)); }
+/* État actif (lecture / export en cours) : accent. */
+.timeline-play-btn.active,
+.timeline-gif-btn.active {
+  background: rgba(var(--tl-accent), 0.22);
+  border-color: rgba(var(--tl-accent), 0.5);
+  color: rgb(var(--tl-bright));
+}
+
+/* --- Molette (slider) -------------------------------------------------- */
+#slotButtons.timeline-slot-strip.timeline-slider,
+.timeline-slot-strip.timeline-slider {
+  display: block;
+  width: min(100%, 1180px);
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  margin: 0 auto;
+  padding: 0 var(--sp-2);
+  overflow: visible;
+  align-self: center;
+  cursor: grab;
+  scrollbar-width: none;
+  touch-action: none;
+  mask-image: linear-gradient(90deg, transparent 0%, #000 28px, #000 calc(100% - 28px), transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 28px, #000 calc(100% - 28px), transparent 100%);
+}
+.timeline-slot-strip.timeline-slider::-webkit-scrollbar { display: none; }
+.timeline-slot-strip.timeline-slider.dragging { cursor: grabbing; }
+
+.timeline-rail { position: relative; width: 100%; height: 44px; min-height: 44px; padding: 0; outline: none; }
+.timeline-rail:focus-visible .timeline-rail-track { box-shadow: 0 0 0 2px rgba(var(--tl-accent), 0.68), inset 0 0 0 1px rgba(255, 255, 255, 0.09); }
+
+.timeline-rail-track {
+  --timeline-active-pct: 0%;
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 44px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(15, 23, 42, 0.80)),
+    linear-gradient(90deg, rgba(var(--tl-accent),0.06), rgba(var(--tl-accent-2),0.08));
+  border: 1px solid rgba(226, 232, 240, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 10px 24px rgba(0, 0, 0, 0.24);
+}
+.timeline-rail-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: var(--timeline-active-pct);
+  border-radius: 14px 0 0 14px;
+  background: linear-gradient(90deg, rgba(var(--tl-accent),0.16), rgba(var(--tl-accent-2),0.28));
+  pointer-events: none;
+}
+
+/* Curseur : trait fin + pastille (le libellé span est masqué dans le rail) */
+.timeline-rail-cursor {
+  position: absolute;
+  left: var(--timeline-active-pct);
+  top: 50%;
+  z-index: 6;
+  width: 34px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  color: rgb(var(--tl-bright));
+  pointer-events: none;
+}
+.timeline-rail-cursor::before {
+  content: "";
+  position: absolute;
+  left: 50%; top: 4px;
+  width: 3px; height: 36px;
+  transform: translateX(-50%);
+  border-radius: var(--r-pill);
+  background: linear-gradient(180deg, rgba(var(--tl-bright),0.98), rgba(var(--tl-accent),0.82));
+  box-shadow: 0 0 10px rgba(var(--tl-accent),0.42);
+}
+.timeline-rail-cursor::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 19px; height: 19px;
+  transform: translate(-50%, -50%);
+  border-radius: var(--r-pill);
+  background: rgba(var(--tl-bright),0.18);
+  border: 3px solid var(--tl-cursor);
+  box-shadow: 0 0 0 4px rgba(8, 47, 73, 0.46), 0 8px 18px rgba(var(--tl-accent),0.34);
+}
+.timeline-rail-cursor span { display: none; }
+
+/* Repères horaires */
+.timeline-hour-mark { position: absolute; left: 0; top: 0; z-index: 2; width: 30px; height: 44px; transform: translateX(-50%); pointer-events: none; }
+.timeline-hour-line { position: absolute; left: 50%; top: 6px; width: 1px; height: 32px; transform: translateX(-50%); border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.46); opacity: 0.52; }
+.timeline-hour-mark:nth-child(2n) .timeline-hour-line { height: 28px; top: 8px; opacity: 0.42; }
+.timeline-hour-label {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  min-width: 18px;
+  text-align: center;
+  color: rgba(226, 238, 252, 0.74);
+  font-size: 9.5px;
+  font-weight: 850;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.70);
+  pointer-events: none;
+}
+.timeline-hour-mark.is-arome-cached .timeline-hour-line { background: rgba(var(--tl-accent),0.76); }
+.timeline-hour-mark.is-arome-loaded .timeline-hour-line { background: rgba(var(--tl-accent-2),0.86); box-shadow: 0 0 8px rgba(var(--tl-accent-2),0.38); }
+.timeline-hour-mark.active .timeline-hour-label { color: #f8fafc; font-weight: 950; }
+.timeline-hour-mark.active .timeline-hour-line { top: 4px; height: 36px; width: 2px; opacity: 0.94; background: rgba(255, 255, 255, 0.90); }
+
+/* --- Icônes de phase solaire (jour/nuit/lever/coucher) du rail desktop -------
+   Posées au-dessus du rail (top négatif), trait de liaison (::after) + bulle
+   d'aide (::before, rognée par le dock overflow:hidden → visible seulement si le
+   dock déborde). Relocalisé depuis le legacy, 0 !important. La couleur des icônes
+   est fixe (phase), le liseré de la bulle suit l'accent (cyan / rouge en chasse). */
+.timeline-light-icon {
+  position: absolute;
+  left: 0;
+  top: -18px;
+  z-index: 9;
+  width: 15px;
+  height: 15px;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  color: rgba(226, 238, 252, 0.74);
+  opacity: 0.96;
+  pointer-events: auto;
+  cursor: help;
+  filter: drop-shadow(0 1px 2px rgba(2, 6, 23, 0.82));
+}
+.timeline-light-icon svg { width: 15px; height: 15px; display: block; }
+.timeline-light-icon::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: calc(100% + 2px);
+  width: 1px; height: 7px;
+  transform: translateX(-50%);
+  border-radius: var(--r-pill);
+  background: rgba(248, 250, 252, 0.58);
+  box-shadow: 0 0 4px rgba(248, 250, 252, 0.18);
+  pointer-events: none;
+}
+.timeline-light-icon::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%; bottom: calc(100% + 8px);
+  z-index: 2;
+  transform: translateX(-50%) translateY(3px);
+  min-width: max-content;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+  border: 1px solid rgba(var(--tl-accent), 0.26);
+  color: rgba(248, 250, 252, 0.96);
+  font-size: 10.5px;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  box-shadow: var(--shadow-2);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s ease;
+  pointer-events: none;
+}
+.timeline-light-icon:hover::before,
+.timeline-light-icon:focus-visible::before {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+.timeline-light-icon-night { color: rgba(125, 211, 252, 0.82); }
+.timeline-light-icon-sunrise,
+.timeline-light-icon-sunset { color: rgba(251, 146, 60, 0.94); }
+.timeline-light-icon-day { color: rgba(253, 224, 71, 0.94); }
+/* Heure sans données AROME : icône grisée. */
+.timeline-light-icon.is-arome-unavailable {
+  opacity: 0.28;
+  color: rgba(148, 163, 184, 0.58);
+  cursor: not-allowed;
+  filter: grayscale(1) drop-shadow(0 4px 10px rgba(0, 0, 0, 0.22));
+}
+.timeline-light-icon.is-arome-unavailable::after { background: rgba(148, 163, 184, 0.24); box-shadow: none; }
+.timeline-light-icon.is-arome-unavailable::before { border-color: rgba(148, 163, 184, 0.24); color: rgba(203, 213, 225, 0.82); }
+
+/* Boutons désactivés (nav/play/export) */
+#prevDayBtn:disabled,
+#nextDayBtn:disabled,
+#playTimelineBtn:disabled,
+#exportGifBtn:disabled { opacity: 0.42; cursor: not-allowed; transform: none; filter: saturate(0.75); }
+
+/* ============================================================================
+   BASCULE rail (desktop ≥768) / molette tactile (mobile ≤767).
+   La molette est masquée par défaut ; en ≤767 on masque le rail et on affiche
+   la molette. Consolidé depuis le legacy (v1.1.111+), 0 !important.
+   ============================================================================ */
+.timeline-wheel { display: none; }
+
+@media (max-width: 767px) {
+  /* Dock tactile FLOTTANT : centré (left:50% + translateX de la base), large
+     pour laisser de la place à la molette, posé près du bas (la barre meta est
+     masquée ≤1024, cf. theme.css → pas besoin de la dégager). */
+  .timeline-dock {
+    width: calc(100vw - 16px);
+    max-width: none;
+    bottom: max(var(--sp-3), env(safe-area-inset-bottom));
+    height: 92px;
+    min-height: 92px;
+    max-height: 92px;
+    padding: 7px 8px 9px;
+    border-radius: var(--r-xl);
+  }
+
+  /* Barre frise : prev | next | molette | play | export */
+  .timeline-bar.timeline-bar-frise {
+    grid-template-columns: 38px 38px minmax(0, 1fr) 38px 38px;
+    grid-template-rows: 76px;
+    grid-template-areas: "prev next slots play export";
+    gap: 6px;
+  }
+  #exportGifBtn { grid-area: export; }
+
+  /* Boutons icône un peu plus larges + svg plus compact en tactile. */
+  .timeline-dock .timeline-icon-btn { width: 38px; min-width: 38px; }
+  .timeline-dock .timeline-icon-btn .icon-svg { width: 16px; height: 16px; }
+
+  /* Bascule : molette visible, rail masqué */
+  .timeline-rail { display: none; }
+  /* Le conteneur slider (#slotButtons) passe à la hauteur molette : en régime
+     rail il est figé à 44px (hors media-query), sinon la molette 76px déborde
+     et se fait rogner par le bas du dock. */
+  #slotButtons.timeline-slot-strip.timeline-slider,
+  .timeline-slot-strip.timeline-slider {
+    height: 76px;
+    min-height: 76px;
+    max-height: 76px;
+  }
+  .timeline-wheel {
+    --timeline-wheel-visible-hours: 8;
+    --timeline-wheel-item-width: calc(100% / var(--timeline-wheel-visible-hours));
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 76px;
+    overflow: visible;
+    isolation: isolate;
+    mask-image: linear-gradient(90deg, transparent 0%, #000 22px, #000 calc(100% - 22px), transparent 100%);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 22px, #000 calc(100% - 22px), transparent 100%);
+  }
+
+  .timeline-wheel-scroller {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+    height: 76px;
+    padding: 6px 0;
+    overflow-x: auto;
+    overflow-y: clip;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: none;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+  }
+  .timeline-wheel-scroller::-webkit-scrollbar { display: none; }
+
+  .timeline-wheel-item {
+    position: relative;
+    flex: 0 0 var(--timeline-wheel-item-width);
+    width: var(--timeline-wheel-item-width);
+    min-width: var(--timeline-wheel-item-width);
+    height: 64px;
+    min-height: 64px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    display: grid;
+    justify-items: center;
+    align-items: start;
+    align-content: center;
+    grid-template-rows: 14px 17px 24px;
+    overflow: visible;
+    background: transparent;
+    box-shadow: none;
+    color: rgba(226, 238, 252, 0.72);
+    font-variant-numeric: tabular-nums;
+    opacity: 0.84;
+  }
+  .timeline-wheel-item:first-child { margin-left: calc(50% - var(--timeline-wheel-item-width) / 2); }
+  .timeline-wheel-item:last-child { margin-right: calc(50% - var(--timeline-wheel-item-width) / 2); }
+  .timeline-wheel-item:active { transform: none; }
+  .timeline-wheel-item.is-arome-unavailable { opacity: 0.32; cursor: not-allowed; }
+
+  /* Lignes de grille : icône (haut) · trait · libellé (bas) */
+  .timeline-wheel-light-icon { grid-row: 1; align-self: start; }
+  .timeline-wheel-line { grid-row: 2; align-self: end; }
+  .timeline-wheel-label { grid-row: 3; align-self: center; }
+
+  /* Icône jour/nuit + tooltip */
+  .timeline-wheel-light-icon {
+    position: relative;
+    z-index: 6;
+    width: 13px;
+    height: 13px;
+    display: grid;
+    place-items: center;
+    color: rgba(226, 238, 252, 0.70);
+    filter: drop-shadow(0 1px 2px rgba(2, 6, 23, 0.82));
+  }
+  .timeline-wheel-light-icon svg { width: 13px; height: 13px; display: block; }
+  .timeline-wheel-light-icon::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: calc(100% + 2px);
+    width: 1px;
+    height: 8px;
+    transform: translateX(-50%);
+    border-radius: var(--r-pill);
+    background: rgba(248, 250, 252, 0.45);
+    pointer-events: none;
+  }
+  .timeline-wheel-light-icon::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%) translateY(3px);
+    min-width: max-content;
+    padding: 5px 8px;
+    border-radius: var(--r-sm);
+    background: var(--surface-3);
+    border: 1px solid rgba(125, 211, 252, 0.26);
+    color: rgba(248, 250, 252, 0.96);
+    font-size: 10px;
+    font-weight: 850;
+    line-height: 1;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    box-shadow: var(--shadow-2);
+    pointer-events: none;
+    transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s ease;
+  }
+  .timeline-wheel-light-icon:hover::before,
+  .timeline-wheel-light-icon:focus-visible::before {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+  }
+  .timeline-wheel-light-icon-night { color: rgba(125, 211, 252, 0.82); }
+  .timeline-wheel-light-icon-sunrise,
+  .timeline-wheel-light-icon-sunset { color: rgba(251, 146, 60, 0.94); }
+  .timeline-wheel-light-icon-day { color: rgba(253, 224, 71, 0.94); }
+
+  /* Trait horaire */
+  .timeline-wheel-line {
+    width: 1px;
+    height: 17px;
+    border-radius: var(--r-pill);
+    background: rgba(226, 238, 252, 0.48);
+    box-shadow: 0 0 4px rgba(2, 6, 23, 0.42);
+  }
+  .timeline-wheel-item:nth-child(2n) .timeline-wheel-line { height: 12px; opacity: 0.7; }
+
+  /* Libellé heure */
+  .timeline-wheel-label {
+    z-index: 5;
+    min-width: 28px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--r-pill);
+    color: rgba(226, 238, 252, 0.82);
+    font-size: 12px;
+    font-weight: 900;
+    line-height: 1;
+    text-shadow: 0 1px 3px rgba(2, 6, 23, 0.86);
+  }
+
+  /* Heure active : pastille cyan */
+  .timeline-wheel-item.active { opacity: 1; color: rgb(var(--tl-bright)); }
+  .timeline-wheel-item.active .timeline-wheel-label {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    margin-top: -6px;
+    background: linear-gradient(180deg, rgb(var(--tl-bright)), var(--tl-cursor));
+    border: 3px solid var(--tl-ring);
+    color: #082f49;
+    font-size: 13px;
+    box-shadow: 0 0 0 4px rgba(8, 47, 73, 0.58), 0 8px 20px rgba(var(--tl-accent),0.36);
+    text-shadow: none;
+  }
+
+  /* Marqueurs données AROME */
+  .timeline-wheel-item.is-arome-cached .timeline-wheel-line { background: rgba(var(--tl-accent),0.86); }
+  .timeline-wheel-item.is-arome-loaded .timeline-wheel-line { background: rgba(var(--tl-accent-2),0.96); box-shadow: 0 0 8px rgba(var(--tl-accent-2),0.44); }
+}
+
+/* Desktop (≥1025) : frise PLEINE LARGEUR, bord à bord, posée au-dessus de la
+   barre meta (qui reste affichée sur desktop). Tablette (768-1024) garde le dock
+   FLOTTANT centré de la base. */
+@media (min-width: 1025px) {
+  .timeline-dock {
+    left: 0;
+    right: 0;
+    width: auto;
+    max-width: none;
+    transform: none;
+    bottom: var(--timeline-strip-bottom);
+    padding: 7px var(--sp-5);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  .timeline-dock.collapsed { transform: translateY(calc(100% + 8px)); }
+  /* La barre frise s'étire sur toute la largeur (plus de cap à 1120px). */
+  .timeline-bar.timeline-bar-frise {
+    width: 100%;
+    max-width: none;
+  }
+}
+@media (min-width: 768px) {
+  #slotButtons.timeline-slot-strip.timeline-slider,
+  #slotButtons.timeline-slot-strip { -webkit-mask-image: none; mask-image: none; }
+}

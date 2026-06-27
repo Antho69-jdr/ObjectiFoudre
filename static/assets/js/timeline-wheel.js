@@ -1,0 +1,283 @@
+// timeline-wheel.js — issu du découpage de timeline.js (Phase 3).
+// Molette de créneaux (scroll/snap/centrage) + buildTimelineWheel + renderSlotButtons.
+    // ── Wheel scroll state ──────────────────────────────────────────────────
+    let wheelSnapTimer = null;
+    let wheelProgrammatic = false;
+    let wheelActiveSlotKey = null;
+
+    // O(1) : trouve l'index de l'item centré via scrollLeft arithmétique
+    // Utilisé uniquement au commit (après scroll terminé), getBoundingClientRect fiable
+    function wheelCenteredItem(scroller) {
+      if (!scroller.isConnected) return null;
+      const rect = scroller.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      let best = null, bestDist = Infinity;
+      for (const item of scroller.querySelectorAll('.timeline-wheel-item:not(:disabled)')) {
+        const ir = item.getBoundingClientRect();
+        const dist = Math.abs(ir.left + ir.width / 2 - cx);
+        if (dist < bestDist) { best = item; bestDist = dist; }
+      }
+      return best;
+    }
+
+    // Met à jour uniquement les deux items concernés (ancien actif → nouveau)
+    function wheelSetActive(scroller, slotKey) {
+      if (slotKey === wheelActiveSlotKey) return;
+      if (wheelActiveSlotKey) {
+        const prev = scroller.querySelector(`[data-slot-key="${wheelActiveSlotKey}"]`);
+        if (prev) { prev.classList.remove('active'); prev.setAttribute('aria-selected', 'false'); }
+      }
+      const next = scroller.querySelector(`[data-slot-key="${slotKey}"]`);
+      if (next) { next.classList.add('active'); next.setAttribute('aria-selected', 'true'); }
+      wheelActiveSlotKey = slotKey;
+    }
+
+    // Snap vers un slot — easeOutQuart (aimant : décélération rapide vers la cible)
+    function wheelScrollTo(scroller, slotKey, animated) {
+      if (!scroller.isConnected) return;
+      const item = scroller.querySelector(`[data-slot-key="${slotKey}"]`);
+      if (!item) return;
+      const sr = scroller.getBoundingClientRect();
+      const ir = item.getBoundingClientRect();
+      const target = Math.max(0, scroller.scrollLeft + ir.left - sr.left - sr.width / 2 + ir.width / 2);
+
+      if (!animated || Math.abs(target - scroller.scrollLeft) < 1) {
+        scroller.scrollLeft = target;
+        return;
+      }
+
+      const startLeft = scroller.scrollLeft;
+      const distance = target - startLeft;
+      const duration = 220;
+      const startTime = performance.now();
+
+      wheelProgrammatic = true;
+      function step(now) {
+        if (!scroller.isConnected) { wheelProgrammatic = false; return; }
+        const t = Math.min((now - startTime) / duration, 1);
+        const ease = 1 - Math.pow(1 - t, 4); // easeOutQuart
+        scroller.scrollLeft = startLeft + distance * ease;
+        if (t < 1) { requestAnimationFrame(step); }
+        else { scroller.scrollLeft = target; wheelProgrammatic = false; }
+      }
+      requestAnimationFrame(step);
+    }
+
+    function wheelCommit(scroller) {
+      if (!scroller.isConnected) return;
+      const item = wheelCenteredItem(scroller);
+      if (!item) return;
+      const slotKey = item.dataset.slotKey;
+      wheelSetActive(scroller, slotKey);
+      wheelScrollTo(scroller, slotKey, true);
+      if (slotKey !== selectedSlotKey && typeof selectTimelineSlot === 'function') {
+        selectTimelineSlot(slotKey, { render: false, stopPlayback: true, loadCached: true });
+      }
+      if (typeof maybeLoadCachedMeteoFranceGribForSelectedSlot === 'function') {
+        maybeLoadCachedMeteoFranceGribForSelectedSlot({ quiet: true });
+      }
+    }
+
+    function wheelScheduleSnap(scroller, delay = 150) {
+      if (wheelSnapTimer) clearTimeout(wheelSnapTimer);
+      wheelSnapTimer = setTimeout(() => { wheelSnapTimer = null; wheelCommit(scroller); }, delay);
+    }
+
+    function syncTimelineWheelScrollToSelected({ smooth = false } = {}) {
+      const scroller = slotButtons?.querySelector?.('.timeline-wheel-scroller');
+      if (!scroller) return;
+      wheelScrollTo(scroller, selectedSlotKey, smooth);
+    }
+
+    function buildTimelineWheel(slots, day) {
+      wheelActiveSlotKey = selectedSlotKey || null;
+
+      const wheel = document.createElement('div');
+      wheel.className = 'timeline-wheel';
+      wheel.setAttribute('aria-hidden', 'false');
+
+      const scroller = document.createElement('div');
+      scroller.className = 'timeline-wheel-scroller';
+      scroller.setAttribute('role', 'listbox');
+      scroller.setAttribute('aria-label', 'Heure affichée');
+
+      const phases = timelinePhaseMapForSlots(day?.day_key || selectedBaseDate, slots, day);
+      for (const slot of slots) {
+        const hasAromeCache = typeof meteoFranceGribCachedSlotKeys !== 'undefined' && meteoFranceGribCachedSlotKeys.has(slot.slot_key);
+        const isAromeLoaded = Array.isArray(slot.cells) && slot.cells.some((cell) => cell?.source_provider === 'meteofrance_arome_grib');
+        const isUnavailable = timelineSlotIsUnavailable(slot, day);
+        const hourText = timelineSlotHourLabel(slot);
+        const phase = phases.get(slot.slot_key);
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = [
+          'timeline-wheel-item',
+          slot.slot_key === selectedSlotKey ? 'active' : '',
+          hasAromeCache ? 'is-arome-cached' : '',
+          isAromeLoaded ? 'is-arome-loaded' : '',
+          isUnavailable ? 'is-arome-unavailable' : '',
+        ].filter(Boolean).join(' ');
+        item.dataset.slotKey = slot.slot_key;
+        item.setAttribute('role', 'option');
+        item.setAttribute('aria-selected', slot.slot_key === selectedSlotKey ? 'true' : 'false');
+        item.setAttribute('aria-label', `${String(hourText).padStart(2, '0')}h`);
+        item.title = isUnavailable
+          ? `${slot.slot_label} · échéance non publiée par le run AROME`
+          : (isAromeLoaded
+            ? `${slot.slot_label} · AROME GRIB chargé`
+            : (hasAromeCache ? `${slot.slot_label} · AROME GRIB en cache serveur` : slot.slot_label));
+        if (isUnavailable) item.disabled = true;
+        if (phase) {
+          const phaseIcon = document.createElement('span');
+          phaseIcon.className = [`timeline-wheel-light-icon`, `timeline-wheel-light-icon-${phase.type}`, phase.unavailable ? 'is-arome-unavailable' : ''].filter(Boolean).join(' ');
+          phaseIcon.dataset.tooltip = phase.tooltip;
+          phaseIcon.innerHTML = timelinePhaseIconSvg(phase.type);
+          item.appendChild(phaseIcon);
+        }
+        const line = document.createElement('span');
+        line.className = 'timeline-wheel-line';
+        const label = document.createElement('span');
+        label.className = 'timeline-wheel-label';
+        label.textContent = hourText;
+        item.appendChild(line);
+        item.appendChild(label);
+        item.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (isUnavailable) return;
+          // Annule le snap en attente (évite snap sur ancien scroller après re-render)
+          if (wheelSnapTimer) { clearTimeout(wheelSnapTimer); wheelSnapTimer = null; }
+          if (typeof selectTimelineSlot === 'function') selectTimelineSlot(slot.slot_key, { stopPlayback: true });
+        });
+        scroller.appendChild(item);
+      }
+
+      // Mise à jour visuelle pendant le scroll — throttlée rAF, O(1) par index
+      const visibleHours = 8;
+      let scrollRafId = null;
+      scroller.addEventListener('scroll', () => {
+        if (wheelProgrammatic) return;
+        if (scrollRafId) return;
+        scrollRafId = requestAnimationFrame(() => {
+          scrollRafId = null;
+          if (!scroller.isConnected) return;
+          const itemWidth = scroller.clientWidth / visibleHours;
+          if (!itemWidth) return;
+          const idx = Math.max(0, Math.min(
+            Math.round(scroller.scrollLeft / itemWidth),
+            scroller.querySelectorAll('.timeline-wheel-item').length - 1
+          ));
+          const items = scroller.querySelectorAll('.timeline-wheel-item');
+          if (items[idx]) wheelSetActive(scroller, items[idx].dataset.slotKey);
+        });
+      }, { passive: true });
+
+      // Primary: scrollend fire après que l'inertie soit terminée
+      scroller.addEventListener('scrollend', () => {
+        if (wheelProgrammatic) return;
+        if (wheelSnapTimer) { clearTimeout(wheelSnapTimer); wheelSnapTimer = null; }
+        wheelCommit(scroller);
+      }, { passive: true });
+
+      // Fallback long (inertie mobile ~300-500ms) pour navigateurs sans scrollend
+      scroller.addEventListener('touchend', () => { wheelScheduleSnap(scroller, 600); }, { passive: true });
+      scroller.addEventListener('pointercancel', () => { wheelScheduleSnap(scroller, 600); });
+
+      // Molette souris
+      scroller.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        const delta = Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+        if (!delta) return;
+        scroller.scrollBy({ left: delta, behavior: 'auto' });
+        wheelScheduleSnap(scroller, 150);
+      }, { passive: false });
+
+      wheel.appendChild(scroller);
+      return wheel;
+    }
+
+    function renderSlotButtons() {
+      const day = getCurrentDay();
+      slotButtons.innerHTML = '';
+      slotButtons.classList.add('timeline-slider');
+      const slots = getRenderableSlots(day);
+      const selectableSlots = timelineSelectableSlots(day);
+      debugLog('renderSlotButtons', slots.map(slot => ({ slotKey: slot?.slot_key, label: slot?.slot_label, cells: Array.isArray(slot?.cells) ? slot.cells.length : 0, unavailable: timelineSlotIsUnavailable(slot, day) })));
+      if (!slots.length) {
+        syncTimelinePlaybackUi();
+        return;
+      }
+      const selectedSlot = slots.find(s => s.slot_key === selectedSlotKey);
+      if (!selectedSlotKey || !selectedSlot || timelineSlotIsUnavailable(selectedSlot, day)) {
+        selectedSlotKey = selectableSlots[0]?.slot_key || slots[0].slot_key;
+      }
+
+      const activeIndex = Math.max(0, slots.findIndex((slot) => slot?.slot_key === selectedSlotKey));
+      const denominator = Math.max(1, slots.length - 1);
+      const activePct = (activeIndex / denominator) * 100;
+      const activeSlot = slots[activeIndex] || slots[0];
+      const activeHour = String(activeSlot?.slot_label || activeSlot?.slot_key || '').replace(/^h/, '').replace('h', '');
+
+      const rail = document.createElement('div');
+      rail.className = 'timeline-rail';
+      rail.setAttribute('role', 'slider');
+      rail.setAttribute('aria-label', 'Heure affichée');
+      rail.setAttribute('aria-valuemin', '0');
+      rail.setAttribute('aria-valuemax', String(slots.length - 1));
+      rail.setAttribute('aria-valuenow', String(activeIndex));
+      rail.setAttribute('aria-valuetext', activeSlot?.slot_label || activeSlot?.slot_key || '');
+      rail.tabIndex = 0;
+
+      const track = document.createElement('div');
+      track.className = 'timeline-rail-track';
+      track.style.setProperty('--timeline-active-pct', `${activePct}%`);
+      addTimelinePhaseIcons(track, day?.day_key || selectedBaseDate);
+
+      const fill = document.createElement('div');
+      fill.className = 'timeline-rail-fill';
+      track.appendChild(fill);
+
+      const cursor = document.createElement('div');
+      cursor.className = 'timeline-rail-cursor';
+      cursor.innerHTML = `<span>${String(activeHour).padStart(2, '0')}h</span>`;
+      track.appendChild(cursor);
+
+      for (let index = 0; index < slots.length; index += 1) {
+        const slot = slots[index];
+        const pct = (index / denominator) * 100;
+        const hasAromeCache = typeof meteoFranceGribCachedSlotKeys !== 'undefined' && meteoFranceGribCachedSlotKeys.has(slot.slot_key);
+        const isAromeLoaded = Array.isArray(slot.cells) && slot.cells.some((cell) => cell?.source_provider === 'meteofrance_arome_grib');
+        const isUnavailable = timelineSlotIsUnavailable(slot, day);
+        const mark = document.createElement('div');
+        mark.className = [
+          'timeline-hour-mark',
+          slot.slot_key === selectedSlotKey ? 'active' : '',
+          hasAromeCache ? 'is-arome-cached' : '',
+          isAromeLoaded ? 'is-arome-loaded' : '',
+          isUnavailable ? 'is-arome-unavailable' : '',
+        ].filter(Boolean).join(' ');
+        mark.dataset.slotKey = slot.slot_key;
+        mark.style.left = `${pct}%`;
+        mark.title = isUnavailable
+          ? `${slot.slot_label} · échéance non publiée par le run AROME`
+          : (isAromeLoaded
+            ? `${slot.slot_label} · AROME GRIB chargé`
+            : (hasAromeCache ? `${slot.slot_label} · AROME GRIB en cache serveur` : slot.slot_label));
+
+        const line = document.createElement('span');
+        line.className = 'timeline-hour-line';
+        const label = document.createElement('span');
+        label.className = 'timeline-hour-label';
+        label.textContent = String(slot.slot_label || '').replace('h', '');
+        mark.appendChild(line);
+        mark.appendChild(label);
+        track.appendChild(mark);
+      }
+
+      const wheel = buildTimelineWheel(slots, day);
+      slotButtons.appendChild(wheel);
+      rail.appendChild(track);
+      slotButtons.appendChild(rail);
+      syncTimelinePlaybackUi();
+      requestAnimationFrame(() => syncTimelineWheelScrollToSelected({ smooth: false }));
+    }

@@ -1,0 +1,47 @@
+/* ============================================================================
+   of-input / of-field — champs de saisie & sélecteurs.
+   ============================================================================ */
+
+.of-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: var(--fs-md);
+  outline: none;
+  box-shadow: var(--shadow-inset);
+  transition: border-color var(--dur-base) var(--ease),
+              background var(--dur-base) var(--ease),
+              box-shadow var(--dur-base) var(--ease);
+}
+
+.of-input::placeholder { color: var(--text-dim); }
+.of-input:hover { background: rgba(255, 255, 255, 0.06); }
+.of-input:focus {
+  border-color: var(--accent-ring);
+  background: var(--surface-3);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-inset);
+}
+
+/* Champ avec libellé */
+.of-field { display: grid; gap: var(--sp-1); }
+.of-field__label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+select.of-input {
+  appearance: none;
+  padding-right: var(--sp-8);
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) center, calc(100% - 13px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}

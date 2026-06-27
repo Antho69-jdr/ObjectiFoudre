@@ -69,7 +69,10 @@
             pollMeteoFranceServerAutomationStatus({ immediate: true, quiet: true });
           }
         }, 0);
-        hideAppLoader(true);
+        // Le loader d'ouverture reste affiché jusqu'à l'hydratation de la journée
+        // (24 créneaux en cache) ; cf. loadAromeFranceData. On arme juste le repli
+        // pour qu'il ne bloque jamais l'app si les données n'arrivent pas.
+        armAppLoaderFailsafe();
       };
 
       map.on('load', handleMapReady);

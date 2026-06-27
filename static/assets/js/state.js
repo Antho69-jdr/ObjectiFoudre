@@ -24,7 +24,10 @@ const GRID_ANIMATION_TOTAL_MS = 520;
 const GRID_ANIMATION_CELL_MS = 340;
 const GRID_ANIMATION_STAGGER_SPAN_MS = 170;
 const VISIBILITY_REFRESH_MS = 10 * 60 * 1000;
-const APP_LOADER_MIN_MS = 0;
+const APP_LOADER_MIN_MS = 600;
+// Repli : si la grille de la journée n'arrive jamais (réseau lent, quota AROME,
+// erreur serveur), on ne laisse jamais le loader bloquer l'app indéfiniment.
+const APP_LOADER_FAILSAFE_MS = 15000;
 const GRID_ANIMATION_MAX_CELLS = 140;
 let userLocationMarker = null;
 let shouldAnimateNextGrid = true;

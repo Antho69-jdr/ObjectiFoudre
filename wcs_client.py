@@ -145,6 +145,41 @@ def _point_fields(p: Any) -> tuple[str, float, float]:
     return str(p.zone), float(p.lat), float(p.lon)
 
 
+def _nearest_values(gid: int, lats: list[float], lons: list[float]) -> list[float | None]:
+    """Valeurs au plus proche voisin, alignées sur l'entrée. Sur grille régulière
+    (regular_ll), indice calculé par arithmétique vectorisée numpy (O(1)/point) au lieu
+    d'une recherche eccodes O(grille)/point. Repli eccodes multi-points sinon. Résultat
+    identique à codes_grib_find_nearest (équivalence vérifiée)."""
+    n = len(lats)
+    if not n:
+        return []
+    try:
+        if str(eccodes.codes_get(gid, "gridType")) == "regular_ll":
+            import numpy as np
+
+            ni = int(eccodes.codes_get(gid, "Ni"))
+            nj = int(eccodes.codes_get(gid, "Nj"))
+            j_consecutive = int(eccodes.codes_get(gid, "jPointsAreConsecutive"))
+            dlat = np.asarray(eccodes.codes_get_array(gid, "distinctLatitudes"), dtype=float)
+            dlon = np.asarray(eccodes.codes_get_array(gid, "distinctLongitudes"), dtype=float)
+            if dlat.size == nj and dlon.size == ni and dlat.size >= 2 and dlon.size >= 2:
+                lat0 = dlat[0]
+                lon0 = dlon[0]
+                lat_step = dlat[1] - dlat[0]
+                lon_step = dlon[1] - dlon[0]
+                qlat = np.asarray(lats, dtype=float)
+                qlon = np.asarray(lons, dtype=float)
+                jj = np.clip(np.rint((qlat - lat0) / lat_step).astype(int), 0, nj - 1)
+                ii = np.clip(np.rint((qlon - lon0) / lon_step).astype(int), 0, ni - 1)
+                flat = (ii * nj + jj) if j_consecutive else (jj * ni + ii)
+                values = np.asarray(eccodes.codes_get_values(gid), dtype=float)
+                return [float(values[f]) for f in flat]
+    except Exception:
+        pass
+    nearest = eccodes.codes_grib_find_nearest_multiple(gid, False, list(lats), list(lons))
+    return [near.value for near in nearest]
+
+
 def sample_at_points(raw: bytes, points: Iterable[Any]) -> dict[str, float]:
     """Décode le 1er message GRIB et renvoie {zone: valeur} au point le plus proche."""
     with tempfile.NamedTemporaryFile(suffix=".grib", delete=False) as fh:
@@ -157,12 +192,12 @@ def sample_at_points(raw: bytes, points: Iterable[Any]) -> dict[str, float]:
             if gid is None:
                 raise WcsError("pas de message GRIB décodable")
             try:
-                for p in points:
-                    zone, lat, lon = _point_fields(p)
-                    near = eccodes.codes_grib_find_nearest(gid, lat, lon)[0]
-                    val = near.value
-                    if val is not None and math.isfinite(val):
-                        out[zone] = float(val)
+                triples = [_point_fields(p) for p in points]
+                if triples:
+                    vals = _nearest_values(gid, [t[1] for t in triples], [t[2] for t in triples])
+                    for (zone, _lat, _lon), val in zip(triples, vals):
+                        if val is not None and math.isfinite(val):
+                            out[zone] = float(val)
             finally:
                 eccodes.codes_release(gid)
     finally:

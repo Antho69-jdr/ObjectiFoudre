@@ -1,0 +1,503 @@
+/* ============================================================================
+   prediction-page.css — coquille PARTAGÉE des pages plein écran
+   (Prévision #predictionPage + Historique #historyPage + .chase-page la réutilise)
+   ----------------------------------------------------------------------------
+   Scope = LOOK du CHROME uniquement (header / onglets / chips date / panneaux).
+   La couche PLEIN-ÉCRAN reste legacy (responsive.css) :
+     - desktop/tablette >= 768 : #predictionPage/#historyPage ... !important
+     - mobile < 767            : body.mobile-ui .prediction-* !important
+     - chase                   : .chase-page .prediction-page-shell (sans !important)
+   Le contenu DATA (légende, synthèse, secteurs, hover, image, analyse-block)
+   n'est PAS ici (chunk 2, rendu par storm-forecast-*.js).
+   Valeurs = computed live mesurées @1440/1024/390 (build v1.2.143).
+   0 !important : gagne par l'ordre de chargement (theme.css chargé en dernier).
+   ============================================================================ */
+
+.prediction-page {
+  position: fixed;
+  inset: 0;
+  z-index: 68;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 6, 14, 0.62);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.prediction-page[aria-hidden="true"] {
+  display: none !important;
+}
+
+.prediction-page-shell {
+  width: min(1220px, calc(100vw - 36px));
+  max-height: min(880px, calc(100vh - 34px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  background: #08111f;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.56);
+  color: #e5edf8;
+}
+
+/* ---- en-tête ---- */
+.prediction-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 2px;
+}
+.prediction-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  color: #67e8f9;
+  text-transform: uppercase;
+}
+.prediction-page-header h2 {
+  margin: 4px 0 3px;
+  font-size: 1.18rem;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+.prediction-page-header p {
+  margin: 0;
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 0.86rem;
+}
+
+/* ---- actions (télécharger + fermer) ---- */
+.prediction-page-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+}
+.prediction-download-btn {
+  min-height: 36px;
+  padding: 0 13px;
+  border-radius: 10px;
+  border: 1px solid rgba(116, 184, 95, 0.36);
+  background: rgba(36, 91, 70, 0.42);
+  color: #ecfdf5;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.prediction-download-btn:hover:not(:disabled) {
+  background: rgba(45, 127, 107, 0.56);
+  border-color: rgba(190, 242, 100, 0.42);
+}
+.prediction-download-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.44;
+}
+.prediction-close-btn {
+  flex: 0 0 auto;
+}
+
+/* ---- onglets de période (Journée / créneaux) ---- */
+.prediction-period-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  width: fit-content;
+  gap: 3px;
+  margin-top: 10px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(2, 6, 14, 0.52);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+.prediction-period-tab {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: none;
+}
+.prediction-period-tab:hover {
+  border-color: rgba(103, 232, 249, 0.38);
+  color: #e6fbff;
+}
+.prediction-period-tab.active,
+.prediction-period-tab[aria-selected="true"] {
+  color: #f8fafc;
+  background: rgba(45, 127, 107, 0.72);
+  border-color: rgba(103, 232, 249, 0.64);
+  box-shadow: inset 0 0 0 1px rgba(190, 242, 100, 0.18), 0 8px 18px rgba(0, 0, 0, 0.22);
+}
+.prediction-period-tab:disabled,
+.prediction-period-tab.is-unavailable {
+  opacity: 0.38;
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.prediction-period-tab.is-unavailable:hover {
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(226, 232, 240, 0.78);
+}
+
+/* ---- bande de sélection de date (J0 → J+10) ---- */
+.prediction-date-strip {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.prediction-date-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 52px;
+  padding: 4px 9px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: rgba(15, 23, 42, 0.7);
+  color: rgba(226, 232, 240, 0.8);
+  cursor: pointer;
+  line-height: 1.1;
+}
+.prediction-date-chip:hover {
+  border-color: rgba(103, 232, 249, 0.4);
+  color: #e6fbff;
+}
+.prediction-date-chip.active {
+  background: rgba(8, 145, 178, 0.42);
+  border-color: rgba(103, 232, 249, 0.64);
+  color: #ecfeff;
+}
+.prediction-date-chip.is-trend {
+  border-style: dashed;
+  border-color: rgba(251, 191, 36, 0.4);
+}
+.prediction-date-chip.is-trend.active {
+  background: rgba(180, 120, 8, 0.34);
+  border-color: rgba(251, 191, 36, 0.7);
+}
+.prediction-chip-jx {
+  font-weight: 800;
+  font-size: 0.78rem;
+}
+.prediction-chip-date {
+  font-size: 0.62rem;
+  opacity: 0.72;
+  text-transform: capitalize;
+}
+
+/* ---- corps : carte (gauche) + analyse (droite) ---- */
+.prediction-page-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.72fr) minmax(300px, 0.68fr);
+  gap: 14px;
+  min-height: 0;
+}
+.prediction-map-panel {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+}
+.prediction-analysis-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 4px 10px 18px;
+  border: 0;
+  border-left: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0;
+  background: transparent;
+}
+.prediction-analysis-title {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: #a7f3d0;
+}
+.prediction-analysis-text {
+  display: grid;
+  gap: 10px;
+  color: rgba(226, 232, 240, 0.86);
+  font-size: 0.91rem;
+  line-height: 1.44;
+}
+.prediction-analysis-text p {
+  margin: 0;
+}
+.prediction-analysis-text strong {
+  color: #fff7ad;
+}
+
+/* ---- tablette / fenêtre étroite (<= 920px, régime "rail" >= 768) ----
+   Note : sous 768 le plein-écran mobile !important (legacy) reprend la main. */
+@media (max-width: 920px) {
+  .prediction-page {
+    padding: 12px;
+  }
+  .prediction-page-shell {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    padding: 10px;
+  }
+  .prediction-page-header {
+    align-items: flex-start;
+  }
+  .prediction-period-tabs {
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+  .prediction-period-tab {
+    flex: 0 0 auto;
+  }
+  .prediction-page-body {
+    gap: 12px;
+    overflow: auto;
+  }
+  .prediction-analysis-panel {
+    border-left: 0;
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 0;
+    padding: 14px 2px 0;
+    max-height: none;
+  }
+}
+
+/* ============================================================================
+   CONTENU DATA (chunk 2) — rendu par storm-forecast-render.js / -page.js.
+   image/hover/highlight = dans .prediction-map-panel ; summary-date/hero +
+   analysis-block + sector-list/chip + disclaimer = injectés dans
+   #predictionAnalysisText (.prediction-analysis-text).
+   ⚠️ Placé APRÈS le chrome À DESSEIN : .prediction-summary-hero strong et
+   .prediction-sector-chip strong (spécificité 0,1,1, comme .prediction-analysis-text
+   strong du chrome) doivent GAGNER par l'ordre pour reprendre leur couleur propre
+   (risk-color / #f8fafc). Sinon le `strong{#fff7ad}` de l'analyse bave dessus
+   (régression apparue au chunk 1 quand analysis-text strong est passé en theme.css).
+   La compaction MOBILE (body.mobile-ui … !important) reste LEGACY (responsive.css),
+   comme le plein-écran du chunk 1. Valeurs = computed live @1440/390 (build v1.2.144).
+   `.prediction-status` et `.prediction-legend*` sont MORTS (aucun markup/JS) → purgés
+   sans reproduction.
+   ============================================================================ */
+
+/* ---- carte de prévision (image + overlays) ---- */
+.prediction-image {
+  display: block;
+  width: 100%;
+  max-width: 880px;
+  max-height: min(700px, calc(100vh - 164px));
+  object-fit: contain;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+.prediction-image[hidden] {
+  display: none !important;
+}
+.prediction-highlight {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  border-radius: 12px;
+  overflow: hidden;
+  mix-blend-mode: screen;
+}
+.prediction-highlight[hidden] {
+  display: none !important;
+}
+.prediction-highlight svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ---- infobulle au survol de la carte ---- */
+.prediction-hover {
+  position: absolute;
+  z-index: 5;
+  min-width: 190px;
+  max-width: 260px;
+  padding: 10px 11px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(7, 17, 31, 0.92);
+  color: #e5eefb;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(12px) saturate(1.08);
+  -webkit-backdrop-filter: blur(12px) saturate(1.08);
+  pointer-events: none;
+  transform: translate(12px, 12px);
+}
+.prediction-hover[hidden] {
+  display: none !important;
+}
+.prediction-hover-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 5px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #ecfeff;
+}
+.prediction-hover-score {
+  color: #a7f3d0;
+  font-variant-numeric: tabular-nums;
+}
+.prediction-hover-meta {
+  display: grid;
+  gap: 3px;
+  color: rgba(226, 232, 240, 0.86);
+  font-size: 0.75rem;
+  line-height: 1.32;
+}
+.prediction-hover-meta strong {
+  color: #ffffff;
+  font-weight: 800;
+}
+
+/* ---- synthèse de la journée (panneau analyse) ---- */
+.prediction-summary-date {
+  margin: 0 0 10px;
+  font-size: 1.45rem;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  line-height: 1.05;
+  color: #f1f5f9;
+}
+.prediction-summary-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 13px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--risk-color) 18%, rgba(15, 23, 42, 0.86));
+  border: 1px solid color-mix(in srgb, var(--risk-stroke) 46%, rgba(255, 255, 255, 0.18));
+}
+.prediction-summary-hero strong,
+.prediction-summary-hero b {
+  color: var(--risk-color);
+}
+.prediction-summary-hero strong {
+  display: block;
+  margin: 3px 0 2px;
+  font-size: 1.1rem;
+  line-height: 1.05;
+}
+.prediction-summary-hero em {
+  display: block;
+  color: rgba(226, 232, 240, 0.74);
+  font-size: 0.78rem;
+  font-style: normal;
+}
+.prediction-summary-kicker {
+  color: rgba(203, 213, 225, 0.66);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.prediction-summary-hero b {
+  font-size: 2.15rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 0.95;
+}
+.prediction-summary-hero small {
+  color: rgba(226, 232, 240, 0.62);
+  font-size: 0.8rem;
+}
+
+/* ---- bloc "Zones à surveiller" + chips secteur ---- */
+.prediction-analysis-block {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.62);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+.prediction-analysis-block-title {
+  color: #e2e8f0;
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.prediction-analysis-block p {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+.prediction-analysis-disclaimer {
+  margin: 0;
+  color: rgba(148, 163, 184, 0.72);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+.prediction-sector-list {
+  display: grid;
+  gap: 7px;
+  color: rgba(226, 232, 240, 0.76);
+  font-size: 0.82rem;
+}
+.prediction-sector-chip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--risk-color) 14%, rgba(2, 6, 14, 0.5));
+  border: 1px solid color-mix(in srgb, var(--risk-stroke) 48%, rgba(255, 255, 255, 0.14));
+}
+.prediction-sector-chip strong,
+.prediction-sector-chip span {
+  display: block;
+}
+.prediction-sector-chip strong {
+  color: #f8fafc;
+  font-size: 0.82rem;
+}
+.prediction-sector-chip span {
+  color: rgba(203, 213, 225, 0.68);
+  font-size: 0.72rem;
+}
+.prediction-sector-chip em {
+  display: block;
+  margin-top: 3px;
+  color: rgba(226, 232, 240, 0.62);
+  font-size: 0.7rem;
+  font-style: normal;
+  line-height: 1.25;
+}
+.prediction-sector-chip b {
+  color: var(--risk-color);
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* tablette (<=920) : hauteur image ; mobile <767 = body.mobile-ui legacy */
+@media (max-width: 920px) {
+  .prediction-image {
+    max-height: 58vh;
+  }
+}

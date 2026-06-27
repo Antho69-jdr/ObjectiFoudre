@@ -29,9 +29,11 @@
         updateHighlight();
       }
       removeLoaderLayers();
+      // Ne ferme PLUS le loader d'ouverture ici : le premier rendu de grille n'est
+      // qu'un créneau. Le loader est fermé après l'hydratation de la journée (24
+      // créneaux) dans loadAromeFranceData (ou par le repli timeout).
       if (!hasCompletedInitialLoad) {
         hasCompletedInitialLoad = true;
-        hideAppLoader();
       }
     }
 

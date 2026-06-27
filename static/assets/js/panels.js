@@ -14,7 +14,19 @@
       if (!appLoader || appLoader.classList.contains('hidden')) return;
       if (appLoaderFailsafe) { clearTimeout(appLoaderFailsafe); appLoaderFailsafe = null; }
       const remaining = force ? 0 : Math.max(0, APP_LOADER_MIN_MS - (performance.now() - appLoaderStartedAt));
-      window.setTimeout(() => appLoader.classList.add('hidden'), remaining);
+      window.setTimeout(() => {
+        appLoader.classList.add('hidden');
+        appLoader.setAttribute('aria-hidden', 'true');
+      }, remaining);
+    }
+
+    // Arme le repli : le loader d'ouverture reste affiché tant que la grille de la
+    // journée (24 créneaux) n'est pas hydratée, mais ne doit jamais bloquer l'app
+    // si les données n'arrivent pas (réseau lent, quota, erreur serveur).
+    function armAppLoaderFailsafe() {
+      if (!appLoader || appLoader.classList.contains('hidden')) return;
+      if (appLoaderFailsafe) clearTimeout(appLoaderFailsafe);
+      appLoaderFailsafe = window.setTimeout(() => hideAppLoader(true), APP_LOADER_FAILSAFE_MS);
     }
 
     function positionPanelToButton(panel, button) {

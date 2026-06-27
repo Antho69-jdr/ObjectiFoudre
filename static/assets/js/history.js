@@ -503,6 +503,64 @@
   // --- Auto-calibration : statut + actions ---
   let learningToken = 0;
   const WEIGHT_LABELS = { cape: 'CAPE', humid: 'Humidité', heat: 'Chauffage', conv: 'Converg.' };
+  const WEIGHT_COLORS = { cape: '#ef6f6f', humid: '#5b9bd5', heat: '#e0a04d', conv: '#6fcf97' };
+  const WEIGHT_KEYS = ['cape', 'humid', 'heat', 'conv'];
+
+  // Barre de chargement indéterminée (pas de progression réelle côté serveur).
+  function progressHtml(label) {
+    return `<div class="history-learning-progress">
+      <div class="hl-progress"><i></i></div>
+      <div class="hl-progress-label">${label}</div>
+    </div>`;
+  }
+
+  // Normalise un jeu de poids en proportions (somme = 1) sur les 4 blocs.
+  function weightShares(src) {
+    const total = WEIGHT_KEYS.reduce((s, k) => s + (Number(src && src[k]) || 0), 0) || 1;
+    const out = {};
+    WEIGHT_KEYS.forEach((k) => { out[k] = (Number(src && src[k]) || 0) / total; });
+    return out;
+  }
+
+  // Histogramme « proportion de chaque bloc dans le calcul du score ».
+  // Toujours affiché : poids appris si calibré, sinon poids d'origine.
+  function renderWeightHistogram(active, def) {
+    const learned = !!(active && active.enabled);
+    const cur = weightShares(learned ? active : def);
+    const orig = weightShares(def);
+    const badge = learned
+      ? '<em class="hl-w-badge on">appris</em>'
+      : '<em class="hl-w-badge">d\'origine</em>';
+    const stacked = WEIGHT_KEYS.map((k) => {
+      const pct = (cur[k] * 100).toFixed(1);
+      return `<i style="width:${pct}%;background:${WEIGHT_COLORS[k]}" title="${WEIGHT_LABELS[k]} ${Math.round(cur[k] * 100)}%"></i>`;
+    }).join('');
+    const rows = WEIGHT_KEYS.map((k) => {
+      const pct = Math.round(cur[k] * 100);
+      const op = Math.round(orig[k] * 100);
+      const delta = learned ? pct - op : 0;
+      const deltaTxt = (learned && delta !== 0)
+        ? `<small class="hl-w-delta ${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '+' : ''}${delta}</small>`
+        : '<small class="hl-w-delta"></small>';
+      const ghost = (learned && op !== pct)
+        ? `<span class="hl-w-ghost" style="left:${op}%" title="origine ${op}%"></span>`
+        : '';
+      return `<div class="hl-w-row">
+        <span class="hl-w-name" style="--hl-c:${WEIGHT_COLORS[k]}">${WEIGHT_LABELS[k]}</span>
+        <span class="hl-w-track"><i style="width:${pct}%;background:${WEIGHT_COLORS[k]}"></i>${ghost}</span>
+        <b class="hl-w-val">${pct}%</b>${deltaTxt}
+      </div>`;
+    }).join('');
+    const hint = learned
+      ? '<div class="hl-w-hint">Le repère clair marque la valeur d\'origine.</div>'
+      : '<div class="hl-w-hint">Proportions d\'origine — affinées dès que la calibration s\'active.</div>';
+    return `<div class="history-learning-hist">
+      <div class="hl-w-head"><span>Poids dans le calcul du score</span>${badge}</div>
+      <div class="hl-w-stack">${stacked}</div>
+      ${rows}
+      ${hint}
+    </div>`;
+  }
 
   function renderLearningStatus(st) {
     if (!learningEl) return;
@@ -527,15 +585,9 @@
     const thr = st.threshold || {};
     const thrExtra = (thr.active !== thr.baseline) ? ` <i>(base ${asNum(thr.baseline)})</i>` : '';
     html += `<div class="history-learning-row"><span>Seuil « zones prévues »</span><b>${asNum(thr.active)}${thrExtra}</b></div>`;
-    const w = (st.weights && st.weights.active) || null;
-    if (w && w.enabled) {
-      const def = (st.weights && st.weights.default) || {};
-      html += `<div class="history-learning-weights"><div class="hl-w-title">Poids appris vs origine</div>`
-        + ['cape', 'humid', 'heat', 'conv'].map((k) =>
-            `<div><span>${WEIGHT_LABELS[k]}</span><b>${Math.round((w[k] || 0) * 100)}%</b><i>${Math.round((def[k] || 0) * 100)}%</i></div>`
-          ).join('')
-        + `</div>`;
-    }
+    const wActive = (st.weights && st.weights.active) || null;
+    const wDef = (st.weights && st.weights.default) || {};
+    html += renderWeightHistogram(wActive, wDef);
     const sk = st.skill || null;
     if (sk && sk.baseline && sk.candidate) {
       html += `<div class="history-learning-skill"><span>Score CSI (test)</span><b>${Number(sk.baseline.csi).toFixed(2)} → ${Number(sk.candidate.csi).toFixed(2)}</b></div>`;
@@ -562,7 +614,7 @@
     if (!learningEl) return;
     const token = ++learningToken;
     if (learningRetrainBtn) learningRetrainBtn.disabled = true;
-    learningEl.innerHTML = '<div class="history-learning-loading">Réentraînement en cours… (lecture des archives)</div>';
+    learningEl.innerHTML = progressHtml('Réentraînement en cours… (lecture des archives)');
     try {
       const response = await fetch('/api/learning/retrain', { method: 'POST' });
       const data = await response.json().catch(() => ({}));

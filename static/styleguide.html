@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ObjectiFoudre — Styleguide DA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/dist/app.css?v=sg1" />
+  <style>
+    /* styles propres à la page de démo (hors design system) */
+    body { padding: var(--sp-8); background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(56,189,248,0.10), transparent 60%),
+      radial-gradient(900px 500px at 0% 110%, rgba(251,191,36,0.06), transparent 55%),
+      var(--bg); }
+    .sg-wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: var(--sp-8); }
+    .sg-head h1 { font-size: var(--fs-3xl); letter-spacing: -0.02em; }
+    .sg-head p { color: var(--text-muted); margin-top: var(--sp-2); }
+    .sg-section { display: grid; gap: var(--sp-4); }
+    .sg-section > h2 { font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); }
+    .sg-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
+    .sg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--sp-3); }
+    .sw { border-radius: var(--r-md); border: 1px solid var(--border); padding: var(--sp-3); display: grid; gap: var(--sp-1); }
+    .sw__chip { height: 44px; border-radius: var(--r-sm); border: 1px solid var(--border-faint); }
+    .sw__name { font-size: var(--fs-xs); font-weight: var(--fw-semibold); }
+    .sw__val { font-size: 10px; color: var(--text-dim); font-family: var(--font-mono); }
+    .type-row { display: flex; align-items: baseline; gap: var(--sp-4); border-bottom: 1px solid var(--border-faint); padding-bottom: var(--sp-2); }
+    .type-row .lbl { width: 64px; color: var(--text-dim); font-size: var(--fs-xs); font-family: var(--font-mono); }
+  </style>
+</head>
+<body>
+  <div class="sg-wrap">
+    <header class="sg-head">
+      <h1>ObjectiFoudre — Direction artistique</h1>
+      <p>DA « orage » rafraîchie · ink profond, verre discipliné, cyan électrique + ambre éclair. Aperçu des primitives du design system.</p>
+    </header>
+
+    <!-- Couleurs -->
+    <section class="sg-section">
+      <h2>Surfaces & ink</h2>
+      <div class="sg-grid">
+        <div class="sw"><div class="sw__chip" style="background:var(--ink-900)"></div><span class="sw__name">ink-900</span><span class="sw__val">fond profond</span></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--bg)"></div><span class="sw__name">bg</span><span class="sw__val">fond app</span></div>
+        <div class="sw"><div class="sw__chip of-panel"></div><span class="sw__name">surface-1</span><span class="sw__val">verre léger</span></div>
+        <div class="sw"><div class="sw__chip of-panel of-panel--2"></div><span class="sw__name">surface-2</span><span class="sw__val">cartes/docks</span></div>
+        <div class="sw"><div class="sw__chip of-panel of-panel--3"></div><span class="sw__name">surface-3</span><span class="sw__val">modales</span></div>
+      </div>
+    </section>
+
+    <section class="sg-section">
+      <h2>Accents & statut</h2>
+      <div class="sg-grid">
+        <div class="sw"><div class="sw__chip" style="background:var(--accent)"></div><span class="sw__name">accent</span><span class="sw__val">cyan électrique</span></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--accent-2)"></div><span class="sw__name">accent-2</span><span class="sw__val">ambre éclair</span></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--success)"></div><span class="sw__name">success</span></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--warning)"></div><span class="sw__name">warning</span></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--danger)"></div><span class="sw__name">danger</span></div>
+      </div>
+    </section>
+
+    <!-- Probabilité (remplissage des cellules) -->
+    <section class="sg-section">
+      <h2>Rampe de probabilité orageuse</h2>
+      <div style="max-width:420px"><div class="of-prob-scale"><span></span><span></span><span></span><span></span><span></span></div></div>
+      <div class="sg-row">
+        <span class="of-legend"><span class="of-prob-dot" data-level="0"></span> Très faible</span>
+        <span class="of-legend"><span class="of-prob-dot" data-level="1"></span> Faible</span>
+        <span class="of-legend"><span class="of-prob-dot" data-level="2"></span> Modérée</span>
+        <span class="of-legend"><span class="of-prob-dot" data-level="3"></span> Élevée</span>
+        <span class="of-legend"><span class="of-prob-dot" data-level="4"></span> Très élevée</span>
+      </div>
+    </section>
+
+    <!-- Sévérité (calque hachuré distinct) -->
+    <section class="sg-section">
+      <h2>Sévérité orageuse</h2>
+      <div class="of-legend"><span class="of-sev-hatch"></span> Hachures : orage potentiellement violent (calque superposé à la probabilité)</div>
+    </section>
+
+    <!-- Typographie -->
+    <section class="sg-section">
+      <h2>Typographie (Inter)</h2>
+      <div class="type-row"><span class="lbl">3xl</span><span style="font-size:var(--fs-3xl);font-weight:var(--fw-bold)">Orage en approche</span></div>
+      <div class="type-row"><span class="lbl">2xl</span><span style="font-size:var(--fs-2xl);font-weight:var(--fw-semibold)">Prévision orageuse</span></div>
+      <div class="type-row"><span class="lbl">xl</span><span style="font-size:var(--fs-xl)">Détails de la cellule</span></div>
+      <div class="type-row"><span class="lbl">md</span><span style="font-size:var(--fs-md)">Texte courant — 14px, la base de lecture de l'interface.</span></div>
+      <div class="type-row"><span class="lbl">sm</span><span style="font-size:var(--fs-sm);color:var(--text-muted)">Texte secondaire atténué.</span></div>
+      <div class="type-row"><span class="lbl">xs</span><span class="u-uppercase" style="font-size:var(--fs-xs);color:var(--text-dim)">Étiquette · 11px</span></div>
+    </section>
+
+    <!-- Boutons -->
+    <section class="sg-section">
+      <h2>Boutons</h2>
+      <div class="sg-row">
+        <button class="of-btn of-btn--primary">Primaire</button>
+        <button class="of-btn of-btn--secondary">Secondaire</button>
+        <button class="of-btn of-btn--ghost">Ghost</button>
+        <button class="of-btn of-btn--danger">Danger</button>
+        <button class="of-btn of-btn--primary" disabled>Désactivé</button>
+      </div>
+      <div class="sg-row">
+        <button class="of-btn of-btn--sm of-btn--secondary">Petit</button>
+        <button class="of-btn of-btn--secondary">Défaut</button>
+        <button class="of-btn of-btn--lg of-btn--primary">Grand</button>
+        <button class="of-btn of-btn--icon of-btn--secondary">⌖</button>
+        <button class="of-btn of-btn--icon is-active">▦</button>
+      </div>
+    </section>
+
+    <!-- Champs -->
+    <section class="sg-section">
+      <h2>Champs</h2>
+      <div class="sg-row" style="align-items:flex-end">
+        <label class="of-field" style="min-width:240px">
+          <span class="of-field__label">Localité</span>
+          <input class="of-input" placeholder="Rechercher une ville…" />
+        </label>
+        <label class="of-field" style="min-width:180px">
+          <span class="of-field__label">Modèle</span>
+          <select class="of-input"><option>AROME</option><option>ARPEGE</option><option>ECMWF</option></select>
+        </label>
+      </div>
+    </section>
+
+    <!-- Chips & badges -->
+    <section class="sg-section">
+      <h2>Chips & badges</h2>
+      <div class="sg-row">
+        <span class="of-chip">AROME</span>
+        <span class="of-chip of-chip--accent">J0 · aujourd'hui</span>
+        <span class="of-chip of-chip--amber">Tendance ECMWF</span>
+        <span class="of-chip"><span class="of-dot of-dot--live"></span> En direct</span>
+        <span class="of-badge">3</span>
+        <span class="of-badge of-badge--amber">!</span>
+        <span class="of-badge of-badge--danger">9</span>
+      </div>
+    </section>
+
+    <!-- Cartes -->
+    <section class="sg-section">
+      <h2>Cartes</h2>
+      <div class="sg-grid">
+        <div class="of-card">
+          <div class="of-card__title">Cellule sélectionnée</div>
+          <div class="of-card__meta">Lyon · 45.76, 4.83</div>
+          <hr class="of-divider" />
+          <div class="sg-row"><span class="of-chip of-chip--accent">Proba 72 %</span><span class="of-legend"><span class="of-prob-dot" data-level="3"></span> Élevée</span></div>
+        </div>
+        <div class="of-card of-panel--3">
+          <div class="of-card__title">CAPE</div>
+          <div style="font-size:var(--fs-2xl);font-weight:var(--fw-bold);color:var(--accent)">2 480 <span style="font-size:var(--fs-sm);color:var(--text-dim)">J/kg</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Modale -->
+    <section class="sg-section">
+      <h2>Modale</h2>
+      <button class="of-btn of-btn--primary" id="sgOpenModal">Ouvrir la modale</button>
+    </section>
+  </div>
+
+  <div class="of-modal-backdrop" id="sgBackdrop"></div>
+  <div class="of-modal" id="sgModal" role="dialog" aria-modal="true">
+    <div class="of-modal__header">
+      <div>
+        <div class="of-modal__title">Détails de la cellule</div>
+        <div class="of-modal__subtitle">AROME · 23 juin, 16h00 · maille 1.3 km</div>
+      </div>
+      <button class="of-modal__close" id="sgCloseModal" aria-label="Fermer">✕</button>
+    </div>
+    <div class="of-modal__body">
+      <div class="sg-grid">
+        <div class="of-card"><div class="of-card__meta">Probabilité</div><div style="font-size:var(--fs-xl);font-weight:var(--fw-bold)">68 %</div></div>
+        <div class="of-card"><div class="of-card__meta">CAPE</div><div style="font-size:var(--fs-xl);font-weight:var(--fw-bold)">2 480</div></div>
+        <div class="of-card"><div class="of-card__meta">Cisaillement</div><div style="font-size:var(--fs-xl);font-weight:var(--fw-bold)">24 m/s</div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const bd = document.getElementById('sgBackdrop');
+    const md = document.getElementById('sgModal');
+    const open = () => { bd.classList.add('is-open'); md.classList.add('is-open'); };
+    const close = () => { bd.classList.remove('is-open'); md.classList.remove('is-open'); };
+    document.getElementById('sgOpenModal').addEventListener('click', open);
+    document.getElementById('sgCloseModal').addEventListener('click', close);
+    bd.addEventListener('click', close);
+  </script>
+</body>
+</html>

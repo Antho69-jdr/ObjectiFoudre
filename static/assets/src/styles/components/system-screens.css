@@ -1,0 +1,112 @@
+/* =============================================================================
+   Component : ecrans systeme (LIVE, legacy migre, parite stricte)
+   -----------------------------------------------------------------------------
+   - app-loader : splash d'ouverture (#appLoader, plein ecran sur #app).
+   - mobile-block-screen : ecran « smartphone non pris en charge ».
+   Valeurs reprises VERBATIM du legacy (composants 534-578 / 1192-1240) → aucun
+   changement visuel ; theme.css charge en dernier gagne a specificite egale une
+   fois le legacy purge (cluster `sysscreens`). Le comportement d'etat
+   `body.mobile-blocked #app` (pointer-events) reste legacy (pas le LOOK).
+   ========================================================================== */
+
+/* ----------------------------------------------------- Splash / loader --- */
+.app-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 35%, rgba(12, 74, 110, 0.22), transparent 42%), #070d18;
+  transition: opacity 420ms ease, visibility 420ms ease;
+}
+.app-loader.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.app-loader-card {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 24px 28px;
+  border-radius: 24px;
+  background: rgba(8, 17, 30, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+}
+.app-loader-logo {
+  width: min(168px, 42vw);
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.28));
+}
+.app-loader-title {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #eaf2ff;
+  text-transform: uppercase;
+}
+.app-loader-subtitle {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@keyframes loaderPulseGlow {
+  0% { opacity: 0.52; }
+  50% { opacity: 1; }
+  100% { opacity: 0.52; }
+}
+
+/* ------------------------------------------------ Ecran de blocage mobile --- */
+.mobile-block-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)) 20px;
+  background:
+    radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 42%),
+    linear-gradient(180deg, rgba(4, 10, 20, 0.98), rgba(7, 17, 31, 0.995));
+}
+.mobile-block-screen[hidden] {
+  display: none !important;
+}
+.mobile-block-card {
+  width: min(100%, 420px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 24px 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(9, 20, 35, 0.94);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  text-align: center;
+}
+.mobile-block-logo {
+  width: 76px;
+  height: 76px;
+  object-fit: contain;
+}
+.mobile-block-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #f5f7fb;
+}
+.mobile-block-text {
+  margin: 0;
+  color: #f5f7fb;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+.mobile-block-text-secondary {
+  color: rgba(230, 236, 245, 0.78);
+  font-size: 0.95rem;
+}
