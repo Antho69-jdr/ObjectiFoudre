@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.144"
+APP_VERSION = "1.2.144-light"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -234,12 +234,26 @@ OBJECTIFOUDRE_CACHE_RETENTION_HOURS = _env_int("OBJECTIFOUDRE_CACHE_RETENTION_HO
 # le paquet complet est redondant → on le purge bien avant les caches encore utiles.
 OBJECTIFOUDRE_FULL_PACKAGE_RETENTION_HOURS = _env_int("OBJECTIFOUDRE_FULL_PACKAGE_RETENTION_HOURS", 12, min_value=1)
 OBJECTIFOUDRE_CACHE_CLEANUP_INTERVAL_SECONDS = _env_int("OBJECTIFOUDRE_CACHE_CLEANUP_INTERVAL_SECONDS", 60 * 60, min_value=5 * 60)
+# === VERSION ALLÉGÉE (branche chasse/version-allegee-j0) =======================
+# Réduit drastiquement l'empreinte mémoire sur Render (qui crashait en préchargeant
+# 5-6 model-days en RAM simultanément) : on ne précharge QUE J0 (aujourd'hui), pas
+# d'ARPEGE, et les features lourdes (prévisions orageuses, historique, mode chasse)
+# sont retirées de l'UI (cf. index.html + utils.js). Seule la grille AROME J0 et ses
+# appels API restent actifs. Mettre OBJECTIFOUDRE_LIGHTWEIGHT=0 (env) pour retrouver
+# le comportement complet sur cette branche.
+OBJECTIFOUDRE_LIGHTWEIGHT = _env_flag("OBJECTIFOUDRE_LIGHTWEIGHT", True)
 # J-1 n'est PLUS préchargé : il est servi à la demande depuis l'archive (history/),
 # ce qui évite de recalculer/garder en RAM une grille déjà persistée durablement.
-OBJECTIFOUDRE_AUTO_PRELOAD_DAYS = os.environ.get("OBJECTIFOUDRE_AUTO_PRELOAD_DAYS", "today,tomorrow,day_after_tomorrow")
+OBJECTIFOUDRE_AUTO_PRELOAD_DAYS = (
+    "today" if OBJECTIFOUDRE_LIGHTWEIGHT
+    else os.environ.get("OBJECTIFOUDRE_AUTO_PRELOAD_DAYS", "today,tomorrow,day_after_tomorrow")
+)
 # Jours préchargés via ARPEGE. J+2 est inclus car le run AROME (~+51 h) ne couvre que
 # le DÉBUT de J+2 → ARPEGE complète l'après-midi/soirée de J+2, puis J+3/J+4. Vide = off.
-OBJECTIFOUDRE_AUTO_PRELOAD_ARPEGE_DAYS = os.environ.get("OBJECTIFOUDRE_AUTO_PRELOAD_ARPEGE_DAYS", "j+2,j+3")
+OBJECTIFOUDRE_AUTO_PRELOAD_ARPEGE_DAYS = (
+    "" if OBJECTIFOUDRE_LIGHTWEIGHT
+    else os.environ.get("OBJECTIFOUDRE_AUTO_PRELOAD_ARPEGE_DAYS", "j+2,j+3")
+)
 # Nb de PROCESSUS pour matérialiser les 24 créneaux d'un jour en parallèle (chaque
 # processus a son propre GIL → vrai parallélisme sur le scoring Python pur). Défaut 1 =
 # séquentiel (comportement historique, Render inchangé). En local, mettre p.ex. 6.

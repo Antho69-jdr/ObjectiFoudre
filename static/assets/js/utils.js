@@ -29,15 +29,12 @@
 
     function getAromeSelectableDates(todayIso = getTodayIsoDate()) {
       const today = normalizeDateIso(todayIso);
-      // J-1 n'est PLUS proposé dans la frise : la veille se consulte uniquement dans les
-      // Archives (la grille du jour passé y est servie depuis l'archive durable).
+      // VERSION ALLÉGÉE (branche chasse) : on ne propose QUE J0 (aujourd'hui) pour limiter
+      // la grille et les appels API à la seule journée courante (Render mémoire). Les jours
+      // suivants (Demain/Après-demain/J+3 ARPEGE) sont retirés ici ; les prévisions orageuses,
+      // l'historique et le mode chasse sont eux retirés de l'UI (cf. index.html).
       return [
         { value: today, kind: 'today', label: 'Aujourd’hui' },
-        { value: addDaysIso(today, 1), kind: 'next', label: 'Demain' },
-        { value: addDaysIso(today, 2), kind: 'day_after_tomorrow', label: 'Après-demain' },
-        // J+3 : grille servie par ARPEGE (le serveur choisit le modèle selon la date).
-        // J+4+ = tendance ECMWF, accessible dans la carte Prévision (pas sur la grille de base).
-        { value: addDaysIso(today, 3), kind: 'j3_arpege', label: 'J+3 (ARPEGE)' },
       ];
     }
 
