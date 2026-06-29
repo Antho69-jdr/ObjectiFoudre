@@ -110,6 +110,8 @@
 @import "./components/info-drawer.css";
 /* Panneau admin/debug Meteo-France (vit dans l'info-drawer), extrait VERBATIM. */
 @import "./components/meteofrance-admin.css";
+/* Menu de choix de format d'export GIF/MP4 (popup JS), extrait VERBATIM. */
+@import "./components/export-menu.css";
 
 /* Component floating-chip : pastille « App installable » (#installChip). Tier 3.
    0 !important ; legacy purge (2 regles ; outline partage laisse au groupe legacy). */
