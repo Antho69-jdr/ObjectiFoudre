@@ -149,38 +149,6 @@
 
     .statusbar { display: none; }
 
-    .meta-stack {
-      position: absolute;
-      z-index: 11;
-      left: 12px;
-      bottom: max(16px, env(safe-area-inset-bottom));
-      display: grid;
-      gap: 6px;
-      max-width: min(320px, calc(100vw - 24px));
-      pointer-events: none;
-    }
-
-    .meta-corner {
-      padding: 8px 10px;
-      border-radius: 12px;
-      background: rgba(10, 18, 32, 0.78);
-      border: 1px solid var(--border);
-      color: var(--muted);
-      font-size: 11px;
-      backdrop-filter: var(--glass-blur);
-      -webkit-backdrop-filter: var(--glass-blur);
-      box-shadow: var(--shadow);
-      width: fit-content;
-      max-width: 100%;
-      pointer-events: auto;
-    }
-
-    .meta-version {
-      color: #dbe9ff;
-      font-weight: 800;
-      letter-spacing: 0.02em;
-    }
-
     
 
     
@@ -451,26 +419,6 @@
     }
     .floating-chip.visible { display: inline-flex; }
 
-    .cell-scale-chip {
-      position: absolute;
-      z-index: 16;
-      right: calc(var(--rail-right) + var(--rail-btn-size) + 14px);
-      bottom: max(16px, env(safe-area-inset-bottom));
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 12px;
-      border-radius: 999px;
-      background: rgba(9, 18, 31, 0.6);
-      border: 1px solid rgba(255,255,255,0.1);
-      box-shadow: 0 12px 30px rgba(0,0,0,0.22);
-      font-size: 12px;
-      color: var(--muted);
-      backdrop-filter: var(--glass-blur);
-      -webkit-backdrop-filter: var(--glass-blur);
-      white-space: nowrap;
-    }
-
     .maplibregl-ctrl-top-right,
     .maplibregl-ctrl-bottom-right {
       display: none !important;
@@ -518,9 +466,6 @@
     }
     .statusbar {
       bottom: max(16px, env(safe-area-inset-bottom));
-    }
-    .meta-corner {
-      bottom: max(12px, env(safe-area-inset-bottom));
     }
     .selection-card {
       bottom: calc(130px + env(safe-area-inset-bottom));
@@ -930,13 +875,6 @@
   .mf-token-actions {
     display: grid;
     grid-template-columns: 1fr;
-  }
-  body.mobile-ui .meta-stack {
-    z-index: 41 !important;
-    left: 8px !important;
-    right: auto !important;
-    bottom: max(8px, env(safe-area-inset-bottom)) !important;
-    max-width: min(320px, calc(100vw - 16px)) !important;
   }
 
   body.mobile-ui .details-modal,

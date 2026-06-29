@@ -1,0 +1,143 @@
+/* ==========================================================================
+   META-STACK (bandeau bas desktop : version | run AROME | echelle)
+   --------------------------------------------------------------------------
+   Cutover de la derniere surface legacy. DESKTOP-ONLY : theme.css masque
+   .meta-stack en display:none !important sous 1024px (le mask gagne sur ce
+   component sans !important), donc seules les valeurs desktop sont decrites
+   ici. Reproduit a parite computee (mesuree live @1440) la grille 3 colonnes
+   (max-content | 1fr | max-content), le chrome verre du bandeau, le marquee
+   anime de #metaRun en debordement (pause au survol, desactive en pointeur
+   grossier), l'overflow scrollable a barre masquee et le fondu des bords.
+   0 !important : le legacy meta est purge, ce component charge en dernier.
+   #metaRun est reecrit par chase.js en mode chasse mais garde ce LOOK.
+   ========================================================================== */
+
+.meta-stack {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  gap: 0;
+  align-items: center;
+  width: 100vw;
+  max-width: none;
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: rgba(7, 17, 31, 0.94);
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  backdrop-filter: blur(14px) saturate(1.05);
+  -webkit-backdrop-filter: blur(14px) saturate(1.05);
+  box-shadow: 0 -8px 18px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+}
+
+.meta-stack .meta-corner {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: none;
+  width: auto;
+  padding: 8px 12px;
+  border: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta-stack .meta-corner:last-child {
+  border-right: 0;
+  text-align: right;
+}
+
+/* Colonne 1 : version (gauche, ellipsis) */
+.meta-stack .meta-version {
+  justify-self: start;
+  max-width: min(34vw, 280px);
+  color: #dbe9ff;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Colonne 2 : run AROME (centre, scrollable + marquee si deborde) */
+#metaRun {
+  justify-self: stretch;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+  touch-action: pan-x;
+  cursor: default;
+}
+
+#metaRun::-webkit-scrollbar {
+  display: none;
+}
+
+#metaRun .meta-run-content {
+  display: inline-block;
+  min-width: max-content;
+  padding-right: 18px;
+  will-change: transform;
+}
+
+#metaRun.meta-run-overflow {
+  mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 18px), transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 18px), transparent 100%);
+}
+
+@keyframes metaRunMarquee {
+  0%, 12% { transform: translateX(0); }
+  88%, 100% { transform: translateX(var(--meta-run-travel, 0px)); }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #metaRun.meta-run-overflow .meta-run-content {
+    animation: metaRunMarquee var(--meta-run-duration, 12s) linear infinite alternate;
+  }
+  #metaRun.meta-run-overflow:hover .meta-run-content,
+  #metaRun.meta-run-overflow:focus-within .meta-run-content {
+    animation-play-state: paused;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  #metaRun.meta-run-overflow .meta-run-content {
+    animation: none;
+    transform: none;
+  }
+  #metaRun.meta-run-overflow {
+    cursor: grab;
+  }
+}
+
+/* Colonne 3 : echelle de cellule (droite, largeur intrinseque) */
+#cellScaleChip,
+.meta-stack .meta-scale {
+  justify-self: end;
+  width: max-content;
+  min-width: max-content;
+  max-width: max-content;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  text-align: right;
+}

@@ -13,13 +13,6 @@
       body.mobile-ui .fab-stack {
         bottom: calc(96px + env(safe-area-inset-bottom));
       }
-      body.mobile-ui .meta-stack {
-        max-width: calc(100vw - 104px);
-      }
-    }
-
-    body.mobile-ui .meta-stack {
-      bottom: max(16px, env(safe-area-inset-bottom));
     }
 
 
@@ -64,11 +57,6 @@
       transform: translateX(-50%);
       width: min(320px, calc(100vw - 28px));
       bottom: max(8px, env(safe-area-inset-bottom));
-    }
-    body.mobile-ui .meta-stack {
-      left: 8px;
-      max-width: calc(100vw - 92px);
-      bottom: max(16px, env(safe-area-inset-bottom));
     }
     body.mobile-ui .selection-card {
       left: 50%;
@@ -145,43 +133,6 @@
   --timeline-strip-h: 104px;
 }
 
-.meta-stack {
-  position: fixed !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  z-index: 40 !important;
-  display: grid !important;
-  grid-template-columns: auto minmax(0,1.4fr) minmax(0,1.6fr) auto !important;
-  gap: 0 !important;
-  align-items: center !important;
-  width: 100vw !important;
-  max-width: none !important;
-  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) !important;
-  background: rgba(7,17,31,0.94) !important;
-  border: 0 !important;
-  border-top: 1px solid rgba(255,255,255,0.08) !important;
-  border-radius: 0 !important;
-  backdrop-filter: blur(14px) saturate(1.05) !important;
-  -webkit-backdrop-filter: blur(14px) saturate(1.05) !important;
-  box-shadow: 0 -10px 24px rgba(0,0,0,0.18) !important;
-  overflow: hidden !important;
-}
-.meta-stack .meta-corner {
-  min-width: 0 !important;
-  padding: 8px 12px !important;
-  border: 0 !important;
-  border-right: 1px solid rgba(255,255,255,0.07) !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  width: 100% !important;
-}
-.meta-stack .meta-corner:last-child { border-right: 0 !important; text-align: right !important; }
-
 
 
 
@@ -225,7 +176,6 @@
 .grid-focus-corner, .fab-stack { display: grid !important; gap: var(--right-rail-gap) !important; }
 .grid-focus-corner { order: 1 !important; }
 .fab-stack { order: 2 !important; }
-.cell-scale-chip { display: none !important; }
 
 
 /* v0.4.56 rail cleanup and search panel fix */
@@ -273,12 +223,6 @@
 :root {
   --meta-height-px: calc(34px + env(safe-area-inset-bottom));
   --timeline-height-px: 104px;
-}
-
-.meta-stack {
-  bottom: 0 !important;
-  padding-bottom: env(safe-area-inset-bottom) !important;
-  box-shadow: 0 -8px 18px rgba(0,0,0,0.16) !important;
 }
 
 
@@ -498,13 +442,6 @@
 
 /* v0.4.80 final mobile fullscreen overrides */
 @media (max-width: 900px) {
-  body.mobile-ui .meta-stack {
-    z-index: 41 !important;
-    left: 8px !important;
-    right: auto !important;
-    bottom: max(8px, env(safe-area-inset-bottom)) !important;
-    max-width: min(320px, calc(100vw - 16px)) !important;
-  }
 
   body.mobile-ui .details-modal,
   body.mobile-ui .info-drawer {
@@ -668,10 +605,6 @@
 /* Fix metaStack (full width + no rounded weird block) */
 
 /* Ensure version bar is below everything cleanly */
-.versionBadge,
-#versionBadge {
-  bottom: 6px !important;
-}
 
 /* Prevent selectionCard collision with meta + timeline */
 
@@ -710,55 +643,6 @@
 
 
 /* ===== v0.6.30 tablet portrait: meta stack same as tablet landscape ===== */
-
-@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
-  body.mobile-ui .meta-stack,
-  .meta-stack,
-  #metaStack,
-  #meta-stack {
-    position: fixed !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100vw !important;
-    max-width: none !important;
-    margin: 0 !important;
-    padding: 8px 12px !important;
-    border-radius: 0 !important;
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    gap: 10px !important;
-    flex-wrap: nowrap !important;
-    overflow: hidden !important;
-    box-sizing: border-box !important;
-    background: rgba(6, 14, 28, 0.84) !important;
-    backdrop-filter: blur(10px) !important;
-    -webkit-backdrop-filter: blur(10px) !important;
-    z-index: 24 !important;
-  }
-
-  body.mobile-ui .meta-stack .meta-corner,
-  .meta-stack .meta-corner,
-  #metaStack .meta-corner,
-  #meta-stack .meta-corner {
-    flex: 1 1 0 !important;
-    min-width: 0 !important;
-    border-radius: 10px !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-  }
-
-  body.mobile-ui .meta-stack .meta-version,
-  .meta-stack .meta-version,
-  #metaStack .meta-version,
-  #meta-stack .meta-version {
-    flex: 0 0 auto !important;
-    width: auto !important;
-    min-width: 0 !important;
-    max-width: max-content !important;
-  }
-}
 
 
 /* ===== v0.6.31 tablet portrait: timeline below meta stack and full width ===== */
@@ -1098,125 +982,10 @@
 
 
 /* ===== v1.1.4 meta stack priority and readable run line ===== */
-.meta-stack,
-body.mobile-ui .meta-stack,
-#metaStack,
-#meta-stack {
-  display: grid !important;
-  grid-template-columns: max-content minmax(0, 1fr) max-content !important;
-  align-items: center !important;
-  gap: 0 !important;
-  overflow: hidden !important;
-}
-
-.meta-stack .meta-corner,
-body.mobile-ui .meta-stack .meta-corner,
-#metaStack .meta-corner,
-#meta-stack .meta-corner {
-  min-width: 0 !important;
-  max-width: none !important;
-  width: auto !important;
-  box-sizing: border-box !important;
-}
-
-#versionBadge,
-.meta-stack .meta-version,
-body.mobile-ui .meta-stack .meta-version {
-  justify-self: start !important;
-  max-width: min(34vw, 280px) !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-}
-
-#metaRun {
-  justify-self: stretch !important;
-  width: 100% !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  overflow-x: auto !important;
-  overflow-y: hidden !important;
-  text-overflow: clip !important;
-  white-space: nowrap !important;
-  scrollbar-width: none !important;
-  -webkit-overflow-scrolling: touch !important;
-  overscroll-behavior-inline: contain !important;
-  touch-action: pan-x !important;
-  cursor: default !important;
-}
-
-#metaRun::-webkit-scrollbar {
-  display: none !important;
-}
-
-#metaRun .meta-run-content {
-  display: inline-block !important;
-  min-width: max-content !important;
-  padding-right: 18px !important;
-  will-change: transform !important;
-}
-
-#metaRun.meta-run-overflow {
-  mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 18px), transparent 100%) !important;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 18px), transparent 100%) !important;
-}
 
 @keyframes metaRunMarquee {
   0%, 12% { transform: translateX(0); }
   88%, 100% { transform: translateX(var(--meta-run-travel, 0px)); }
-}
-
-@media (hover: hover) and (pointer: fine) {
-  #metaRun.meta-run-overflow .meta-run-content {
-    animation: metaRunMarquee var(--meta-run-duration, 12s) linear infinite alternate !important;
-  }
-
-  #metaRun.meta-run-overflow:hover .meta-run-content,
-  #metaRun.meta-run-overflow:focus-within .meta-run-content {
-    animation-play-state: paused !important;
-  }
-}
-
-@media (hover: none), (pointer: coarse) {
-  #metaRun.meta-run-overflow .meta-run-content {
-    animation: none !important;
-    transform: none !important;
-  }
-
-  #metaRun.meta-run-overflow {
-    cursor: grab !important;
-  }
-}
-
-#cellScaleChip,
-.meta-stack .meta-scale,
-body.mobile-ui .meta-stack .meta-scale {
-  justify-self: end !important;
-  width: max-content !important;
-  min-width: max-content !important;
-  max-width: max-content !important;
-  flex: 0 0 auto !important;
-  white-space: nowrap !important;
-  overflow: visible !important;
-  text-overflow: clip !important;
-  text-align: right !important;
-}
-
-@media (max-width: 767px) {
-  #versionBadge,
-  .meta-stack .meta-version,
-  body.mobile-ui .meta-stack .meta-version {
-    max-width: 26vw !important;
-  }
-
-  #cellScaleChip,
-  .meta-stack .meta-scale,
-  body.mobile-ui .meta-stack .meta-scale {
-    max-width: 28vw !important;
-    min-width: auto !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-  }
 }
 
 /* v1.1.11 tablet portrait details + selection follow fix */
@@ -1511,57 +1280,6 @@ body.mobile-ui #detailsModal.details-modal.visible {
     --timeline-height-px: 74px !important;
   }
 
-  body.mobile-ui .meta-stack,
-  .meta-stack {
-    position: fixed !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100vw !important;
-    max-width: none !important;
-    min-height: var(--mobile-meta-h) !important;
-    display: grid !important;
-    grid-template-columns: max-content minmax(0, 1fr) max-content !important;
-    align-items: center !important;
-    gap: 8px !important;
-    padding: 6px 12px calc(6px + env(safe-area-inset-bottom)) !important;
-    margin: 0 !important;
-    border-radius: 0 !important;
-    border: 1px solid rgba(148, 163, 184, 0.16) !important;
-    border-left: 0 !important;
-    border-right: 0 !important;
-    border-bottom: 0 !important;
-    background: rgba(6, 14, 28, 0.88) !important;
-    box-shadow: 0 -14px 30px rgba(0, 0, 0, 0.22) !important;
-    backdrop-filter: blur(14px) saturate(1.08) !important;
-    -webkit-backdrop-filter: blur(14px) saturate(1.08) !important;
-    overflow: hidden !important;
-    z-index: 44 !important;
-    pointer-events: auto !important;
-  }
-
-  body.mobile-ui .meta-stack .meta-corner,
-  .meta-stack .meta-corner {
-    min-height: 30px !important;
-    padding: 7px 9px !important;
-    border-radius: 10px !important;
-    font-size: 10.6px !important;
-    line-height: 1.1 !important;
-  }
-
-  #versionBadge,
-  body.mobile-ui .meta-stack .meta-version,
-  .meta-stack .meta-version {
-    max-width: min(30vw, 280px) !important;
-  }
-
-  #cellScaleChip,
-  body.mobile-ui .meta-stack .meta-scale,
-  .meta-stack .meta-scale {
-    max-width: max-content !important;
-    min-width: max-content !important;
-  }
-
   
 }
 
@@ -1576,72 +1294,6 @@ body.mobile-ui #detailsModal.details-modal.visible {
 
   body.mobile-blocked #app {
     display: block !important;
-  }
-
-  body.mobile-ui .meta-stack,
-  .meta-stack {
-    position: fixed !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100vw !important;
-    max-width: none !important;
-    min-height: var(--mobile-meta-h) !important;
-    display: grid !important;
-    grid-template-columns: minmax(72px, 94px) minmax(0, 1fr) minmax(54px, max-content) !important;
-    align-items: center !important;
-    gap: 5px !important;
-    padding: 5px 7px calc(5px + env(safe-area-inset-bottom)) !important;
-    margin: 0 !important;
-    border-radius: 0 !important;
-    border: 1px solid rgba(148, 163, 184, 0.15) !important;
-    border-left: 0 !important;
-    border-right: 0 !important;
-    border-bottom: 0 !important;
-    background: rgba(6, 14, 28, 0.90) !important;
-    box-shadow: 0 -12px 26px rgba(0, 0, 0, 0.24) !important;
-    backdrop-filter: blur(14px) saturate(1.08) !important;
-    -webkit-backdrop-filter: blur(14px) saturate(1.08) !important;
-    overflow: hidden !important;
-    z-index: 44 !important;
-    pointer-events: auto !important;
-  }
-
-  body.mobile-ui .meta-stack .meta-corner,
-  .meta-stack .meta-corner {
-    min-width: 0 !important;
-    min-height: 29px !important;
-    padding: 6px 7px !important;
-    border-radius: 9px !important;
-    font-size: 9.4px !important;
-    line-height: 1.08 !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-  }
-
-  #versionBadge,
-  body.mobile-ui .meta-stack .meta-version,
-  .meta-stack .meta-version {
-    max-width: 94px !important;
-    min-width: 0 !important;
-    justify-self: start !important;
-  }
-
-  #metaRun {
-    min-width: 0 !important;
-    justify-self: stretch !important;
-    touch-action: pan-x !important;
-  }
-
-  #cellScaleChip,
-  body.mobile-ui .meta-stack .meta-scale,
-  .meta-stack .meta-scale {
-    max-width: 64px !important;
-    min-width: 0 !important;
-    justify-self: end !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
   }
 
   
@@ -1703,28 +1355,6 @@ body.mobile-ui #detailsModal.details-modal.visible {
   }
 }
 
-@media (max-width: 380px) {
-  body.mobile-ui .meta-stack,
-  .meta-stack {
-    grid-template-columns: 72px minmax(0, 1fr) 54px !important;
-    gap: 4px !important;
-    padding-left: 5px !important;
-    padding-right: 5px !important;
-  }
-
-  #versionBadge,
-  body.mobile-ui .meta-stack .meta-version,
-  .meta-stack .meta-version {
-    max-width: 72px !important;
-  }
-
-  #cellScaleChip,
-  body.mobile-ui .meta-stack .meta-scale,
-  .meta-stack .meta-scale {
-    max-width: 54px !important;
-  }
-}
-
 /* ===== v1.1.111 mobile compact pass ===== */
 @media (max-width: 767px) {
   body.mobile-ui {
@@ -1732,79 +1362,6 @@ body.mobile-ui #detailsModal.details-modal.visible {
     --timeline-height-px: 86px !important;
     --right-rail-width: 38px !important;
     --rail-btn-size: 38px !important;
-  }
-
-  body.mobile-ui .meta-stack,
-  .meta-stack {
-    min-height: var(--mobile-meta-h) !important;
-    grid-template-columns: 64px minmax(0, 1fr) 42px !important;
-    gap: 4px !important;
-    padding: 3px 6px calc(3px + env(safe-area-inset-bottom)) !important;
-    background: rgba(6, 14, 28, 0.82) !important;
-    box-shadow: 0 -8px 22px rgba(0, 0, 0, 0.22) !important;
-  }
-
-  body.mobile-ui .meta-stack .meta-corner,
-  .meta-stack .meta-corner {
-    min-height: 26px !important;
-    padding: 5px 6px !important;
-    border-radius: 8px !important;
-    font-size: 9.2px !important;
-    line-height: 1 !important;
-    background: rgba(11, 20, 34, 0.66) !important;
-    border-color: rgba(148, 163, 184, 0.12) !important;
-    box-shadow: none !important;
-  }
-
-  #versionBadge,
-  body.mobile-ui .meta-stack .meta-version,
-  .meta-stack .meta-version {
-    max-width: 64px !important;
-    color: transparent !important;
-    font-size: 0 !important;
-    letter-spacing: 0 !important;
-  }
-
-  #versionBadge::before,
-  body.mobile-ui .meta-stack .meta-version::before,
-  .meta-stack .meta-version::before {
-    content: attr(data-app-version);
-    color: rgba(226, 238, 252, 0.96);
-    font-size: 9.2px;
-    font-weight: 900;
-    line-height: 1;
-  }
-
-  #cellScaleChip,
-  body.mobile-ui .meta-stack .meta-scale,
-  .meta-stack .meta-scale {
-    max-width: 42px !important;
-    color: transparent !important;
-    font-size: 0 !important;
-    letter-spacing: 0 !important;
-    text-align: center !important;
-  }
-
-  #cellScaleChip::before,
-  body.mobile-ui .meta-stack .meta-scale::before,
-  .meta-stack .meta-scale::before {
-    content: "15 km";
-    color: rgba(226, 238, 252, 0.88);
-    font-size: 9.2px;
-    font-weight: 900;
-    line-height: 1;
-  }
-
-  #metaRun {
-    font-size: 9.4px !important;
-    font-weight: 750 !important;
-    letter-spacing: 0 !important;
-    padding-left: 7px !important;
-    padding-right: 7px !important;
-  }
-
-  #metaRun.meta-run-overflow .meta-run-content {
-    animation: metaRunMarquee var(--meta-run-duration, 10s) linear infinite alternate !important;
   }
 
   
@@ -2090,74 +1647,6 @@ body.mobile-ui #detailsModal.details-modal.visible {
     --rail-btn-size: var(--touch-rail-size) !important;
   }
 
-  body.mobile-ui .meta-stack,
-  .meta-stack {
-    position: fixed !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100vw !important;
-    height: auto !important;
-    min-height: calc(var(--touch-meta-h) + env(safe-area-inset-bottom)) !important;
-    max-width: none !important;
-    display: grid !important;
-    grid-template-columns: max-content minmax(0, 1fr) max-content !important;
-    align-items: center !important;
-    gap: 8px !important;
-    padding: 6px 12px calc(6px + env(safe-area-inset-bottom)) !important;
-    margin: 0 !important;
-    border-radius: 0 !important;
-    border: 1px solid rgba(148, 163, 184, 0.16) !important;
-    border-left: 0 !important;
-    border-right: 0 !important;
-    border-bottom: 0 !important;
-    background: rgba(6, 14, 28, 0.88) !important;
-    box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.22) !important;
-    backdrop-filter: blur(14px) saturate(1.08) !important;
-    -webkit-backdrop-filter: blur(14px) saturate(1.08) !important;
-    overflow: hidden !important;
-    z-index: 44 !important;
-    pointer-events: auto !important;
-  }
-
-  body.mobile-ui .meta-stack .meta-corner,
-  .meta-stack .meta-corner {
-    min-width: 0 !important;
-    min-height: 30px !important;
-    width: auto !important;
-    max-width: none !important;
-    padding: 7px 9px !important;
-    border-radius: 10px !important;
-    font-size: 10.4px !important;
-    line-height: 1.05 !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-    box-shadow: none !important;
-  }
-
-  #versionBadge,
-  body.mobile-ui .meta-stack .meta-version,
-  .meta-stack .meta-version {
-    max-width: min(28vw, 260px) !important;
-    justify-self: start !important;
-  }
-
-  #metaRun {
-    justify-self: stretch !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: none !important;
-  }
-
-  #cellScaleChip,
-  body.mobile-ui .meta-stack .meta-scale,
-  .meta-stack .meta-scale {
-    min-width: max-content !important;
-    max-width: max-content !important;
-    justify-self: end !important;
-  }
-
   
 
   
@@ -2215,63 +1704,6 @@ body.mobile-ui #detailsModal.details-modal.visible {
     --touch-meta-h: 34px;
     --touch-timeline-h: 82px;
     --touch-rail-size: 38px;
-  }
-
-  body.mobile-ui .meta-stack,
-  .meta-stack {
-    grid-template-columns: 66px minmax(0, 1fr) 44px !important;
-    gap: 4px !important;
-    padding: 3px 6px calc(3px + env(safe-area-inset-bottom)) !important;
-  }
-
-  body.mobile-ui .meta-stack .meta-corner,
-  .meta-stack .meta-corner {
-    min-height: 26px !important;
-    padding: 5px 6px !important;
-    border-radius: 8px !important;
-    font-size: 9.2px !important;
-  }
-
-  #versionBadge,
-  body.mobile-ui .meta-stack .meta-version,
-  .meta-stack .meta-version {
-    max-width: 66px !important;
-    color: transparent !important;
-    font-size: 0 !important;
-  }
-
-  #versionBadge::before,
-  body.mobile-ui .meta-stack .meta-version::before,
-  .meta-stack .meta-version::before {
-    content: attr(data-app-version) !important;
-    color: rgba(226, 238, 252, 0.96) !important;
-    font-size: 9.2px !important;
-    font-weight: 900 !important;
-  }
-
-  #cellScaleChip,
-  body.mobile-ui .meta-stack .meta-scale,
-  .meta-stack .meta-scale {
-    max-width: 44px !important;
-    min-width: 44px !important;
-    color: transparent !important;
-    font-size: 0 !important;
-    text-align: center !important;
-  }
-
-  #cellScaleChip::before,
-  body.mobile-ui .meta-stack .meta-scale::before,
-  .meta-stack .meta-scale::before {
-    content: "15 km" !important;
-    color: rgba(226, 238, 252, 0.90) !important;
-    font-size: 9.2px !important;
-    font-weight: 900 !important;
-  }
-
-  #metaRun {
-    font-size: 9.4px !important;
-    padding-left: 7px !important;
-    padding-right: 7px !important;
   }
 
   
@@ -2391,17 +1823,6 @@ body.mobile-ui #detailsModal.details-modal.visible {
 
 
 /* ===== v1.1.114 tablette portrait : fond frise + metastack = même style que paysage ===== */
-@media (min-width: 768px) and (max-width: 1024px) {
-  
-
-  body.mobile-ui .meta-stack,
-  .meta-stack {
-    background: rgba(7, 17, 31, 0.94) !important;
-    box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.18) !important;
-    border: 0 !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
-  }
-}
 
 /* Page prédiction / historique en PLEIN ÉCRAN sur desktop + tablette (>= 768px).
    Le mobile (< 768px) est déjà plein écran plus haut et est de toute façon bloqué.
@@ -2442,34 +1863,8 @@ body.mobile-ui #detailsModal.details-modal.visible {
    verticaux, même hauteur (~30px). --mobile-meta-h recalé pour que le dock suive. */
 @media (min-width: 768px) and (max-width: 1024px) {
   body.mobile-ui { --mobile-meta-h: 30px !important; --meta-height-px: 30px !important; }
-  body.mobile-ui .meta-stack,
-  .meta-stack {
-    gap: 0 !important;
-    height: var(--mobile-meta-h) !important;
-    min-height: var(--mobile-meta-h) !important;
-    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) !important;
-    background: rgba(7, 17, 31, 0.94) !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
-    box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.18) !important;
-    backdrop-filter: blur(14px) saturate(1.05) !important;
-    -webkit-backdrop-filter: blur(14px) saturate(1.05) !important;
-  }
   /* Dock collé juste au-dessus du metastack : on bat les règles portrait
      (#timelineDock, calc(var(--meta-height-px,48px)-1px)) avec une spécificité (1,2,0). */
-  
-  body.mobile-ui .meta-stack .meta-corner,
-  .meta-stack .meta-corner {
-    min-height: 0 !important;
-    padding: 8px 12px !important;
-    border-radius: 0 !important;
-    font-size: 11px !important;
-    border-right: 1px solid rgba(255, 255, 255, 0.07) !important;
-  }
-  body.mobile-ui .meta-stack .meta-corner:last-child,
-  .meta-stack .meta-corner:last-child {
-    border-right: 0 !important;
-    text-align: right !important;
-  }
 }
 
 /* Tâche : timeline-content centré verticalement dans timeline-dock (mobile/tablette/
@@ -2504,76 +1899,14 @@ body.mobile-ui #detailsModal.details-modal.visible {
     --mobile-meta-h: 30px !important;
     --meta-height-px: 30px !important;
   }
-  body.mobile-ui .meta-stack,
-  .meta-stack {
-    grid-template-columns: minmax(0, auto) minmax(0, 1fr) max-content !important;
-    gap: 0 !important;
-    height: 30px !important;
-    min-height: 30px !important;
-    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) !important;
-    background: rgba(7, 17, 31, 0.94) !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
-    box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.18) !important;
-    backdrop-filter: blur(14px) saturate(1.05) !important;
-    -webkit-backdrop-filter: blur(14px) saturate(1.05) !important;
-  }
-  body.mobile-ui .meta-stack .meta-corner,
-  .meta-stack .meta-corner {
-    min-height: 0 !important;
-    padding: 8px 12px !important;
-    border-radius: 0 !important;
-    font-size: 11px !important;
-    border-right: 1px solid rgba(255, 255, 255, 0.07) !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-  }
-  body.mobile-ui .meta-stack .meta-corner:last-child,
-  .meta-stack .meta-corner:last-child {
-    border-right: 0 !important;
-    text-align: right !important;
-  }
   /* Texte complet (annule la compaction icône/court des chips version & échelle) */
   #versionBadge,
   #cellScaleChip,
   /* Restaure le texte (la compaction mobile le rendait transparent + font 0) avec
      les couleurs exactes du desktop. */
-  #versionBadge,
-  body.mobile-ui .meta-stack .meta-version,
-  .meta-stack .meta-version {
-    font-size: 11px !important;
-    color: rgb(219, 233, 255) !important;
-  }
-  #cellScaleChip,
-  body.mobile-ui .meta-stack .meta-scale,
-  .meta-stack .meta-scale {
-    font-size: 11px !important;
-    color: rgb(183, 199, 223) !important;
-    min-width: max-content !important;
-    max-width: none !important;
-  }
   /* La version peut être longue : on la laisse se tronquer pour que le créneau
      (colonne centrale) garde de la place (comme sur tablette). */
-  #versionBadge,
-  body.mobile-ui .meta-stack .meta-version,
-  .meta-stack .meta-version {
-    max-width: 42vw !important;
-  }
   /* Texte du créneau à la même taille que le desktop (11px), tronqué si besoin. */
-  #metaRun,
-  body.mobile-ui .meta-stack #metaRun,
-  body.mobile-ui .meta-stack .meta-run-overflow {
-    font-size: 11px !important;
-  }
-  #versionBadge::before,
-  #cellScaleChip::before,
-  body.mobile-ui .meta-stack .meta-version::before,
-  body.mobile-ui .meta-stack .meta-scale::before,
-  .meta-stack .meta-version::before,
-  .meta-stack .meta-scale::before {
-    display: none !important;
-    content: none !important;
-  }
 }
 
 /* Info-bulles révélées simultanément par le bouton « ? » : style identique à .app-tooltip,

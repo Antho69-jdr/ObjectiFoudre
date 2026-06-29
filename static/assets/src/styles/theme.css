@@ -38,8 +38,7 @@
    carte flottante mobile) reste legacy. Scopé #detailsModal. */
 @import "./components/details-modal.css";
 
-/* Component badges carte : overlays horloge / date / quota (LOOK + position).
-   La barre meta-stack (bas) reste legacy (desktop-only, très responsive). */
+/* Component badges carte : overlays horloge / date / quota (LOOK + position). */
 @import "./components/badges.css";
 
 /* Component bouton : primitive of-btn (DS) + reset `button` générique live +
@@ -64,6 +63,12 @@
 /* Component bouton d'aide de la frise (#screenTooltipsBtn) : pastille ronde verre
    visible <=1024, bascule les info-bulles. Scope body.mobile-ui (0 !important). */
 @import "./components/frise-help.css";
+
+/* Component meta-stack : bandeau bas DESKTOP (version | run AROME | echelle).
+   Grille 3 colonnes + marquee anime de #metaRun en debordement + overflow
+   scrollable + fondu des bords. Masque <=1024 par le bloc ci-dessous (le mask
+   gagne sur le component). Legacy meta purge ; 0 !important. */
+@import "./components/meta-stack.css";
 
 :root {
   /* Fond & surfaces */
