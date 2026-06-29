@@ -70,6 +70,13 @@
    gagne sur le component). Legacy meta purge ; 0 !important. */
 @import "./components/meta-stack.css";
 
+/* Component mode chasse : overlay radar/nowcast superpose (look + position +
+   masquages body.chase-mode). Reutilise rail/molette/grid-focus-btn de base ;
+   recoloration rouge via --tl-accent (timeline.css). Parite stricte (certains
+   !important PORTEURS battent les regles de base partagees). Charge en dernier
+   (apres timeline) ; legacy chase purge de components.css. */
+@import "./components/chase.css";
+
 :root {
   /* Fond & surfaces */
   --bg: #070d18;
