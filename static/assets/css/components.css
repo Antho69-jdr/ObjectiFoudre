@@ -260,26 +260,6 @@
     .metric-btn .hint { margin-top: 4px; font-size: 11px; color: var(--muted); display: block; }
     .metric-btn:hover, .metric-btn:focus-visible { background: rgba(56, 189, 248,0.10); border-color: rgba(56, 189, 248,0.45); }
     .info-modal.visible { display: block; }
-    
-    
-    .floating-chip {
-      position: absolute;
-      z-index: 17;
-      top: calc(478px + env(safe-area-inset-top));
-      right: var(--rail-right);
-      display: none;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 12px;
-      border-radius: 999px;
-      background: rgba(9, 18, 31, 0.6);
-      border: 1px solid rgba(255,255,255,0.1);
-      box-shadow: 0 12px 30px rgba(0,0,0,0.22);
-      font-size: 12px;
-      color: var(--muted);
-      backdrop-filter: blur(12px);
-    }
-    .floating-chip.visible { display: inline-flex; }
 
     .maplibregl-ctrl-top-right,
     .maplibregl-ctrl-bottom-right {

@@ -96,6 +96,10 @@
    #modalBackdrop scindes. Charge APRES details-modal (header partage .details-header). */
 @import "./components/info-drawer.css";
 
+/* Component floating-chip : pastille « App installable » (#installChip). Tier 3.
+   0 !important ; legacy purge (2 regles ; outline partage laisse au groupe legacy). */
+@import "./components/floating-chip.css";
+
 :root {
   /* Fond & surfaces */
   --bg: #070d18;

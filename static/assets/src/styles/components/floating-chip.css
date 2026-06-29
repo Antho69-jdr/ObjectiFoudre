@@ -1,0 +1,23 @@
+/* Component floating-chip : pastille flottante « App installable » (#installChip,
+   markup statique ; affichee par .visible quand l'install PWA est dispo). Position
+   absolue ancree en haut a droite (sous le rail). Tier 3 du retrait legacy.
+   Parite stricte, 0 !important. L'outline debug quasi-invisible reste porte par le
+   groupe partage legacy (.timeline-dock,…,.floating-chip) jusqu'a sa derniere surface. */
+.floating-chip {
+  position: absolute;
+  z-index: 17;
+  top: calc(478px + env(safe-area-inset-top));
+  right: var(--rail-right);
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  background: rgba(9, 18, 31, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+  font-size: 12px;
+  color: var(--muted);
+  backdrop-filter: blur(12px);
+}
+.floating-chip.visible { display: inline-flex; }
