@@ -2576,54 +2576,6 @@ body.mobile-ui #detailsModal.details-modal.visible {
   }
 }
 
-/* ===== Bouton d'aide « ? » collé à la frise (tablette + mobile) =====
-   Enfant du dock : il suit la translation (monte/descend avec la frise) et reste
-   visible/cliquable même quand la frise est repliée. Caché sur desktop. */
-.frise-help-btn { display: none; }
-@media (max-width: 1024px) {
-  body.mobile-ui #timelineDock .frise-help-btn,
-  #timelineDock .frise-help-btn,
-  .frise-help-btn {
-    display: grid !important;
-    place-items: center !important;
-    position: absolute !important;
-    right: 8px !important;
-    top: -36px !important;
-    /* cercle PARFAIT : largeur = hauteur, max bornés, aspect-ratio en filet de sécurité */
-    width: 30px !important;
-    height: 30px !important;
-    min-width: 30px !important;
-    max-width: 30px !important;
-    min-height: 30px !important;
-    max-height: 30px !important;
-    aspect-ratio: 1 / 1 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    border-radius: 50% !important;
-    /* même couleur/transparence que les boutons de la barre latérale (verre sombre, filet blanc) */
-    border: 1px solid rgba(255, 255, 255, 0.12) !important;
-    background: rgba(10, 20, 35, 0.72) !important;
-    color: #e5edf9 !important;
-    font-size: 15px !important;
-    font-weight: 800 !important;
-    line-height: 1 !important;
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28) !important;
-    backdrop-filter: var(--glass-blur, blur(8px)) !important;
-    -webkit-backdrop-filter: var(--glass-blur, blur(8px)) !important;
-    pointer-events: auto !important;
-    z-index: 131 !important;
-    cursor: pointer !important;
-  }
-  .frise-help-btn:hover { background: rgba(17, 31, 54, 0.9) !important; border-color: rgba(255, 255, 255, 0.2) !important; }
-  .frise-help-btn[aria-pressed="true"] {
-    background: rgba(14, 165, 233, 0.32) !important;
-    border-color: rgba(125, 211, 252, 0.6) !important;
-    color: #bae6fd !important;
-  }
-  /* La frise repliée passe en pointer-events:none ; le bouton garde son interactivité. */
-  
-}
-
 /* Info-bulles révélées simultanément par le bouton « ? » : style identique à .app-tooltip,
    mais persistantes (pas de transition d'apparition). */
 .app-tooltip.app-tooltip-revealed { transition: none !important; }

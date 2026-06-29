@@ -61,6 +61,10 @@
    !important (responsive desktop+mobile) et le chase restent legacy. Chunk 1. */
 @import "./components/prediction-page.css";
 
+/* Component bouton d'aide de la frise (#screenTooltipsBtn) : pastille ronde verre
+   visible <=1024, bascule les info-bulles. Scope body.mobile-ui (0 !important). */
+@import "./components/frise-help.css";
+
 :root {
   /* Fond & surfaces */
   --bg: #070d18;

@@ -1,0 +1,56 @@
+/* ============================================================================
+   frise-help.css — bouton d'aide de la frise (#screenTooltipsBtn .frise-help-btn)
+   ----------------------------------------------------------------------------
+   Bascule l'affichage des info-bulles à l'écran (cf. tooltip.js). Caché sur
+   desktop ; visible ≤1024 (tablette) en pastille ronde « verre », enfant absolu
+   du #timelineDock (positionné au-dessus, suit le repli de la frise).
+   Migré à parité du legacy (responsive.css), mais SANS !important : on scope sous
+   `body.mobile-ui` (toujours posé) → spécificité (0,2,0) qui bat la règle tactile
+   générique `body.mobile-ui button { min-width:88px }` (0,1,1) sans !important.
+   ============================================================================ */
+
+.frise-help-btn {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  body.mobile-ui .frise-help-btn {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    right: 8px;
+    top: -36px;
+    /* cercle parfait */
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    max-width: 30px;
+    min-height: 30px;
+    max-height: 30px;
+    aspect-ratio: 1 / 1;
+    padding: 0;
+    margin: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(10, 20, 35, 0.72);
+    color: #e5edf9;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+    backdrop-filter: var(--glass-blur, blur(8px));
+    -webkit-backdrop-filter: var(--glass-blur, blur(8px));
+    pointer-events: auto;
+    z-index: 131;
+    cursor: pointer;
+  }
+  body.mobile-ui .frise-help-btn:hover {
+    background: rgba(17, 31, 54, 0.9);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  body.mobile-ui .frise-help-btn[aria-pressed="true"] {
+    background: rgba(14, 165, 233, 0.32);
+    border-color: rgba(125, 211, 252, 0.6);
+    color: #bae6fd;
+  }
+}
