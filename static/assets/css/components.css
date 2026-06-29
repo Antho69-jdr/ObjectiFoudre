@@ -259,36 +259,6 @@
     .metric-value-neutral { color: var(--text); }
     .metric-btn .hint { margin-top: 4px; font-size: 11px; color: var(--muted); display: block; }
     .metric-btn:hover, .metric-btn:focus-visible { background: rgba(56, 189, 248,0.10); border-color: rgba(56, 189, 248,0.45); }
-
-
-    .info-drawer {
-      position: fixed;
-      z-index: 19;
-      inset: 0;
-      width: 100vw;
-      height: 100dvh;
-      max-width: 100vw;
-      max-height: 100dvh;
-      overflow: auto;
-      padding: calc(18px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
-      background: rgba(7, 15, 27, 0.985);
-      border: 0;
-      border-radius: 0;
-      box-shadow: none;
-      transform: none;
-      display: none;
-      backdrop-filter: var(--glass-blur);
-      -webkit-backdrop-filter: var(--glass-blur);
-    }
-    .info-drawer.visible { display: block; }
-    .info-drawer p, .info-drawer li {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.5;
-    }
-    
-    .info-drawer ul { margin: 10px 0 0 18px; padding: 0; }
-    .drawer-section { margin-top: 14px; }
     .info-modal.visible { display: block; }
     
     
@@ -345,23 +315,6 @@
       bottom: calc(130px + env(safe-area-inset-bottom));
     }
 
-    
-    
-    
-    
-    
-    
-
-.drawer-backdrop-transparent {
-  display: none !important;
-  background: transparent !important;
-}
-
-.drawer-section-title {
-  font-weight: 800;
-  color: var(--text);
-}
-
 
     .search-dock.show-search .search-panel {
       display: grid;
@@ -371,15 +324,15 @@
 
     
 
-    .timeline-dock,
-    .selection-card,
-    .details-modal,
-    .info-modal,
-    .info-drawer,
-    .panel-card,
-    .meta-corner,
-    .cell-scale-chip,
-    .floating-chip {
+    
+  .timeline-dock,
+  .selection-card,
+  .details-modal,
+  .info-modal,
+  .panel-card,
+  .meta-corner,
+  .cell-scale-chip,
+  .floating-chip {
       outline: 1px solid rgba(255,255,255,0.02);
     }
 
@@ -416,90 +369,6 @@
 
 .selection-card .action-row {
   margin-top: 10px;
-}
-
-.info-drawer {
-  width: 100vw;
-  padding: calc(18px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
-}
-.info-drawer-header {
-  position: sticky;
-  top: calc(-18px - env(safe-area-inset-top));
-  z-index: 2;
-  margin: calc(-18px - env(safe-area-inset-top)) -24px 16px;
-  padding: calc(18px + env(safe-area-inset-top)) 24px 14px;
-  background: linear-gradient(180deg, rgba(8,17,30,0.96), rgba(8,17,30,0.88));
-  backdrop-filter: blur(18px) saturate(1.04);
-  -webkit-backdrop-filter: blur(18px) saturate(1.04);
-  border-bottom: 1px solid rgba(255,255,255,0.08);
-}
-.info-drawer .title {
-  font-size: 18px;
-}
-.info-drawer p,
-.info-drawer li {
-  color: #c8d5ea;
-  font-size: 13px;
-  line-height: 1.55;
-}
-.drawer-intro {
-  margin-top: 0;
-}
-.drawer-section {
-  margin-top: 16px;
-  display: grid;
-  gap: 10px;
-}
-.drawer-section-title {
-  font-weight: 800;
-  color: #eef4ff;
-  letter-spacing: 0.01em;
-}
-.drawer-scale-grid,
-.drawer-category-list,
-.drawer-formula-grid {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: 1fr 1fr;
-}
-.drawer-scale-card,
-.drawer-formula-card,
-.drawer-category-card {
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.035);
-  padding: 12px;
-}
-.drawer-scale-card,
-.drawer-formula-card {
-  display: grid;
-  gap: 4px;
-}
-.drawer-scale-card strong,
-.drawer-category-card h3 {
-  margin: 0;
-  font-size: 13px;
-  color: #eef4ff;
-}
-.drawer-scale-card span,
-.drawer-formula-note,
-.drawer-category-card p {
-  color: #c8d5ea;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.drawer-formula-line {
-  font-size: 13px;
-  color: #eef4ff;
-}
-.drawer-category-card ul,
-.drawer-bullet-list {
-  margin: 0;
-  padding-left: 18px;
-}
-.drawer-category-card ul {
-  display: grid;
-  gap: 6px;
 }
 .mf-public-status {
   margin-top: 8px;
@@ -695,8 +564,8 @@
     grid-template-columns: 1fr;
   }
 
-  body.mobile-ui .details-modal,
-  body.mobile-ui .info-drawer {
+  
+  body.mobile-ui .details-modal {
     position: absolute !important;
     inset: 0 !important;
     width: 100vw !important;
@@ -717,33 +586,15 @@
     z-index: 31 !important;
   }
 
-  /* (le header de #detailsModal est désormais porté par le component details-modal.css ;
-     ce groupe ne style plus que l'en-tête du tiroir info) */
-  body.mobile-ui .info-drawer-header {
-    position: sticky !important;
-    top: calc(-14px - env(safe-area-inset-top)) !important;
-    z-index: 2 !important;
-    margin: calc(-14px - env(safe-area-inset-top)) -14px 14px !important;
-    padding: calc(14px + env(safe-area-inset-top)) 14px 12px !important;
-    background: linear-gradient(180deg, rgba(7,15,27,1), rgba(7,15,27,0.94)) !important;
-    border-bottom: 1px solid rgba(255,255,255,0.08) !important;
-    border-radius: 0 !important;
-  }
-
-  body.mobile-ui #modalBackdrop.visible,
-  body.mobile-ui #drawerBackdrop.visible {
+  
+  body.mobile-ui #modalBackdrop.visible {
     display: none !important;
-  }
-
-  body.mobile-ui .drawer-scale-grid,
-  body.mobile-ui .drawer-category-list {
-    grid-template-columns: 1fr !important;
   }
 }
 
 @media (max-width: 900px) and (orientation: landscape) {
-  body.mobile-ui .details-modal,
-  body.mobile-ui .info-drawer {
+  
+  body.mobile-ui .details-modal {
     padding-left: 16px !important;
     padding-right: 16px !important;
     padding-bottom: calc(104px + env(safe-area-inset-bottom)) !important;
@@ -853,13 +704,6 @@
 .details-modal,
 #detailsModal {
   z-index: 74 !important;
-}
-.modal-backdrop#drawerBackdrop {
-  z-index: 83 !important;
-}
-.info-drawer,
-#infoDrawer {
-  z-index: 84 !important;
 }
 .modal-backdrop#infoBackdrop {
   z-index: 85 !important;

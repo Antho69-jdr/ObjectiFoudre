@@ -11,3 +11,4 @@ Clef API*.txt
 node_modules/
 static/node_modules/
 *.prepurge
+*.presplit

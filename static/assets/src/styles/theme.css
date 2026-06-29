@@ -90,6 +90,12 @@
    Tier 1 du retrait legacy. 0 !important ; legacy purge de components.css. */
 @import "./components/metric-info.css";
 
+/* Component info-drawer : tiroir « Guide de lecture » (#infoDrawer). Migration
+   COMPLETE (look + position + compaction ≤900 + paysage). Tier 2 du retrait legacy.
+   0 !important ; legacy purge (drawer-only) + groupes partages .details-modal/
+   #modalBackdrop scindes. Charge APRES details-modal (header partage .details-header). */
+@import "./components/info-drawer.css";
+
 :root {
   /* Fond & surfaces */
   --bg: #070d18;
