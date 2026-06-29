@@ -70,30 +70,6 @@
 
     
 
-    .date-bar {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-
-    .date-input {
-      width: 100%;
-      min-height: 44px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: rgba(255,255,255,0.04);
-      color: var(--text);
-      padding: 0 14px;
-      font-size: 14px;
-      outline: none;
-    }
-
-    .date-input:focus { border-color: rgba(59,130,246,0.6); box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
-
-    
-
     
     
     

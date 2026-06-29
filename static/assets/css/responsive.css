@@ -173,9 +173,6 @@
 }
 .search-dock { display: block !important; order: 0 !important; }
 .mobile-toggle-bar { margin: 0 !important; }
-.grid-focus-corner, .fab-stack { display: grid !important; gap: var(--right-rail-gap) !important; }
-.grid-focus-corner { order: 1 !important; }
-.fab-stack { order: 2 !important; }
 
 
 /* v0.4.56 rail cleanup and search panel fix */
@@ -196,16 +193,6 @@
 
 .mobile-toggle-bar {
   display: contents !important;
-}
-
-.grid-focus-corner,
-.fab-stack {
-  display: contents !important;
-}
-
-.grid-focus-corner > *,
-.fab-stack > * {
-  margin: 0 !important;
 }
 
 .search-panel {
@@ -243,16 +230,6 @@
   width: var(--right-rail-width) !important;
 }
 
-.grid-focus-corner,
-.fab-stack {
-  display: contents !important;
-}
-
-.grid-focus-corner > *,
-.fab-stack > * {
-  width: var(--right-rail-width) !important;
-}
-
 
 /* v0.4.58 bottom stack seal + visible timeline toggle */
 
@@ -283,10 +260,6 @@
   min-height: 36px !important;
   height: 36px !important;
   font-size: 12px !important;
-}
-
-.timeline-date-input {
-  padding: 0 10px !important;
 }
 
 .timeline-today-btn,
