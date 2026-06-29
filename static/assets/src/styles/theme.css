@@ -63,10 +63,13 @@
    (parite stricte avec le legacy purge). */
 @import "./components/system-screens.css";
 
-/* Component coquille PARTAGEE des pages plein ecran (prevision + historique +
-   chase) : LOOK du chrome (header, onglets, chips date, panneaux). Le plein-ecran
-   !important (responsive desktop+mobile) et le chase restent legacy. Chunk 1. */
+/* Component coquille PARTAGEE des pages plein ecran (prevision + historique) :
+   LOOK du chrome (header, onglets, chips date, panneaux). Chunk 1+2. */
 @import "./components/prediction-page.css";
+/* POSITION plein-ecran (desktop >=768) + compaction mobile (<767) de la coquille,
+   extrait VERBATIM du legacy (Tier 4). Importe APRES le LOOK. Les widgets .history-*
+   (calendrier/player) restent legacy = surface a part. */
+@import "./components/prediction-page-layout.css";
 
 /* Component bouton d'aide de la frise (#screenTooltipsBtn) : pastille ronde verre
    visible <=1024, bascule les info-bulles. Scope body.mobile-ui (0 !important). */

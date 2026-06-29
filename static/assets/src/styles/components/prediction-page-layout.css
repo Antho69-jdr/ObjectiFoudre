@@ -1,0 +1,198 @@
+/* Pages Prevision/Historique : POSITION plein-ecran (desktop >=768 !important) +
+   compaction mobile (<767 body.mobile-ui) de la coquille PARTAGEE, extrait VERBATIM
+   du legacy (parite par construction ; !important porteurs preserves). Le LOOK
+   chrome+data est dans prediction-page.css. Importe APRES prediction-page.css.
+   Les widgets .history-* (calendrier/player) restent legacy = surface a part.
+   Cf. project-chantier-ui (Tier 4). */
+
+@media (max-width: 767px) {
+  body.mobile-ui .prediction-page {
+    padding: 0 !important;
+    place-items: stretch !important;
+    overflow: hidden !important;
+  }
+  body.mobile-ui .prediction-page-shell {
+    width: 100vw !important;
+    height: 100svh !important;
+    max-width: none !important;
+    max-height: none !important;
+    padding: 10px !important;
+    border-radius: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+  body.mobile-ui .prediction-page-header {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 8px !important;
+    align-items: start !important;
+  }
+  body.mobile-ui .prediction-eyebrow {
+    font-size: 0.58rem !important;
+  }
+  body.mobile-ui .prediction-page-header h2 {
+    font-size: 1.02rem !important;
+    line-height: 1.05 !important;
+    margin: 2px 0 !important;
+  }
+  body.mobile-ui .prediction-page-header p {
+    font-size: 0.72rem !important;
+    line-height: 1.2 !important;
+  }
+  body.mobile-ui .prediction-page-actions {
+    gap: 6px !important;
+  }
+  body.mobile-ui .prediction-download-btn {
+    min-height: 32px !important;
+    padding: 0 9px !important;
+    font-size: 0.66rem !important;
+  }
+  body.mobile-ui .prediction-close-btn,
+  body.mobile-ui #predictionPageCloseBtn {
+    width: 34px !important;
+    min-width: 34px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    border-radius: 999px !important;
+  }
+  body.mobile-ui .prediction-page-header {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-rows: auto auto !important;
+  }
+  body.mobile-ui .prediction-period-tabs {
+    grid-column: 1 / -1 !important;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    width: 100% !important;
+    margin-top: 4px !important;
+    padding: 3px !important;
+    gap: 3px !important;
+    overflow: visible !important;
+    flex-wrap: unset !important;
+  }
+  body.mobile-ui .prediction-period-tab:first-child {
+    grid-column: 1 / -1 !important;
+  }
+  body.mobile-ui .prediction-period-tab {
+    min-height: 30px !important;
+    padding: 0 8px !important;
+    font-size: 0.68rem !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+  }
+  body.mobile-ui .prediction-page-body {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    overflow: visible !important;
+  }
+  body.mobile-ui .prediction-map-panel {
+    min-height: 220px !important;
+  }
+  body.mobile-ui .prediction-image {
+    width: 100% !important;
+    max-height: 45svh !important;
+    object-fit: contain !important;
+  }
+  body.mobile-ui .prediction-analysis-panel {
+    border-left: 0 !important;
+    border-top: 1px solid rgba(148, 163, 184, 0.18) !important;
+    padding: 10px 0 0 !important;
+  }
+  body.mobile-ui .prediction-analysis-title {
+    font-size: 0.68rem !important;
+  }
+  body.mobile-ui .prediction-analysis-text,
+  body.mobile-ui .prediction-analysis-block p,
+  body.mobile-ui .prediction-analysis-disclaimer {
+    font-size: 0.75rem !important;
+    line-height: 1.28 !important;
+  }
+  body.mobile-ui .prediction-summary-hero,
+  body.mobile-ui .prediction-analysis-block,
+  body.mobile-ui .prediction-legend {
+    padding: 8px !important;
+    border-radius: 10px !important;
+  }
+  body.mobile-ui .prediction-summary-hero {
+    gap: 8px !important;
+  }
+  body.mobile-ui .prediction-summary-hero b {
+    font-size: 1.55rem !important;
+  }
+  body.mobile-ui .prediction-summary-hero strong {
+    font-size: 0.88rem !important;
+    margin: 2px 0 1px !important;
+  }
+  body.mobile-ui .prediction-summary-hero em {
+    font-size: 0.70rem !important;
+  }
+  body.mobile-ui .prediction-summary-hero small {
+    font-size: 0.68rem !important;
+  }
+  body.mobile-ui .prediction-sector-chip {
+    min-height: 42px !important;
+    padding: 7px 9px !important;
+    gap: 7px !important;
+  }
+  body.mobile-ui .prediction-sector-chip strong {
+    font-size: 0.76rem !important;
+  }
+  body.mobile-ui .prediction-sector-chip span {
+    font-size: 0.66rem !important;
+  }
+  body.mobile-ui .prediction-sector-chip b {
+    font-size: 0.92rem !important;
+  }
+  body.mobile-ui .prediction-sector-chip em {
+    font-size: 0.64rem !important;
+  }
+  body.mobile-ui .prediction-legend-bands span,
+  body.mobile-ui .prediction-legend-bands-compact span {
+    font-size: 0.82rem !important;
+    gap: 9px !important;
+    min-height: 30px !important;
+  }
+  body.mobile-ui .prediction-legend i {
+    width: 26px !important;
+    height: 16px !important;
+    border-radius: 5px !important;
+  }
+  body.mobile-ui .prediction-legend-note {
+    font-size: 0.76rem !important;
+  }
+  body.mobile-ui .prediction-legend-title,
+  body.mobile-ui .prediction-analysis-block-title {
+    font-size: 0.78rem !important;
+  }
+}
+@media (min-width: 768px) {
+  #predictionPage.prediction-page,
+  #historyPage.prediction-page {
+    padding: 0 !important;
+    place-items: stretch !important;
+    /* Rangée bornée au viewport : sinon la rangée grid "auto" grandit avec le
+       contenu et height:100% du shell ne se résout pas -> shell qui déborde et
+       contrôles du lecteur poussés hors écran. */
+    grid-template-rows: minmax(0, 100vh) !important;
+    overflow: hidden !important;
+  }
+  #predictionPage .prediction-page-shell,
+  #historyPage .prediction-page-shell {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: 100vh !important;
+    min-height: 0 !important;
+    border-radius: 0 !important;
+    border-width: 0 !important;
+  }
+}
+@media (max-width: 920px), (max-height: 600px) {
+  #historyPage .prediction-analysis-panel {
+    flex: 0 0 auto !important;
+    overflow: visible !important;
+  }
+}
+@media (orientation: landscape) and (max-height: 600px) {
+  #historyPage .prediction-analysis-panel { grid-area: analysis !important; }
+}
