@@ -14,8 +14,10 @@
    body.chase-mode #chaseSlots), PAS d'ici.
 
    Pilotage JS : chase.js (IIFE) cree #chaseSlots (rail+molette), le popup
-   (.chase-popup/.chase-pop-*/.chase-verdict/.chase-pos-list/.chase-user-dot),
+   (.chase-popup, .chase-pop-x, .chase-verdict, .chase-pos-list, .chase-user-dot),
    bascule body.chase-mode. Le rail n'apparait qu'apres chargement radar (~8s).
+   NB : ne JAMAIS ecrire la sequence etoile-slash dans ce commentaire (fermeture
+   prematuree -> regle suivante cassee). Cf. piege documente dans project-chantier-ui.
    ========================================================================== */
 
 /* --- Bascule d'affichage : masque/montre l'UI chasse selon body.chase-mode --- */
