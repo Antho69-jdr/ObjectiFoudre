@@ -100,6 +100,11 @@
    0 !important ; legacy purge (2 regles ; outline partage laisse au groupe legacy). */
 @import "./components/floating-chip.css";
 
+/* Component rail-search-layout : POSITION du rail droit (scroller fixe + colonne)
+   + dock de recherche (interleaves). Migre VERBATIM (parite par construction,
+   !important porteurs preserves). Tier 3. Tokens conserves (definitions legacy). */
+@import "./components/rail-search-layout.css";
+
 :root {
   /* Fond & surfaces */
   --bg: #070d18;
