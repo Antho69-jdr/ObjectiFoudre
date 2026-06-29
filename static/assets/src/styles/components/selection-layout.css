@@ -1,0 +1,278 @@
+/* =============================================================================
+   Component selection-layout : POSITION + compaction de #selectionCard — 3 modes
+   pilotes par selection-card.js (desktop .desktop-outside-grid inline / tablette
+   .tablet-follow-grid inline!important / mobile reset CSS). Largeurs/paddings par
+   BP + layout boutons internes (.action-row/.icon-btn/#openDetailsBtn/.primary-btn
+   scopes #selectionCard). LOOK de base = selection.css (v1.2.135). Migre VERBATIM
+   (parite par construction ; !important PRESERVES porteurs — body.mobile-ui toujours
+   pose + thicket multi-generation + JS inline). Ordre source preserve. Tier 3.
+   Groupes partages LAISSES en legacy : padding-top (topbar,…), outline debug,
+   #selectionCard .icon-btn + #closeSelectionBtn. NE PAS toucher au JS de placement. */
+
+.selection-card {
+      position: absolute;
+      z-index: 16;
+      left: 50%;
+      bottom: 130px;
+      transform: translateX(-50%);
+      width: min(388px, calc(100vw - 44px));
+      border-radius: 22px;
+      padding: 16px;
+      background: rgba(8, 17, 30, 0.8);
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 20px 44px rgba(0,0,0,0.28);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      display: none;
+    }
+.selection-card.desktop-outside-grid {
+      left: auto;
+      right: auto;
+      bottom: auto;
+      transform: none;
+    }
+.selection-card.visible { display: block; }
+.selection-card {
+      bottom: calc(130px + env(safe-area-inset-bottom));
+    }
+.selection-card {
+  width: min(360px, calc(100vw - 44px));
+  padding: 14px;
+}
+.selection-card .action-row {
+  margin-top: 10px;
+}
+.selection-card,
+#selectionCard {
+  z-index: 60 !important;
+}
+#selectionCard.selection-card,
+.selection-card#selectionCard {
+  width: min(440px, calc(100vw - 44px));
+  padding: 16px;
+}
+#selectionCard.selection-card,
+.selection-card#selectionCard {
+  width: min(340px, calc(100vw - 44px));
+  padding: 12px;
+  border-radius: 16px;
+}
+#selectionCard .icon-btn {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  font-size: 16px;
+}
+#selectionCard .action-row {
+  margin-top: 9px;
+}
+#selectionCard .primary-btn {
+  min-height: 36px;
+  height: 36px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+#selectionCard .selection-heading {
+  min-width: 0;
+  padding-top: 2px;
+}
+#selectionCard .action-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  margin-top: 10px;
+}
+#selectionCard .primary-btn {
+  width: 100%;
+  justify-content: center;
+}
+#selectionCard.selection-card {
+  width: min(322px, calc(100vw - 28px));
+  padding: 12px 13px;
+}
+#selectionCard .icon-btn,
+#selectionCard #closeSelectionBtn {
+  flex: 0 0 auto;
+  width: 30px; min-width: 30px; max-width: 30px;
+  height: 30px; min-height: 30px; max-height: 30px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 16px;
+}
+#selectionCard .action-row {
+  margin: 0;
+}
+#selectionCard #openDetailsBtn {
+  width: 100%;
+  min-height: 34px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 700;
+  background: rgba(56, 189, 248, 0.16);
+  border: 1px solid rgba(56, 189, 248, 0.34);
+  color: #cfe0fb;
+  box-shadow: none;
+}
+#selectionCard #openDetailsBtn:hover {
+  background: rgba(56, 189, 248, 0.26);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+body.mobile-ui .selection-card {
+      left: 50%;
+      right: auto;
+      transform: translateX(-50%);
+      width: min(360px, calc(100vw - 28px));
+      bottom: calc(84px + env(safe-area-inset-bottom));
+      border-radius: 20px;
+      max-height: none;
+      overflow: visible;
+      padding: 14px;
+    }
+.selection-card.desktop-outside-grid,
+#selectionCard.desktop-outside-grid {
+  bottom: auto !important;
+}
+#selectionCard {
+  z-index: 50 !important;
+}
+.selection-card,
+#selectionCard {
+  bottom: calc(140px + env(safe-area-inset-bottom)) !important;
+}
+
+@media (max-width: 767px) {
+  #selectionCard.selection-card,
+    .selection-card#selectionCard {
+      width: min(320px, calc(100vw - 90px));
+      padding: 10px;
+    }
+  body.mobile-ui .selection-card {
+      left: 8px !important;
+      right: 8px !important;
+      bottom: calc(var(--mobile-meta-h) + var(--timeline-height-px) + env(safe-area-inset-bottom) + 10px) !important;
+      width: auto !important;
+      max-width: none !important;
+      transform: none !important;
+      z-index: 38 !important;
+    }
+  body.mobile-ui .selection-card,
+    #selectionCard.selection-card {
+      left: 10px !important;
+      right: 10px !important;
+      bottom: calc(var(--mobile-meta-h) + var(--timeline-height-px) + env(safe-area-inset-bottom) + 8px) !important;
+      width: auto !important;
+      max-width: none !important;
+      max-height: 206px !important;
+      padding: 10px !important;
+      border-radius: 18px !important;
+      overflow: hidden !important;
+    }
+  #selectionCard .action-row {
+      margin-top: 9px !important;
+    }
+  #selectionCard #openDetailsBtn {
+      min-height: 40px !important;
+      height: 40px !important;
+      border-radius: 13px !important;
+      font-size: 15px !important;
+    }
+  body.mobile-ui .selection-card,
+    #selectionCard.selection-card {
+      width: min(330px, calc(100vw - 20px)) !important;
+      max-width: calc(100vw - 20px) !important;
+      padding: 10px !important;
+      border-radius: 16px !important;
+    }
+  #selectionCard.tablet-follow-grid,
+    body.mobile-ui #selectionCard.tablet-follow-grid {
+      width: min(318px, calc(100vw - var(--touch-rail-size) - 42px)) !important;
+      max-width: calc(100vw - var(--touch-rail-size) - 42px) !important;
+    }
+  #selectionCard #openDetailsBtn {
+      min-height: 38px !important;
+      height: 38px !important;
+    }
+  #selectionCard.selection-card {
+      padding: 10px 12px !important;
+      max-height: none !important;
+    }
+  #selectionCard #openDetailsBtn {
+      min-height: 34px !important;
+      height: 34px !important;
+      border-radius: 11px !important;
+      font-size: 13px !important;
+    }
+}
+
+@media (orientation: landscape) {
+  body.mobile-ui .selection-card {
+          width: min(360px, calc(100vw - 28px));
+          bottom: calc(72px + env(safe-area-inset-bottom));
+          border-radius: 20px;
+        }
+}
+
+@media (max-width: 900px) {
+  body.mobile-ui .selection-card {
+      width: min(332px, calc(100vw - 24px)) !important;
+      padding: 12px !important;
+      border-radius: 18px !important;
+    }
+  body.mobile-ui .selection-card .action-row {
+      flex-direction: row !important;
+      gap: 8px !important;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
+  #selectionCard {
+      top: auto !important;
+      bottom: 120px !important;
+      transform: translateX(-50%) !important;
+      left: 50% !important;
+      right: auto !important;
+      max-height: 50vh;
+    }
+  #selectionCard {
+      max-height: min(58vh, 520px) !important;
+    }
+  #selectionCard:not(.desktop-outside-grid):not(.tablet-follow-grid) {
+      left: auto !important;
+      right: auto !important;
+      top: auto !important;
+      bottom: auto !important;
+      transform: none !important;
+    }
+  #selectionCard {
+      bottom: auto !important;
+      top: 80px !important;
+      max-height: 60vh !important;
+    }
+  #selectionCard,
+    .selection-card {
+      bottom: 154px !important;
+    }
+  #selectionCard.tablet-follow-grid,
+    body.mobile-ui #selectionCard.tablet-follow-grid {
+      position: absolute !important;
+      right: auto !important;
+      bottom: auto !important;
+      transform: none !important;
+      width: min(340px, calc(100vw - var(--right-rail-width, 46px) - 42px)) !important;
+      max-height: min(42vh, 280px) !important;
+      overflow-y: auto !important;
+    }
+}
+
+@media (max-width: 1024px) {
+  #selectionCard.tablet-follow-grid,
+    body.mobile-ui #selectionCard.tablet-follow-grid {
+      position: fixed !important;
+      width: min(340px, calc(100vw - var(--touch-rail-size) - 42px)) !important;
+      max-width: calc(100vw - var(--touch-rail-size) - 42px) !important;
+      right: auto !important;
+      bottom: auto !important;
+      transform: none !important;
+    }
+}

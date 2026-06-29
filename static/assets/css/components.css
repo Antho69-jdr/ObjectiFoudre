@@ -96,30 +96,10 @@
 
 
 
-    .selection-card {
-      position: absolute;
-      z-index: 16;
-      left: 50%;
-      bottom: 130px;
-      transform: translateX(-50%);
-      width: min(388px, calc(100vw - 44px));
-      border-radius: 22px;
-      padding: 16px;
-      background: rgba(8, 17, 30, 0.8);
-      border: 1px solid rgba(255,255,255,0.1);
-      box-shadow: 0 20px 44px rgba(0,0,0,0.28);
-      backdrop-filter: var(--glass-blur);
-      -webkit-backdrop-filter: var(--glass-blur);
-      display: none;
-    }
-    .selection-card.desktop-outside-grid {
-      left: auto;
-      right: auto;
-      bottom: auto;
-      transform: none;
-    }
+    
+    
 
-    .selection-card.visible { display: block; }
+    
     
     
     
@@ -238,9 +218,7 @@
     .topbar, .statusbar, .selection-card, .details-modal, .info-modal, .meta-corner {
       padding-top: calc(10px + env(safe-area-inset-top) * 0);
     }
-    .selection-card {
-      bottom: calc(130px + env(safe-area-inset-bottom));
-    }
+    
 
 
     
@@ -272,10 +250,6 @@
 /* v0.4.79 UI refinement */
 
 
-.selection-card {
-  width: min(360px, calc(100vw - 44px));
-  padding: 14px;
-}
 
 
 
@@ -290,9 +264,8 @@
 
 
 
-.selection-card .action-row {
-  margin-top: 10px;
-}
+
+
 .mf-public-status {
   margin-top: 8px;
 }
@@ -617,10 +590,7 @@
 
 
 /* v1.0.0 layering + timeline play button */
-.selection-card,
-#selectionCard {
-  z-index: 60 !important;
-}
+
 .modal-backdrop#modalBackdrop {
   z-index: 73 !important;
 }
@@ -648,11 +618,7 @@
 
 
 /* v1.1.8 selectionCard + compact score details */
-#selectionCard.selection-card,
-.selection-card#selectionCard {
-  width: min(440px, calc(100vw - 44px));
-  padding: 16px;
-}
+
 
 
 
@@ -707,34 +673,17 @@
 
 
 /* v1.1.9 compact selection + inline score calculation */
-#selectionCard.selection-card,
-.selection-card#selectionCard {
-  width: min(340px, calc(100vw - 44px));
-  padding: 12px;
-  border-radius: 16px;
-}
-
-
-
-#selectionCard .icon-btn {
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
-  font-size: 16px;
-}
 
 
 
 
-#selectionCard .action-row {
-  margin-top: 9px;
-}
-#selectionCard .primary-btn {
-  min-height: 36px;
-  height: 36px;
-  border-radius: 12px;
-  font-size: 13px;
-}
+
+
+
+
+
+
+
 
 .metric-card {
   cursor: default;
@@ -796,15 +745,7 @@
 
 
 
-@media (max-width: 767px) {
-  #selectionCard.selection-card,
-  .selection-card#selectionCard {
-    width: min(320px, calc(100vw - 90px));
-    padding: 10px;
-  }
-  
-  
-}
+
 
 /* v1.1.10 detailsModal top alignment */
 
@@ -972,23 +913,13 @@
 
 /* v1.1.19 selection card balance */
 
-#selectionCard .selection-heading {
-  min-width: 0;
-  padding-top: 2px;
-}
 
 
 
 
-#selectionCard .action-row {
-  display: grid;
-  grid-template-columns: 1fr;
-  margin-top: 10px;
-}
-#selectionCard .primary-btn {
-  width: 100%;
-  justify-content: center;
-}
+
+
+
 
 
 /* v1.1.20 perfectly circular close buttons */
@@ -1661,49 +1592,21 @@
 /* ===== Item 2 — selectionCard affinée (compacte, dense, contenu réorganisé) :
    titre + scores Proba/Conf sur une ligne, contexte CAPE toujours visible,
    bouton Détails discret. Verre inchangé. Surcharge les règles dispersées ci-dessus. ===== */
-#selectionCard.selection-card {
-  width: min(322px, calc(100vw - 28px));
-  padding: 12px 13px;
-}
 
 
 
 
 
 
-#selectionCard .icon-btn,
-#selectionCard #closeSelectionBtn {
-  flex: 0 0 auto;
-  width: 30px; min-width: 30px; max-width: 30px;
-  height: 30px; min-height: 30px; max-height: 30px;
-  padding: 0;
-  border-radius: 999px;
-  font-size: 16px;
-}
 
 
 
 
-#selectionCard .action-row {
-  margin: 0;
-}
-#selectionCard #openDetailsBtn {
-  width: 100%;
-  min-height: 34px;
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 11px;
-  font-size: 13px;
-  font-weight: 700;
-  background: rgba(56, 189, 248, 0.16);
-  border: 1px solid rgba(56, 189, 248, 0.34);
-  color: #cfe0fb;
-  box-shadow: none;
-}
-#selectionCard #openDetailsBtn:hover {
-  background: rgba(56, 189, 248, 0.26);
-  border-color: rgba(56, 189, 248, 0.5);
-}
+
+
+
+
+
 
 /* ===== Archives — sélection de date en CALENDRIER mensuel (les jours archivés
    s'allument au fil des préchargements) + bouton afficher/masquer. Remplace la

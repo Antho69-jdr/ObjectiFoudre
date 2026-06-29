@@ -1,9 +1,5 @@
     @media (orientation: landscape) {
-      body.mobile-ui .selection-card {
-        width: min(360px, calc(100vw - 28px));
-        bottom: calc(72px + env(safe-area-inset-bottom));
-        border-radius: 20px;
-      }
+      
       
       body.mobile-ui .details-modal,
       body.mobile-ui .info-modal {
@@ -31,17 +27,7 @@
       width: min(320px, calc(100vw - 28px));
       bottom: max(8px, env(safe-area-inset-bottom));
     }
-    body.mobile-ui .selection-card {
-      left: 50%;
-      right: auto;
-      transform: translateX(-50%);
-      width: min(360px, calc(100vw - 28px));
-      bottom: calc(84px + env(safe-area-inset-bottom));
-      border-radius: 20px;
-      max-height: none;
-      overflow: visible;
-      padding: 14px;
-    }
+    
     
     
     body.mobile-ui .details-grid {
@@ -211,19 +197,7 @@
     
 
 /* v0.4.79 mobile info drawer + lighter selection card */
-@media (max-width: 900px) {
-  body.mobile-ui .selection-card {
-    width: min(332px, calc(100vw - 24px)) !important;
-    padding: 12px !important;
-    border-radius: 18px !important;
-  }
-  
-  
-  body.mobile-ui .selection-card .action-row {
-    flex-direction: row !important;
-    gap: 8px !important;
-  }
-}
+
 
 
 /* v0.4.80 final mobile fullscreen overrides */
@@ -302,16 +276,7 @@
 /* ===== v0.6.16 RESPONSIVE FIX ===== */
 
 /* TABLET PORTRAIT: stop full height */
-@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
-  #selectionCard {
-    top: auto !important;
-    bottom: 120px !important;
-    transform: translateX(-50%) !important;
-    left: 50% !important;
-    right: auto !important;
-    max-height: 50vh;
-  }
-}
+
 
 /* MOBILE LANDSCAPE FIX */
 
@@ -322,48 +287,23 @@
 
 /* Tablet portrait should behave like tablet landscape/desktop follow logic.
    Remove the forced bottom-centered layout from v0.6.16. */
-@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
-  #selectionCard {
-    max-height: min(58vh, 520px) !important;
-  }
-  #selectionCard:not(.desktop-outside-grid):not(.tablet-follow-grid) {
-    left: auto !important;
-    right: auto !important;
-    top: auto !important;
-    bottom: auto !important;
-    transform: none !important;
-  }
-}
+
 
 /* Keep the card safely above the timeline on phones when follow mode is disabled */
 
 
 /* When the card follows the grid outside the center stack, prevent timeline overlap */
-.selection-card.desktop-outside-grid,
-#selectionCard.desktop-outside-grid {
-  bottom: auto !important;
-}
+
 
 
 /* ===== v0.6.18 GLOBAL FIXES ===== */
 
 
-#selectionCard {
-  z-index: 50 !important;
-}
 
-.selection-card,
-#selectionCard {
-  bottom: calc(140px + env(safe-area-inset-bottom)) !important;
-}
 
-@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
-  #selectionCard {
-    bottom: auto !important;
-    top: 80px !important;
-    max-height: 60vh !important;
-  }
-}
+
+
+
 
 
 /* ===== v0.6.19 MOBILE PORTRAIT FIXES ===== */
@@ -435,10 +375,7 @@
   
 
   /* keep selection card above timeline */
-  #selectionCard,
-  .selection-card {
-    bottom: 154px !important;
-  }
+  
 }
 
 
@@ -709,24 +646,7 @@
 
 
 /* v1.1.11 tablet portrait details + selection follow fix */
-@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
-  #selectionCard.tablet-follow-grid,
-  body.mobile-ui #selectionCard.tablet-follow-grid {
-    position: absolute !important;
-    right: auto !important;
-    bottom: auto !important;
-    transform: none !important;
-    width: min(340px, calc(100vw - var(--right-rail-width, 46px) - 42px)) !important;
-    max-height: min(42vh, 280px) !important;
-    overflow-y: auto !important;
-  }
 
-  
-
-  
-
-  
-}
 
 /* v1.1.15 desktop/tablet landscape detailsModal height */
 @media (min-width: 901px) {
@@ -1038,15 +958,7 @@ body.mobile-ui #detailsModal.details-modal.visible {
 
   
 
-  body.mobile-ui .selection-card {
-    left: 8px !important;
-    right: 8px !important;
-    bottom: calc(var(--mobile-meta-h) + var(--timeline-height-px) + env(safe-area-inset-bottom) + 10px) !important;
-    width: auto !important;
-    max-width: none !important;
-    transform: none !important;
-    z-index: 38 !important;
-  }
+  
 
   body.mobile-ui #detailsModal.details-modal {
     width: calc(100vw - 12px) !important;
@@ -1085,18 +997,7 @@ body.mobile-ui #detailsModal.details-modal.visible {
 
   
 
-  body.mobile-ui .selection-card,
-  #selectionCard.selection-card {
-    left: 10px !important;
-    right: 10px !important;
-    bottom: calc(var(--mobile-meta-h) + var(--timeline-height-px) + env(safe-area-inset-bottom) + 8px) !important;
-    width: auto !important;
-    max-width: none !important;
-    max-height: 206px !important;
-    padding: 10px !important;
-    border-radius: 18px !important;
-    overflow: hidden !important;
-  }
+  
 
   
 
@@ -1124,16 +1025,9 @@ body.mobile-ui #detailsModal.details-modal.visible {
 
   
 
-  #selectionCard .action-row {
-    margin-top: 9px !important;
-  }
+  
 
-  #selectionCard #openDetailsBtn {
-    min-height: 40px !important;
-    height: 40px !important;
-    border-radius: 13px !important;
-    font-size: 15px !important;
-  }
+  
 
   body.mobile-ui #detailsModal.details-modal {
     inset: 10px 8px calc(var(--mobile-meta-h) + var(--timeline-height-px) + env(safe-area-inset-bottom) + 8px) 8px !important;
@@ -1372,15 +1266,7 @@ body.mobile-ui #detailsModal.details-modal.visible {
 
   
 
-  #selectionCard.tablet-follow-grid,
-  body.mobile-ui #selectionCard.tablet-follow-grid {
-    position: fixed !important;
-    width: min(340px, calc(100vw - var(--touch-rail-size) - 42px)) !important;
-    max-width: calc(100vw - var(--touch-rail-size) - 42px) !important;
-    right: auto !important;
-    bottom: auto !important;
-    transform: none !important;
-  }
+  
 
   body.mobile-ui #detailsModal.details-modal {
     inset: calc(10px + env(safe-area-inset-top)) 10px calc(var(--touch-meta-h) + var(--touch-timeline-h) + env(safe-area-inset-bottom) + 10px) 10px !important;
@@ -1406,19 +1292,9 @@ body.mobile-ui #detailsModal.details-modal.visible {
 
   
 
-  body.mobile-ui .selection-card,
-  #selectionCard.selection-card {
-    width: min(330px, calc(100vw - 20px)) !important;
-    max-width: calc(100vw - 20px) !important;
-    padding: 10px !important;
-    border-radius: 16px !important;
-  }
+  
 
-  #selectionCard.tablet-follow-grid,
-  body.mobile-ui #selectionCard.tablet-follow-grid {
-    width: min(318px, calc(100vw - var(--touch-rail-size) - 42px)) !important;
-    max-width: calc(100vw - var(--touch-rail-size) - 42px) !important;
-  }
+  
 
   
 
@@ -1426,10 +1302,7 @@ body.mobile-ui #detailsModal.details-modal.visible {
 
   
 
-  #selectionCard #openDetailsBtn {
-    min-height: 38px !important;
-    height: 38px !important;
-  }
+  
 }
 
 
@@ -1617,26 +1490,7 @@ body.mobile-ui #detailsModal.details-modal.visible {
 /* ===== Item 2 — selectionCard affinée : surcharges smartphone (sheet repensé,
    plus fin, contexte CAPE rendu visible). Bat le bloc mobile plus haut (display:none
    du contexte, max-height) car même média + source plus tardive. ===== */
-@media (max-width: 767px) {
-  #selectionCard.selection-card {
-    padding: 10px 12px !important;
-    max-height: none !important;
-  }
-  
-  
-  
-  
-  
-  
-  
-  
-  #selectionCard #openDetailsBtn {
-    min-height: 34px !important;
-    height: 34px !important;
-    border-radius: 11px !important;
-    font-size: 13px !important;
-  }
-}
+
 
 /* ===== Item 4 — refonte Archives sur téléphone (portrait + paysage).
    Le panneau de dates vertical (grille de grosses tuiles ~26vh) devient un STRIP

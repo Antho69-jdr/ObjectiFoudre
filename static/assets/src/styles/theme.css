@@ -33,6 +33,12 @@
    le placement JS restent legacy). Scopé #selectionCard. */
 @import "./components/selection.css";
 
+/* Component selection-layout : POSITION + compaction de #selectionCard (3 modes
+   JS) migrees VERBATIM du legacy. Importe JUSTE APRES selection.css mais ses regles
+   (verbatim, !important porteurs) reproduisent l'etat legacy ; placé ici pour rester
+   groupe avec le LOOK selection. Tier 3 du retrait legacy. */
+@import "./components/selection-layout.css";
+
 /* Component modale de détails : LOOK + layout du CONTENU (header, inspecteur,
    grille, cards, chips, profil de vent). Le CONTENEUR (position/taille/radius/
    carte flottante mobile) reste legacy. Scopé #detailsModal. */
