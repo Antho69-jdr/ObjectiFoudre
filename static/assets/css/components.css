@@ -169,7 +169,7 @@
     .metric-value-neutral { color: var(--text); }
     .metric-btn .hint { margin-top: 4px; font-size: 11px; color: var(--muted); display: block; }
     .metric-btn:hover, .metric-btn:focus-visible { background: rgba(56, 189, 248,0.10); border-color: rgba(56, 189, 248,0.45); }
-    .info-modal.visible { display: block; }
+    
 
     .maplibregl-ctrl-top-right,
     .maplibregl-ctrl-bottom-right {
@@ -198,7 +198,7 @@
       box-shadow: none !important;
       backdrop-filter: none;
     }
-    .topbar, .statusbar, .selection-card, .details-modal, .info-modal, .meta-corner {
+    .topbar, .statusbar, .selection-card, .details-modal, .meta-corner{
       padding-top: calc(10px + env(safe-area-inset-top) * 0);
     }
     
@@ -214,11 +214,10 @@
   .timeline-dock,
   .selection-card,
   .details-modal,
-  .info-modal,
   .panel-card,
   .meta-corner,
   .cell-scale-chip,
-  .floating-chip {
+  .floating-chip{
       outline: 1px solid rgba(255,255,255,0.02);
     }
 
@@ -351,13 +350,8 @@
 
 
 
-.modal-backdrop#infoBackdrop {
-  z-index: 85 !important;
-}
-.info-modal,
-#infoModal {
-  z-index: 86 !important;
-}
+
+
 
 
 .arome-retired-ui,
@@ -381,11 +375,7 @@
 
 
 
-#infoModal.info-modal {
-  width: min(560px, calc(100vw - 44px));
-  max-height: min(78vh, 640px);
-  overflow: auto;
-}
+
 
 
 
