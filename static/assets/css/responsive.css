@@ -981,13 +981,6 @@
 
 
 
-/* ===== v1.1.4 meta stack priority and readable run line ===== */
-
-@keyframes metaRunMarquee {
-  0%, 12% { transform: translateX(0); }
-  88%, 100% { transform: translateX(var(--meta-run-travel, 0px)); }
-}
-
 /* v1.1.11 tablet portrait details + selection follow fix */
 @media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
   #selectionCard.tablet-follow-grid,

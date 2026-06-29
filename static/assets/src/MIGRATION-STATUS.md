@@ -1,53 +1,61 @@
-# Phase 2 — Statut de la reconstruction CSS
+# Statut de la refonte CSS
 
-## ⚑ STAGING LIVRÉ (v1.2.114) — DA d'abord, structure ensuite
-Décision : appliquer la nouvelle DA SANS refondre le layout d'abord.
-`styles/theme.css` (build → `dist/theme.css`) ne redéfinit QUE les tokens couleur
-(--bg/--panel/--panel-2/--text/--muted/--border/--shadow/--accent/--accent-2/--glass-blur)
-et est chargé EN DERNIER dans index.html, après les 3 CSS legacy. Résultat : toute
-l'app passe à l'ink profond + cyan, layout 100% intact (validé desktop+mobile, 0 erreur).
-NE PAS y mettre les variables structurelles (--rail-*, --timeline-*…) : responsive.css
-les fait varier par breakpoint, on les écraserait.
-Reste à fignoler : quelques couleurs en dur dans le legacy (ex. état .active du rail
-= rose/bleu codé en dur, pas via token).
+> ⚠️ Ce document a été réécrit le 2026-06-29 pour refléter la stratégie
+> RÉELLEMENT suivie. L'ancien plan (« reconstruire toutes les surfaces dans
+> `dist/app.css` puis bascule UNIQUE en retirant les 3 CSS legacy ») a été
+> ABANDONNÉ : il butait sur le mur des `!important` legacy (un `!important`
+> bat tout sélecteur sans `!important`, quel que soit l'ordre/la spécificité).
 
-## Reconstruction structurelle complète (différée) — rebuild puis bascule unique
+## Stratégie retenue : staging + cutover incrémental, surface par surface
 
-Mécanique validée : on reconstruit TOUTES les surfaces dans `src/styles/`, puis on remplace
-les 3 CSS legacy (`main.css` + `components.css` + `responsive.css`) par le seul bundle
-`dist/app.css` en UNE bascule, validée contre les baselines (desktop/tablette/mobile),
-puis on corrige les régressions au screenshot.
+1. `styles/theme.css` (→ `dist/theme.css`) est chargé EN DERNIER dans
+   `index.html`, après les 3 CSS legacy (`main.css` + `components.css` +
+   `responsive.css`). Il importe `tokens.css` (DA) puis les components.
+2. Pour CHAQUE surface : on mesure le computed live (baseline), on écrit un
+   component scopé aux valeurs exactes, on l'`@import` dans theme.css, on
+   **purge le legacy correspondant** au niveau règle (`scratchpad/port_delete.py`,
+   lossless md5, whitelist EXACTE + PROTECT chase/partagés), on valide la parité
+   computed, on bump le cache (index.html + sw.js + APP_VERSION).
+3. Le legacy n'est donc PAS retiré d'un coup : il est vidé progressivement.
 
-Baselines capturées : `baseline-{desktop,tablet,mobile}-chrome.png` (loader masqué pour voir le chrome).
+Conventions : préfixe `of-` = primitives DS ; couleurs → tokens ; viser
+0 `!important` dans les components (gagné par le scope + l'ordre de chargement,
+une fois le legacy `!important` purgé). Pas de modif du HTML.
 
-## Surfaces — état
+## Surfaces — LOOK componentisé (✅ TERMINÉ)
 
-- [x] Fondations : tokens, base (reset/typo), breakpoints + app-shell (`layout.css`)
-- [x] Rail droit : positionnement (`layout.css`) + boutons icône (`components/rail.css`)
-- [x] Badges carte : meta-stack, grid-source, quota (`components/badges.css`)
-- [x] Carte de sélection : hero-score, quick-grid, summary, actions (`components/selection.css`)
-- [x] Modale détails + tiroir info + chips flottants + KPIs (`components/details-modal.css`)
-- [x] Primitives DS : button, panel, input, chip, modal, forecast-scales
-- [ ] Timeline dock : dock, slot-pills (+ badges AROME), curseur, day-buttons, nav/play/export
-- [ ] Recherche : search-dock, location-bar, location-input, #searchCityBtn, autocomplete dropdown
-- [ ] Base `button` générique + `.ghost-btn` + `.button-row`
-- [ ] Légende (legend-gradient/scale) + info-drawer contenu
-- [ ] Loader (#appLoader) + mobile-block (#mobileBlockScreen)
-- [ ] Page Prévision (controls.js) — overlay + sélecteur date + carte image + légende sévérité
-- [ ] Page Historique (history.js) — overlay archive
-- [ ] Mode Chasse (chase.js) — overlay radar/nowcast
-- [ ] responsive.css (5008 l.) : passer en revue les overrides restants par surface (mobile/tablette/paysage)
+- [x] Timeline dock (rail + molette + toggle/collapse + nav/play/export) — `components/timeline.css`
+- [x] Rail droit (boutons icône verre) — `components/rail.css`
+- [x] Recherche (barre, input, loupe, dropdown autocomplete) — `components/search.css`
+- [x] Carte de sélection — `components/selection.css`
+- [x] Modale détails (header, inspecteur, content-grid, cards, chips, profil vent) — `components/details-modal.css`
+- [x] Badges carte (horloge / date / quota) — `components/badges.css`
+- [x] Bouton générique + conteneurs + contrôles maplibre — `components/button.css`
+- [x] Légende proba — `components/forecast-scales.css`
+- [x] Écrans système (loader/splash + blocage mobile) — `components/system-screens.css`
+- [x] Page Prévision + Historique (coquille partagée + contenu data) — `components/prediction-page.css`
+- [x] Frise-help (bouton aide mobile) — `components/frise-help.css`
+- [x] Meta-stack (bandeau bas desktop : version | run + marquee | échelle) — `components/meta-stack.css`
 
-## Bascule (à la fin seulement)
+## Reste (dette de fond, DIFFÉRÉ — voir mémoire `project_chantier_ui`)
 
-1. `index.html` : retirer les 3 `<link>` legacy, ajouter `<link href="/assets/dist/app.css?v=...">`.
-2. Rebuild, recharger, screenshots desktop/tablette/mobile + ouverture modale/sélection/pages.
+Chaque cutover a migré le LOOK mais laissé le LAYOUT/POSITION en legacy
+`!important` (choix « look séparable d'abord »). Les 3 CSS legacy survivent donc :
+
+- [ ] **Layout/position** : positionnement fixed/inset, grilles plein-écran,
+      compaction `body.mobile-ui` tactile. ~546 `!important` responsive.css +
+      162 components.css restants (majoritairement position/dims, pas du look).
+      → migrer pour pouvoir RETIRER les 3 CSS legacy et viser 0 `!important`.
+- [ ] **Mode Chasse** (overlay radar/nowcast) : seule surface fonctionnelle non
+      componentisée. ~101 refs `chase` dans components.css. Réutilise les
+      components timeline/rail recolorés en rouge, mais son layout d'overlay
+      reste legacy. → surface dédiée.
+
+## Bascule finale (quand layout + chase seront faits)
+
+1. `index.html` : retirer les 3 `<link>` legacy, ne garder que `theme.css`
+   (ou fusionner dans `dist/app.css`).
+2. Rebuild, recharger, screenshots desktop/tablette/mobile + modale/sélection/pages/chase.
 3. Diff vs baselines → corriger surface par surface.
-4. Bump cache (index.html + sw.js CACHE_NAME + APP_VERSION) — discipline PWA.
-5. Supprimer `main.css`, `components.css`, `responsive.css`, `responsive.css.bak`.
-
-## Conventions
-
-- Préfixe `of-` = primitives DS neuves ; on garde les classes/ids legacy pour le reste (pas de modif HTML en Phase 2).
-- Zéro `!important` (sauf la règle a11y `prefers-reduced-motion`).
-- Couleurs → tokens (`tokens.css`). Pas de hex en dur sauf nuances de statut ponctuelles.
+4. Bump cache (index.html + sw.js CACHE_NAME + APP_VERSION).
+5. Supprimer `main.css`, `components.css`, `responsive.css`.
