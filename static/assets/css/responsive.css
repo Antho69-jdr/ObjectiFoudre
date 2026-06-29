@@ -190,87 +190,7 @@
 
 
 
-/* v0.4.75 right rail touch shield */
 
-
-    
-    
-
-/* v0.4.79 mobile info drawer + lighter selection card */
-
-
-
-/* v0.4.80 final mobile fullscreen overrides */
-@media (max-width: 900px) {
-
-  
-  body.mobile-ui .details-modal {
-    position: absolute !important;
-    inset: 0 !important;
-    width: 100vw !important;
-    max-width: 100vw !important;
-    height: 100dvh !important;
-    max-height: 100dvh !important;
-    transform: none !important;
-    left: 0 !important;
-    top: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    border-radius: 0 !important;
-    border: 0 !important;
-    box-shadow: none !important;
-    background: rgba(7, 15, 27, 0.985) !important;
-    padding: calc(14px + env(safe-area-inset-top)) 14px calc(112px + env(safe-area-inset-bottom)) !important;
-    overscroll-behavior: contain !important;
-    z-index: 31 !important;
-  }
-
-  
-  body.mobile-ui #modalBackdrop.visible {
-    display: none !important;
-  }
-}
-
-@media (max-width: 900px) and (orientation: landscape) {
-  
-  body.mobile-ui .details-modal {
-    padding-left: 16px !important;
-    padding-right: 16px !important;
-    padding-bottom: calc(104px + env(safe-area-inset-bottom)) !important;
-  }
-}
-
-
-/* v0.4.82 detail modal alignment and mobile full-width content */
-.details-modal .details-content {
-  width: min(100%, 780px);
-  margin: 0 auto;
-}
-@media (max-width: 900px) {
-  
-  body.mobile-ui .details-modal {
-    display: none;
-    align-content: start !important;
-    justify-items: stretch !important;
-  }
-  
-  body.mobile-ui .details-modal.visible {
-    display: grid !important;
-  }
-  body.mobile-ui .details-modal .details-content {
-    width: 100% !important;
-    max-width: 100% !important;
-    margin: 0 auto !important;
-  }
-}
-@media (min-width: 901px) {
-  .details-modal {
-    align-content: start;
-  }
-  .details-modal .details-content {
-    max-width: min(100%, 780px);
-  }
-}
 
 
 /* ===== v0.6.16 RESPONSIVE FIX ===== */
@@ -622,96 +542,6 @@
 
 
 
-/* v1.1.11 tablet portrait details + selection follow fix */
-
-
-/* v1.1.15 desktop/tablet landscape detailsModal height */
-@media (min-width: 901px) {
-  #detailsModal.details-modal,
-  .details-modal#detailsModal {
-    top: calc(50% - 36px) !important;
-    height: min(720px, calc(100vh - 112px)) !important;
-    max-height: calc(100vh - 112px) !important;
-    grid-template-rows: auto auto minmax(0, 1fr) !important;
-  }
-
-  
-
-  
-
-  
-
-  
-}
-
-@media (min-width: 901px) and (max-height: 760px) and (orientation: landscape) {
-  #detailsModal.details-modal,
-  .details-modal#detailsModal {
-    top: calc(50% - 26px) !important;
-    height: min(680px, calc(100vh - 92px)) !important;
-    max-height: calc(100vh - 92px) !important;
-  }
-
-  
-}
-
-/* v1.1.16 adaptive detailsModal desktop/tablet landscape */
-@media (min-width: 901px) {
-  #detailsModal.details-modal,
-  .details-modal#detailsModal {
-    height: fit-content !important;
-    min-height: 0 !important;
-    max-height: calc(100vh - 112px) !important;
-    grid-template-rows: auto auto auto !important;
-    align-content: start !important;
-  }
-
-  
-}
-
-@media (min-width: 901px) and (max-height: 760px) and (orientation: landscape) {
-  #detailsModal.details-modal,
-  .details-modal#detailsModal {
-    height: fit-content !important;
-    max-height: calc(100vh - 92px) !important;
-  }
-
-  
-}
-
-
-
-/* v1.1.56 full-page details modal + stable desktop columns */
-#detailsModal.details-modal,
-.details-modal#detailsModal,
-body.mobile-ui #detailsModal.details-modal {
-  position: fixed !important;
-  inset: 0 !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  transform: none !important;
-  width: 100vw !important;
-  height: 100dvh !important;
-  max-width: 100vw !important;
-  max-height: 100dvh !important;
-  min-height: 100dvh !important;
-  padding: calc(18px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom)) !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: rgba(7, 15, 27, 0.985) !important;
-  box-shadow: none !important;
-  overflow: auto !important;
-  grid-template-rows: auto auto minmax(0, 1fr) !important;
-  align-content: start !important;
-}
-
-#detailsModal.details-modal.visible,
-.details-modal#detailsModal.visible,
-body.mobile-ui #detailsModal.details-modal.visible {
-  display: grid !important;
-}
 
 
 
@@ -721,33 +551,6 @@ body.mobile-ui #detailsModal.details-modal.visible {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-@media (max-width: 620px) {
-  #detailsModal.details-modal,
-  .details-modal#detailsModal,
-  body.mobile-ui #detailsModal.details-modal {
-    padding: calc(14px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom)) !important;
-  }
-
-  
-
-  
-
-  
-
-  
-}
 
 
 .export-format-menu {
@@ -937,14 +740,7 @@ body.mobile-ui #detailsModal.details-modal.visible {
 
   
 
-  body.mobile-ui #detailsModal.details-modal {
-    width: calc(100vw - 12px) !important;
-    height: calc(100svh - 16px) !important;
-    max-width: none !important;
-    max-height: calc(100svh - 16px) !important;
-    inset: 8px 6px auto 6px !important;
-    transform: none !important;
-  }
+  
 }
 
 /* ===== v1.1.111 mobile compact pass ===== */
@@ -1006,13 +802,7 @@ body.mobile-ui #detailsModal.details-modal.visible {
 
   
 
-  body.mobile-ui #detailsModal.details-modal {
-    inset: 10px 8px calc(var(--mobile-meta-h) + var(--timeline-height-px) + env(safe-area-inset-bottom) + 8px) 8px !important;
-    width: auto !important;
-    height: auto !important;
-    max-height: none !important;
-    border-radius: 16px !important;
-  }
+  
 
   
 }
@@ -1245,15 +1035,7 @@ body.mobile-ui #detailsModal.details-modal.visible {
 
   
 
-  body.mobile-ui #detailsModal.details-modal {
-    inset: calc(10px + env(safe-area-inset-top)) 10px calc(var(--touch-meta-h) + var(--touch-timeline-h) + env(safe-area-inset-bottom) + 10px) 10px !important;
-    width: auto !important;
-    height: auto !important;
-    max-width: none !important;
-    max-height: none !important;
-    transform: none !important;
-    overflow: hidden !important;
-  }
+  
 }
 
 @media (max-width: 767px) {

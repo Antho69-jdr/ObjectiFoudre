@@ -40,9 +40,11 @@
 @import "./components/selection-layout.css";
 
 /* Component modale de détails : LOOK + layout du CONTENU (header, inspecteur,
-   grille, cards, chips, profil de vent). Le CONTENEUR (position/taille/radius/
-   carte flottante mobile) reste legacy. Scopé #detailsModal. */
+   grille, cards, chips, profil de vent). Scopé #detailsModal. */
 @import "./components/details-modal.css";
+/* CONTENEUR de la modale (position/grid/backdrop/carte flottante mobile) extrait
+   VERBATIM du legacy (Tier 4). Importé APRÈS le LOOK pour préserver la cascade. */
+@import "./components/details-modal-layout.css";
 
 /* Component badges carte : overlays horloge / date / quota (LOOK + position). */
 @import "./components/badges.css";
