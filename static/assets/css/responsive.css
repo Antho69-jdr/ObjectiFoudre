@@ -29,26 +29,12 @@
     
     
     
-    body.mobile-ui .details-grid {
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
     
-    body.mobile-ui .metric-btn {
-      padding: 10px;
-      border-radius: 12px;
-    }
-    body.mobile-ui .metric-btn .label {
-      font-size: 10px;
-    }
-    body.mobile-ui .metric-btn .value {
-      font-size: 13px;
-      margin-top: 4px;
-    }
-    body.mobile-ui .metric-btn .hint {
-      font-size: 10px;
-      margin-top: 3px;
-    }
+    
+    
+    
+    
+    
     body.mobile-ui .details-modal{
       width: min(400px, calc(100vw - 28px));
       max-height: calc(100vh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom));

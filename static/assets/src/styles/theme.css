@@ -45,6 +45,9 @@
 /* CONTENEUR de la modale (position/grid/backdrop/carte flottante mobile) extrait
    VERBATIM du legacy (Tier 4). Importé APRÈS le LOOK pour préserver la cascade. */
 @import "./components/details-modal-layout.css";
+/* Classes-enfant GÉNÉRIQUES de la details-modal (anciennes générations non scopées,
+   battues par details-modal.css #detailsModal .child) extraites VERBATIM du legacy. */
+@import "./components/details-content-base.css";
 
 /* Component badges carte : overlays horloge / date / quota (LOOK + position). */
 @import "./components/badges.css";
