@@ -1,0 +1,24 @@
+/* Component app-tooltip : info-bulle flottante ancree au <body> (tooltip.js), jamais
+   clippee. JS pose hidden + left/top + opacity inline (0 -> 1 via rAF). Le CSS fournit
+   le LOOK + position:fixed + opacity:0 + transition + [hidden]. Variante -revealed
+   (reveal simultane par le bouton « ? », persistante, sans transition) : 0 !important,
+   la specificite (0,2,0) bat .app-tooltip (0,1,0) en intra-fichier. Parite stricte. */
+.app-tooltip {
+  position: fixed;
+  z-index: 100000;
+  pointer-events: none;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(8, 17, 30, 0.96);
+  border: 1px solid rgba(125, 211, 252, 0.26);
+  color: rgba(248, 250, 252, 0.96);
+  font-size: 10.5px;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.app-tooltip[hidden] { display: none; }
+.app-tooltip.app-tooltip-revealed { transition: none; }

@@ -77,6 +77,19 @@
    (apres timeline) ; legacy chase purge de components.css. */
 @import "./components/chase.css";
 
+/* Component grid-cell-tooltip : bulle de survol des cellules (look + position
+   absolue ; JS pose left/top inline + bascule is-visible). Tier 1 du retrait
+   legacy. 0 !important ; legacy purge de components.css. */
+@import "./components/grid-tooltip.css";
+
+/* Component app-tooltip : info-bulle flottante (tooltip.js), ancree au body.
+   Tier 1 du retrait legacy. 0 !important ; legacy purge (components + responsive). */
+@import "./components/app-tooltip.css";
+
+/* Component metric-info : contenu du panneau d'aide metrique (#infoModal).
+   Tier 1 du retrait legacy. 0 !important ; legacy purge de components.css. */
+@import "./components/metric-info.css";
+
 :root {
   /* Fond & surfaces */
   --bg: #070d18;

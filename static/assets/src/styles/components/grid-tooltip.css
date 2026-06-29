@@ -1,0 +1,32 @@
+/* Component grid-cell-tooltip : bulle de rappel CAPE/CIN/cisaillement/temp/rosee
+   au survol des cellules de la grille (Desktop ; handlers non lies en pointeur
+   grossier). Cree par grid-layers.js (className grid-cell-tooltip), positionne en
+   INLINE (left/top px) par le JS, bascule via .is-visible. Le CSS fournit le LOOK
+   + position:absolute + display none/flex. Parite stricte, 0 !important. */
+.grid-cell-tooltip {
+  position: absolute;
+  z-index: 30;
+  pointer-events: none;
+  display: none;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(8, 17, 30, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.40);
+  color: #e2e8f0;
+  font-size: 11.5px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+.grid-cell-tooltip.is-visible { display: flex; }
+.grid-cell-tooltip .gct-row b {
+  display: inline-block;
+  min-width: 58px;
+  color: #7dd3fc;
+  font-weight: 800;
+}

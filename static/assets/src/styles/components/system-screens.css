@@ -6,7 +6,8 @@
    Valeurs reprises VERBATIM du legacy (composants 534-578 / 1192-1240) → aucun
    changement visuel ; theme.css charge en dernier gagne a specificite egale une
    fois le legacy purge (cluster `sysscreens`). Le comportement d'etat
-   `body.mobile-blocked #app` (pointer-events) reste legacy (pas le LOOK).
+   `body.mobile-blocked` (overflow + pointer-events, migre depuis le legacy en
+   Tier 1 du retrait des CSS legacy) est en bas de fichier.
    ========================================================================== */
 
 /* ----------------------------------------------------- Splash / loader --- */
@@ -103,4 +104,15 @@
 .mobile-block-text-secondary {
   color: rgba(230, 236, 245, 0.78);
   font-size: 0.95rem;
+}
+
+/* ------------------------------------------ Comportement « bloque » --- */
+/* mobile-block.js pose body.mobile-blocked sous l'ecran de blocage : fige le
+   scroll + neutralise l'app dessous. (Actuellement isBlockedSmartphone()=false
+   -> dormant ; migre pour parite. Le display:block etait en !important legacy
+   mais ne surcharge rien — #app est block par defaut — donc 0 !important.) */
+body.mobile-blocked { overflow: hidden; }
+body.mobile-blocked #app { pointer-events: none; user-select: none; }
+@media (max-width: 767px) {
+  body.mobile-blocked #app { display: block; }
 }

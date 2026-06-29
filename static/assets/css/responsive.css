@@ -1258,10 +1258,6 @@ body.mobile-ui #detailsModal.details-modal.visible {
     --right-rail-gap: 8px !important;
   }
 
-  body.mobile-blocked #app {
-    display: block !important;
-  }
-
   
 
   
@@ -1874,10 +1870,6 @@ body.mobile-ui #detailsModal.details-modal.visible {
      (colonne centrale) garde de la place (comme sur tablette). */
   /* Texte du créneau à la même taille que le desktop (11px), tronqué si besoin. */
 }
-
-/* Info-bulles révélées simultanément par le bouton « ? » : style identique à .app-tooltip,
-   mais persistantes (pas de transition d'apparition). */
-.app-tooltip.app-tooltip-revealed { transition: none !important; }
 
 /* Roue mobile : la bulle CSS (::before) des icônes jour/nuit est clippée par le scroller
    (overflow-y hidden) → neutralisée ; tooltip.js affiche à la place l'app-tooltip flottant

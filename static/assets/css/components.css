@@ -362,20 +362,6 @@
   color: var(--text);
 }
 
-.metric-info-explain {
-  margin-top: 0;
-}
-
-.metric-info-heading {
-  margin-top: 10px;
-}
-
-.metric-info-guide {
-  margin-top: 6px;
-  display: grid;
-  gap: 6px;
-}
-
 
     .search-dock.show-search .search-panel {
       display: grid;
@@ -699,23 +685,6 @@
 .details-modal .metric-btn {
   min-height: 88px;
 }
-.metric-info-scales {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-}
-.metric-info-scale-card {
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.035);
-  padding: 10px 12px;
-  color: #c8d5ea;
-  font-size: 12px;
-  line-height: 1.55;
-}
-.metric-info-scale-card strong {
-  color: #eef4ff;
-}
 
 @media (max-width: 900px) {
   .mf-token-row {
@@ -901,24 +870,6 @@
 }
 
 
-
-/* v1.0.1 mobile blocking + ObjectiFoudre branding */
-
-
-
-
-
-
-
-body.mobile-blocked {
-  overflow: hidden;
-}
-body.mobile-blocked #app {
-  pointer-events: none;
-  user-select: none;
-}
-
-
 .arome-retired-ui,
 .arome-retired-ui[hidden] {
   display: none !important;
@@ -948,11 +899,6 @@ body.mobile-blocked #app {
   width: min(560px, calc(100vw - 44px));
   max-height: min(78vh, 640px);
   overflow: auto;
-}
-.metric-info-explain {
-  color: #c8d5ea;
-  font-size: 12px;
-  line-height: 1.35;
 }
 
 @media (min-width: 901px) {
@@ -1511,35 +1457,6 @@ body.mobile-blocked #app {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   touch-action: none; /* on gère le pinch/pan nous-mêmes */
 }
-
-/* Bulle de rappel CAPE/Temp/Rosée au survol des cellules de la grille (Desktop) */
-.grid-cell-tooltip {
-  position: absolute;
-  z-index: 30;
-  pointer-events: none;
-  display: none;
-  flex-direction: column;
-  gap: 1px;
-  padding: 7px 10px;
-  border-radius: 10px;
-  background: rgba(8, 17, 30, 0.92);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.40);
-  color: #e2e8f0;
-  font-size: 11.5px;
-  line-height: 1.3;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-}
-.grid-cell-tooltip.is-visible { display: flex; }
-.grid-cell-tooltip .gct-row b {
-  display: inline-block;
-  min-width: 58px;
-  color: #7dd3fc;
-  font-weight: 800;
-}
 .history-player-controls[hidden] {
   display: none;
 }
@@ -1973,31 +1890,6 @@ body.mobile-blocked #app {
 .history-learning-btn-ghost:hover { background: rgba(255, 255, 255, 0.07); }
 
 /* ===== Fixes UI tablette + desktop (régime « rail » de la frise, >= 768px) ===== */
-/* (Le fix du shell plein écran historique/prévision est dans responsive.css, qui
-   charge après ce fichier — c'est là que vit la règle plein écran.) */
-
-
-/* Tooltip applicatif flottant (cf. tooltip.js) : même apparence que les tooltips
-   des icônes de la frise (.timeline-light-icon::before). Ancré au <body> en position
-   fixed -> jamais rogné par un conteneur. Remplace les tooltips natifs (title). */
-.app-tooltip {
-  position: fixed;
-  z-index: 100000;
-  pointer-events: none;
-  padding: 5px 8px;
-  border-radius: 8px;
-  background: rgba(8, 17, 30, 0.96);
-  border: 1px solid rgba(125, 211, 252, 0.26);
-  color: rgba(248, 250, 252, 0.96);
-  font-size: 10.5px;
-  font-weight: 850;
-  line-height: 1;
-  white-space: nowrap;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-.app-tooltip[hidden] { display: none; }
 
 /* ===== Item 2 — selectionCard affinée (compacte, dense, contenu réorganisé) :
    titre + scores Proba/Conf sur une ligne, contexte CAPE toujours visible,
