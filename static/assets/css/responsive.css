@@ -353,30 +353,7 @@
 /* ===== v0.6.30 tablet portrait: meta stack same as tablet landscape ===== */
 
 
-/* ===== v0.6.31 tablet portrait: timeline below meta stack and full width ===== */
 
-@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
-  
-
-  body.mobile-ui .timeline-dock .timeline-shell,
-  .timeline-dock .timeline-shell,
-  #timelineDock .timeline-shell,
-  body.mobile-ui .timeline-dock .timeline-card,
-  .timeline-dock .timeline-card,
-  #timelineDock .timeline-card {
-    width: 100% !important;
-    max-width: none !important;
-    margin: 0 !important;
-    border-radius: 0 !important;
-  }
-
-  
-
-  
-
-  /* keep selection card above timeline */
-  
-}
 
 
 /* ===== v0.6.32 tablet portrait: timeline glued to meta stack + stronger collapsed state ===== */
