@@ -1882,59 +1882,6 @@ body.mobile-blocked #app {
   color: #fca5a5;
 }
 /* Plein écran (≠ modale centrée des autres pages) */
-.chase-page { padding: 0; place-items: stretch; }
-.chase-page .prediction-page-shell {
-  width: 100vw;
-  max-width: 100vw;
-  height: 100vh;
-  height: 100dvh;
-  max-height: 100vh;
-  max-height: 100dvh;
-  border-radius: 0;
-  border: none;
-  padding: 12px;
-  gap: 10px;
-}
-.chase-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.42fr);
-  gap: 12px;
-  min-height: 0;
-}
-.chase-map-panel { min-height: 0; }
-.chase-panel { overflow-y: auto; }
-@media (max-width: 900px) {
-  .chase-body {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1.7fr) minmax(0, 1fr);
-  }
-  .chase-page .prediction-page-shell { padding: 8px; }
-  .chase-header { gap: 8px; }
-}
-.chase-header .chase-layer-tabs {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-}
-.chase-layer-tab {
-  min-height: 30px;
-  padding: 0 11px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.13);
-  background: rgba(15, 23, 42, 0.74);
-  color: rgba(226,232,240,0.8);
-  font-size: 0.75rem;
-  font-weight: 800;
-  cursor: pointer;
-}
-.chase-layer-tab:hover { border-color: rgba(248,113,113,0.5); color: #fff; }
-.chase-layer-tab.active {
-  background: rgba(190, 40, 50, 0.4);
-  border-color: rgba(248,113,113,0.7);
-  color: #fff;
-}
 .chase-geo-btn {
   min-height: 38px;
   padding: 0 13px;
@@ -1950,17 +1897,6 @@ body.mobile-blocked #app {
   background: rgba(34, 197, 94, 0.32);
   border-color: rgba(134, 239, 172, 0.7);
 }
-.chase-map-panel {
-  position: relative;
-  display: block;
-  padding: 0;
-  overflow: hidden;
-}
-.chase-map {
-  position: absolute;
-  inset: 0;
-  border-radius: 14px;
-}
 .chase-empty-hint {
   position: absolute;
   top: 50%; left: 50%;
@@ -1971,19 +1907,6 @@ body.mobile-blocked #app {
   color: #cbd5e1;
   font-size: 0.85rem;
   pointer-events: none;
-}
-.chase-time-bar {
-  position: absolute;
-  left: 12px; right: 12px; bottom: 12px;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 14px;
-  border-radius: 12px;
-  background: rgba(10, 18, 32, 0.78);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  backdrop-filter: blur(6px);
 }
 .chase-play-btn {
   flex: 0 0 auto;
@@ -1996,19 +1919,9 @@ body.mobile-blocked #app {
   font-size: 0.85rem;
 }
 .chase-play-btn.active { background: rgba(190,40,50,0.6); }
-.chase-scrubber { flex: 1 1 auto; min-width: 0; accent-color: #f87171; }
 /* Zone droite à largeur FIXE (badge activité + heure) : sans ça, le changement de texte à
    la jonction radar↔AROME-PI redimensionne le scrubber (flex:1) → le curseur tremble au
    drag. Largeur figée → le scrubber ne bouge jamais ; badge/heure restent compacts dedans. */
-.chase-time-meta {
-  flex: 0 0 240px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  overflow: hidden;
-  white-space: nowrap;
-}
 .chase-time-label {
   flex: 0 0 auto;
   font-size: 0.82rem;
@@ -2037,17 +1950,6 @@ body.mobile-blocked #app {
   border: 3px solid #fff;
   box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.4), 0 0 10px rgba(56,189,248,0.7);
 }
-.chase-banner {
-  border-radius: 12px;
-  border: 1px solid rgba(248, 113, 113, 0.38);
-  background: rgba(127, 29, 29, 0.28);
-  color: #fecaca;
-  font-size: 0.78rem;
-  line-height: 1.4;
-  padding: 9px 12px;
-  margin-bottom: 12px;
-}
-.chase-banner strong { color: #fee2e2; }
 .chase-verdict {
   display: flex;
   align-items: center;
@@ -2067,8 +1969,6 @@ body.mobile-blocked #app {
 .chase-pos-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
 .chase-pos-list li { display: flex; justify-content: space-between; font-size: 0.82rem; color: rgba(226,232,240,0.82); }
 .chase-pos-list strong { color: #ecfeff; }
-.chase-pos-note, .chase-pos-empty, .chase-pos-loading { margin-top: 10px; font-size: 0.72rem; opacity: 0.62; }
-.chase-attribution { margin-top: 14px; font-size: 0.68rem; opacity: 0.55; }
 
 /* ── Mode « En chasse » superposé à la carte de base ───────────────────────── */
 #chaseControls, #chaseLayerRail, #chaseTopInfo { display: none; }
