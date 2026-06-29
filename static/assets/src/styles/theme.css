@@ -67,9 +67,11 @@
    LOOK du chrome (header, onglets, chips date, panneaux). Chunk 1+2. */
 @import "./components/prediction-page.css";
 /* POSITION plein-ecran (desktop >=768) + compaction mobile (<767) de la coquille,
-   extrait VERBATIM du legacy (Tier 4). Importe APRES le LOOK. Les widgets .history-*
-   (calendrier/player) restent legacy = surface a part. */
+   extrait VERBATIM du legacy (Tier 4). Importe APRES le LOOK. */
 @import "./components/prediction-page-layout.css";
+/* Widgets bespoke de la page Historique (calendrier, player, scrubber, verification,
+   apprentissage) extraits VERBATIM du legacy (Tier 4). */
+@import "./components/history-page.css";
 
 /* Component bouton d'aide de la frise (#screenTooltipsBtn) : pastille ronde verre
    visible <=1024, bascule les info-bulles. Scope body.mobile-ui (0 !important). */
