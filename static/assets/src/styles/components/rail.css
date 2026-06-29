@@ -62,7 +62,9 @@
 .grid-focus-btn:disabled,
 .fab:disabled { cursor: wait; opacity: 0.62; }
 
-/* État actif/enclenché → cyan dégradé (accent). */
+/* État actif/enclenché → cyan dégradé (accent). NB : la teinte FINALE de l'état actif
+   est imposée par la passe recolor de theme.css (chargée APRÈS ce component → gagne) ;
+   ces valeurs servent de repli cohérent. Cf. theme.css « États actifs des boutons du rail ». */
 .right-rail-stack .grid-focus-btn.active,
 .icon-only-btn.active,
 .fab.active,

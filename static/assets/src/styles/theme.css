@@ -92,10 +92,17 @@
    Color-only : aucune propriété de layout touchée.
    ============================================================================ */
 
-/* États actifs des boutons du rail + bascule recherche */
+/* États actifs des boutons du rail + bascule recherche. Source de vérité de la teinte
+   active (chargée en dernier → gagne sur components/rail.css). Couvre TOUS les boutons
+   du rail (grid-focus / icon-only / fab / toggleSearch / aria-pressed) pour une teinte
+   #38bdf8 cohérente — avant, icon-only/fab/aria-pressed gardaient un cyan plus terne. */
 .right-rail-stack .grid-focus-btn.active,
+.icon-only-btn.active,
+.fab.active,
 #toggleSearchBtn.active,
-.search-dock.show-search #toggleSearchBtn {
+.search-dock.show-search #toggleSearchBtn,
+[aria-pressed="true"].grid-focus-btn,
+[aria-pressed="true"].fab {
   background: linear-gradient(180deg, rgba(56, 189, 248, 0.96), rgba(14, 165, 233, 0.92));
   border-color: rgba(186, 230, 253, 0.5);
   color: #04121f;

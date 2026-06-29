@@ -54,12 +54,6 @@
   color: var(--muted);
 }
 
-@keyframes loaderPulseGlow {
-  0% { opacity: 0.52; }
-  50% { opacity: 1; }
-  100% { opacity: 0.52; }
-}
-
 /* ------------------------------------------------ Ecran de blocage mobile --- */
 .mobile-block-screen {
   position: fixed;

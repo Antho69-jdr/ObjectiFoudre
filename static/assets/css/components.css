@@ -538,13 +538,6 @@
     
     
 
-    @keyframes loaderPulseGlow {
-      0% { opacity: 0.52; }
-      50% { opacity: 1; }
-      100% { opacity: 0.52; }
-    }
-
-
 .drawer-backdrop-transparent {
   display: none !important;
   background: transparent !important;
