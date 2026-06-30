@@ -17,6 +17,11 @@
    structurelles rail/timeline ont été sorties vers layout.css (cf. tokens.css). */
 @import "./tokens.css";
 
+/* Tokens de STRUCTURE (dims rail/timeline/meta variées par breakpoint) migrés
+   VERBATIM de responsive.css (FINAL). Après tokens.css ; scope body.mobile-ui
+   et !important porteurs conservés. */
+@import "./components/layout-tokens.css";
+
 /* Reset/base de l'app (box-sizing, html/body, #app, #map) — migré de main.css
    lors du retrait des CSS legacy. */
 @import "./components/base-reset.css";

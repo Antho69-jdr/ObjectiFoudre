@@ -276,3 +276,21 @@ body.mobile-ui .selection-card {
       transform: none !important;
     }
 }
+
+/* Sizing @767 des boutons icône de la carte sélection + #closeSelectionBtn,
+   migré VERBATIM de responsive.css (FINAL retrait CSS legacy). `#selectionCard
+   .icon-btn` (1,1,0) bat close-buttons.css `#closeSelectionBtn` (1,0,0) → fixe
+   #closeSelectionBtn à 38px au mobile (cf. #6B). !important porteurs. */
+@media (max-width: 767px) {
+  #selectionCard .icon-btn,
+  #closeSelectionBtn {
+    width: 38px !important;
+    min-width: 38px !important;
+    max-width: 38px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    max-height: 38px !important;
+    border-radius: 999px !important;
+    font-size: 18px !important;
+  }
+}

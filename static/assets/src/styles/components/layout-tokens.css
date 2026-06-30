@@ -1,0 +1,98 @@
+/* ============================================================================
+   layout-tokens.css — thicket de tokens de structure migré VERBATIM de
+   responsive.css (FINAL du retrait CSS legacy). Générations :root (dernière
+   gagne) + overrides @media `body.mobile-ui {}` (!important PORTEURS, scope
+   body.mobile-ui CONSERVÉ : ces tokens ciblent body.mobile-ui, pas :root).
+   Importé tôt dans theme.css (après tokens.css). Ordre source EXACT préservé
+   (:root d'abord, @media ensuite) → cascade identique. NB : --timeline-height-px
+   et --meta-height-px sont AUSSI posés en inline par controls-timeline.js
+   (calcul dynamique) → le JS override avant comme après.
+   ============================================================================ */
+
+:root {
+  --meta-strip-h: 34px;
+  --timeline-strip-bottom: calc(var(--meta-strip-h) + env(safe-area-inset-bottom));
+  --timeline-strip-h: 104px;
+}
+:root {
+  --meta-height-px: calc(34px + env(safe-area-inset-bottom));
+  --timeline-height-px: 104px;
+}
+:root {
+  --timeline-height-px: 92px;
+}
+:root {
+  --timeline-height-px: 82px;
+  --timeline-strip-h: 82px;
+}
+:root {
+  --rail-btn-size: 42px;
+  --right-rail-width: 42px;
+  --right-rail-gap: 8px;
+  --timeline-height-px: 68px;
+  --timeline-strip-h: 68px;
+}
+:root {
+  --rail-btn-size: 40px;
+  --right-rail-width: 40px;
+  --right-rail-gap: 8px;
+  --timeline-height-px: 64px;
+  --timeline-strip-h: 64px;
+}
+@media (min-width: 768px) and (max-width: 1024px) {
+  body.mobile-ui {
+    --mobile-meta-h: 46px !important;
+    --timeline-height-px: 74px !important;
+  }
+}
+@media (max-width: 767px) {
+  body.mobile-ui {
+    --mobile-meta-h: 43px !important;
+    --timeline-height-px: 66px !important;
+    --right-rail-width: 40px !important;
+    --rail-btn-size: 40px !important;
+    --right-rail-gap: 8px !important;
+  }
+  body.mobile-ui {
+    --mobile-meta-h: 34px !important;
+    --timeline-height-px: 86px !important;
+    --right-rail-width: 38px !important;
+    --rail-btn-size: 38px !important;
+  }
+}
+@media (max-width: 1024px) {
+  body.mobile-ui {
+    --touch-meta-h: 44px;
+    --touch-timeline-h: 78px;
+    --touch-rail-size: 42px;
+    --mobile-meta-h: var(--touch-meta-h) !important;
+    --timeline-height-px: var(--touch-timeline-h) !important;
+    --right-rail-width: var(--touch-rail-size) !important;
+    --rail-btn-size: var(--touch-rail-size) !important;
+  }
+}
+@media (max-width: 767px) {
+  body.mobile-ui {
+    --touch-meta-h: 34px;
+    --touch-timeline-h: 82px;
+    --touch-rail-size: 38px;
+  }
+  body.mobile-ui {
+    --touch-timeline-h: 92px;
+    --timeline-height-px: var(--touch-timeline-h) !important;
+  }
+}
+@media (min-width: 768px) and (max-width: 1024px) {
+  body.mobile-ui { --mobile-meta-h: 30px !important; --meta-height-px: 30px !important; }
+}
+@media (max-width: 767px) {
+  body.mobile-ui {
+    --timeline-height-px: 72px !important;
+    --touch-timeline-h: 72px !important;
+  }
+  body.mobile-ui {
+    --touch-meta-h: 30px !important;
+    --mobile-meta-h: 30px !important;
+    --meta-height-px: 30px !important;
+  }
+}
