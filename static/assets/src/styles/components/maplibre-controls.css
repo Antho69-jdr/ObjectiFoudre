@@ -1,30 +1,36 @@
 /* ============================================================================
    maplibre-controls.css — POSITION des contrôles vendor MapLibre (#8, retrait
-   CSS legacy). Classes créées au RUNTIME par maplibre-gl (faux-mortes pour un
-   détecteur littéral). Migré VERBATIM de components.css, !important préservés.
-   Le LOOK des boutons (.maplibregl-ctrl-group button) vit dans button.css.
+   CSS legacy). Classes créées au RUNTIME par maplibre-gl. Le LOOK des boutons
+   (.maplibregl-ctrl-group button) vit dans button.css.
    Consomme --rail-top-map / --rail-right (tokens.css) + --right-rail-width.
+   ----------------------------------------------------------------------------
+   !important RETIRÉS (phase qualité 2026-06-30) : ces règles battent le CSS
+   vendor maplibre-gl.css, mais theme.css est chargé APRÈS lui (index.html) à
+   spécificité ÉGALE (0,1,0 / 0,2,0) → on gagne déjà par l'ORDRE, sans !important.
+   Preuve : `top` n'avait pas de !important et gagnait (436px). `.maplibregl-ctrl-
+   group` est de plus ABSENT du DOM live (contrôles custom) → inerte. Vérifié :
+   top-right/bottom-right restent display:none + right:12px. Future-safe (ordre).
    ============================================================================ */
 .maplibregl-ctrl-top-right,
 .maplibregl-ctrl-bottom-right {
-  display: none !important;
+  display: none;
   top: var(--rail-top-map);
-  right: var(--rail-right) !important;
+  right: var(--rail-right);
   justify-items: stretch;
 }
 .maplibregl-ctrl-top-right .maplibregl-ctrl,
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
-  margin: 0 !important;
-  float: none !important;
+  margin: 0;
+  float: none;
   width: var(--right-rail-width);
 }
 .maplibregl-ctrl-group {
   display: grid;
   gap: 10px;
-  border: 0 !important;
-  border-radius: 0 !important;
+  border: 0;
+  border-radius: 0;
   overflow: visible;
-  background: transparent !important;
-  box-shadow: none !important;
+  background: transparent;
+  box-shadow: none;
   backdrop-filter: none;
 }
