@@ -1,12 +1,18 @@
 /* ============================================================================
-   layout-tokens.css — thicket de tokens de structure migré VERBATIM de
-   responsive.css (FINAL du retrait CSS legacy). Générations :root (dernière
-   gagne) + overrides @media `body.mobile-ui {}` (!important PORTEURS, scope
-   body.mobile-ui CONSERVÉ : ces tokens ciblent body.mobile-ui, pas :root).
-   Importé tôt dans theme.css (après tokens.css). Ordre source EXACT préservé
-   (:root d'abord, @media ensuite) → cascade identique. NB : --timeline-height-px
-   et --meta-height-px sont AUSSI posés en inline par controls-timeline.js
-   (calcul dynamique) → le JS override avant comme après.
+   layout-tokens.css — thicket de tokens de structure migré de responsive.css
+   (FINAL du retrait CSS legacy). Générations :root (dernière gagne) + overrides
+   @media `body.mobile-ui {}`.
+   ----------------------------------------------------------------------------
+   !important RETIRÉS (phase qualité, 2026-06-30) : ces tokens (custom
+   properties) ne sont définis QUE dans ce fichier dans le bundle live. Ils ne
+   battaient que les `:root` (sur html) ; or `body.mobile-ui` cible body → ses
+   descendants héritent de body (ancêtre le plus proche), donc la valeur gagne
+   par héritage sans !important. Entre règles `body.mobile-ui` de même
+   spécificité, l'ORDRE tranche (identique avec/sans !important). Le JS
+   (controls-timeline.js) pose --timeline-height-px/--meta-height-px en inline
+   sur html (priorité normale) → shadowé par body pour les descendants, avant
+   comme après. Parité computed prouvée @1440/1024/390 (cf. baseline).
+   Ordre source EXACT préservé (:root d'abord, @media ensuite) → cascade identique.
    ============================================================================ */
 
 :root {
@@ -41,23 +47,23 @@
 }
 @media (min-width: 768px) and (max-width: 1024px) {
   body.mobile-ui {
-    --mobile-meta-h: 46px !important;
-    --timeline-height-px: 74px !important;
+    --mobile-meta-h: 46px;
+    --timeline-height-px: 74px;
   }
 }
 @media (max-width: 767px) {
   body.mobile-ui {
-    --mobile-meta-h: 43px !important;
-    --timeline-height-px: 66px !important;
-    --right-rail-width: 40px !important;
-    --rail-btn-size: 40px !important;
-    --right-rail-gap: 8px !important;
+    --mobile-meta-h: 43px;
+    --timeline-height-px: 66px;
+    --right-rail-width: 40px;
+    --rail-btn-size: 40px;
+    --right-rail-gap: 8px;
   }
   body.mobile-ui {
-    --mobile-meta-h: 34px !important;
-    --timeline-height-px: 86px !important;
-    --right-rail-width: 38px !important;
-    --rail-btn-size: 38px !important;
+    --mobile-meta-h: 34px;
+    --timeline-height-px: 86px;
+    --right-rail-width: 38px;
+    --rail-btn-size: 38px;
   }
 }
 @media (max-width: 1024px) {
@@ -65,10 +71,10 @@
     --touch-meta-h: 44px;
     --touch-timeline-h: 78px;
     --touch-rail-size: 42px;
-    --mobile-meta-h: var(--touch-meta-h) !important;
-    --timeline-height-px: var(--touch-timeline-h) !important;
-    --right-rail-width: var(--touch-rail-size) !important;
-    --rail-btn-size: var(--touch-rail-size) !important;
+    --mobile-meta-h: var(--touch-meta-h);
+    --timeline-height-px: var(--touch-timeline-h);
+    --right-rail-width: var(--touch-rail-size);
+    --rail-btn-size: var(--touch-rail-size);
   }
 }
 @media (max-width: 767px) {
@@ -79,20 +85,20 @@
   }
   body.mobile-ui {
     --touch-timeline-h: 92px;
-    --timeline-height-px: var(--touch-timeline-h) !important;
+    --timeline-height-px: var(--touch-timeline-h);
   }
 }
 @media (min-width: 768px) and (max-width: 1024px) {
-  body.mobile-ui { --mobile-meta-h: 30px !important; --meta-height-px: 30px !important; }
+  body.mobile-ui { --mobile-meta-h: 30px; --meta-height-px: 30px; }
 }
 @media (max-width: 767px) {
   body.mobile-ui {
-    --timeline-height-px: 72px !important;
-    --touch-timeline-h: 72px !important;
+    --timeline-height-px: 72px;
+    --touch-timeline-h: 72px;
   }
   body.mobile-ui {
-    --touch-meta-h: 30px !important;
-    --mobile-meta-h: 30px !important;
-    --meta-height-px: 30px !important;
+    --touch-meta-h: 30px;
+    --mobile-meta-h: 30px;
+    --meta-height-px: 30px;
   }
 }
