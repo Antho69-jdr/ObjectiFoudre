@@ -1,75 +1,10 @@
-    :root {
-      color-scheme: dark;
-      --bg: #07111f;
-      --panel: rgba(8, 17, 30, 0.54);
-      --panel-2: rgba(10, 20, 35, 0.62);
-      --text: #e5eefc;
-      --muted: #b7c7df;
-      --border: rgba(255,255,255,0.12);
-      --shadow: 0 16px 40px rgba(0,0,0,0.26);
-      --accent: #3b82f6;
-      --accent-2: rgba(59,130,246,0.18);
-      --overlay-backdrop: rgba(0,0,0,0);
-      --glass-blur: blur(16px) saturate(1.15);
-      --rail-right: 12px;
-      --rail-gap: 12px;
-      --shell-radius: 18px;
-      --rail-btn: 46px;
-      --rail-top-topbar: 12px;
-      --rail-top-focus: 128px;
-      --rail-btn-size: 46px;
-      --right-rail-width: 46px;
-      --right-rail-gap: 10px;
-      --timeline-height: 88px;
-      --rail-focus-count: 4;
-      --rail-top-layer: var(--rail-top-focus);
-      --rail-top-fab: calc(var(--rail-top-layer) + (var(--rail-btn-size) * var(--rail-focus-count)) + (var(--right-rail-gap) * (var(--rail-focus-count) - 1)) + 18px);
-      --rail-top-map: calc(var(--rail-top-fab) + (var(--rail-btn-size) * 2) + var(--right-rail-gap) + 18px);
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; }
-    body { overflow: hidden; }
-    #app { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
-    #map { position: absolute; inset: 0; }
-
-    .overlay {
-      position: absolute;
-      z-index: 10;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      backdrop-filter: var(--glass-blur);
-      -webkit-backdrop-filter: var(--glass-blur);
-      box-shadow: var(--shadow);
-    }
-
-    .search-dock {
-      position: fixed;
-      z-index: 19;
-      top: var(--rail-top-topbar);
-      right: var(--rail-right);
-      display: grid;
-      gap: var(--right-rail-gap);
-      justify-items: stretch;
-      align-items: start;
-      width: var(--right-rail-width);
-      max-width: calc(100vw - 24px);
-      padding: 0;
-      background: transparent;
-      border: 0;
-      box-shadow: none;
-      backdrop-filter: none;
-      -webkit-backdrop-filter: none;
-      overflow: visible;
-      pointer-events: none;
-      isolation: isolate;
-    }
-
-    .search-dock > * {
-      pointer-events: auto;
-    }
-
-    
-
-    
-    
-    
+/* main.css — VIDÉ lors du retrait des CSS legacy (surface #5 base/reset/tokens).
+   Tout son contenu a été migré vers le bundle theme.css :
+     • tokens couleur  → morts (shadowés par tokens.css + :root de theme.css) ;
+     • tokens structurels variés (--rail-btn-size/--right-rail-width/...)  → déjà
+       fournis par responsive.css (toplevel :root + overrides @media) ;
+     • constantes (--rail-right/--rail-top-*/--rail-focus-count)  → tokens.css ;
+     • reset (* / html,body / #app / #map)  → components/base-reset.css ;
+     • .overlay  → supprimé (mort) ;
+     • .search-dock  → rail-search-layout.css (décls de base portées).
+   Le <link> sera retiré au Final (suppression des 3 CSS legacy). */

@@ -143,6 +143,17 @@
      DERNIER). Seul --shell-radius (constant) reste ici. */
   --shell-radius: var(--r-lg);
 
+  /* Constantes de structure du rail droit (NON variées par breakpoint →
+     contrairement aux dims ci-dessus, elles peuvent vivre ici sans risque
+     d'écrasement). Migrées de main.css lors du retrait des CSS legacy. */
+  --rail-right: 12px;
+  --rail-top-topbar: 12px;
+  --rail-top-focus: 128px;
+  --rail-focus-count: 4;
+  --rail-top-layer: var(--rail-top-focus);
+  --rail-top-fab: calc(var(--rail-top-layer) + (var(--rail-btn-size) * var(--rail-focus-count)) + (var(--right-rail-gap) * (var(--rail-focus-count) - 1)) + 18px);
+  --rail-top-map: calc(var(--rail-top-fab) + (var(--rail-btn-size) * 2) + var(--right-rail-gap) + 18px);
+
   /* ======================================================================
      ALIAS DE COMPATIBILITÉ (legacy)
      Le CSS legacy (components.css / responsive.css) référence ces anciens

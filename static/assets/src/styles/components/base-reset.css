@@ -1,0 +1,11 @@
+/* ============================================================================
+   base-reset.css — reset/base de l'app, migré de main.css (retrait CSS legacy).
+   Sélecteurs d'élément/ID nus : aucune règle concurrente nue en
+   components/responsive.css (que des `body.xxx` qualifiées qui gagnent par
+   spécificité) → relocalisation sûre, parité par construction.
+   ============================================================================ */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; }
+body { overflow: hidden; }
+#app { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+#map { position: absolute; inset: 0; }

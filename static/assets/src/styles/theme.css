@@ -17,6 +17,10 @@
    structurelles rail/timeline ont été sorties vers layout.css (cf. tokens.css). */
 @import "./tokens.css";
 
+/* Reset/base de l'app (box-sizing, html/body, #app, #map) — migré de main.css
+   lors du retrait des CSS legacy. */
+@import "./components/base-reset.css";
+
 /* Component timeline PROPRE (rail desktop + molette mobile, 0 !important).
    Remplace les ~150 règles timeline legacy purgées de components/responsive.css. */
 @import "./components/timeline.css";
