@@ -142,20 +142,27 @@ body.mobile-ui .button-row::-webkit-scrollbar { display: none; }
 body.mobile-ui button { flex: 0 0 auto; min-width: 88px; min-height: 46px; }
 body.mobile-ui .action-row { flex-direction: column; }
 
-/* Contrôles maplibre (zoom +/−) : chrome verre, comme le rail. */
+/* Contrôles maplibre (zoom +/−) : chrome verre, comme le rail.
+   !important RETIRÉS (phase qualité 2026-06-30) : ce LOOK bat le vendor
+   maplibre-gl.css `.maplibregl-ctrl-group button` (0,1,1), mais theme.css charge
+   APRÈS lui à spécificité ÉGALE → gain par ORDRE. De plus `.maplibregl-ctrl-group`
+   est ABSENT du DOM live (contrôles custom) → règle INERTE aujourd'hui.
+   CAVEAT (inerte) : si les contrôles natifs maplibre réapparaissaient, le vendor
+   `.maplibregl-ctrl-group button+button` (0,1,2) repeindrait son border-top
+   séparateur (notre `border` 0,1,1 perd ce sous-cas) → re-scoper alors. */
 .maplibregl-ctrl-group button {
-  width: var(--rail-btn-size) !important;
-  height: var(--rail-btn-size) !important;
-  min-width: var(--rail-btn-size) !important;
-  min-height: var(--rail-btn-size) !important;
-  background: rgba(10, 18, 32, 0.92) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 14px !important;
-  box-shadow: var(--shadow) !important;
+  width: var(--rail-btn-size);
+  height: var(--rail-btn-size);
+  min-width: var(--rail-btn-size);
+  min-height: var(--rail-btn-size);
+  background: rgba(10, 18, 32, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  margin: 0 !important;
-  padding: 0 !important;
+  margin: 0;
+  padding: 0;
 }
 .maplibregl-ctrl-group button span {
   filter: brightness(0) invert(1);
