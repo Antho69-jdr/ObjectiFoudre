@@ -66,8 +66,11 @@
   gap: 8px;
 }
 
-.arome-retired-ui,
-.arome-retired-ui[hidden] {
+/* `body .arome-retired-ui` (0,1,1) pour battre le sizing rail `.fab`
+   (display:inline-grid!important, 0,1,0) → masque réellement #locateBtn
+   (bouton « localiser » retiré). #locateBtn a aussi été ôté du groupe sizing. */
+body .arome-retired-ui,
+body .arome-retired-ui[hidden] {
   display: none !important;
 }
 
