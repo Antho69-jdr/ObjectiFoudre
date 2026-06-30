@@ -1,0 +1,98 @@
+/* ============================================================================
+   legacy-misc.css — petits restes VIVANTS migrés de components.css (#9, retrait
+   CSS legacy). Importé TÔT dans theme.css (après base-shared, avant les
+   components scopés) → réplique la position « early » qu'avait components.css :
+   les versions scopées (#detailsModal .x, .info-drawer .title, …) chargées PLUS
+   BAS continuent de gagner exactement comme avant. Parité par construction.
+   - Génériques : fournissent des valeurs de BASE que les components surchargent
+     partiellement (ex. .title font-weight/margin sous .info-drawer .title).
+   - Enfants details / wp-* : redondants avec #detailsModal scoped, gardés
+     verbatim par sûreté (couvrent toute prop non re-fixée par le scoped).
+   - .tone-* (--verif-tone) et @keyframes : CONSOMMÉS par history-page.css (live).
+   - .arome-retired-ui : masque l'UI retirée (NB : #locateBtn reste visible car
+     son ID dans le sizing rail bat .arome-retired-ui par spécificité — bug
+     legacy pré-existant, parité conservée).
+   Exclus : .icon-svg (doublon identique de rail.css) et .mode-toggle-btn.active
+   (mort, 0 élément) → purgés, non relocalisés.
+   ============================================================================ */
+
+.search-dock,
+.mobile-toggle-bar,
+#toggleSearchBtn {
+  pointer-events: auto;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 0 0 8px;
+}
+
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+
+.icon-btn {
+  min-width: 42px;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.primary-btn {
+  background: rgba(56, 189, 248,0.95);
+  border-color: rgba(255,255,255,0.28);
+}
+
+.details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.details-content {
+  width: min(100%, 780px);
+  display: grid;
+  gap: 16px;
+  margin: 0 auto;
+}
+
+.details-score-layout {
+  display: grid;
+  gap: 8px;
+}
+
+.arome-retired-ui,
+.arome-retired-ui[hidden] {
+  display: none !important;
+}
+
+/* --- Panneau de vérification prévision vs réalité (--verif-tone, consommé par
+   history-page.css via .history-verif-score tone-*). --- */
+.tone-good { --verif-tone: #6fcf97; }
+.tone-ok   { --verif-tone: #9ccc65; }
+.tone-mid  { --verif-tone: #e0a04d; }
+.tone-low  { --verif-tone: #d96b6b; }
+.tone-muted { --verif-tone: #94a3b8; }
+
+/* Barre de chargement (réentraînement) — indéterminée, glisse en boucle.
+   Consommée par .hl-progress-bar::after dans history-page.css. */
+@keyframes hl-progress-slide {
+  0% { transform: translateX(-130%); }
+  100% { transform: translateX(330%); }
+}
+
+/* Profil vertical de vent dans le modal de détails (10 m + niveaux isobares, WCS). */
+.details-wind-profile { margin-top: 10px; padding: 10px 12px; background: rgba(10,18,32,0.5); border: 1px solid rgba(148,163,184,0.18); border-radius: 12px; }
+.details-wind-profile-title { font-size: 12px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px; letter-spacing: 0.02em; }
+.details-wind-profile-rows { display: flex; flex-direction: column; gap: 2px; }
+
+.wp-level { color: #94a3b8; font-variant-numeric: tabular-nums; }
+.wp-speed { color: #e2e8f0; font-variant-numeric: tabular-nums; }
+.wp-dir { color: #cbd5e1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wp-arrow { color: #7dd3fc; font-weight: 700; }
+.wp-loading { font-size: 12px; color: #64748b; padding: 4px 0; }
