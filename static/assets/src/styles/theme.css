@@ -21,6 +21,10 @@
    lors du retrait des CSS legacy. */
 @import "./components/base-reset.css";
 
+/* Groupes partagés génériques (.modal-backdrop, outline debug) migrés de
+   components.css — AVANT les components scopés (details/drawer) pour la cascade. */
+@import "./components/base-shared.css";
+
 /* Component timeline PROPRE (rail desktop + molette mobile, 0 !important).
    Remplace les ~150 règles timeline legacy purgées de components/responsive.css. */
 @import "./components/timeline.css";

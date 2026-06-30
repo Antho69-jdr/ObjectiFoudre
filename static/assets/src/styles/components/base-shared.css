@@ -1,0 +1,33 @@
+/* ============================================================================
+   base-shared.css — groupes PARTAGÉS génériques migrés de components.css
+   (retrait CSS legacy, surface #6). Importé TÔT dans theme.css (juste après
+   base-reset) pour préserver la cascade.
+
+   1) .modal-backdrop générique : fournit position/inset/display/background aux
+      2 backdrops live (#modalBackdrop, #drawerBackdrop). Les components scopés
+      (details-modal-layout, info-drawer — importés PLUS BAS) n'overrident que
+      z-index (et, pour le drawer, display/background) → cet import doit rester
+      AVANT eux pour que leur ordre/spécificité gagne (la transparence du drawer
+      bat .modal-backdrop.visible par l'ordre).
+   2) Outline debug (hairline blanc 2 %) partagé par 6 surfaces live : aucun
+      component ne le surcharge → relocalisé verbatim (.cell-scale-chip retiré,
+      sélecteur mort). Position-indépendant.
+   ============================================================================ */
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: transparent;
+  backdrop-filter: none;
+  display: none;
+}
+.modal-backdrop.visible { display: block; }
+
+.timeline-dock,
+.selection-card,
+.details-modal,
+.panel-card,
+.meta-corner,
+.floating-chip {
+  outline: 1px solid rgba(255,255,255,0.02);
+}
