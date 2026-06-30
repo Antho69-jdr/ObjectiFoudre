@@ -133,33 +133,7 @@
     
     
 
-    .maplibregl-ctrl-top-right,
-    .maplibregl-ctrl-bottom-right {
-      display: none !important;
-      top: var(--rail-top-map);
-      right: var(--rail-right) !important;
-      justify-items: stretch;
-    }
-    .maplibregl-ctrl-top-right .maplibregl-ctrl,
-    .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
-      margin: 0 !important;
-      float: none !important;
-      width: var(--right-rail-width);
-    }
-    
-    
-    
-    
-    .maplibregl-ctrl-group {
-      display: grid;
-      gap: 10px;
-      border: 0 !important;
-      border-radius: 0 !important;
-      overflow: visible;
-      background: transparent !important;
-      box-shadow: none !important;
-      backdrop-filter: none;
-    }
+    /* contrôles vendor MapLibre → maplibre-controls.css (theme.css) */
     /* groupe chrome padding-top supprimé (mort : tous co-locataires overridés/inexistants) */
     
 

@@ -68,6 +68,9 @@
    Parité stricte avec le legacy (purgé). */
 @import "./components/button.css";
 
+/* Position des contrôles vendor MapLibre (zoom) migrée VERBATIM de components.css. */
+@import "./components/maplibre-controls.css";
+
 /* Component echelles : primitives DS of-prob / of-sev + legende proba LIVE
    (legend-wrap, legend-gradient, legend-scale ; gradient hex = couleurs cellules,
    parite stricte avec le legacy purge). */

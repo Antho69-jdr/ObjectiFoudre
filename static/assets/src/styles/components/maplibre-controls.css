@@ -1,0 +1,30 @@
+/* ============================================================================
+   maplibre-controls.css — POSITION des contrôles vendor MapLibre (#8, retrait
+   CSS legacy). Classes créées au RUNTIME par maplibre-gl (faux-mortes pour un
+   détecteur littéral). Migré VERBATIM de components.css, !important préservés.
+   Le LOOK des boutons (.maplibregl-ctrl-group button) vit dans button.css.
+   Consomme --rail-top-map / --rail-right (tokens.css) + --right-rail-width.
+   ============================================================================ */
+.maplibregl-ctrl-top-right,
+.maplibregl-ctrl-bottom-right {
+  display: none !important;
+  top: var(--rail-top-map);
+  right: var(--rail-right) !important;
+  justify-items: stretch;
+}
+.maplibregl-ctrl-top-right .maplibregl-ctrl,
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl {
+  margin: 0 !important;
+  float: none !important;
+  width: var(--right-rail-width);
+}
+.maplibregl-ctrl-group {
+  display: grid;
+  gap: 10px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  overflow: visible;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none;
+}
