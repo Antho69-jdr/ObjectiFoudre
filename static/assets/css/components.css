@@ -26,24 +26,7 @@
     
 
     
-    .mobile-toggle-btn,
-    .icon-only-btn,
-    .grid-focus-btn,
-    .fab,
-    #toggleSearchBtn,
-    #bestCellsBtn,
-    #infoDrawerBtn,
-    #locateBtn {
-      width: var(--rail-btn-size) !important;
-      min-width: var(--rail-btn-size) !important;
-      max-width: var(--rail-btn-size) !important;
-      height: var(--rail-btn-size) !important;
-      min-height: var(--rail-btn-size) !important;
-      max-height: var(--rail-btn-size) !important;
-      padding: 0 !important;
-      display: inline-grid !important;
-      place-items: center !important;
-    }
+    /* sizing boutons rail → rail.css (theme.css) */
 
 .icon-svg {
       width: 20px;

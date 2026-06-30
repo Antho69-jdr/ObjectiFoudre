@@ -35,6 +35,30 @@
               transform var(--dur-fast) var(--ease);
 }
 
+/* Sizing var(--rail-btn-size) migré VERBATIM de components.css (retrait CSS
+   legacy, #7). Les `!important` sont PORTEURS : ils battent la règle tactile
+   `body.mobile-ui button{min-width:88px}` (0,1,1) toujours live ; un sélecteur
+   de classe sans !important (0,1,0) y perdrait. Les 4 IDs sont redondants (tous
+   couverts par leurs classes) mais conservés verbatim. */
+.mobile-toggle-btn,
+.icon-only-btn,
+.grid-focus-btn,
+.fab,
+#toggleSearchBtn,
+#bestCellsBtn,
+#infoDrawerBtn,
+#locateBtn {
+  width: var(--rail-btn-size) !important;
+  min-width: var(--rail-btn-size) !important;
+  max-width: var(--rail-btn-size) !important;
+  height: var(--rail-btn-size) !important;
+  min-height: var(--rail-btn-size) !important;
+  max-height: var(--rail-btn-size) !important;
+  padding: 0 !important;
+  display: inline-grid !important;
+  place-items: center !important;
+}
+
 .icon-svg {
   width: 20px;
   height: 20px;
