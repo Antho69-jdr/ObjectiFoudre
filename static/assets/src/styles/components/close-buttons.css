@@ -1,0 +1,57 @@
+/* ============================================================================
+   close-buttons.css — boutons de fermeture circulaires (5 IDs), migré VERBATIM
+   de components.css (retrait CSS legacy, #6 group B). !important PRÉSERVÉS.
+   Cluster FULL-only : responsive.css `#selectionCard .icon-btn, #closeSelectionBtn`
+   (mixte) reste en legacy ; il matche aussi #closeSelectionBtn et le bat par
+   spécificité (1,1,0 > 1,0,0) → 38px mobile préservé sans split.
+   ============================================================================ */
+
+#closeSelectionBtn,
+#closeDetailsBtn,
+#closeDrawerBtn,
+#predictionPageCloseBtn,
+#detailsCalcInspectorClose {
+  aspect-ratio: 1 / 1 !important;
+  box-sizing: border-box !important;
+  border-radius: 50% !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  flex: 0 0 auto !important;
+  padding: 0 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+}
+#closeSelectionBtn,
+#closeDetailsBtn,
+#closeDrawerBtn,
+#predictionPageCloseBtn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  max-width: 36px !important;
+  max-height: 36px !important;
+  font-size: 18px !important;
+}
+#detailsCalcInspectorClose {
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px !important;
+  min-height: 22px !important;
+  max-width: 22px !important;
+  max-height: 22px !important;
+  font-size: 14px !important;
+}
+@media (max-width: 767px) {
+  #closeSelectionBtn,
+  #closeDetailsBtn,
+  #closeDrawerBtn,
+  #predictionPageCloseBtn {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    min-height: 34px !important;
+    max-width: 34px !important;
+    max-height: 34px !important;
+  }
+}

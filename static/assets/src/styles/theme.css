@@ -57,6 +57,9 @@
    battues par details-modal.css #detailsModal .child) extraites VERBATIM du legacy. */
 @import "./components/details-content-base.css";
 
+/* Boutons de fermeture circulaires (5 IDs) migrés VERBATIM de components.css. */
+@import "./components/close-buttons.css";
+
 /* Component badges carte : overlays horloge / date / quota (LOOK + position). */
 @import "./components/badges.css";
 
