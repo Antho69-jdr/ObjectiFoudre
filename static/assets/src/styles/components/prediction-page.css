@@ -25,7 +25,7 @@
   -webkit-backdrop-filter: blur(12px);
 }
 .prediction-page[aria-hidden="true"] {
-  display: none !important;
+  display: none;
 }
 
 .prediction-page-shell {
@@ -309,7 +309,7 @@
   box-shadow: none;
 }
 .prediction-image[hidden] {
-  display: none !important;
+  display: none;
 }
 .prediction-highlight {
   position: absolute;
@@ -320,7 +320,7 @@
   mix-blend-mode: screen;
 }
 .prediction-highlight[hidden] {
-  display: none !important;
+  display: none;
 }
 .prediction-highlight svg {
   display: block;
@@ -346,7 +346,7 @@
   transform: translate(12px, 12px);
 }
 .prediction-hover[hidden] {
-  display: none !important;
+  display: none;
 }
 .prediction-hover-title {
   display: flex;
