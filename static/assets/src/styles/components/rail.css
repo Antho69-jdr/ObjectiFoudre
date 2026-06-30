@@ -35,28 +35,31 @@
               transform var(--dur-fast) var(--ease);
 }
 
-/* Sizing var(--rail-btn-size) migré VERBATIM de components.css (retrait CSS
-   legacy, #7). Les `!important` sont PORTEURS : ils battent la règle tactile
-   `body.mobile-ui button{min-width:88px}` (0,1,1) toujours live ; un sélecteur
-   de classe sans !important (0,1,0) y perdrait. Les IDs sont redondants (couverts
-   par leurs classes) mais conservés verbatim — SAUF #locateBtn, retiré pour que
-   .arome-retired-ui (body .arome-retired-ui) puisse le masquer (cf. legacy-misc). */
-.mobile-toggle-btn,
-.icon-only-btn,
-.grid-focus-btn,
-.fab,
-#toggleSearchBtn,
-#bestCellsBtn,
-#infoDrawerBtn {
-  width: var(--rail-btn-size) !important;
-  min-width: var(--rail-btn-size) !important;
-  max-width: var(--rail-btn-size) !important;
-  height: var(--rail-btn-size) !important;
-  min-height: var(--rail-btn-size) !important;
-  max-height: var(--rail-btn-size) !important;
-  padding: 0 !important;
-  display: inline-grid !important;
-  place-items: center !important;
+/* Sizing var(--rail-btn-size). !important RETIRÉS (phase qualité 2026-06-30) :
+   le SEUL concurrent est la règle tactile `body.mobile-ui button{min-width:88px;
+   min-height:46px}` (0,1,1) — battue par SPÉCIFICITÉ en scopant `body.mobile-ui .X`
+   (0,2,0 pour les classes, 1,1,0 pour les IDs), sans !important (même levier que
+   frise-help). body.mobile-ui est TOUJOURS posé → s'applique à toutes largeurs,
+   comme avant. width/height/max/padding/display/place-items n'avaient de toute
+   façon aucun concurrent ≥ la règle look. Les IDs sont redondants (couverts par
+   leurs classes) mais gardés — #locateBtn retiré (masqué par body .arome-retired-ui,
+   cf. legacy-misc). #locateBtn=.fab reste caché (display:none!important du retired). */
+body.mobile-ui .mobile-toggle-btn,
+body.mobile-ui .icon-only-btn,
+body.mobile-ui .grid-focus-btn,
+body.mobile-ui .fab,
+body.mobile-ui #toggleSearchBtn,
+body.mobile-ui #bestCellsBtn,
+body.mobile-ui #infoDrawerBtn {
+  width: var(--rail-btn-size);
+  min-width: var(--rail-btn-size);
+  max-width: var(--rail-btn-size);
+  height: var(--rail-btn-size);
+  min-height: var(--rail-btn-size);
+  max-height: var(--rail-btn-size);
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
 }
 
 .icon-svg {
