@@ -142,8 +142,12 @@
   padding: 13px 42px 13px 14px;
   color: #d9e7f7;
 }
-.details-calc-inspector[hidden] {
-  display: none !important;
+/* Scopé #detailsModal …[hidden] (1,2,0) pour battre #detailsModal
+   .details-calc-inspector{display:grid} (1,1,0) par spécificité → masquage sans
+   !important (phase qualité 2026-06-30 ; avant : .details-calc-inspector[hidden]
+   0,2,0 perdait contre 1,1,0 et exigeait !important). */
+#detailsModal .details-calc-inspector[hidden] {
+  display: none;
 }
 .details-calc-inspector-close {
   position: absolute;

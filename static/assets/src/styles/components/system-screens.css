@@ -68,8 +68,10 @@
     radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 42%),
     linear-gradient(180deg, rgba(4, 10, 20, 0.98), rgba(7, 17, 31, 0.995));
 }
+/* [hidden] (0,2,0) bat la base .mobile-block-screen{display:flex} (0,1,0) par
+   spécificité → display:none sans !important (phase qualité 2026-06-30). */
 .mobile-block-screen[hidden] {
-  display: none !important;
+  display: none;
 }
 .mobile-block-card {
   width: min(100%, 420px);
