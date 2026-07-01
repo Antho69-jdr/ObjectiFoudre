@@ -63,6 +63,7 @@
   }
 
   function setHint(message) {
+    const p = frameEl && frameEl.closest('.prediction-map-panel'); if (p) p.classList.remove('prediction-scanning');
     if (controlsEl) controlsEl.hidden = true;
     if (frameEl) frameEl.hidden = true;
     if (emptyHintEl) { emptyHintEl.hidden = false; emptyHintEl.textContent = message; }
@@ -348,6 +349,39 @@
     return frames;
   }
 
+  // France « vide » (ink + maillage cyan) dans #historyFrame pendant le chargement :
+  // buildSvg videra ensuite le SVG et le reconstruira coloré → hydratation (comme
+  // la Carte de risque Prévision). Régions remplies = silhouette France.
+  function renderHistoryScope() {
+    if (!frameEl || typeof buildGifFranceProjection !== 'function' || typeof franceRegionRings !== 'function') return false;
+    const proj = buildGifFranceProjection({ left: 0, top: 0, width: VB, height: VB });
+    const regionRings = franceRegionRings();
+    const deptRings = (typeof FRANCE_DEPARTMENT_RINGS !== 'undefined' && Array.isArray(FRANCE_DEPARTMENT_RINGS)) ? FRANCE_DEPARTMENT_RINGS : [];
+    const regionData = (regionRings && regionRings.length) ? ringsToPath(regionRings, proj, 1) : '';
+    if (!regionData) return false;
+    const deptData = deptRings.length ? ringsToPath(deptRings, proj, 2) : '';
+    while (frameEl.firstChild) frameEl.removeChild(frameEl.firstChild);
+    frameEl.setAttribute('viewBox', `0 0 ${VB} ${VB}`);
+    frameEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    const mk = (tag, attrs) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+    frameEl.appendChild(mk('rect', { x: 0, y: 0, width: VB, height: VB, fill: '#070f1c' }));
+    frameEl.appendChild(mk('path', { d: regionData, fill: '#091321' }));
+    const border = (d, stroke, w) => { if (!d) return; frameEl.appendChild(mk('path', { d, fill: 'none', stroke, 'stroke-width': String(w), 'vector-effect': 'non-scaling-stroke', 'stroke-linejoin': 'round' })); };
+    border(deptData, 'rgba(125,211,252,0.42)', 0.62);
+    border(regionData, 'rgba(125,211,252,0.72)', 1.3);
+    return true;
+  }
+  function historyPanel() { return frameEl && frameEl.closest('.prediction-map-panel'); }
+  function showHistoryScanning() {
+    renderHistoryScope();
+    if (frameEl) frameEl.hidden = false;
+    if (emptyHintEl) emptyHintEl.hidden = true;
+    const p = historyPanel(); if (p) p.classList.add('prediction-scanning');
+  }
+  function hideHistoryScanning() {
+    const p = historyPanel(); if (p) p.classList.remove('prediction-scanning');
+  }
+
   async function selectDate(date) {
     historyDate = date;
     highlightActiveDate();
@@ -356,7 +390,7 @@
     const token = ++loadToken;
     loadVerification(date);
     ensureFlashPoints(date); // couche SVG séparée -> pas besoin d'attendre
-    setHint('Chargement de la grille archivée…');
+    showHistoryScanning();
     try {
       const data = await fetchDay(date, token);
       if (token !== loadToken) return;
@@ -380,6 +414,7 @@
   }
 
   function setupPlayer(frames, analysisHtml) {
+    hideHistoryScanning();
     slotFrames = frames;
     frameIndex = 0;
     if (scrubber) { scrubber.min = 0; scrubber.max = Math.max(0, frames.length - 1); scrubber.value = 0; }

@@ -224,16 +224,16 @@
 /* Chargement : le balayage radar (.of-radar) est superposé à #predictionImage
    qui montre la France « vide ». Visible tant que le panneau a .prediction-scanning
    (posée/retirée par le JS) ; se fond dès l'hydratation (couleurs). */
-#predictionPage .prediction-map-panel .of-radar {
+.prediction-map-panel .of-radar {
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.4s var(--ease);
 }
-#predictionPage .prediction-map-panel.prediction-scanning .of-radar {
+.prediction-map-panel.prediction-scanning .of-radar {
   opacity: 1;
   visibility: visible;
 }
-#predictionPage .prediction-map-panel:not(.prediction-scanning) .of-radar-sweep {
+.prediction-map-panel:not(.prediction-scanning) .of-radar-sweep {
   animation: none;
 }
 .prediction-analysis-panel {
