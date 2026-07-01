@@ -328,6 +328,23 @@
     frameEl.appendChild(cellsG);
     curColors = new Array(n).fill(baseColor);
 
+    // Masque « hors-France » : un seul path statique (rectangle troué de la France,
+    // fill-rule evenodd) rempli du fond, posé SUR les cellules → couvre les carrés
+    // de la grille qui dépassent la frontière, SANS clipPath (aucun coût par frame,
+    // contrairement au clip sur 2636 rects que l'on évite).
+    const clipRings = (typeof FRANCE_GRID_CLIP_RINGS !== 'undefined' && Array.isArray(FRANCE_GRID_CLIP_RINGS) && FRANCE_GRID_CLIP_RINGS.length)
+      ? FRANCE_GRID_CLIP_RINGS : regionRings;
+    const franceOutline = (clipRings && clipRings.length) ? ringsToPath(clipRings, proj, 1) : '';
+    if (franceOutline) {
+      const mask = document.createElementNS(SVGNS, 'path');
+      mask.setAttribute('d', `M0 0 H${VB} V${VB} H0 Z ${franceOutline}`);
+      mask.setAttribute('fill', '#070f1c');
+      mask.setAttribute('fill-rule', 'evenodd');
+      mask.setAttribute('pointer-events', 'none');
+      mask.setAttribute('shape-rendering', 'geometricPrecision');
+      frameEl.appendChild(mask);
+    }
+
     const addBorderPath = (d, stroke, width) => {
       if (!d) return;
       const p = document.createElementNS(SVGNS, 'path');
