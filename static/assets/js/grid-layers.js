@@ -391,7 +391,10 @@ function ensureGridCellTooltip() {
 }
 function fmtGridTip(value, suffix) {
   const n = Number(value);
-  return Number.isFinite(n) ? Math.round(n) + suffix : '—';
+  const inner = Number.isFinite(n)
+    ? Math.round(n) + '<span class="gct-unit">' + suffix + '</span>'
+    : '—';
+  return '<span class="gct-val">' + inner + '</span>';
 }
 function onGridEnter() {
   map.getCanvas().style.cursor = 'pointer';
@@ -404,7 +407,12 @@ function onGridMove(e) {
     return;
   }
   const el = ensureGridCellTooltip();
-  el.innerHTML =
+  const score = Number(p.trigger_score);
+  const scoreColor = (typeof colorFromScore === 'function' && Number.isFinite(score)) ? colorFromScore(score) : '#7dd3fc';
+  const head = Number.isFinite(score)
+    ? '<span class="gct-head"><b>Probabilité</b><strong style="color:' + scoreColor + '">' + Math.round(score) + '</strong></span>'
+    : '';
+  el.innerHTML = head +
     '<span class="gct-row"><b>MLCAPE</b>' + fmtGridTip(p.mucape, ' J/kg') + '</span>' +
     '<span class="gct-row"><b>CIN</b>' + fmtGridTip(p.convective_inhibition, ' J/kg') + '</span>' +
     '<span class="gct-row"><b>Cisaill. 0-6km</b>' + fmtGridTip(p.shear_ms, ' m/s') + '</span>' +
