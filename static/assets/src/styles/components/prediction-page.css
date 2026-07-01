@@ -80,16 +80,16 @@
   min-height: 36px;
   padding: 0 13px;
   border-radius: 10px;
-  border: 1px solid rgba(116, 184, 95, 0.36);
-  background: rgba(36, 91, 70, 0.42);
-  color: #ecfdf5;
+  border: 1px solid rgba(125, 211, 252, 0.38);
+  background: rgba(56, 189, 248, 0.14);
+  color: #eafaff;
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
 }
 .prediction-download-btn:hover:not(:disabled) {
-  background: rgba(45, 127, 107, 0.56);
-  border-color: rgba(190, 242, 100, 0.42);
+  background: rgba(56, 189, 248, 0.24);
+  border-color: rgba(125, 211, 252, 0.6);
 }
 .prediction-download-btn:disabled {
   cursor: not-allowed;
@@ -125,15 +125,14 @@
   box-shadow: none;
 }
 .prediction-period-tab:hover {
-  border-color: rgba(103, 232, 249, 0.38);
+  background: rgba(255, 255, 255, 0.05);
   color: #e6fbff;
 }
 .prediction-period-tab.active,
 .prediction-period-tab[aria-selected="true"] {
-  color: #f8fafc;
-  background: rgba(45, 127, 107, 0.72);
-  border-color: rgba(103, 232, 249, 0.64);
-  box-shadow: inset 0 0 0 1px rgba(190, 242, 100, 0.18), 0 8px 18px rgba(0, 0, 0, 0.22);
+  color: #eafaff;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.22), rgba(56, 189, 248, 0.11));
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.5), var(--shadow-1);
 }
 .prediction-period-tab:disabled,
 .prediction-period-tab.is-unavailable {
@@ -173,17 +172,26 @@
   color: #e6fbff;
 }
 .prediction-date-chip.active {
-  background: rgba(8, 145, 178, 0.42);
-  border-color: rgba(103, 232, 249, 0.64);
-  color: #ecfeff;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.20), rgba(56, 189, 248, 0.10));
+  border-color: rgba(125, 211, 252, 0.55);
+  color: #eafaff;
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.22), var(--shadow-1);
 }
+/* Chips « tendance » (J+5→J+10, ECMWF) : sémantique ambre = repère de moindre
+   certitude (pointillé), distincte du cyan AROME. */
 .prediction-date-chip.is-trend {
   border-style: dashed;
-  border-color: rgba(251, 191, 36, 0.4);
+  border-color: rgba(251, 191, 36, 0.42);
+}
+.prediction-date-chip.is-trend:hover {
+  border-color: rgba(251, 191, 36, 0.6);
+  color: #fff3d6;
 }
 .prediction-date-chip.is-trend.active {
-  background: rgba(180, 120, 8, 0.34);
-  border-color: rgba(251, 191, 36, 0.7);
+  background: linear-gradient(180deg, rgba(251, 191, 36, 0.20), rgba(251, 191, 36, 0.09));
+  border-color: rgba(251, 191, 36, 0.62);
+  color: #fff7e6;
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.22), var(--shadow-1);
 }
 .prediction-chip-jx {
   font-weight: 800;
