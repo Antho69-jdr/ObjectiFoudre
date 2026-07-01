@@ -42,6 +42,7 @@
   height: auto;
   display: block;
   filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.28));
+  animation: of-loader-glow 2.6s ease-in-out infinite;
 }
 .app-loader-title {
   font-size: 14px;
@@ -53,6 +54,33 @@
 .app-loader-subtitle {
   font-size: 12px;
   color: var(--muted);
+}
+/* Barre de progression indéterminée : segment cyan qui balaye une piste faible.
+   Affordance « chargement en cours » sous le sous-titre (0 JS). */
+.app-loader-card::after {
+  content: "";
+  width: 148px;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background:
+    linear-gradient(90deg, transparent, var(--accent), transparent) -40% 0 / 45% 100% no-repeat,
+    rgba(125, 211, 252, 0.14);
+  animation: of-loader-bar 1.3s ease-in-out infinite;
+}
+@keyframes of-loader-bar {
+  0%   { background-position: -45% 0, 0 0; }
+  100% { background-position: 145% 0, 0 0; }
+}
+@keyframes of-loader-glow {
+  0%, 100% { filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.28)); }
+  50%      { filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.28)) drop-shadow(0 0 15px rgba(56, 189, 248, 0.38)); }
+}
+/* Une fois masqué (app chargée), on coupe les animations (pas de CPU inutile). */
+.app-loader.hidden .app-loader-logo,
+.app-loader.hidden .app-loader-card::after { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .app-loader-logo { animation: none; }
+  .app-loader-card::after { animation: none; background-position: 50% 0, 0 0; }
 }
 
 /* ------------------------------------------------ Ecran de blocage mobile --- */
