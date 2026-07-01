@@ -105,7 +105,7 @@ function predictionDistanceKm(a, b) {
 // pic propre de la cellule reste dominant tout en gommant le bruit isolé.
 function smoothPredictionCells(cells) {
   if (!Array.isArray(cells) || !cells.length) return [];
-  const radiusKm = 78;
+  const radiusKm = 60;
   return cells.map((cell) => {
     let weighted = 0;
     let totalWeight = 0;
@@ -221,8 +221,8 @@ function predictionAdminLineMarkup(project) {
     }).filter(Boolean).join('');
     if (!paths) return '';
     return `<g class="prediction-admin-lines" fill="none" stroke-linejoin="round" stroke-linecap="round">
-      <g stroke="#020617" stroke-opacity="0.72" stroke-width="0.92">${paths}</g>
-      <g stroke="#7dd3fc" stroke-opacity="0.18" stroke-width="0.24">${paths}</g>
+      <g stroke="#020617" stroke-opacity="0.42" stroke-width="1.0">${paths}</g>
+      <g stroke="#7dd3fc" stroke-opacity="0.42" stroke-width="0.62">${paths}</g>
     </g>`;
   }
 
@@ -327,8 +327,8 @@ function predictionRegionBoundaryMarkup(project) {
     .join('');
   if (!paths) return '';
   return `<g class="prediction-region-lines" fill="none" stroke-linejoin="round" stroke-linecap="round">
-    <g stroke="#020617" stroke-opacity="0.82" stroke-width="1.72">${paths}</g>
-    <g stroke="#9ddbd0" stroke-opacity="0.18" stroke-width="0.42">${paths}</g>
+    <g stroke="#020617" stroke-opacity="0.5" stroke-width="2.0">${paths}</g>
+    <g stroke="#7dd3fc" stroke-opacity="0.72" stroke-width="1.3">${paths}</g>
   </g>`;
 }
 
@@ -831,8 +831,8 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
     <g clip-path="url(#franceClip)">${severityMarkup}</g>
     <g clip-path="url(#franceClip)">${adminMarkup}</g>
     <g clip-path="url(#franceClip)">${regionBoundaryMarkup}</g>
-    <path d="${francePath}" fill="none" stroke="#020617" stroke-opacity="0.84" stroke-width="1.18" stroke-linejoin="round"/>
-    <path d="${francePath}" fill="none" stroke="#7dd3fc" stroke-opacity="0.20" stroke-width="0.32" stroke-linejoin="round"/>
+    <path d="${francePath}" fill="none" stroke="#020617" stroke-opacity="0.6" stroke-width="1.7" stroke-linejoin="round"/>
+    <path d="${francePath}" fill="none" stroke="#7dd3fc" stroke-opacity="0.72" stroke-width="1.3" stroke-linejoin="round"/>
   </g>
   <g transform="translate(38 ${legendY})">
     <text x="0" y="0" fill="#dbeafe" fill-opacity="0.82" font-family="Inter, Arial, sans-serif" font-size="${legendTitleSize}" font-weight="900">PROBABILITÉ DE RISQUE ORAGEUX</text>
@@ -840,6 +840,29 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
     ${severityLegendMarkup}
   </g>
 </svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+// France « base » (vide) pour le chargement : MÊME SVG que la carte (viewBox
+// 860×760, même projection, même fond + dépts/régions + arête) mais SANS les
+// couleurs de risque. Posée telle quelle dans #predictionImage pendant le
+// chargement ; on swap ensuite vers la version colorée → la France « s'hydrate »
+// sur le MÊME élément image (aucun décalage possible). Transition sans couture.
+function drawPredictionScopeImage() {
+  const width = 860;
+  const height = 760;
+  const project = predictionProjectionMetrics(width, height).project;
+  const francePath = predictionFranceSvgPath(project);
+  const adminMarkup = predictionAdminLineMarkup(project);
+  const regionMarkup = predictionRegionBoundaryMarkup(project);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" shape-rendering="geometricPrecision">
+    <defs><clipPath id="scopeClip" clipPathUnits="userSpaceOnUse"><path d="${francePath}"/></clipPath></defs>
+    <rect width="${width}" height="${height}" fill="#07111f"/>
+    <path d="${francePath}" fill="#091321"/>
+    <g clip-path="url(#scopeClip)">${adminMarkup}${regionMarkup}</g>
+    <path d="${francePath}" fill="none" stroke="#020617" stroke-opacity="0.55" stroke-width="1.4" stroke-linejoin="round"/>
+    <path d="${francePath}" fill="none" stroke="#7dd3fc" stroke-opacity="0.55" stroke-width="1.05" stroke-linejoin="round"/>
+  </svg>`;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 

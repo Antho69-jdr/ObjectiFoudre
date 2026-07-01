@@ -184,13 +184,17 @@ async function predictionEnsureDay(dateIso) {
   }
 }
 
+// Rampe « radar / chaleur » sur fond ink : la France sombre s'allume par foyers,
+// du calme (ink ≈ fond) au cyan/vert/ambre/rouge/magasin. Cohérent avec le radar
+// de chargement. NB : la légende du tiroir (forecast-scales.css .legend-gradient)
+// reprend ces mêmes teintes — les garder synchronisées.
 const PREDICTION_RISK_LEVELS = Object.freeze([
-  { key: 'below-threshold', label: 'Sous seuil', range: '0-59', min: 0, color: '#e7edf1', stroke: '#586b7a', text: 'signal inférieur au seuil cartographié' },
-  { key: 'low', label: 'Faible', range: '60-70', min: 60, color: '#4da6b4', stroke: '#123a42', text: 'signal faible, à surveiller localement' },
-  { key: 'medium', label: 'Moyen', range: '71-80', min: 71, color: '#75a96d', stroke: '#253b25', text: 'signal moyen, environnement à suivre' },
-  { key: 'elevated', label: 'Élevé', range: '81-89', min: 81, color: '#bf7d57', stroke: '#482b1a', text: 'signal élevé à surveiller sérieusement' },
-  { key: 'very-high', label: 'Très élevé', range: '90-95', min: 90, color: '#bd5d66', stroke: '#4d1f27', text: 'signal très élevé, à contrôler finement' },
-  { key: 'certain', label: 'Extrême', range: '96-100', min: 96, color: '#9a72c8', stroke: '#33224d', text: 'signal maximal ou quasi maximal' },
+  { key: 'below-threshold', label: 'Sous seuil', range: '0-59', min: 0, color: '#091321', stroke: '#16283c', text: 'signal inférieur au seuil cartographié' },
+  { key: 'low', label: 'Faible', range: '60-70', min: 60, color: '#2e83a6', stroke: '#0b485c', text: 'signal faible, à surveiller localement' },
+  { key: 'medium', label: 'Moyen', range: '71-80', min: 71, color: '#34d399', stroke: '#0f766e', text: 'signal moyen, environnement à suivre' },
+  { key: 'elevated', label: 'Élevé', range: '81-89', min: 81, color: '#fbbf24', stroke: '#92580e', text: 'signal élevé à surveiller sérieusement' },
+  { key: 'very-high', label: 'Très élevé', range: '90-95', min: 90, color: '#f43f5e', stroke: '#9f1239', text: 'signal très élevé, à contrôler finement' },
+  { key: 'certain', label: 'Extrême', range: '96-100', min: 96, color: '#d946ef', stroke: '#86198f', text: 'signal maximal ou quasi maximal' },
 ]);
 
 function predictionPeriodConfig(periodKey = selectedPredictionPeriodKey) {

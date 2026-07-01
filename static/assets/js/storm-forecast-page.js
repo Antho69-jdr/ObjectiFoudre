@@ -27,10 +27,21 @@ function predictionPointInsideFrance(lon, lat) {
   return rings.some((ring) => pointInRing(lon, lat, ring));
 }
 
-function predictionImagePointerGeo(event) {
-  if (!predictionImage || predictionImage.hidden) return null;
+// Rectangle du CONTENU de l'image (object-fit:contain → letterbox centré).
+// Indispensable pour aligner détection du survol + highlight + carte.
+function predictionImageContentRect() {
   const rect = predictionImage.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
+  const scale = Math.min(rect.width / 860, rect.height / 760);
+  const cw = 860 * scale;
+  const ch = 760 * scale;
+  return { left: rect.left + (rect.width - cw) / 2, top: rect.top + (rect.height - ch) / 2, width: cw, height: ch };
+}
+
+function predictionImagePointerGeo(event) {
+  if (!predictionImage || predictionImage.hidden) return null;
+  const rect = predictionImageContentRect();
+  if (!rect || !rect.width || !rect.height) return null;
   const x = ((event.clientX - rect.left) / rect.width) * 860;
   const y = ((event.clientY - rect.top) / rect.height) * 760;
   const metrics = predictionProjectionMetrics(860, 760);
@@ -240,6 +251,25 @@ function predictionHoverHtml(zone) {
     </div>`;
 }
 
+// Illumine le département survolé : dessine son polygone dans #predictionHighlight
+// (mix-blend-mode:screen → ajoute de la lumière sur la carte). Même mapping plein-
+// rect que predictionImagePointerGeo → cohérent avec la détection du survol.
+function predictionDrawDepartmentHighlight(ring) {
+  if (!predictionHighlight || !predictionImage || !Array.isArray(ring) || ring.length < 3) return;
+  const project = predictionProjectionMetrics(860, 760).project;
+  const d = ring.map((pt, i) => {
+    const [x, y] = project(Number(pt[0]), Number(pt[1]));
+    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(' ') + ' Z';
+  predictionHighlight.style.left = predictionImage.offsetLeft + 'px';
+  predictionHighlight.style.top = predictionImage.offsetTop + 'px';
+  predictionHighlight.style.width = predictionImage.offsetWidth + 'px';
+  predictionHighlight.style.height = predictionImage.offsetHeight + 'px';
+  // meet = même letterboxing que l'image (object-fit:contain) → tracé aligné sur la carte.
+  predictionHighlight.innerHTML = `<svg viewBox="0 0 860 760" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><path d="${d}" fill="rgba(56,189,248,0.20)" stroke="rgba(125,211,252,0.92)" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+  predictionHighlight.hidden = false;
+}
+
 function movePredictionHover(event) {
   if (!predictionHover || !currentPredictionPageResult?.ok) return;
   const point = predictionImagePointerGeo(event);
@@ -248,6 +278,7 @@ function movePredictionHover(event) {
     hidePredictionHover();
     return;
   }
+  predictionDrawDepartmentHighlight(zone.departmentRing);
   const panelRect = predictionImage.parentElement.getBoundingClientRect();
   const x = Math.max(8, Math.min(panelRect.width - 270, event.clientX - panelRect.left + 14));
   const y = Math.max(8, Math.min(panelRect.height - 136, event.clientY - panelRect.top + 14));
@@ -311,14 +342,16 @@ function renderPredictionPageResult(result) {
     }
   }
   if (result?.ok && result.dataUrl) {
+    // Hydratation : la France « vide » gagne ses couleurs sur le même élément image.
     predictionImage.src = result.dataUrl;
     predictionImage.alt = `Carte de prévision orageuse ${period.label.toLowerCase()} ${result.dayKey || ''}`.trim();
     predictionImage.hidden = false;
+    predictionImage.closest('.prediction-map-panel')?.classList.remove('prediction-scanning');
     initPredictionHover();
     predictionAnalysisText.innerHTML = result.analysisHtml || '';
   } else {
-    predictionImage.hidden = true;
-    hidePredictionHover();
+    // Pas encore prête : on garde la France « vide » + le balayage radar.
+    showPredictionScanning();
     predictionAnalysisText.textContent = result?.message || 'La synthèse sera disponible quand la fenêtre 08h-08h sera chargée.';
   }
 }
@@ -717,9 +750,22 @@ if (typeof predictionDownloadBtn !== 'undefined' && predictionDownloadBtn) {
   predictionDownloadBtn.addEventListener('click', downloadPredictionPageImage);
 }
 
+// Chargement : pose la France « vide » (drawPredictionScopeImage) DANS
+// #predictionImage + active le balayage (classe .prediction-scanning). On swap
+// ensuite vers la version colorée → la France s'hydrate sur le MÊME élément
+// image (transition sans couture, aucun décalage possible).
+function showPredictionScanning() {
+  if (!predictionImage || typeof drawPredictionScopeImage !== 'function') return;
+  predictionImage.src = drawPredictionScopeImage();
+  predictionImage.hidden = false;
+  predictionImage.closest('.prediction-map-panel')?.classList.add('prediction-scanning');
+  hidePredictionHover();
+}
+
 async function openPredictionPage(initialDate = null) {
   if (!predictionPage) return;
   predictionPage.setAttribute('aria-hidden', 'false');
+  showPredictionScanning();
   buildPredictionDateStrip();
   // Date par défaut : celle demandée si dans la plage, sinon la date de la grille si
   // elle est dans J0→J+10, sinon aujourd'hui.

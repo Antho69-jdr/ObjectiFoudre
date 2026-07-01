@@ -20,60 +20,35 @@
   animation: of-skeleton 1.5s ease-in-out infinite;
 }
 
-/* --- Radar de chargement (balayage de la France, façon sonar) ---------- */
-/* Silhouette France + anneaux + faisceau tournant. Remplace le shimmer sur
-   les zones carte en attente. Thème cyan « orage ». */
+/* --- Radar de chargement (balayage sonar) ------------------------------ */
+/* Le loader = balayage SEUL, superposé à #predictionImage qui affiche la France
+   « vide » puis s'hydrate (couleurs). Une seule France (l'image) → aucun décalage.
+   Balayage + pivot centrés sur le panneau = centre de l'image = centre de la France. */
 .of-radar {
+  position: absolute;
+  inset: 0;
   display: grid;
-  justify-items: center;
-  align-content: center;
-  gap: var(--sp-5);
-  padding: var(--sp-4);
+  place-items: center;
   pointer-events: none;
 }
-.of-radar-scope {
-  position: relative;
-  width: min(360px, 72%, 46vh);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.07), rgba(7, 13, 24, 0) 68%),
-    rgba(9, 17, 30, 0.32);
-  border: 1px solid rgba(125, 211, 252, 0.16);
-  box-shadow: inset 0 0 44px rgba(56, 189, 248, 0.07), var(--shadow-2);
-}
-.of-radar-face {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-.of-radar-rings circle,
-.of-radar-rings line {
-  fill: none;
-  stroke: rgba(125, 211, 252, 0.18);
-  stroke-width: 0.3;
-  vector-effect: non-scaling-stroke;
-}
-.of-radar-land path {
-  fill: rgba(56, 189, 248, 0.10);
-  stroke: rgba(125, 211, 252, 0.5);
-  stroke-width: 0.5;
-  stroke-linejoin: round;
-}
-/* Faisceau : dégradé conique (traînée qui s'estompe + bord vif) qui tourne. */
+/* Balayage circulaire (conique tournant), centré en absolu sur le panneau
+   (= centre image = centre France = pivot). Le translate est INTÉGRÉ à la
+   rotation (sinon l'animation transform écrase le centrage). */
 .of-radar-sweep {
   position: absolute;
-  inset: 0;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(94%, 90vh);
+  aspect-ratio: 1;
   border-radius: 50%;
   background: conic-gradient(
     from 0deg,
     rgba(56, 189, 248, 0) 0deg,
     rgba(56, 189, 248, 0) 232deg,
-    rgba(56, 189, 248, 0.10) 320deg,
-    rgba(56, 189, 248, 0.34) 354deg,
-    rgba(125, 211, 252, 0.62) 360deg
+    rgba(56, 189, 248, 0.07) 320deg,
+    rgba(56, 189, 248, 0.26) 354deg,
+    rgba(125, 211, 252, 0.5) 360deg
   );
   animation: of-radar-spin 3.8s linear infinite;
 }
@@ -88,8 +63,8 @@
   transform: translateX(-50%);
   background: linear-gradient(to top, rgba(125, 211, 252, 0), rgba(125, 211, 252, 0.85));
 }
-/* Pivot central lumineux. */
-.of-radar-scope::after {
+/* Pivot central lumineux (centre du panneau = centre de la France). */
+.of-radar::after {
   content: "";
   position: absolute;
   left: 50%;
@@ -102,6 +77,10 @@
   box-shadow: 0 0 10px rgba(56, 189, 248, 0.85);
 }
 .of-radar-caption {
+  position: absolute;
+  left: 50%;
+  bottom: var(--sp-2);
+  transform: translateX(-50%);
   font-size: var(--label-eyebrow-size);
   font-weight: var(--label-eyebrow-weight);
   letter-spacing: var(--label-eyebrow-tracking);
@@ -109,7 +88,8 @@
   color: var(--label-eyebrow-color);
 }
 @keyframes of-radar-spin {
-  to { transform: rotate(360deg); }
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
 }
 @media (prefers-reduced-motion: reduce) {
   .of-radar-sweep { animation: none; opacity: 0.55; }

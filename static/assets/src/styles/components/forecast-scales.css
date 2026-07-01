@@ -80,18 +80,18 @@
   border: 1px solid var(--border);
   background: linear-gradient(
     90deg,
-    #e7edf1 0%,
-    #e7edf1 64%,
-    #4da6b4 65%,
-    #4da6b4 74%,
-    #75a96d 75%,
-    #75a96d 84%,
-    #bf7d57 85%,
-    #bf7d57 89%,
-    #bd5d66 90%,
-    #bd5d66 94%,
-    #9a72c8 95%,
-    #9a72c8 100%
+    #16283c 0%,
+    #16283c 64%,
+    #2e83a6 65%,
+    #2e83a6 74%,
+    #34d399 75%,
+    #34d399 84%,
+    #fbbf24 85%,
+    #fbbf24 89%,
+    #f43f5e 90%,
+    #f43f5e 94%,
+    #d946ef 95%,
+    #d946ef 100%
   );
   overflow: hidden;
 }
