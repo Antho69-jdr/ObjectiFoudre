@@ -1,5 +1,15 @@
 // selection-card.js — issu du découpage de selection.js (Phase 3).
 // Carte de sélection (affichage/positionnement) + openDetails/closeDetails + init top-level (DERNIER).
+    // Pose --score-band = couleur de la rampe carte (colorFromScore) sur la
+    // carte-héros, pour le liseré de probabilité (cf. details-modal.css/selection.css).
+    function setScoreBand(el, score) {
+      if (!el) return;
+      if (typeof colorFromScore === 'function' && score != null && score !== '' && !Number.isNaN(Number(score))) {
+        el.style.setProperty('--score-band', colorFromScore(Number(score)));
+      } else {
+        el.style.removeProperty('--score-band');
+      }
+    }
     function showSelection(p) {
       selectionTitle.textContent = formatSelectionLocation(p);
       if (selectionConfidence) selectionConfidence.textContent = safe(p.confidence_score);
@@ -7,6 +17,7 @@
       if (selectionTrigger) selectionTrigger.textContent = safe(p.trigger_score);
       if (selectionConfidence) applyMetricTone(selectionConfidence, 'confidence_score', p.confidence_score);
       if (selectionTrigger) applyMetricTone(selectionTrigger, 'trigger_score', p.trigger_score);
+      if (selectionTrigger) setScoreBand(selectionTrigger.closest('.selection-score-trigger'), p.trigger_score);
       const selectionTriggerHint = document.getElementById('selectionTriggerHint');
       if (selectionTriggerHint) selectionTriggerHint.textContent = probabilityHint(p);
       selectionCard.classList.add('visible');
@@ -232,6 +243,7 @@
       detailsSubtitle.textContent = `${formatSelectionLocation(p)} · ${p.selected_hour || p.slot_label || 'heure active'}`;
       if (dConfidence) dConfidence.textContent = safe(p.confidence_score);
       if (dTrigger) dTrigger.textContent = safe(p.trigger_score);
+      if (dTrigger) setScoreBand(dTrigger.closest('.metric-card-score'), p.trigger_score);
       if (dCape) dCape.textContent = safe(p.mucape);
       if (dCin) dCin.textContent = safe(p.convective_inhibition, ' J/kg');
       if (dShear) dShear.textContent = safe(p.shear_ms, ' m/s');

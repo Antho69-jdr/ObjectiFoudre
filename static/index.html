@@ -7,20 +7,20 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="ObjectiFoudre" />
-  <link rel="manifest" href="/manifest.webmanifest?v=1.2.168" />
-  <link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=1.2.168" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png?v=1.2.168" />
+  <link rel="manifest" href="/manifest.webmanifest?v=1.2.169" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=1.2.169" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png?v=1.2.169" />
   <title>ObjectiFoudre — Tactile</title>
-  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.2.168"></script>
-  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.2.168" rel="stylesheet" />
+  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.2.169"></script>
+  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.2.169" rel="stylesheet" />
   <!-- CSS legacy (main/components/responsive) supprimé : tout est désormais dans le
        bundle componentisé theme.css (esbuild de assets/src/styles/). -->
-  <link rel="stylesheet" href="/assets/dist/theme.css?v=1.2.168" />
+  <link rel="stylesheet" href="/assets/dist/theme.css?v=1.2.169" />
 </head>
 <body>
   <div id="mobileBlockScreen" class="mobile-block-screen" hidden>
     <div class="mobile-block-card">
-      <img class="mobile-block-logo" src="/static/logo-splash.png?v=1.2.168" alt="ObjectiFoudre" />
+      <img class="mobile-block-logo" src="/static/logo-splash.png?v=1.2.169" alt="ObjectiFoudre" />
       <div class="mobile-block-title">ObjectiFoudre</div>
       <p class="mobile-block-text">Smartphone non pris en charge.</p>
       <p class="mobile-block-text mobile-block-text-secondary">L'application est disponible uniquement sur PC et tablette.</p>
@@ -29,7 +29,7 @@
   <div id="app">
     <div class="app-loader" id="appLoader" aria-hidden="false">
       <div class="app-loader-card">
-        <img class="app-loader-logo" src="/static/logo-splash.png?v=1.2.168" alt="Objectif Foudre" />
+        <img class="app-loader-logo" src="/static/logo-splash.png?v=1.2.169" alt="Objectif Foudre" />
         <div class="app-loader-subtitle">Chargement de la situation convective…</div>
       </div>
     </div>
@@ -227,7 +227,7 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.2.168">Version : v1.2.168 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.2.169">Version : v1.2.169 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
@@ -374,6 +374,25 @@
         </header>
         <div class="prediction-page-body">
           <div class="prediction-map-panel">
+            <div class="of-radar" role="status" aria-label="Chargement de la carte de France">
+              <div class="of-radar-scope">
+                <svg class="of-radar-face" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                  <g class="of-radar-rings">
+                    <circle cx="50" cy="50" r="49"/>
+                    <circle cx="50" cy="50" r="33"/>
+                    <circle cx="50" cy="50" r="17"/>
+                    <line x1="50" y1="1.5" x2="50" y2="98.5"/>
+                    <line x1="1.5" y1="50" x2="98.5" y2="50"/>
+                  </g>
+                  <g class="of-radar-land" transform="translate(9 9) scale(0.82)">
+                    <path d="M0.36,31.56 0.56,31.31 3.00,30.85 3.20,30.98 3.62,30.42 2.45,29.61 1.68,30.26 1.74,29.44 1.12,29.13 1.65,28.55 1.65,28.88 1.98,28.81 3.70,28.99 3.65,29.35 4.08,29.55 4.70,29.76 4.59,29.52 3.59,29.12 3.55,28.79 3.18,28.80 2.36,28.66 3.61,27.47 0.80,28.37 0.14,28.61 0.33,28.25 0.23,28.13 0.20,27.25 0.15,27.12 1.15,26.11 2.00,26.43 1.37,25.81 1.58,25.78 1.98,25.66 2.51,25.34 3.47,25.24 4.17,25.36 4.60,24.92 5.15,24.85 5.98,25.90 6.07,25.14 6.57,25.85 6.84,25.59 6.48,25.16 6.75,24.67 7.90,25.29 8.49,25.13 8.66,24.41 8.46,23.98 8.95,23.61 9.50,23.66 10.26,23.48 10.95,23.19 11.31,23.34 11.79,23.55 11.64,24.27 12.40,23.67 12.97,24.30 13.67,25.32 14.46,26.35 14.70,26.56 15.62,25.92 16.05,25.44 16.54,25.55 17.46,25.19 17.74,25.44 18.10,25.82 18.40,25.72 18.41,25.56 19.63,26.45 19.70,26.63 19.52,26.05 19.71,25.96 19.25,25.37 20.11,24.97 20.34,25.45 21.06,25.87 23.00,25.73 23.99,25.57 23.81,24.94 22.42,24.40 22.13,23.51 22.57,22.91 22.89,21.63 22.37,21.83 22.16,20.78 22.13,19.62 22.12,19.40 21.45,18.54 21.39,18.53 20.77,18.06 20.23,16.39 20.46,15.34 19.84,14.51 22.06,15.31 23.36,14.73 24.81,15.70 24.51,16.05 24.26,16.30 25.17,18.13 25.89,17.89 28.11,18.31 31.79,18.98 34.29,17.74 34.46,17.22 34.51,14.87 37.41,13.20 41.68,12.02 43.69,9.95 44.48,9.81 44.07,8.86 44.79,8.13 44.40,6.26 44.34,5.88 44.52,4.38 44.37,2.89 47.87,1.47 48.33,1.23 48.47,1.11 51.09,0.65 51.39,2.38 51.71,3.46 52.79,4.32 53.95,4.07 55.58,4.35 55.95,5.20 56.87,6.72 57.85,6.41 58.48,6.67 58.82,7.94 59.41,8.17 60.51,8.38 62.03,8.64 62.34,9.09 62.64,8.94 62.26,9.54 62.56,10.34 62.15,11.55 62.19,11.92 63.37,12.02 66.04,11.74 66.93,10.00 66.92,11.04 66.70,12.02 67.16,13.78 68.79,14.09 70.03,14.78 70.36,15.64 71.16,15.83 72.02,16.49 72.65,16.27 73.54,16.14 74.18,16.76 75.00,17.27 75.52,17.12 76.21,16.74 77.45,17.11 78.85,17.44 79.29,18.12 79.77,19.00 80.93,20.31 80.97,19.67 82.32,19.93 82.77,20.28 84.13,20.67 84.63,20.10 85.13,20.17 85.78,20.86 86.50,21.29 87.65,21.19 88.60,21.27 90.64,22.14 89.65,23.85 88.78,24.68 87.65,26.07 87.19,27.94 86.91,28.92 86.10,30.75 86.41,32.25 85.77,34.18 85.65,35.06 86.15,36.28 85.77,36.79 85.46,37.24 85.01,37.25 84.77,37.74 83.28,37.60 81.96,37.11 81.66,37.72 82.16,38.35 81.67,39.22 80.07,41.26 79.38,42.21 78.13,42.85 78.12,44.02 75.91,46.39 75.63,47.55 76.29,48.53 75.93,49.78 74.87,50.26 74.81,50.92 76.06,50.83 77.27,49.68 76.78,49.40 77.51,48.51 78.69,48.16 80.51,48.74 80.71,50.20 81.36,51.01 81.64,51.61 81.65,53.81 81.15,54.02 80.75,55.04 82.07,55.93 82.08,57.28 82.87,58.00 82.85,59.09 82.61,60.25 81.85,60.31 80.48,60.78 79.80,62.16 80.35,63.36 81.63,63.81 82.08,64.53 81.82,65.66 81.07,67.16 81.35,68.30 82.02,69.71 83.38,70.54 84.45,71.10 85.05,71.43 86.37,71.05 86.81,70.78 87.04,71.95 86.62,72.83 85.99,73.61 85.77,74.79 84.46,75.51 84.28,75.59 83.80,75.75 83.19,76.12 83.07,77.17 82.80,76.97 81.84,77.26 81.11,78.40 80.32,78.53 79.19,79.95 79.96,80.09 79.03,80.86 77.82,81.32 77.01,81.55 76.20,82.00 75.77,82.40 75.99,81.99 75.17,81.73 74.57,81.54 74.39,81.94 74.33,82.00 73.70,82.05 73.00,81.31 72.49,80.90 71.91,80.64 70.53,80.60 70.58,79.92 70.34,79.13 68.54,79.47 67.92,78.45 67.49,78.43 67.20,78.15 66.97,78.41 66.99,78.96 67.59,78.96 65.82,79.27 65.35,78.66 62.80,78.10 62.15,77.37 60.98,77.29 58.78,78.84 57.02,79.86 54.82,82.21 54.48,86.42 55.19,87.68 55.45,88.50 54.52,88.11 53.68,88.28 52.80,88.67 51.89,89.46 51.02,89.53 50.29,88.94 48.37,88.62 47.36,89.37 46.81,88.31 45.45,87.30 45.38,86.94 43.75,86.29 43.37,86.79 41.91,85.54 40.86,84.92 40.03,84.74 38.28,84.18 38.02,84.76 38.04,85.90 36.32,85.91 35.41,86.07 34.57,85.45 32.62,85.59 32.08,84.94 30.65,84.80 29.86,84.52 29.16,84.50 28.11,83.11 25.61,82.55 24.92,82.25 24.25,82.05 24.08,81.68 23.33,82.31 23.50,81.48 22.71,79.80 22.40,80.21 22.06,79.69 21.25,79.43 21.16,78.87 22.15,78.43 24.19,71.26 25.05,65.86 25.35,66.03 25.27,64.68 24.69,66.19 25.32,57.51 25.98,56.58 25.92,57.17 28.16,60.09 28.12,58.11 26.59,56.68 24.94,55.34 24.76,55.37 25.43,54.29 25.56,53.70 25.71,52.81 25.56,52.24 25.68,51.29 25.52,51.00 25.26,50.70 25.01,50.10 25.50,49.11 24.95,49.55 24.48,49.30 24.02,48.79 22.88,48.20 20.74,47.24 18.45,43.95 18.68,43.13 19.58,41.82 17.74,40.74 18.27,39.39 19.37,38.92 17.39,39.73 16.31,39.44 15.95,38.82 16.16,37.89 16.25,37.57 15.96,37.14 15.72,36.78 13.04,36.55 13.50,36.66 13.71,36.47 14.37,36.59 14.03,35.82 14.15,35.61 13.46,35.80 12.96,35.96 12.93,35.77 12.70,36.14 12.71,36.48 12.33,36.36 11.80,36.38 11.56,36.73 11.56,37.28 11.50,36.22 11.04,35.33 10.98,35.07 10.55,35.20 10.53,35.13 10.57,34.05 9.77,33.71 10.04,34.57 9.30,35.04 8.71,33.32 7.97,34.24 7.77,34.25 8.03,33.70 7.38,33.98 7.35,34.02 6.23,33.65 6.15,33.47 5.58,33.01 5.24,33.52 4.82,33.37 5.04,32.65 4.76,32.55 4.74,32.61 4.30,32.91 4.34,33.60 4.03,33.30 4.32,33.93 3.16,32.99 2.59,32.37 1.83,31.61 1.76,31.59 0.36,31.56Z"/>
+                    <path d="M92.93,89.19 93.25,89.36 93.51,89.50 93.74,89.85 93.94,90.25 93.14,90.62 93.17,90.82 93.04,91.17 93.04,91.44 93.17,91.63 93.76,91.87 94.16,92.27 94.35,92.43 93.79,93.10 93.28,93.29 93.38,93.98 94.15,93.84 94.56,93.68 94.58,94.11 94.40,94.49 94.51,94.83 94.23,95.15 93.79,95.43 94.03,95.56 94.56,95.55 94.61,95.93 95.00,95.99 95.52,96.15 95.19,96.51 94.57,97.07 94.61,97.38 95.03,97.81 95.30,97.92 95.55,98.09 95.98,98.23 96.28,98.38 96.38,98.42 96.61,98.56 96.93,98.62 96.99,99.03 97.38,99.35 97.94,98.73 97.68,98.57 98.00,97.97 98.53,97.34 98.33,96.93 98.08,97.02 98.54,96.79 98.67,96.60 98.70,96.19 98.87,94.19 99.93,91.87 100.00,90.05 99.89,88.58 99.23,86.20 99.52,84.83 99.25,83.15 99.04,82.67 98.61,83.56 98.47,84.14 98.49,84.87 98.16,86.06 97.48,85.56 96.96,85.52 96.51,86.21 95.74,86.50 95.29,86.56 94.75,86.82 94.62,87.26 94.43,87.15 94.19,87.01 94.16,87.61 93.65,88.11 93.87,88.18 93.81,88.41 93.71,88.68 93.39,88.99 93.11,89.15 92.93,89.19Z"/>
+                  </g>
+                </svg>
+                <div class="of-radar-sweep"></div>
+              </div>
+              <div class="of-radar-caption">Balayage de la France…</div>
+            </div>
             <img id="predictionImage" class="prediction-image" alt="Carte de prévision orageuse journalière" hidden />
             <div id="predictionHighlight" class="prediction-highlight" hidden></div>
             <div id="predictionHover" class="prediction-hover" hidden></div>
@@ -487,42 +506,42 @@
       </div>
     </div>
   </div>
-  <script src="/assets/js/dom.js?v=1.2.168"></script>
-  <script src="/assets/js/utils.js?v=1.2.168"></script>
-  <script src="/assets/js/panels.js?v=1.2.168"></script>
-  <script src="/assets/js/state.js?v=1.2.168"></script>
-  <script src="/assets/js/core.js?v=1.2.168"></script>
-  <script src="/assets/js/map-ui.js?v=1.2.168"></script>
-  <script src="/assets/js/timeline-playback.js?v=1.2.168"></script>
-  <script src="/assets/js/timeline-solar.js?v=1.2.168"></script>
-  <script src="/assets/js/timeline-wheel.js?v=1.2.168"></script>
-  <script src="/assets/js/grid-loader.js?v=1.2.168"></script>
-  <script src="/assets/js/grid-clip-geometry.js?v=1.2.168"></script>
-  <script src="/assets/js/grid-geojson.js?v=1.2.168"></script>
-  <script src="/assets/js/france-admin-lines.js?v=1.2.168"></script>
-  <script src="/assets/js/france-regions.js?v=1.2.168"></script>
-  <script src="/assets/js/storm-forecast-data.js?v=1.2.168"></script>
-  <script src="/assets/js/storm-forecast-render.js?v=1.2.168"></script>
-  <script src="/assets/js/storm-forecast-page.js?v=1.2.168"></script>
-  <script src="/assets/js/grid-layers.js?v=1.2.168"></script>
-  <script src="/assets/js/grid.js?v=1.2.168"></script>
-  <script src="/assets/js/metric-data.js?v=1.2.168"></script>
-  <script src="/assets/js/metric-ui.js?v=1.2.168"></script>
-  <script src="/assets/js/selection-detail-data.js?v=1.2.168"></script>
-  <script src="/assets/js/selection-inspector.js?v=1.2.168"></script>
-  <script src="/assets/js/selection-card.js?v=1.2.168"></script>
-  <script src="/assets/js/data.js?v=1.2.168"></script>
-  <script src="/assets/js/services.js?v=1.2.168"></script>
-  <script src="/assets/js/search-autocomplete.js?v=1.2.168"></script>
-  <script src="/assets/js/controls-timeline.js?v=1.2.168"></script>
-  <script src="/assets/js/controls-export.js?v=1.2.168"></script>
-  <script src="/assets/js/controls-meteofrance.js?v=1.2.168"></script>
-  <script src="/assets/js/history.js?v=1.2.168"></script>
-  <script src="/assets/js/chase.js?v=1.2.168"></script>
-  <script src="/assets/js/bootstrap.js?v=1.2.168"></script>
-  <script src="/assets/js/mobile-block.js?v=1.2.168"></script>
-  <script src="/assets/js/tooltip.js?v=1.2.168"></script>
+  <script src="/assets/js/dom.js?v=1.2.169"></script>
+  <script src="/assets/js/utils.js?v=1.2.169"></script>
+  <script src="/assets/js/panels.js?v=1.2.169"></script>
+  <script src="/assets/js/state.js?v=1.2.169"></script>
+  <script src="/assets/js/core.js?v=1.2.169"></script>
+  <script src="/assets/js/map-ui.js?v=1.2.169"></script>
+  <script src="/assets/js/timeline-playback.js?v=1.2.169"></script>
+  <script src="/assets/js/timeline-solar.js?v=1.2.169"></script>
+  <script src="/assets/js/timeline-wheel.js?v=1.2.169"></script>
+  <script src="/assets/js/grid-loader.js?v=1.2.169"></script>
+  <script src="/assets/js/grid-clip-geometry.js?v=1.2.169"></script>
+  <script src="/assets/js/grid-geojson.js?v=1.2.169"></script>
+  <script src="/assets/js/france-admin-lines.js?v=1.2.169"></script>
+  <script src="/assets/js/france-regions.js?v=1.2.169"></script>
+  <script src="/assets/js/storm-forecast-data.js?v=1.2.169"></script>
+  <script src="/assets/js/storm-forecast-render.js?v=1.2.169"></script>
+  <script src="/assets/js/storm-forecast-page.js?v=1.2.169"></script>
+  <script src="/assets/js/grid-layers.js?v=1.2.169"></script>
+  <script src="/assets/js/grid.js?v=1.2.169"></script>
+  <script src="/assets/js/metric-data.js?v=1.2.169"></script>
+  <script src="/assets/js/metric-ui.js?v=1.2.169"></script>
+  <script src="/assets/js/selection-detail-data.js?v=1.2.169"></script>
+  <script src="/assets/js/selection-inspector.js?v=1.2.169"></script>
+  <script src="/assets/js/selection-card.js?v=1.2.169"></script>
+  <script src="/assets/js/data.js?v=1.2.169"></script>
+  <script src="/assets/js/services.js?v=1.2.169"></script>
+  <script src="/assets/js/search-autocomplete.js?v=1.2.169"></script>
+  <script src="/assets/js/controls-timeline.js?v=1.2.169"></script>
+  <script src="/assets/js/controls-export.js?v=1.2.169"></script>
+  <script src="/assets/js/controls-meteofrance.js?v=1.2.169"></script>
+  <script src="/assets/js/history.js?v=1.2.169"></script>
+  <script src="/assets/js/chase.js?v=1.2.169"></script>
+  <script src="/assets/js/bootstrap.js?v=1.2.169"></script>
+  <script src="/assets/js/mobile-block.js?v=1.2.169"></script>
+  <script src="/assets/js/tooltip.js?v=1.2.169"></script>
   <!-- Bundle modules ES (Phase 3) — s'exécute après le legacy, pont window.OF. Contient idb-cache migré. -->
-  <script type="module" src="/assets/dist/app.js?v=1.2.168"></script>
+  <script type="module" src="/assets/dist/app.js?v=1.2.169"></script>
 </body>
 </html>

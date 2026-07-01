@@ -66,6 +66,22 @@
   font-weight: 800;
   line-height: 1;
 }
+/* Pastille PROBA : liseré fin à la couleur de la rampe carte (--score-band posée
+   par selection-card.js). Seule la proba le porte → la distingue de la confiance. */
+#selectionCard .selection-score-trigger {
+  position: relative;
+  overflow: hidden;
+  padding-left: 12px;
+}
+#selectionCard .selection-score-trigger::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--score-band, var(--accent));
+}
 
 /* Bouton fermer (rond, discret) */
 #selectionCard .icon-btn,

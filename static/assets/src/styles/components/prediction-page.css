@@ -51,10 +51,10 @@
   padding: 0 2px;
 }
 .prediction-eyebrow {
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0;
-  color: #67e8f9;
+  font-size: var(--label-eyebrow-size);
+  font-weight: var(--label-eyebrow-weight);
+  letter-spacing: var(--label-eyebrow-tracking);
+  color: var(--label-eyebrow-color);
   text-transform: uppercase;
 }
 .prediction-page-header h2 {
@@ -212,6 +212,22 @@
   border: 0;
   border-radius: 10px;
   background: transparent;
+}
+/* Chargement : radar de balayage France (.of-radar, cf. states.css) pendant
+   que l'image de prévision n'est pas prête (#predictionImage[hidden]).
+   Fondu + arrêt du balayage dès que l'image arrive (via :has). */
+#predictionPage .prediction-map-panel .of-radar {
+  position: absolute;
+  inset: 0;
+  opacity: 1;
+  transition: opacity 0.35s var(--ease);
+}
+#predictionPage .prediction-map-panel:has(.prediction-image:not([hidden])) .of-radar {
+  opacity: 0;
+  visibility: hidden;
+}
+#predictionPage .prediction-map-panel:has(.prediction-image:not([hidden])) .of-radar-sweep {
+  animation: none;
 }
 .prediction-analysis-panel {
   display: grid;
@@ -410,9 +426,10 @@
   font-style: normal;
 }
 .prediction-summary-kicker {
-  color: rgba(203, 213, 225, 0.66);
-  font-size: 0.68rem;
-  font-weight: 800;
+  color: var(--label-eyebrow-color);
+  font-size: var(--label-eyebrow-size);
+  font-weight: var(--label-eyebrow-weight);
+  letter-spacing: var(--label-eyebrow-tracking);
   text-transform: uppercase;
 }
 .prediction-summary-hero b {
@@ -435,9 +452,10 @@
   border: 1px solid rgba(148, 163, 184, 0.12);
 }
 .prediction-analysis-block-title {
-  color: #e2e8f0;
-  font-size: 0.76rem;
-  font-weight: 900;
+  color: var(--label-eyebrow-color);
+  font-size: var(--label-eyebrow-size);
+  font-weight: var(--label-eyebrow-weight);
+  letter-spacing: var(--label-eyebrow-tracking);
   text-transform: uppercase;
 }
 .prediction-analysis-block p {

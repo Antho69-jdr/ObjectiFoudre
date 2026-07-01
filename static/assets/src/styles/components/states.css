@@ -1,0 +1,140 @@
+/* states.css — états transverses du design system.
+   - Skeleton de chargement (shimmer) réutilisable par keyframe globale.
+   - Anneau de focus clavier (a11y) cohérent, à spécificité 0 (:where) pour ne
+     jamais écraser un style de focus déjà soigné par un component.
+   Respecte prefers-reduced-motion. 0 !important. */
+
+/* --- Skeleton shimmer (zone de média en attente) ----------------------- */
+@keyframes of-skeleton {
+  0%   { background-position: 180% 0, 0 0; }
+  100% { background-position: -80% 0, 0 0; }
+}
+
+/* Surface utilitaire : pose un shimmer plein conteneur. Les surfaces qui
+   l'utilisent (prediction-map-panel, history-frame) déclarent le ::before. */
+.of-skeleton {
+  background:
+    linear-gradient(100deg, transparent 18%, rgba(125, 211, 252, 0.08) 42%, rgba(125, 211, 252, 0.08) 52%, transparent 74%),
+    rgba(255, 255, 255, 0.025);
+  background-size: 220% 100%, 100% 100%;
+  animation: of-skeleton 1.5s ease-in-out infinite;
+}
+
+/* --- Radar de chargement (balayage de la France, façon sonar) ---------- */
+/* Silhouette France + anneaux + faisceau tournant. Remplace le shimmer sur
+   les zones carte en attente. Thème cyan « orage ». */
+.of-radar {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: var(--sp-5);
+  padding: var(--sp-4);
+  pointer-events: none;
+}
+.of-radar-scope {
+  position: relative;
+  width: min(360px, 72%, 46vh);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.07), rgba(7, 13, 24, 0) 68%),
+    rgba(9, 17, 30, 0.32);
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  box-shadow: inset 0 0 44px rgba(56, 189, 248, 0.07), var(--shadow-2);
+}
+.of-radar-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.of-radar-rings circle,
+.of-radar-rings line {
+  fill: none;
+  stroke: rgba(125, 211, 252, 0.18);
+  stroke-width: 0.3;
+  vector-effect: non-scaling-stroke;
+}
+.of-radar-land path {
+  fill: rgba(56, 189, 248, 0.10);
+  stroke: rgba(125, 211, 252, 0.5);
+  stroke-width: 0.5;
+  stroke-linejoin: round;
+}
+/* Faisceau : dégradé conique (traînée qui s'estompe + bord vif) qui tourne. */
+.of-radar-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(56, 189, 248, 0) 0deg,
+    rgba(56, 189, 248, 0) 232deg,
+    rgba(56, 189, 248, 0.10) 320deg,
+    rgba(56, 189, 248, 0.34) 354deg,
+    rgba(125, 211, 252, 0.62) 360deg
+  );
+  animation: of-radar-spin 3.8s linear infinite;
+}
+/* Bord vif du faisceau (le trait radar) au sommet (0deg), tourne avec le calque. */
+.of-radar-sweep::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: linear-gradient(to top, rgba(125, 211, 252, 0), rgba(125, 211, 252, 0.85));
+}
+/* Pivot central lumineux. */
+.of-radar-scope::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(191, 232, 252, 0.95);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.85);
+}
+.of-radar-caption {
+  font-size: var(--label-eyebrow-size);
+  font-weight: var(--label-eyebrow-weight);
+  letter-spacing: var(--label-eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--label-eyebrow-color);
+}
+@keyframes of-radar-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .of-radar-sweep { animation: none; opacity: 0.55; }
+}
+
+/* --- Focus clavier visible (a11y) -------------------------------------- */
+/* Spécificité 0 → défaut global ; un :focus-visible plus spécifique d'un
+   component gagne toujours. Ne s'applique qu'au focus clavier. */
+:where(
+  button, a[href], input, select, textarea, summary,
+  [tabindex]:not([tabindex="-1"]),
+  .metric-card, .prediction-date-chip, .prediction-period-tab,
+  .history-cal-day, .search-autocomplete-item
+):focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+/* Exception : le canvas maplibre est focusable (tabindex=0) mais un anneau
+   autour de TOUTE la carte est lourd → on le retire (spécificité 0,2,0 gagne). */
+.maplibregl-canvas:focus,
+.maplibregl-canvas:focus-visible {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .of-skeleton { animation: none; }
+}

@@ -117,6 +117,22 @@
   --lh-tight: 1.15;
   --lh-normal: 1.45;
 
+  /* --- Rôles de micro-libellé (discipline du texte structurel) ----------- */
+  /* Deux rôles unifiés là où le legacy en avait 6 traitements ad hoc.
+     Capitales tracées à graisse modérée = lisible + intentionnel (vs 800/900
+     serré à 9-12px = « amateur »). À consommer via les mixins ci-dessous. */
+  /* Eyebrow : kicker accentué (haut de page/section clé). Cyan calme. */
+  --label-eyebrow-size: 11px;
+  --label-eyebrow-weight: var(--fw-bold);     /* 700 */
+  --label-eyebrow-tracking: 0.085em;
+  --label-eyebrow-color: #7dd3fc;             /* cyan calme, lisible sur verre */
+  /* Section : en-tête de groupe en capitales (neutre lumineux, plus quiet
+     que la donnée blanche → la valeur prime). */
+  --label-section-size: 11px;
+  --label-section-weight: var(--fw-bold);     /* 700 */
+  --label-section-tracking: 0.075em;
+  --label-section-color: #aebfd8;             /* muted lumineux */
+
   /* --- Mouvement --------------------------------------------------------- */
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);

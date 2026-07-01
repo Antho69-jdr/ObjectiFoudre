@@ -34,6 +34,10 @@
    versions scopées (chargées plus bas) gagnent comme avec le legacy. */
 @import "./components/legacy-misc.css";
 
+/* États transverses du DS : skeleton de chargement (keyframe globale) +
+   anneau de focus clavier a11y (spécificité 0). */
+@import "./components/states.css";
+
 /* Component timeline PROPRE (rail desktop + molette mobile, 0 !important).
    Remplace les ~150 règles timeline legacy purgées de components/responsive.css. */
 @import "./components/timeline.css";

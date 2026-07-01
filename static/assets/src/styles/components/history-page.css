@@ -503,10 +503,11 @@
 .history-cal-toggle:hover { background: rgba(255, 255, 255, 0.07); }
 .history-cal-toggle-title {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: var(--label-section-size);
+  font-weight: var(--label-section-weight);
   text-transform: uppercase;
-  letter-spacing: 0.07em;
-  opacity: 0.7;
+  letter-spacing: var(--label-section-tracking);
+  color: var(--label-section-color);
 }
 .history-cal-toggle-current {
   flex: 1 1 auto;
