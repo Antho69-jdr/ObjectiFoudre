@@ -34,11 +34,33 @@
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.15;
   white-space: normal;
   pointer-events: none;
+}
+
+/* Repère iconographique (horloge / calendrier) : dit ce que sont ces nombres.
+   Icône monochrome via mask, un cran plus discrète que le texte. */
+.current-time-badge::before,
+.timeline-map-date-badge::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  vertical-align: -1.5px;
+  background-color: currentColor;
+  opacity: 0.7;
+  -webkit-mask: var(--badge-icon) center / contain no-repeat;
+  mask: var(--badge-icon) center / contain no-repeat;
+}
+.current-time-badge {
+  --badge-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7.5V12l3.2 1.9'/%3E%3C/svg%3E");
+}
+.timeline-map-date-badge {
+  --badge-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='5' width='16' height='16' rx='2'/%3E%3Cpath d='M8 3v4M16 3v4M4 10h16'/%3E%3C/svg%3E");
 }
 
 /* Variantes « source de grille » (intention de design ; inertes en pratique). */

@@ -217,7 +217,7 @@ body.chase-mode #chaseSlots {
   border-radius: 14px;
   background:
     linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(15, 23, 42, 0.80)),
-    linear-gradient(90deg, rgba(var(--tl-accent),0.06), rgba(var(--tl-accent-2),0.08));
+    linear-gradient(90deg, rgba(var(--tl-accent),0.05), rgba(var(--tl-accent),0.09));
   border: 1px solid rgba(226, 232, 240, 0.16);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 10px 24px rgba(0, 0, 0, 0.24);
 }
@@ -226,7 +226,7 @@ body.chase-mode #chaseSlots {
   left: 0; top: 0; bottom: 0;
   width: var(--timeline-active-pct);
   border-radius: 14px 0 0 14px;
-  background: linear-gradient(90deg, rgba(var(--tl-accent),0.16), rgba(var(--tl-accent-2),0.28));
+  background: linear-gradient(90deg, rgba(var(--tl-accent),0.14), rgba(var(--tl-accent),0.34));
   pointer-events: none;
 }
 
@@ -285,7 +285,7 @@ body.chase-mode #chaseSlots {
   pointer-events: none;
 }
 .timeline-hour-mark.is-arome-cached .timeline-hour-line { background: rgba(var(--tl-accent),0.76); }
-.timeline-hour-mark.is-arome-loaded .timeline-hour-line { background: rgba(var(--tl-accent-2),0.86); box-shadow: 0 0 8px rgba(var(--tl-accent-2),0.38); }
+.timeline-hour-mark.is-arome-loaded .timeline-hour-line { background: rgba(var(--tl-accent),0.98); box-shadow: 0 0 8px rgba(var(--tl-accent),0.45); }
 .timeline-hour-mark.active .timeline-hour-label { color: #f8fafc; font-weight: 950; }
 .timeline-hour-mark.active .timeline-hour-line { top: 4px; height: 36px; width: 2px; opacity: 0.94; background: rgba(255, 255, 255, 0.90); }
 
@@ -578,7 +578,7 @@ body.chase-mode #chaseSlots {
 
   /* Marqueurs données AROME */
   .timeline-wheel-item.is-arome-cached .timeline-wheel-line { background: rgba(var(--tl-accent),0.86); }
-  .timeline-wheel-item.is-arome-loaded .timeline-wheel-line { background: rgba(var(--tl-accent-2),0.96); box-shadow: 0 0 8px rgba(var(--tl-accent-2),0.44); }
+  .timeline-wheel-item.is-arome-loaded .timeline-wheel-line { background: rgba(var(--tl-accent),0.98); box-shadow: 0 0 8px rgba(var(--tl-accent),0.44); }
 }
 
 /* Desktop (≥1025) : frise PLEINE LARGEUR, bord à bord, posée au-dessus de la

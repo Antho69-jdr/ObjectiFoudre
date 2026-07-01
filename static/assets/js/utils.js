@@ -64,7 +64,11 @@
       const value = normalizeDateIso(dateIso);
       const parts = value.split('-');
       if (parts.length !== 3) return value;
-      return parts[2] + '-' + parts[1] + '-' + parts[0];
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      if (Number.isNaN(d.getTime())) return parts[2] + '-' + parts[1] + '-' + parts[0];
+      // Date française lisible : « mar. 1 juil. 2026 » (badge carte + frise).
+      const label = d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+      return label.charAt(0).toUpperCase() + label.slice(1);
     }
 
 
