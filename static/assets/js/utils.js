@@ -207,14 +207,15 @@
 
     function colorFromStormForecast(score) {
       const s = clampScore(score);
+      // Rampe « radar/chaleur » sur ink (cohérente avec la carte de risque Prévision) :
+      // calme = ink sombre (se fond dans le fond), puis cyan→vert→ambre→rouge→magenta.
       const stops = [
-        { at: 0, c: [18, 66, 112] },
-        { at: 22, c: [45, 127, 107] },
-        { at: 42, c: [108, 161, 72] },
-        { at: 60, c: [224, 173, 58] },
-        { at: 78, c: [232, 95, 54] },
-        { at: 92, c: [160, 43, 118] },
-        { at: 100, c: [92, 28, 120] },
+        { at: 0, c: [9, 19, 33] },
+        { at: 26, c: [46, 131, 166] },
+        { at: 46, c: [52, 211, 153] },
+        { at: 66, c: [251, 191, 36] },
+        { at: 83, c: [244, 63, 94] },
+        { at: 100, c: [217, 70, 239] },
       ];
       let a = stops[0], b = stops[stops.length - 1];
       for (let i = 0; i < stops.length - 1; i += 1) {

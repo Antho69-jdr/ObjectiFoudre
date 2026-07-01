@@ -258,7 +258,9 @@
     if (!slots.length) return null;
     const proj = buildGifFranceProjection({ left: 0, top: 0, width: VB, height: VB });
     projection = proj;
-    const color = (typeof gifScoreColor === 'function') ? gifScoreColor : ((s) => (typeof colorFromScore === 'function' ? colorFromScore(s) : '#3a6'));
+    // Rampe « radar/chaleur » sur ink (cohérente avec la Carte de risque Prévision).
+    const color = (typeof colorFromStormForecast === 'function') ? colorFromStormForecast
+      : ((typeof gifScoreColor === 'function') ? gifScoreColor : ((s) => (typeof colorFromScore === 'function' ? colorFromScore(s) : '#3a6')));
     const baseColor = color(0);
 
     // 1) géométrie : union des cellules sur tous les créneaux
@@ -338,8 +340,8 @@
       p.setAttribute('pointer-events', 'none');
       frameEl.appendChild(p);
     };
-    addBorderPath(deptData, 'rgba(150,170,200,0.30)', 0.5);   // départements (dessous, discret)
-    addBorderPath(regionData, 'rgba(176,200,228,0.66)', 1.1); // régions (dessus, net)
+    addBorderPath(deptData, 'rgba(125,211,252,0.42)', 0.62);  // départements (dessous, cyan discret)
+    addBorderPath(regionData, 'rgba(125,211,252,0.72)', 1.3); // régions (dessus, cyan net = niveau pays)
 
     flashLayer = document.createElementNS(SVGNS, 'g');
     frameEl.appendChild(flashLayer);

@@ -44,8 +44,10 @@
     }
 
     function gifScoreColor(score) {
-      const rgb = parseRgbColor(colorFromScore(score));
-      if (!rgb) return colorFromScore(score);
+      // Rampe « radar/chaleur » (comme la carte Historique live + Prévision).
+      const ramp = (typeof colorFromStormForecast === 'function') ? colorFromStormForecast : colorFromScore;
+      const rgb = parseRgbColor(ramp(score));
+      if (!rgb) return ramp(score);
       const softened = gifBlendRgb(rgb, GIF_SCORE_SOFT_MIX_RGB, 0.18);
       return `rgb(${softened[0]}, ${softened[1]}, ${softened[2]})`;
     }
@@ -74,7 +76,7 @@
       }
       rawColors.push(...collectMapPaletteColors(mapBackground));
       for (let score = 0; score <= 100; score += 1) {
-        const baseColor = parseRgbColor(colorFromScore(score));
+        const baseColor = parseRgbColor((typeof colorFromStormForecast === 'function' ? colorFromStormForecast : colorFromScore)(score));
         const exportColor = parseRgbColor(gifScoreColor(score));
         if (baseColor) rawColors.push(baseColor);
         if (exportColor) rawColors.push(exportColor);
