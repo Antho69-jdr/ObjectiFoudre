@@ -203,11 +203,18 @@
     function detailChip(label, value, hint = '', options = {}) {
       const tone = options.tone ? ` details-calc-chip-${options.tone}` : '';
       const key = options.key || String(label).toLowerCase().replace(/\s+/g, '_');
+      // Mini-barre de niveau : les sous-scores sont sur 0-100 → un liseré de
+      // remplissage rend la décomposition scannable (facteur haut/bas d'un coup d'œil).
+      const num = detailNumeric(value);
+      const bar = (options.bar !== false && Number.isFinite(num))
+        ? `<span class="calc-bar"><i style="width:${Math.max(0, Math.min(100, num))}%"></i></span>`
+        : '';
       return `
         <button type="button" class="details-calc-chip${tone}" data-calc-key="${escapeDetailHtml(key)}" data-calc-label="${escapeDetailHtml(label)}" data-calc-value="${escapeDetailHtml(value)}">
           <span class="calc-label">${escapeDetailHtml(label)}</span>
           <strong class="calc-value">${escapeDetailHtml(value)}</strong>
           ${hint ? `<span class="calc-hint">${escapeDetailHtml(hint)}</span>` : ''}
+          ${bar}
         </button>
       `;
     }

@@ -1,5 +1,10 @@
     function safe(value, suffix = '') {
       if (value === undefined || value === null || value === '') return '-';
+      // Grands nombres (ex. Rayonnement) : séparateurs de milliers pour la lisibilité.
+      const n = Number(value);
+      if (Number.isFinite(n) && Math.abs(n) >= 10000) {
+        return `${Math.round(n).toLocaleString('fr-FR')}${suffix}`;
+      }
       return `${value}${suffix}`;
     }
 

@@ -264,11 +264,19 @@
       const d10 = detailNumeric(p.wind_direction_10m);
       if (s10 !== null) rows.push({ label: '10 m', speed: s10, dir: d10 });
       (levels || []).forEach((l) => rows.push({ label: l.level + ' hPa', speed: l.speed_ms, dir: l.dir_deg }));
-      return rows.map((r) => {
-        const speed = (r.speed === null || r.speed === undefined) ? '—' : Math.round(r.speed * 3.6) + ' km/h';
+      const kmh = rows.map((r) => (r.speed === null || r.speed === undefined) ? null : Math.round(r.speed * 3.6));
+      // Barre de vitesse normalisée au max du profil (plancher 60 km/h) → le
+      // cisaillement vertical (vent qui forcit en altitude) se lit d'un coup d'œil.
+      const maxKmh = Math.max(60, ...kmh.filter((v) => v !== null));
+      return rows.map((r, i) => {
+        const v = kmh[i];
+        const speed = (v === null) ? '—' : v + ' km/h';
+        const pct = (v === null) ? 0 : Math.max(2, Math.min(100, (v / maxKmh) * 100));
         const dir = (r.dir === null || r.dir === undefined) ? '—'
           : '<span class="wp-arrow" style="display:inline-block;transform:rotate(' + Math.round(r.dir) + 'deg)">↑</span> ' + Math.round(r.dir) + '° ' + windDirCardinal(r.dir);
-        return '<div class="wp-row"><span class="wp-level">' + r.label + '</span><span class="wp-speed">' + speed + '</span><span class="wp-dir">' + dir + '</span></div>';
+        return '<div class="wp-row"><span class="wp-level">' + r.label + '</span><span class="wp-speed">' + speed + '</span>'
+          + '<span class="wp-bar"><i style="width:' + pct.toFixed(0) + '%"></i></span>'
+          + '<span class="wp-dir">' + dir + '</span></div>';
       }).join('');
     }
     const windProfilePending = new Map();
