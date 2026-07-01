@@ -7,20 +7,20 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="ObjectiFoudre" />
-  <link rel="manifest" href="/manifest.webmanifest?v=1.2.190" />
-  <link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=1.2.190" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png?v=1.2.190" />
+  <link rel="manifest" href="/manifest.webmanifest?v=1.2.193" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=1.2.193" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png?v=1.2.193" />
   <title>ObjectiFoudre — Tactile</title>
-  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.2.190"></script>
-  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.2.190" rel="stylesheet" />
+  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.2.193"></script>
+  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.2.193" rel="stylesheet" />
   <!-- CSS legacy (main/components/responsive) supprimé : tout est désormais dans le
        bundle componentisé theme.css (esbuild de assets/src/styles/). -->
-  <link rel="stylesheet" href="/assets/dist/theme.css?v=1.2.190" />
+  <link rel="stylesheet" href="/assets/dist/theme.css?v=1.2.193" />
 </head>
 <body>
   <div id="mobileBlockScreen" class="mobile-block-screen" hidden>
     <div class="mobile-block-card">
-      <img class="mobile-block-logo" src="/static/logo-splash.png?v=1.2.190" alt="ObjectiFoudre" />
+      <img class="mobile-block-logo" src="/static/logo-splash.png?v=1.2.193" alt="ObjectiFoudre" />
       <div class="mobile-block-title">ObjectiFoudre</div>
       <p class="mobile-block-text">Smartphone non pris en charge.</p>
       <p class="mobile-block-text mobile-block-text-secondary">L'application est disponible uniquement sur PC et tablette.</p>
@@ -29,7 +29,7 @@
   <div id="app">
     <div class="app-loader" id="appLoader" aria-hidden="false">
       <div class="app-loader-card">
-        <img class="app-loader-logo" src="/static/logo-splash.png?v=1.2.190" alt="Objectif Foudre" />
+        <img class="app-loader-logo" src="/static/logo-splash.png?v=1.2.193" alt="Objectif Foudre" />
         <div class="app-loader-subtitle">Chargement de la situation convective…</div>
       </div>
     </div>
@@ -227,7 +227,7 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.2.190">Version : v1.2.190 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.2.193">Version : v1.2.193 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" aria-labelledby="infoDrawerTitle">
@@ -484,6 +484,12 @@
         <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h7"></path><path d="M6 8.5 9.5 12 6 15.5"></path><path d="M22 12h-7"></path><path d="M18 8.5 14.5 12 18 15.5"></path></svg>
       </button>
     </div>
+    <!-- Légende de réflectivité radar (rampe faible→violent, cf. _MF_RADAR_COLORS). -->
+    <div class="chase-legend" id="chaseLegend" aria-hidden="true">
+      <span class="chase-legend-title" id="chaseLegendTitle">Réflectivité radar</span>
+      <span class="chase-legend-bar"></span>
+      <span class="chase-legend-scale"><span>Faible</span><span>Violent</span></span>
+    </div>
     <div class="chase-overlay" id="chaseControls" aria-hidden="true">
       <div class="chase-frise" id="chaseFrise">
         <button class="chase-frise-btn chase-play-btn" id="chasePlayBtn" type="button" aria-pressed="false" aria-label="Lecture de l'animation" title="Lecture de l'animation">
@@ -499,42 +505,42 @@
       </div>
     </div>
   </div>
-  <script src="/assets/js/dom.js?v=1.2.190"></script>
-  <script src="/assets/js/utils.js?v=1.2.190"></script>
-  <script src="/assets/js/panels.js?v=1.2.190"></script>
-  <script src="/assets/js/state.js?v=1.2.190"></script>
-  <script src="/assets/js/core.js?v=1.2.190"></script>
-  <script src="/assets/js/map-ui.js?v=1.2.190"></script>
-  <script src="/assets/js/timeline-playback.js?v=1.2.190"></script>
-  <script src="/assets/js/timeline-solar.js?v=1.2.190"></script>
-  <script src="/assets/js/timeline-wheel.js?v=1.2.190"></script>
-  <script src="/assets/js/grid-loader.js?v=1.2.190"></script>
-  <script src="/assets/js/grid-clip-geometry.js?v=1.2.190"></script>
-  <script src="/assets/js/grid-geojson.js?v=1.2.190"></script>
-  <script src="/assets/js/france-admin-lines.js?v=1.2.190"></script>
-  <script src="/assets/js/france-regions.js?v=1.2.190"></script>
-  <script src="/assets/js/storm-forecast-data.js?v=1.2.190"></script>
-  <script src="/assets/js/storm-forecast-render.js?v=1.2.190"></script>
-  <script src="/assets/js/storm-forecast-page.js?v=1.2.190"></script>
-  <script src="/assets/js/grid-layers.js?v=1.2.190"></script>
-  <script src="/assets/js/grid.js?v=1.2.190"></script>
-  <script src="/assets/js/metric-data.js?v=1.2.190"></script>
-  <script src="/assets/js/metric-ui.js?v=1.2.190"></script>
-  <script src="/assets/js/selection-detail-data.js?v=1.2.190"></script>
-  <script src="/assets/js/selection-inspector.js?v=1.2.190"></script>
-  <script src="/assets/js/selection-card.js?v=1.2.190"></script>
-  <script src="/assets/js/data.js?v=1.2.190"></script>
-  <script src="/assets/js/services.js?v=1.2.190"></script>
-  <script src="/assets/js/search-autocomplete.js?v=1.2.190"></script>
-  <script src="/assets/js/controls-timeline.js?v=1.2.190"></script>
-  <script src="/assets/js/controls-export.js?v=1.2.190"></script>
-  <script src="/assets/js/controls-meteofrance.js?v=1.2.190"></script>
-  <script src="/assets/js/history.js?v=1.2.190"></script>
-  <script src="/assets/js/chase.js?v=1.2.190"></script>
-  <script src="/assets/js/bootstrap.js?v=1.2.190"></script>
-  <script src="/assets/js/mobile-block.js?v=1.2.190"></script>
-  <script src="/assets/js/tooltip.js?v=1.2.190"></script>
+  <script src="/assets/js/dom.js?v=1.2.193"></script>
+  <script src="/assets/js/utils.js?v=1.2.193"></script>
+  <script src="/assets/js/panels.js?v=1.2.193"></script>
+  <script src="/assets/js/state.js?v=1.2.193"></script>
+  <script src="/assets/js/core.js?v=1.2.193"></script>
+  <script src="/assets/js/map-ui.js?v=1.2.193"></script>
+  <script src="/assets/js/timeline-playback.js?v=1.2.193"></script>
+  <script src="/assets/js/timeline-solar.js?v=1.2.193"></script>
+  <script src="/assets/js/timeline-wheel.js?v=1.2.193"></script>
+  <script src="/assets/js/grid-loader.js?v=1.2.193"></script>
+  <script src="/assets/js/grid-clip-geometry.js?v=1.2.193"></script>
+  <script src="/assets/js/grid-geojson.js?v=1.2.193"></script>
+  <script src="/assets/js/france-admin-lines.js?v=1.2.193"></script>
+  <script src="/assets/js/france-regions.js?v=1.2.193"></script>
+  <script src="/assets/js/storm-forecast-data.js?v=1.2.193"></script>
+  <script src="/assets/js/storm-forecast-render.js?v=1.2.193"></script>
+  <script src="/assets/js/storm-forecast-page.js?v=1.2.193"></script>
+  <script src="/assets/js/grid-layers.js?v=1.2.193"></script>
+  <script src="/assets/js/grid.js?v=1.2.193"></script>
+  <script src="/assets/js/metric-data.js?v=1.2.193"></script>
+  <script src="/assets/js/metric-ui.js?v=1.2.193"></script>
+  <script src="/assets/js/selection-detail-data.js?v=1.2.193"></script>
+  <script src="/assets/js/selection-inspector.js?v=1.2.193"></script>
+  <script src="/assets/js/selection-card.js?v=1.2.193"></script>
+  <script src="/assets/js/data.js?v=1.2.193"></script>
+  <script src="/assets/js/services.js?v=1.2.193"></script>
+  <script src="/assets/js/search-autocomplete.js?v=1.2.193"></script>
+  <script src="/assets/js/controls-timeline.js?v=1.2.193"></script>
+  <script src="/assets/js/controls-export.js?v=1.2.193"></script>
+  <script src="/assets/js/controls-meteofrance.js?v=1.2.193"></script>
+  <script src="/assets/js/history.js?v=1.2.193"></script>
+  <script src="/assets/js/chase.js?v=1.2.193"></script>
+  <script src="/assets/js/bootstrap.js?v=1.2.193"></script>
+  <script src="/assets/js/mobile-block.js?v=1.2.193"></script>
+  <script src="/assets/js/tooltip.js?v=1.2.193"></script>
   <!-- Bundle modules ES (Phase 3) — s'exécute après le legacy, pont window.OF. Contient idb-cache migré. -->
-  <script type="module" src="/assets/dist/app.js?v=1.2.190"></script>
+  <script type="module" src="/assets/dist/app.js?v=1.2.193"></script>
 </body>
 </html>

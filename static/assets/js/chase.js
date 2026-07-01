@@ -706,14 +706,14 @@
     else { verdict = '🌤 Calme'; cls = 'sev-low'; }
     const hailTxt = (typeof hail === 'number' && hail > 0.5) ? ' · grêle probable' : '';
     const rows = [
-      ['Réflectivité', echo !== null ? Math.round(echo) + ' dBZ' : '—'],
-      ['CAPE', typeof cape === 'number' ? Math.round(cape) + ' J/kg' : '—'],
-      ['Rafales 15 min', typeof gust === 'number' ? Math.round(gust) + ' km/h' : '—'],
-      ['Grêle (diag)', typeof hail === 'number' ? (hail > 0.5 ? 'oui' : 'non') : '—'],
-      ['Graupel', typeof graupel === 'number' ? graupel.toFixed(2) : '—'],
+      ['Réflectivité', echo !== null ? Math.round(echo) : '—', ' dBZ'],
+      ['CAPE', typeof cape === 'number' ? Math.round(cape) : '—', ' J/kg'],
+      ['Rafales 15 min', typeof gust === 'number' ? Math.round(gust) : '—', ' km/h'],
+      ['Grêle (diag)', typeof hail === 'number' ? (hail > 0.5 ? 'oui' : 'non') : '—', ''],
+      ['Graupel', typeof graupel === 'number' ? graupel.toFixed(2) : '—', ''],
     ];
     return `<div class="chase-verdict ${cls}">${verdict}${hailTxt}<span class="chase-verdict-time">${fmtClock(Math.floor(new Date(t).getTime() / 1000))}</span></div>` +
-      '<ul class="chase-pos-list">' + rows.map((r) => `<li><span>${r[0]}</span><strong>${r[1]}</strong></li>`).join('') + '</ul>';
+      '<ul class="chase-pos-list">' + rows.map((r) => `<li><span>${r[0]}</span><strong>${r[1]}${(r[2] && r[1] !== '—') ? `<span class="chase-unit">${r[2]}</span>` : ''}</strong></li>`).join('') + '</ul>';
   }
 
   function placeUserMarker() {
@@ -767,6 +767,10 @@
       b.classList.toggle('active', on);
       b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
+    // La légende de réflectivité (palette en-app) n'est valable que pour cette
+    // couche ; les autres (CAPE, rafales…) utilisent des palettes WMS Météo-France.
+    const legendEl = document.getElementById('chaseLegend');
+    if (legendEl) legendEl.classList.toggle('is-hidden', key !== 'reflectivity');
     applyCursor();
     schedulePrefetch();  // précharge la frise de la nouvelle couche active
   }
