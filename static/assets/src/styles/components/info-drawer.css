@@ -50,7 +50,9 @@
   -webkit-backdrop-filter: blur(18px) saturate(1.04);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
-.info-drawer .title { font-size: 18px; }
+.info-drawer .title { font-size: 18px; letter-spacing: -0.01em; }
+/* Sous-titre d'en-tete : legerement espace du titre, tracking calme. */
+.info-drawer-header .muted { margin-top: 3px; letter-spacing: 0.01em; }
 
 /* Texte courant */
 .info-drawer p,
@@ -68,10 +70,14 @@
   display: grid;
   gap: 10px;
 }
-.drawer-section-title {
-  font-weight: 800;
-  color: #eef4ff;
-  letter-spacing: 0.01em;
+/* Titre de section = micro-libelle DS (comme modale/prevision) au lieu du gras
+   plat legacy. Scope .info-drawer pour battre .small (font-size). */
+.info-drawer .drawer-section-title {
+  font-size: var(--label-section-size);
+  font-weight: var(--label-section-weight);
+  letter-spacing: var(--label-section-tracking);
+  text-transform: uppercase;
+  color: var(--label-section-color);
 }
 
 /* Grilles de cartes (2 colonnes desktop) */
@@ -83,15 +89,36 @@
   grid-template-columns: 1fr 1fr;
 }
 
-/* Cartes */
+/* Cartes = surface DS legerement elevee (degrade + filet + ombre douce) au lieu
+   du plat uniforme legacy. position:relative pour le lisere des plages. */
 .drawer-scale-card,
 .drawer-formula-card,
 .drawer-category-card {
+  position: relative;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.035);
-  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.022));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  padding: 12px 13px;
 }
+
+/* Cartes de PLAGE : lisere gauche + chiffre de plage teintes par la couleur de
+   la bande (meme rampe que la legende/carte) → l'echelle prend vie. */
+.drawer-scale-grid > .drawer-scale-card { padding-left: 18px; }
+.drawer-scale-grid > .drawer-scale-card::before {
+  content: "";
+  position: absolute;
+  left: 7px; top: 12px; bottom: 12px;
+  width: 3px;
+  border-radius: var(--r-pill);
+  background: var(--band, #2e83a6);
+}
+.drawer-scale-grid > .drawer-scale-card strong { color: var(--band, #eef4ff); }
+.drawer-scale-grid > .drawer-scale-card:nth-child(1) { --band: #2e83a6; }
+.drawer-scale-grid > .drawer-scale-card:nth-child(2) { --band: #34d399; }
+.drawer-scale-grid > .drawer-scale-card:nth-child(3) { --band: #fbbf24; }
+.drawer-scale-grid > .drawer-scale-card:nth-child(4) { --band: #f43f5e; }
+.drawer-scale-grid > .drawer-scale-card:nth-child(5) { --band: #d946ef; }
 .drawer-scale-card,
 .drawer-formula-card {
   display: grid;
@@ -123,6 +150,15 @@
   display: grid;
   gap: 6px;
 }
+
+/* Listes de reperes : rythme aere, puces cyan (accent DS), intitules en gras
+   plus lumineux. */
+.drawer-bullet-list {
+  display: grid;
+  gap: 7px;
+}
+.drawer-bullet-list li::marker { color: var(--accent, #38bdf8); }
+.drawer-bullet-list strong { color: #eef4ff; }
 
 /* Backdrop toujours masque (bat .modal-backdrop.visible 0,2,0 par l'ordre, 0 !important) */
 .modal-backdrop.drawer-backdrop-transparent {
