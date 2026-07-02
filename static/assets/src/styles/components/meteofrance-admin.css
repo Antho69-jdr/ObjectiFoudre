@@ -7,19 +7,22 @@
 }
 .mf-admin-panel {
   margin-top: 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(15, 23, 42, 0.34);
+  border-radius: var(--r-md);
+  border: 1px solid rgba(148, 163, 184, 0.20);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(15, 23, 42, 0.30));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.03);
   overflow: hidden;
 }
 .mf-admin-panel summary {
   cursor: pointer;
   list-style: none;
-  padding: 10px 11px;
+  padding: 11px 13px;
   color: #cffafe;
   font-size: 12px;
   font-weight: 800;
+  transition: background var(--dur-base) var(--ease);
 }
+.mf-admin-panel summary:hover { background: rgba(125, 211, 252, 0.06); }
 .mf-admin-panel summary::-webkit-details-marker {
   display: none;
 }
@@ -40,9 +43,11 @@
   gap: 8px;
 }
 .mf-token-label {
-  color: #eef4ff;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: var(--label-section-size);
+  font-weight: var(--label-section-weight);
+  letter-spacing: var(--label-section-tracking);
+  text-transform: uppercase;
+  color: var(--label-section-color);
 }
 .mf-token-row {
   display: grid;
@@ -65,7 +70,7 @@
 .mf-token-input {
   min-width: 0;
   min-height: 40px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   border: 1px solid rgba(255,255,255,0.10);
   background: rgba(3, 8, 18, 0.58);
   color: #eef4ff;
@@ -79,7 +84,7 @@
 }
 .mf-test-status {
   min-height: 36px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   border: 1px solid rgba(255,255,255,0.08);
   background: rgba(255,255,255,0.035);
   color: #c8d5ea;
@@ -105,7 +110,7 @@
 .mf-preload-progress {
   display: grid;
   gap: 7px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   border: 1px solid rgba(125, 211, 252,0.22);
   background: rgba(3,8,18,0.34);
   padding: 9px 10px;
