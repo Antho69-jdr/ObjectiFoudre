@@ -135,6 +135,31 @@ body.chase-mode #mfQuotaCooldownBadge { display: none !important; }
   -webkit-backdrop-filter: var(--glass-blur);
   overflow: visible;
 }
+/* Desktop ≥1025 : comme .timeline-dock → BARRE PLEINE LARGEUR bord a bord,
+   coins HAUT arrondis, collee au-dessus de la meta-strip. La frise interne
+   s'etire (plus de cap 1120px). On ne fait que la geometrie ; la teinte rouge
+   (bg/bordure) vient du base. */
+@media (min-width: 1025px) {
+  .chase-overlay {
+    left: 0; right: 0;
+    width: auto; max-width: none;
+    transform: none;
+    /* COLLE a la meta-stack (idem dock normal) : hauteur reelle mesuree. */
+    bottom: var(--meta-height-px, var(--timeline-strip-bottom));
+    padding: 7px var(--sp-5);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  .chase-overlay .chase-frise { width: 100%; max-width: none; }
+  /* Rail ETROIT CENTRE (choix user) : le rail chasse couvre peu d'heures (~8h
+     radar+nowcast) → etire s'il remplit toute la largeur. On le PLAFONNE a la
+     densite de la frise normale (~45px/h → ~360px pour 8h) et on le CENTRE dans
+     le bandeau (la colonne 1fr garde l'espace, le wrap se cape + se centre). */
+  .chase-frise .chase-rail-wrap {
+    justify-self: center;
+    width: 100%;
+    max-width: 360px;
+  }
+}
 
 /* frise : play | rail/molette | export | geo, sur UNE ligne, tout centre.
    Grille a gouttieres egales (88px de chaque cote) → rail centre. */

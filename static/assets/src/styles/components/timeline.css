@@ -153,10 +153,10 @@ body.chase-mode #chaseSlots {
 .timeline-dock .timeline-icon-btn {
   display: inline-grid;
   place-items: center;
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
-  min-height: 34px;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
   padding: 0;
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(10, 20, 35, 0.90), rgba(7, 14, 25, 0.78));
@@ -175,7 +175,7 @@ body.chase-mode #chaseSlots {
   transform: translateY(-1px);
 }
 .timeline-dock .timeline-icon-btn:active { transform: translateY(0); }
-.timeline-dock .timeline-icon-btn .icon-svg { width: 17px; height: 17px; display: block; }
+.timeline-dock .timeline-icon-btn .icon-svg { width: 20px; height: 20px; display: block; }
 .timeline-nav-btn .icon-svg { filter: drop-shadow(0 0 5px rgba(var(--tl-accent), 0.18)); }
 /* État actif (lecture / export en cours) : accent. */
 .timeline-play-btn.active,
@@ -591,7 +591,9 @@ body.chase-mode #chaseSlots {
     width: auto;
     max-width: none;
     transform: none;
-    bottom: var(--timeline-strip-bottom);
+    /* COLLE a la meta-stack : sa HAUTEUR REELLE mesuree (--meta-height-px) plutot
+       que --meta-strip-h (surestime de ~4px → vide sous la frise). */
+    bottom: var(--meta-height-px, var(--timeline-strip-bottom));
     padding: 7px var(--sp-5);
     border-radius: var(--r-lg) var(--r-lg) 0 0;
   }
