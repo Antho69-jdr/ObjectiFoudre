@@ -150,14 +150,13 @@ body.chase-mode #mfQuotaCooldownBadge { display: none !important; }
     border-radius: var(--r-lg) var(--r-lg) 0 0;
   }
   .chase-overlay .chase-frise { width: 100%; max-width: none; }
-  /* Rail ETROIT CENTRE (choix user) : le rail chasse couvre peu d'heures (~8h
-     radar+nowcast) → etire s'il remplit toute la largeur. On le PLAFONNE a la
-     densite de la frise normale (~45px/h → ~360px pour 8h) et on le CENTRE dans
-     le bandeau (la colonne 1fr garde l'espace, le wrap se cape + se centre). */
+  /* Rail = MEME TAILLE que le slider normal (.timeline-slot-strip.timeline-slider
+     = width:min(100%,1180px) centre). On applique la MEME regle au wrap chasse
+     → largeur identique (jusqu'a 1180px, centree). */
   .chase-frise .chase-rail-wrap {
     justify-self: center;
     width: 100%;
-    max-width: 360px;
+    max-width: 1180px;
   }
 }
 
