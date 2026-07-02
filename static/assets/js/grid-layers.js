@@ -409,6 +409,8 @@ function onGridMove(e) {
   const el = ensureGridCellTooltip();
   const score = Number(p.trigger_score);
   const scoreColor = (typeof colorFromScore === 'function' && Number.isFinite(score)) ? colorFromScore(score) : '#7dd3fc';
+  if (Number.isFinite(score)) { el.style.setProperty('--gct-score', scoreColor); }
+  else { el.style.removeProperty('--gct-score'); }
   const head = Number.isFinite(score)
     ? '<span class="gct-head"><b>Probabilité</b><strong style="color:' + scoreColor + '">' + Math.round(score) + '</strong></span>'
     : '';

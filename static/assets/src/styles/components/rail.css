@@ -117,3 +117,23 @@ body.mobile-ui #infoDrawerBtn {
   background: rgba(255, 255, 255, 0.09);
   border-color: var(--border);
 }
+
+/* --- Regroupement fonctionnel du rail droit -------------------------------
+   Le stack aligne : Meilleures cellules (outil carte) | Prévisions · Chasse ·
+   Historique (modes/pages) | Info (aide). On matérialise ces 3 groupes par un
+   écart un peu plus large + un séparateur fin dans l'espace, pour la
+   scannabilité — sans toucher au look des boutons. */
+.right-rail-stack .grid-focus-btn { position: relative; }
+#predictionPageBtn,
+#infoDrawerBtn { margin-top: 9px; }
+#predictionPageBtn::before,
+#infoDrawerBtn::before {
+  content: "";
+  position: absolute;
+  top: -9px;
+  left: 24%;
+  right: 24%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.30), transparent);
+  pointer-events: none;
+}

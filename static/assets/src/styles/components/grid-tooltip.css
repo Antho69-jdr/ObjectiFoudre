@@ -9,7 +9,7 @@
   pointer-events: none;
   display: none;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 172px;
   padding: 9px 11px;
   border-radius: 11px;
@@ -33,7 +33,9 @@
   gap: 14px;
   margin-bottom: 5px;
   padding-bottom: 5px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  /* Liseré d'en-tête teinté par la couleur du score (--gct-score posé en JS) —
+     écho de la couleur de la cellule survolée. Repli neutre. */
+  border-bottom: 1px solid color-mix(in srgb, var(--gct-score, #64748b) 42%, transparent);
 }
 .grid-cell-tooltip .gct-head b {
   font-size: 9.5px;
