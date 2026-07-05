@@ -22,3 +22,12 @@
 }
 .app-tooltip[hidden] { display: none; }
 .app-tooltip.app-tooltip-revealed { transition: none; }
+/* Variante « aide » (pastille ? cliquable) : phrase longue sur plusieurs lignes. */
+.app-tooltip.app-tooltip-help {
+  max-width: 260px;
+  white-space: normal;
+  line-height: 1.4;
+  text-align: left;
+  padding: 8px 10px;
+  font-weight: 700;
+}

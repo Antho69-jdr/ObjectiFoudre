@@ -233,17 +233,47 @@
   align-items: center;
   gap: 8px;
 }
-.history-learning-help {
-  width: 18px;
-  height: 18px;
+/* Pastille d'aide « ? » CLIQUABLE (toggle du tooltip in-app via .app-help-dot,
+   cf. tooltip.js) : MÊME forme que le bouton ? de la frise (.frise-help-btn) —
+   cercle verre, pressé cyan. Clic uniquement (survol exclu côté tooltip.js).
+   Scopé sous .history-learning-title (0,2,0) pour battre la règle tactile
+   `body.mobile-ui button{min-width:88;min-height:46}` (0,1,1) → sinon ovale. */
+.history-learning-title .history-learning-help {
+  display: inline-grid;
+  place-items: center;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  max-width: 24px;
+  min-height: 24px;
+  max-height: 24px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
   border-radius: 50%;
-  border: 1px solid rgba(148, 163, 184, 0.5);
-  background: rgba(255, 255, 255, 0.04);
-  color: #cbd5e1;
-  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 20, 35, 0.72);
+  color: #e5edf9;
+  font-size: 14px;
+  font-weight: 800;
   line-height: 1;
-  cursor: help;
+  cursor: pointer;
   flex: 0 0 auto;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+  backdrop-filter: var(--glass-blur, blur(8px));
+  -webkit-backdrop-filter: var(--glass-blur, blur(8px));
+  transition: background var(--dur-base) var(--ease),
+              border-color var(--dur-base) var(--ease),
+              color var(--dur-base) var(--ease);
+}
+.history-learning-help:hover {
+  background: rgba(17, 31, 54, 0.9);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.history-learning-help[aria-pressed="true"] {
+  background: rgba(14, 165, 233, 0.32);
+  border-color: rgba(125, 211, 252, 0.6);
+  color: #bae6fd;
 }
 .history-learning {
   margin-top: 8px;

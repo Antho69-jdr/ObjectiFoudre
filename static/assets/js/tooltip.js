@@ -50,6 +50,8 @@
     if (!node || !node.closest) return null;
     const el = node.closest('[data-tooltip]');
     if (!el) return null;
+    // Pastilles d'aide « ? » : clic UNIQUEMENT (pas de survol) → exclues du hover.
+    if (el.classList.contains('app-help-dot')) return null;
     if (el.classList.contains('timeline-light-icon') || el.classList.contains('timeline-wheel-light-icon')) return null;
     // Sur tablette/mobile (≤1024px), pas de tooltip d'heure : il masque les info-bulles
     // des icônes jour/nuit de la frise (qu'on veut justement pouvoir lire).
@@ -133,6 +135,8 @@
     revealed = [];
     const btn = document.getElementById('screenTooltipsBtn');
     if (btn) btn.setAttribute('aria-pressed', 'false');
+    document.querySelectorAll('.app-help-dot[aria-pressed="true"]')
+      .forEach((b) => b.setAttribute('aria-pressed', 'false'));
   }
   function revealAll() {
     clearRevealed();
@@ -174,10 +178,46 @@
     e.stopPropagation();
     if (revealed.length) clearRevealed(); else revealAll();
   });
+  // --- Pastille d'aide « ? » ponctuelle (.app-help-dot, ex. auto-calibration) --
+  // Clic/tap = toggle de SA propre info-bulle (même rendu flottant que « révéler »,
+  // ancré au <body>, jamais clippé). Utile au tactile (le survol ne suffit pas).
+  function revealOne(el) {
+    clearRevealed();
+    hide();
+    const text = el.getAttribute('data-tooltip');
+    if (!text) return;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    const lbl = document.createElement('div');
+    lbl.className = 'app-tooltip app-tooltip-revealed app-tooltip-help';
+    lbl.setAttribute('role', 'tooltip');
+    lbl.textContent = text;
+    lbl.hidden = false;
+    document.body.appendChild(lbl);
+    const tw = lbl.offsetWidth, th = lbl.offsetHeight;
+    const left = Math.max(4, Math.min(r.left + r.width / 2 - tw / 2, vw - tw - 4));
+    let top = r.bottom + 8;                       // EN DESSOUS par défaut
+    if (top + th > vh - 4) top = r.top - th - 8;  // au-dessus si pas de place
+    top = Math.max(4, Math.min(top, vh - th - 4));
+    lbl.style.left = Math.round(left) + 'px';
+    lbl.style.top = Math.round(top) + 'px';
+    lbl.style.opacity = '1';
+    revealed.push(lbl);
+    el.setAttribute('aria-pressed', 'true');
+  }
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest && e.target.closest('.app-help-dot');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (revealed.length) clearRevealed(); else revealOne(btn);
+  });
+
   // Fermer en touchant ailleurs / au défilement / au redimensionnement.
   document.addEventListener('pointerdown', (e) => {
     if (!revealed.length) return;
-    if (e.target.closest && e.target.closest('#screenTooltipsBtn')) return;
+    if (e.target.closest && (e.target.closest('#screenTooltipsBtn') || e.target.closest('.app-help-dot'))) return;
     clearRevealed();
   }, true);
   window.addEventListener('scroll', clearRevealed, true);
