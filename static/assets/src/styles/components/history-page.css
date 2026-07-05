@@ -546,12 +546,15 @@
 .history-cal-nav:disabled { opacity: 0.3; cursor: default; }
 .history-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
 .history-cal-wd { text-align: center; font-size: 10px; font-weight: 700; opacity: 0.5; padding-bottom: 2px; }
+/* Jours du calendrier = même langage chip que les dates (référence
+   learningRetrainBtn) : radius 10 ; jour disponible = ghost neutre ; jour
+   sélectionné = cyan plat. */
 .history-cal-day {
   aspect-ratio: 1 / 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -559,15 +562,20 @@
 .history-cal-day.is-empty { color: rgba(226, 232, 240, 0.26); }
 .history-cal-day.has-archive {
   cursor: pointer;
-  color: #e7eefb;
-  background: rgba(56, 189, 248, 0.13);
-  border: 1px solid rgba(125, 211, 252, 0.26);
-  transition: background 0.15s ease, border-color 0.15s ease;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease);
 }
-.history-cal-day.has-archive:hover { background: rgba(56, 189, 248, 0.26); }
+.history-cal-day.has-archive:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(103, 232, 249, 0.4);
+  color: #e6fbff;
+}
 .history-cal-day.has-archive.active {
-  background: linear-gradient(180deg, rgba(56, 189, 248, 0.42), rgba(56, 189, 248, 0.26));
-  border-color: rgba(125, 211, 252, 0.7);
+  background: rgba(56, 189, 248, 0.14);
+  border-color: rgba(125, 211, 252, 0.45);
+  color: #e2eefc;
   font-weight: 700;
 }
 .history-cal-day.has-archive:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 1px; }

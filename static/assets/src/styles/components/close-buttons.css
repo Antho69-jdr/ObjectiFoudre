@@ -26,6 +26,7 @@
 #closeDetailsBtn,
 #closeDrawerBtn,
 #predictionPageCloseBtn,
+#historyPageCloseBtn,
 #selectionCard #closeSelectionBtn {
   aspect-ratio: 1 / 1;
   box-sizing: border-box;
@@ -43,6 +44,26 @@
   max-width: 36px;
   max-height: 36px;
   font-size: 18px;
+  /* LOOK UNIFIÉ (design predictionPageCloseBtn = reset button de base) : verre
+     clair + filet + icône lumineuse. Uniformise closeSelectionBtn (était
+     surface-2 foncée + text-muted) et historyPageCloseBtn (était 42px .icon-btn).
+     Les IDs (1,0,0 ; #selectionCard #closeSelectionBtn 2,0,0) battent leurs
+     contextes ; close-buttons importé après selection/details. */
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--text);
+  transition: background var(--dur-base) var(--ease),
+              border-color var(--dur-base) var(--ease),
+              color var(--dur-base) var(--ease);
+}
+#closeDetailsBtn:hover,
+#closeDrawerBtn:hover,
+#predictionPageCloseBtn:hover,
+#historyPageCloseBtn:hover,
+#selectionCard #closeSelectionBtn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: var(--border-strong);
+  color: #fff;
 }
 #detailsModal #detailsCalcInspectorClose {
   aspect-ratio: 1 / 1;
@@ -65,7 +86,8 @@
 @media (max-width: 767px) {
   #closeDetailsBtn,
   #closeDrawerBtn,
-  #predictionPageCloseBtn {
+  #predictionPageCloseBtn,
+  #historyPageCloseBtn {
     width: 34px;
     height: 34px;
     min-width: 34px;
