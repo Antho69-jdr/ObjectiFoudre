@@ -21,11 +21,13 @@
   place-items: center;
   font-size: 0;            /* masque le texte ; l'icône passe par .icon-svg */
   line-height: 1;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  background: linear-gradient(180deg, rgba(10, 20, 35, 0.90), rgba(7, 14, 25, 0.78));
-  color: #e5edf9;
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  /* Forme CHIP (langage learningRetrainBtn) : radius 10, ghost neutre au repos.
+     backdrop-filter conservé pour la lisibilité au-dessus de la carte. */
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.03);
+  color: #cbd5e1;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(16px) saturate(1.15);
   -webkit-backdrop-filter: blur(16px) saturate(1.15);
   cursor: pointer;
@@ -75,10 +77,10 @@ body.mobile-ui #infoDrawerBtn {
 .grid-focus-btn:hover,
 .fab:hover,
 #toggleSearchBtn:hover {
-  background: linear-gradient(180deg, rgba(16, 32, 52, 0.95), rgba(9, 18, 31, 0.9));
-  border-color: rgba(125, 211, 252, 0.42);
-  color: #eafaff;
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 3px rgba(56, 189, 248, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(103, 232, 249, 0.4);
+  color: #e6fbff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
 }
 
 .mobile-toggle-btn:active,
@@ -100,9 +102,9 @@ body.mobile-ui #infoDrawerBtn {
 .search-dock.show-search #toggleSearchBtn,
 [aria-pressed="true"].grid-focus-btn,
 [aria-pressed="true"].fab {
-  background: linear-gradient(180deg, rgba(14, 165, 233, 0.94), rgba(2, 132, 199, 0.90));
-  border-color: rgba(186, 230, 253, 0.42);
-  color: #cffafe;
+  background: rgba(56, 189, 248, 0.14);
+  border-color: rgba(125, 211, 252, 0.45);
+  color: #e2eefc;
 }
 
 /* Boutons dans le panneau de recherche : plus discrets (pas de verre dégradé). */

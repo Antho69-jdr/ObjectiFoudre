@@ -158,30 +158,31 @@ body.chase-mode #chaseSlots {
   height: 40px;
   min-height: 40px;
   padding: 0;
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(10, 20, 35, 0.90), rgba(7, 14, 25, 0.78));
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  color: #e5edf9;
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  /* Forme CHIP (langage learningRetrainBtn) : radius 10, ghost neutre au repos. */
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: #cbd5e1;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(16px) saturate(1.15);
   -webkit-backdrop-filter: blur(16px) saturate(1.15);
   transition: transform var(--dur-fast) var(--ease), background var(--dur-base) var(--ease),
               border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease);
 }
 .timeline-dock .timeline-icon-btn:hover {
-  background: rgba(17, 31, 54, 0.96);
-  border-color: rgba(255, 255, 255, 0.18);
-  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(103, 232, 249, 0.4);
+  color: #e6fbff;
   transform: translateY(-1px);
 }
 .timeline-dock .timeline-icon-btn:active { transform: translateY(0); }
 .timeline-dock .timeline-icon-btn .icon-svg { width: 20px; height: 20px; display: block; }
 .timeline-nav-btn .icon-svg { filter: drop-shadow(0 0 5px rgba(var(--tl-accent), 0.18)); }
-/* État actif (lecture / export en cours) : accent. */
+/* État actif (lecture / export en cours) : accent PLAT (cyan / rouge en chasse). */
 .timeline-play-btn.active,
 .timeline-gif-btn.active {
-  background: rgba(var(--tl-accent), 0.22);
-  border-color: rgba(var(--tl-accent), 0.5);
+  background: rgba(var(--tl-accent), 0.14);
+  border-color: rgba(var(--tl-accent), 0.55);
   color: rgb(var(--tl-bright));
 }
 

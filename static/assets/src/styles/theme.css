@@ -190,9 +190,9 @@
 .search-dock.show-search #toggleSearchBtn,
 [aria-pressed="true"].grid-focus-btn,
 [aria-pressed="true"].fab {
-  background: linear-gradient(180deg, rgba(56, 189, 248, 0.96), rgba(14, 165, 233, 0.92));
-  border-color: rgba(186, 230, 253, 0.5);
-  color: #04121f;
+  background: rgba(56, 189, 248, 0.14);
+  border-color: rgba(125, 211, 252, 0.45);
+  color: #e2eefc;
 }
 
 /* Boutons actifs génériques + bouton primaire */

@@ -71,9 +71,10 @@ body.chase-mode #chaseLegend { display: flex; }
 }
 
 /* bouton barre laterale (droite) en etat « chasse active » → rouge */
+/* Bouton « en chasse » actif (rail droit) : rouge plat chip (identité chasse). */
 #chasePageBtn.active {
-  background: linear-gradient(180deg, rgba(220, 38, 38, 0.95), rgba(153, 27, 27, 0.92));
-  border-color: rgba(254, 202, 202, 0.5);
+  background: rgba(248, 113, 113, 0.16);
+  border-color: rgba(248, 113, 113, 0.55);
   color: #fff;
 }
 
@@ -104,10 +105,18 @@ body.chase-mode #mfQuotaCooldownBadge { display: none !important; }
   flex-direction: column;
   gap: var(--right-rail-gap, 12px);
 }
+/* Rail couches = chip form. Au REPOS (non sélectionné) : ghost neutre IDENTIQUE
+   au rail droit (hérité de .grid-focus-btn, aucune surcharge). Rouge seulement au
+   survol et à l'état actif (identité chasse à l'interaction/sélection). */
+.chase-layer-rail .grid-focus-btn:hover {
+  background: rgba(248, 113, 113, 0.10);
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fff;
+}
 .chase-layer-rail .grid-focus-btn.active {
-  background: linear-gradient(180deg, rgba(14, 165, 233, 0.94), rgba(2, 132, 199, 0.90));
-  border-color: rgba(186, 230, 253, 0.42);
-  color: #cffafe;
+  background: rgba(248, 113, 113, 0.16);
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fff;
 }
 
 /* --- Overlay = MEME FORME que la frise de base (.timeline-dock) : CARTE
@@ -185,12 +194,14 @@ body.chase-mode #mfQuotaCooldownBadge { display: none !important; }
   width: 40px !important; height: 40px !important;
   min-width: 40px !important; min-height: 40px !important; max-width: 40px !important; max-height: 40px !important;
   display: grid; place-items: center; padding: 0 !important;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  background: linear-gradient(180deg, rgba(10, 20, 35, 0.90), rgba(7, 14, 25, 0.78));
-  color: #e5edf9; cursor: pointer;
+  /* Forme CHIP rouge (identité chasse) : radius 10, ghost à filet rouge au repos,
+     rouge plat à l'état actif. */
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  background: rgba(255, 255, 255, 0.03);
+  color: #f2d6d6; cursor: pointer;
   font-size: 0;
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(16px) saturate(1.15);
   -webkit-backdrop-filter: blur(16px) saturate(1.15);
   transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease),
@@ -198,17 +209,17 @@ body.chase-mode #mfQuotaCooldownBadge { display: none !important; }
 }
 .chase-frise-btn .icon-svg { width: 20px; height: 20px; }
 .chase-frise-btn:hover {
-  background: linear-gradient(180deg, rgba(16, 32, 52, 0.95), rgba(9, 18, 31, 0.9));
-  border-color: rgba(125, 211, 252, 0.42);
-  color: #eafaff;
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 3px rgba(56, 189, 248, 0.1);
+  background: rgba(248, 113, 113, 0.10);
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
 }
 .chase-frise-btn:active { transform: translateY(1px); }
 .chase-frise-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .chase-frise-btn.active {
-  background: linear-gradient(180deg, rgba(14, 165, 233, 0.94), rgba(2, 132, 199, 0.90));
-  border-color: rgba(186, 230, 253, 0.42);
-  color: #cffafe;
+  background: rgba(248, 113, 113, 0.16);
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fff;
 }
 
 /* --- Conteneur du rail : REUTILISE le rail/molette EXACT de la frise de base

@@ -785,6 +785,31 @@
     nowEl.textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
   }
 
+  // ── Recolor ROUGE de la carte de base en mode chasse ─────────────────────────
+  // Teinte terres + mers/océans + tracés régions/départements en rouge (identité
+  // chasse). Le radar et la grille de score ne sont PAS touchés (autres couches).
+  // Valeurs NORMALES = celles posées par improveCartoVectorReadability (state.js).
+  const CHASE_MAP_TINT = [
+    ['background', 'background-color', '#160a0c', '#08101c'],
+    ['water', 'fill-color', 'rgba(58, 30, 34, 1)', 'rgba(38, 56, 72, 1)'],
+    ['landuse_residential', 'fill-color', 'rgba(38, 20, 22, 0.72)', 'rgba(17, 28, 42, 0.72)'],
+    ['waterway', 'line-color', 'rgba(120, 70, 74, 0.55)', 'rgba(70, 100, 124, 0.55)'],
+    ['france-department-lines', 'line-color', 'rgba(180, 120, 124, 0.5)', 'rgba(120, 145, 175, 0.5)'],
+    ['france-region-lines', 'line-color', 'rgba(208, 150, 154, 0.62)', 'rgba(150, 176, 208, 0.62)'],
+  ];
+  function setChaseMapTint(on) {
+    if (!map) return;
+    const apply = () => {
+      for (const [layer, prop, chaseVal, normalVal] of CHASE_MAP_TINT) {
+        if (map.getLayer(layer)) {
+          try { map.setPaintProperty(layer, prop, on ? chaseVal : normalVal); } catch (_) {}
+        }
+      }
+    };
+    if (map.isStyleLoaded && map.isStyleLoaded()) apply();
+    else map.once('idle', apply);
+  }
+
   // ── Activation / désactivation (bascule sur la carte de base) ────────────────
   async function activate() {
     if (active) return;
@@ -793,6 +818,7 @@
     toggleBtn.setAttribute('aria-pressed', 'true');
     controls.setAttribute('aria-hidden', 'false');
     document.body.classList.add('chase-mode');
+    setChaseMapTint(true);
     // on garde la meta-stack visible : sa ligne #metaRun reçoit l'attribution (sauvegarde
     // pour restauration à la sortie). Badge haut-centre : horloge live.
     savedMetaRun = metaRunEl ? metaRunEl.textContent : null;
@@ -819,6 +845,7 @@
     toggleBtn.setAttribute('aria-pressed', 'false');
     controls.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('chase-mode');
+    setChaseMapTint(false);
     if (nowTimer) { window.clearInterval(nowTimer); nowTimer = null; }
     if (metaRunEl && savedMetaRun != null) { metaRunEl.textContent = savedMetaRun; savedMetaRun = null; }
     for (const id of CHASE_LAYERS) setVis(id, false);
