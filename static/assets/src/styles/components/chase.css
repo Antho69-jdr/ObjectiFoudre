@@ -92,6 +92,21 @@ body.chase-mode #gridSourceBadge,
 body.chase-mode #timelineDateLabel,
 body.chase-mode #mfQuotaCooldownBadge { display: none !important; }
 
+/* La meta-stack (bandeau bas) suit la DA de la frise selon le mode : en chasse,
+   elle passe en rouge comme l'overlay/frise (bg rouge sombre + filet rouge +
+   séparateurs et texte réchauffés). En normal elle garde son look neutre. */
+body.chase-mode .meta-stack {
+  background: rgba(20, 8, 10, 0.92);
+  border-top-color: rgba(248, 113, 113, 0.30);
+}
+body.chase-mode .meta-stack .meta-corner {
+  border-right-color: rgba(248, 113, 113, 0.18);
+  color: rgba(253, 226, 226, 0.72);
+}
+body.chase-mode .meta-stack .meta-version {
+  color: #fde8e8;
+}
+
 /* --- Rail vertical des couches (gauche) : reutilise .grid-focus-btn → MEME
    forme/taille ET MEME look que la barre de droite (verre, radius 14, survol/
    actif CYAN). On ne fait que le PLACER : le repos/survol heritent de
