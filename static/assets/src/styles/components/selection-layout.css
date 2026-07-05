@@ -108,15 +108,15 @@
   padding: 0 12px;
   border-radius: 11px;
   font-size: 13px;
-  font-weight: 700;
-  background: rgba(56, 189, 248, 0.16);
-  border: 1px solid rgba(56, 189, 248, 0.34);
-  color: #cfe0fb;
+  font-weight: 800;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(125, 211, 252, 0.55);
+  color: #eafaff;
   box-shadow: none;
 }
 #selectionCard #openDetailsBtn:hover {
-  background: rgba(56, 189, 248, 0.26);
-  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(56, 189, 248, 0.24);
+  border-color: rgba(125, 211, 252, 0.7);
 }
 body.mobile-ui .selection-card {
       left: 50%;

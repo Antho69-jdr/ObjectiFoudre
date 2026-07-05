@@ -80,16 +80,16 @@
   min-height: 36px;
   padding: 0 13px;
   border-radius: 10px;
-  border: 1px solid rgba(125, 211, 252, 0.38);
+  border: 1px solid rgba(125, 211, 252, 0.55);
   background: rgba(56, 189, 248, 0.14);
   color: #eafaff;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
 }
 .prediction-download-btn:hover:not(:disabled) {
   background: rgba(56, 189, 248, 0.24);
-  border-color: rgba(125, 211, 252, 0.6);
+  border-color: rgba(125, 211, 252, 0.7);
 }
 .prediction-download-btn:disabled {
   cursor: not-allowed;

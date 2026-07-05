@@ -93,8 +93,8 @@
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.04);
   color: inherit;
   font-size: 15px;
   cursor: pointer;
@@ -144,16 +144,17 @@
   width: 100%;
   padding: 9px 12px;
   border-radius: 10px;
-  border: 1px solid rgba(125, 211, 252, 0.4);
+  border: 1px solid rgba(125, 211, 252, 0.55);
   background: rgba(56, 189, 248, 0.14);
-  color: inherit;
+  color: #eafaff;
   font: inherit;
-  font-weight: 600;
+  font-weight: 800;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 .history-collect-btn:hover {
   background: rgba(56, 189, 248, 0.24);
+  border-color: rgba(125, 211, 252, 0.7);
 }
 .history-verif-score {
   display: flex;
