@@ -81,6 +81,7 @@ body.mobile-ui #infoDrawerBtn {
   border-color: rgba(103, 232, 249, 0.4);
   color: #e6fbff;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);   /* lift cohérent avec la frise (boutons icônes) */
 }
 
 .mobile-toggle-btn:active,
@@ -90,7 +91,7 @@ body.mobile-ui #infoDrawerBtn {
 #toggleSearchBtn:active { transform: translateY(1px); }
 
 .grid-focus-btn:disabled,
-.fab:disabled { cursor: wait; opacity: 0.62; }
+.fab:disabled { cursor: not-allowed; opacity: 0.45; }
 
 /* État actif/enclenché → cyan dégradé (accent). NB : la teinte FINALE de l'état actif
    est imposée par la passe recolor de theme.css (chargée APRÈS ce component → gagne) ;

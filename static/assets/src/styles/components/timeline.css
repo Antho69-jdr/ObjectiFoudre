@@ -144,7 +144,7 @@ body.chase-mode #chaseSlots {
 .timeline-today-btn,
 .timeline-play-btn { min-height: 40px; border-radius: var(--r-md); padding: 0 var(--sp-3); white-space: nowrap; font-weight: var(--fw-bold); font-size: var(--fs-sm); }
 .timeline-play-btn.active { box-shadow: 0 10px 24px var(--accent-soft); }
-.timeline-play-btn:disabled { opacity: 0.46; cursor: not-allowed; }
+.timeline-play-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* --- Chrome commun des boutons icône (prev/next/play/export) --------------
    Look « verre » : fond transparent (laisse voir le dock), filet + ombre. La
@@ -369,7 +369,7 @@ body.chase-mode #chaseSlots {
 #prevDayBtn:disabled,
 #nextDayBtn:disabled,
 #playTimelineBtn:disabled,
-#exportGifBtn:disabled { opacity: 0.42; cursor: not-allowed; transform: none; filter: saturate(0.75); }
+#exportGifBtn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
 /* ============================================================================
    BASCULE rail (desktop ≥768) / molette tactile (mobile ≤767).

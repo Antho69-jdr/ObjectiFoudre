@@ -228,9 +228,10 @@ body.chase-mode .meta-stack .meta-version {
   border-color: rgba(248, 113, 113, 0.5);
   color: #fff;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);   /* lift cohérent (boutons icônes) */
 }
 .chase-frise-btn:active { transform: translateY(1px); }
-.chase-frise-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.chase-frise-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .chase-frise-btn.active {
   background: rgba(248, 113, 113, 0.16);
   border-color: rgba(248, 113, 113, 0.55);

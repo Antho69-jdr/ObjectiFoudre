@@ -110,6 +110,15 @@ button {
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 button:active { transform: scale(0.985); }
+/* Disabled CANONIQUE (défaut) : demi-opacité + curseur interdit + pas de press.
+   Les rares :disabled de composant sont alignés sur ces valeurs. */
+button:disabled,
+button[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+button:disabled:active,
+button[disabled]:active { transform: none; }
 button.active {
   background: rgba(56, 189, 248, 0.95);
   border-color: rgba(255, 255, 255, 0.28);

@@ -4,6 +4,20 @@
      jamais écraser un style de focus déjà soigné par un component.
    Respecte prefers-reduced-motion. 0 !important. */
 
+/* --- Texte de chargement : léger pouls d'opacité ----------------------- */
+/* Distingue un état « en cours » (animé, vivant) d'un état « vide » (statique,
+   muted). Appliqué aux libellés de chargement explicites. */
+@keyframes of-loading-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.8; }
+}
+.of-loading,
+.history-learning-loading,
+.chase-pop-loading,
+.wp-loading {
+  animation: of-loading-pulse 1.4s ease-in-out infinite;
+}
+
 /* --- Skeleton shimmer (zone de média en attente) ----------------------- */
 @keyframes of-skeleton {
   0%   { background-position: 180% 0, 0 0; }
@@ -117,4 +131,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .of-skeleton { animation: none; }
+  .of-loading,
+  .history-learning-loading,
+  .chase-pop-loading,
+  .wp-loading { animation: none; opacity: 0.6; }
 }

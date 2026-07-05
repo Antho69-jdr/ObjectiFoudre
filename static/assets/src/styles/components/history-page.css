@@ -510,7 +510,7 @@
   cursor: pointer;
 }
 .history-learning-btn:hover { background: rgba(56, 189, 248, 0.26); }
-.history-learning-btn:disabled { opacity: 0.5; cursor: default; }
+.history-learning-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .history-learning-btn-ghost {
   border-color: rgba(148, 163, 184, 0.35);
   background: rgba(255, 255, 255, 0.03);
@@ -574,7 +574,7 @@
   cursor: pointer;
 }
 .history-cal-nav:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
-.history-cal-nav:disabled { opacity: 0.3; cursor: default; }
+.history-cal-nav:disabled { opacity: 0.45; cursor: not-allowed; }
 .history-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
 .history-cal-wd { text-align: center; font-size: 10px; font-weight: 700; opacity: 0.5; padding-bottom: 2px; }
 /* Jours du calendrier = même langage chip que les dates (référence

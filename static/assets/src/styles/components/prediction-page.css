@@ -93,7 +93,7 @@
 }
 .prediction-download-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.44;
+  opacity: 0.45;
 }
 .prediction-close-btn {
   flex: 0 0 auto;
@@ -144,7 +144,7 @@
 }
 .prediction-period-tab:disabled,
 .prediction-period-tab.is-unavailable {
-  opacity: 0.38;
+  opacity: 0.45;
   cursor: not-allowed;
   border-color: rgba(255, 255, 255, 0.08);
 }
