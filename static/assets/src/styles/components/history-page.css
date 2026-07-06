@@ -626,9 +626,9 @@
     flex: 0 0 auto;
     max-height: none;
     padding: 8px;
-    position: sticky;
-    top: 0;
-    z-index: 3;
+    /* ANCRÉ dans le flux (pas sticky) : l'agenda déplié reste à sa place en haut
+       et défile avec la page — le contenu ne passe plus dessous au scroll. */
+    position: static;
   }
   #historyPage .history-dates-title { display: none; }
   #historyPage .history-dates-list {
@@ -669,9 +669,15 @@
   #historyPage .history-play-btn,
   #historyPage .history-download-btn,
   #historyPage .history-flash-btn {
-    width: 34px;
-    height: 34px;
-    font-size: 14px;
+    /* Carré : min/max explicites pour battre body.mobile-ui button{min-width:88}
+       (sinon boutons 88×46 trop larges qui étranglent la barre). */
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    font-size: 15px;
   }
   #historyPage .history-hour-label { min-width: 44px; font-size: 13px; }
   #historyPage .history-player-controls { flex-wrap: wrap; gap: 8px 10px; }
