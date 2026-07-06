@@ -81,7 +81,7 @@
   body.mobile-ui {
     --touch-meta-h: 34px;
     --touch-timeline-h: 82px;
-    --touch-rail-size: 38px;
+    --touch-rail-size: 42px;   /* cible tactile confortable sur téléphone (=tablette) */
   }
   body.mobile-ui {
     --touch-timeline-h: 92px;

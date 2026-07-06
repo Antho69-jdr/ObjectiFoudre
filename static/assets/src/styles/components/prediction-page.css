@@ -99,6 +99,13 @@
   flex: 0 0 auto;
 }
 
+/* Cible tactile confortable sur téléphone (onglet période). Spécificité 0,3,0
+   pour battre `body.mobile-ui .prediction-period-tab`. (Le bouton télécharger +
+   les fermetures sont traités dans prediction-page-layout.css / close-buttons.css.) */
+@media (max-width: 767px) {
+  body.mobile-ui .prediction-period-tabs .prediction-period-tab { min-height: 42px; }
+}
+
 /* ---- onglets de période (Journée / créneaux) ---- */
 /* Onglets = chips autonomes façon learningRetrainBtn (plus de piste-pilule) :
    simple rangée flex à gouttières. */

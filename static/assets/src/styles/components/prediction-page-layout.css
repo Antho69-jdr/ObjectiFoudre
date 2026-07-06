@@ -50,16 +50,16 @@
     gap: 6px;
   }
   body.mobile-ui .prediction-download-btn {
-    min-height: 32px;
-    padding: 0 9px;
-    font-size: 0.66rem;
+    min-height: 42px;
+    padding: 0 11px;
+    font-size: 0.7rem;
   }
   body.mobile-ui .prediction-close-btn,
   body.mobile-ui #predictionPageCloseBtn {
-    width: 34px;
-    min-width: 34px;
-    height: 34px;
-    min-height: 34px;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
     border-radius: 999px;
   }
   body.mobile-ui .prediction-page-header {

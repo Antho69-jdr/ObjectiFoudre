@@ -88,11 +88,13 @@
   #closeDrawerBtn,
   #predictionPageCloseBtn,
   #historyPageCloseBtn {
-    width: 34px;
-    height: 34px;
-    min-width: 34px;
-    min-height: 34px;
-    max-width: 34px;
-    max-height: 34px;
+    /* Cible tactile confortable sur téléphone (≥40px). */
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    max-width: 40px;
+    max-height: 40px;
+    font-size: 19px;
   }
 }
