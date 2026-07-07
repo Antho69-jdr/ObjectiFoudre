@@ -328,6 +328,12 @@
       }
       lastRenderSig = sig;
       if (wheelDebugEl && liveScroller && liveScroller.offsetParent !== null) wheelDbg('render RUN');
+      // Molette visible : mémoriser la position de scroll pour la RESTAURER après
+      // reconstruction (au lieu de repartir de 0 puis re-centrer → saut visible =
+      // « rollback »). Rend le rebuild invisible pour le scroll, comme la chasse
+      // qui ne reconstruit jamais.
+      const preserveScrollLeft = (liveScroller && liveScroller.offsetParent !== null)
+        ? liveScroller.scrollLeft : null;
       slotButtons.innerHTML = '';
       slotButtons.classList.add('timeline-slider');
       const selectableSlots = timelineSelectableSlots(day);
@@ -408,5 +414,17 @@
       rail.appendChild(track);
       slotButtons.appendChild(rail);
       syncTimelinePlaybackUi();
-      requestAnimationFrame(() => syncTimelineWheelScrollToSelected({ smooth: false }));
+      requestAnimationFrame(() => {
+        // Reconstruction alors que la molette était visible : RESTAURER la
+        // position de scroll (pas de saut 0 → re-centrage). Sinon (1er rendu,
+        // desktop) : centrer sur la sélection comme avant.
+        const newScroller = slotButtons.querySelector('.timeline-wheel-scroller');
+        if (preserveScrollLeft != null && newScroller && newScroller.offsetParent !== null) {
+          wheelProgrammatic = true;
+          newScroller.scrollLeft = preserveScrollLeft;
+          requestAnimationFrame(() => requestAnimationFrame(() => { wheelProgrammatic = false; }));
+        } else {
+          syncTimelineWheelScrollToSelected({ smooth: false });
+        }
+      });
     }
