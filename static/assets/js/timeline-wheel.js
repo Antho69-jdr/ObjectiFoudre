@@ -88,17 +88,30 @@
     }
 
     // Snap vers un slot — easeOutQuart (aimant : décélération rapide vers la cible)
+    // Renvoie true si un déplacement a été (ou est) réellement effectué.
     function wheelScrollTo(scroller, slotKey, animated) {
-      if (!scroller.isConnected) return;
+      if (!scroller.isConnected) return false;
       const item = scroller.querySelector(`[data-slot-key="${slotKey}"]`);
-      if (!item) return;
+      if (!item) return false;
       const sr = scroller.getBoundingClientRect();
       const ir = item.getBoundingClientRect();
       const target = Math.max(0, scroller.scrollLeft + ir.left - sr.left - sr.width / 2 + ir.width / 2);
 
-      if (!animated || Math.abs(target - scroller.scrollLeft) < 1) {
+      // DÉJÀ centré (<1px) : NE RIEN écrire. Réécrire scrollLeft (même une no-op)
+      // déclenche un `scrollend` sur Firefox → wheelCommit → wheelScrollTo →
+      // boucle infinie de snap (tremblement + molette bloquée sur l'heure
+      // présélectionnée, cf. log Firefox : scrollend→commit en continu). Chromium
+      // ne déclenche pas ce scrollend, d'où l'invisibilité du bug côté tests.
+      if (Math.abs(target - scroller.scrollLeft) < 1) return false;
+
+      if (!animated) {
+        // Écriture instantanée gardée : le `scrollend` qui en découle doit être
+        // ignoré (wheelProgrammatic) pour ne pas relancer un commit. Reset après
+        // 2 frames pour couvrir le scrollend asynchrone de Firefox.
+        wheelProgrammatic = true;
         scroller.scrollLeft = target;
-        return;
+        requestAnimationFrame(() => requestAnimationFrame(() => { wheelProgrammatic = false; }));
+        return true;
       }
 
       const startLeft = scroller.scrollLeft;
@@ -113,9 +126,12 @@
         const ease = 1 - Math.pow(1 - t, 4); // easeOutQuart
         scroller.scrollLeft = startLeft + distance * ease;
         if (t < 1) { requestAnimationFrame(step); }
-        else { scroller.scrollLeft = target; wheelProgrammatic = false; }
+        // Fin d'anim : garder le drapeau prog encore 2 frames pour absorber le
+        // `scrollend` de fin (Firefox), sinon il relance un commit.
+        else { scroller.scrollLeft = target; requestAnimationFrame(() => requestAnimationFrame(() => { wheelProgrammatic = false; })); }
       }
       requestAnimationFrame(step);
+      return true;
     }
 
     function wheelCommit(scroller) {
@@ -123,12 +139,15 @@
       const item = wheelCenteredItem(scroller);
       if (!item) return;
       const slotKey = item.dataset.slotKey;
-      wheelDbg('commit ' + slotKey + ' (sel=' + selectedSlotKey + ')');
       wheelSetActive(scroller, slotKey);
-      wheelScrollTo(scroller, slotKey, true);
-      if (slotKey !== selectedSlotKey && typeof selectTimelineSlot === 'function') {
-        const ok = selectTimelineSlot(slotKey, { render: false, stopPlayback: true, loadCached: true });
-        wheelDbg('select→' + (ok ? 'OK' : 'REFUS') + ' sel=' + selectedSlotKey);
+      const moved = wheelScrollTo(scroller, slotKey, true);
+      const changed = slotKey !== selectedSlotKey;
+      wheelDbg('commit ' + slotKey + ' (sel=' + selectedSlotKey + ') moved=' + moved);
+      // Rien n'a bougé ET déjà sur le bon créneau → NE RIEN relancer (ni select
+      // ni chargement) : c'est le cas de la boucle scrollend résiduelle.
+      if (!changed && !moved) return;
+      if (changed && typeof selectTimelineSlot === 'function') {
+        selectTimelineSlot(slotKey, { render: false, stopPlayback: true, loadCached: true });
       }
       if (typeof maybeLoadCachedMeteoFranceGribForSelectedSlot === 'function') {
         maybeLoadCachedMeteoFranceGribForSelectedSlot({ quiet: true });
