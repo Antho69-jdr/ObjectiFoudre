@@ -4,6 +4,19 @@
     let wheelSnapTimer = null;
     let wheelProgrammatic = false;
     let wheelActiveSlotKey = null;
+    // Horodatage de la dernière manipulation UTILISATEUR de la molette (geste
+    // tactile / scroll non programmatique). Tant que c'est récent, on DIFFÈRE
+    // les rebuilds de renderSlotButtons : de nombreux chargements asynchrones
+    // (GRIB, hydratation, lecture) re-render la frise, et le rAF de fin de
+    // render re-scrolle la molette sur le slot sélectionné → en plein geste, la
+    // molette « se téléporte » en arrière (aimantation excessive signalée sur
+    // mobile). La frise chasse n'a pas ce problème : elle n'est jamais
+    // reconstruite pendant le geste.
+    let wheelUserLastAt = 0;
+    let wheelRenderRetryTimer = null;
+    function timelineWheelUserBusy() {
+      return (performance.now() - wheelUserLastAt) < 700;
+    }
 
     // O(1) : trouve l'index de l'item centré via scrollLeft arithmétique
     // Utilisé uniquement au commit (après scroll terminé), getBoundingClientRect fiable
@@ -155,8 +168,15 @@
       // Mise à jour visuelle pendant le scroll — throttlée rAF, O(1) par index
       const visibleHours = 8;
       let scrollRafId = null;
+      // Marque le début de geste (le scroll seul ne suffit pas : il peut être
+      // déclenché par l'inertie APRÈS relâcher, mais c'est voulu — l'inertie
+      // fait partie du geste utilisateur).
+      scroller.addEventListener('pointerdown', () => { wheelUserLastAt = performance.now(); }, { passive: true });
+      scroller.addEventListener('touchstart', () => { wheelUserLastAt = performance.now(); }, { passive: true });
+
       scroller.addEventListener('scroll', () => {
         if (wheelProgrammatic) return;
+        wheelUserLastAt = performance.now();
         if (scrollRafId) return;
         scrollRafId = requestAnimationFrame(() => {
           scrollRafId = null;
@@ -197,6 +217,20 @@
     }
 
     function renderSlotButtons() {
+      // Molette en cours de manipulation (mobile) : DIFFÉRER le rebuild.
+      // Reconstruire détruirait le scroller sous le doigt et le rAF final
+      // re-scrollerait sur le slot sélectionné → molette « aimantée » qui
+      // combat le geste. On réessaie une fois le geste terminé.
+      const liveScroller = slotButtons.querySelector('.timeline-wheel-scroller');
+      if (liveScroller && liveScroller.offsetParent !== null && timelineWheelUserBusy()) {
+        if (!wheelRenderRetryTimer) {
+          wheelRenderRetryTimer = setTimeout(() => {
+            wheelRenderRetryTimer = null;
+            renderSlotButtons();
+          }, 350);
+        }
+        return;
+      }
       const day = getCurrentDay();
       slotButtons.innerHTML = '';
       slotButtons.classList.add('timeline-slider');
