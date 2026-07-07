@@ -416,12 +416,6 @@ body.chase-mode #chaseSlots {
     height: 76px;
     min-height: 76px;
     max-height: 76px;
-    /* En régime molette (rail masqué), le conteneur ne doit PLUS bloquer le
-       tactile : le `touch-action:none` (posé pour le drag du rail desktop)
-       annulait, en tant qu'ancêtre, le pan-x du scroller interne → la molette
-       ne défilait pas au doigt (contrairement à la frise chasse, dont le
-       conteneur n'a pas ce none). On rend la main au pan horizontal. */
-    touch-action: pan-x;
   }
   .timeline-wheel {
     --timeline-wheel-visible-hours: 8;
