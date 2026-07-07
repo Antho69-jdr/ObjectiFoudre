@@ -18,25 +18,46 @@
       return (performance.now() - wheelUserLastAt) < 700;
     }
 
-    // ── Debug TEMPORAIRE (?frisedebug=1) : overlay à l'écran qui liste les
-    // événements de la molette — diagnostic du « rebond » signalé sur Firefox
-    // vue téléphone, que les tests Chromium ne reproduisent pas. À RETIRER. ──
+    // ── Debug TEMPORAIRE (?frisedebug=1) : overlay à l'écran — diagnostic du
+    // « rebond » signalé sur Firefox vue téléphone, que Chromium ne reproduit
+    // pas. Enregistre EN SILENCE pendant le geste puis FIGE le log complet du
+    // geste une fois l'accalmie venue (lisible, appui = copie presse-papier).
+    // À RETIRER. ──
     const wheelDebugEl = (() => {
       try {
         if (!/frisedebug/.test(location.search)) return null;
         const el = document.createElement('div');
-        el.style.cssText = 'position:fixed;left:4px;top:4px;z-index:99999;background:rgba(0,0,0,.85);color:#7dd3fc;font:10px/1.5 monospace;padding:5px 7px;border-radius:6px;pointer-events:none;max-width:80vw;white-space:pre;';
+        el.style.cssText = 'position:fixed;left:4px;top:4px;z-index:99999;background:rgba(0,0,0,.9);color:#e2eefc;font:11px/1.55 monospace;padding:7px 9px;border-radius:8px;max-width:92vw;max-height:70vh;overflow:auto;white-space:pre;border:1px solid #7dd3fc;';
+        el.textContent = 'frise-debug prêt — fais ton geste';
+        el.addEventListener('click', () => {
+          const txt = wheelDbgBuffer.join('\n');
+          try { navigator.clipboard.writeText(txt); el.style.borderColor = '#4ade80'; setTimeout(() => { el.style.borderColor = '#7dd3fc'; }, 600); } catch (_) {}
+        });
         (document.body || document.documentElement).appendChild(el);
         return el;
       } catch (_) { return null; }
     })();
-    const wheelDbgLines = [];
+    let wheelDbgBuffer = [];      // log du geste courant
+    let wheelDbgFreezeTimer = null;
+    let wheelDbgRecording = false;
     function wheelDbg(msg) {
       if (!wheelDebugEl) return;
-      const t = (performance.now() / 1000).toFixed(1);
-      wheelDbgLines.push(t + ' ' + msg);
-      if (wheelDbgLines.length > 10) wheelDbgLines.shift();
-      wheelDebugEl.textContent = wheelDbgLines.join('\n');
+      const t = (performance.now() / 1000).toFixed(2);
+      // pointerdown/touchstart = début d'un NOUVEAU geste → on repart de zéro
+      if (/^(pointerdown|touchstart)/.test(msg) && !wheelDbgRecording) {
+        wheelDbgBuffer = [];
+        wheelDbgRecording = true;
+        wheelDebugEl.textContent = '⏺ enregistrement…';
+      }
+      wheelDbgBuffer.push(t + ' ' + msg);
+      if (wheelDbgBuffer.length > 60) wheelDbgBuffer.shift();
+      // On FIGE l'affichage 900 ms après le DERNIER événement (fin du geste +
+      // inertie + snap) → texte stable, lisible.
+      if (wheelDbgFreezeTimer) clearTimeout(wheelDbgFreezeTimer);
+      wheelDbgFreezeTimer = setTimeout(() => {
+        wheelDbgRecording = false;
+        wheelDebugEl.textContent = '── geste (appui = copier) ──\n' + wheelDbgBuffer.join('\n');
+      }, 900);
     }
 
     // O(1) : trouve l'index de l'item centré via scrollLeft arithmétique
