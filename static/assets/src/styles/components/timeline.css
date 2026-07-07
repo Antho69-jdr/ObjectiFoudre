@@ -460,7 +460,10 @@ body.chase-mode #chaseSlots {
      natif décélère PILE sur le créneau, sans dépassement ni re-tirage. Scopé
      #slotButtons pour ne pas toucher la chasse (qui garde son snap JS). */
   #slotButtons .timeline-wheel-scroller { scroll-snap-type: x mandatory; }
-  #slotButtons .timeline-wheel-item { scroll-snap-align: center; }
+  /* scroll-snap-stop:always → l'inertie ne peut pas « survoler » les créneaux :
+     un geste s'arrête au créneau suivant. Frise moins sensible / moins « rapide »
+     (défilement délibéré, pas de fuite à travers plusieurs heures d'un coup). */
+  #slotButtons .timeline-wheel-item { scroll-snap-align: center; scroll-snap-stop: always; }
 
   .timeline-wheel-item {
     position: relative;
