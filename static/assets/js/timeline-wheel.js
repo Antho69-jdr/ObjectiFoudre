@@ -14,6 +14,7 @@
     // reconstruite pendant le geste.
     let wheelUserLastAt = 0;
     let wheelRenderRetryTimer = null;
+    let lastRenderSig = null;   // signature du dernier rendu (anti-rebuild inutile)
     function timelineWheelUserBusy() {
       return (performance.now() - wheelUserLastAt) < 700;
     }
@@ -306,11 +307,29 @@
         }
         return;
       }
-      if (wheelDebugEl && liveScroller && liveScroller.offsetParent !== null) wheelDbg('render RUN');
       const day = getCurrentDay();
+      const slots = getRenderableSlots(day);
+      // Signature du contenu : ne RECONSTRUIRE que si quelque chose de visible a
+      // changé (créneaux / dispo / cache serveur / GRIB chargé / sélection / jour).
+      // Sinon les nombreux appels de fond (polls serveur d'automation, cache GRIB)
+      // rebuildaient la molette à vide puis la re-centraient en boucle → churn
+      // permanent + « rollback »/tremblement pendant un geste sur mobile. La frise
+      // chasse n'a pas ce souci (jamais reconstruite en arrière-plan).
+      const wheelLive = slotButtons.querySelector('.timeline-wheel');
+      const sig = (day?.day_key || '') + '|' + selectedSlotKey + '|' + slots.map((s) =>
+        s.slot_key
+        + (timelineSlotIsUnavailable(s, day) ? 'u' : '')
+        + ((typeof meteoFranceGribCachedSlotKeys !== 'undefined' && meteoFranceGribCachedSlotKeys.has(s.slot_key)) ? 'c' : '')
+        + ((Array.isArray(s.cells) && s.cells.some((c) => c?.source_provider === 'meteofrance_arome_grib')) ? 'L' : '')
+      ).join(',');
+      if (wheelLive && sig === lastRenderSig) {
+        syncTimelinePlaybackUi();   // maj légère des boutons lecture, sans rebuild ni re-scroll
+        return;
+      }
+      lastRenderSig = sig;
+      if (wheelDebugEl && liveScroller && liveScroller.offsetParent !== null) wheelDbg('render RUN');
       slotButtons.innerHTML = '';
       slotButtons.classList.add('timeline-slider');
-      const slots = getRenderableSlots(day);
       const selectableSlots = timelineSelectableSlots(day);
       debugLog('renderSlotButtons', slots.map(slot => ({ slotKey: slot?.slot_key, label: slot?.slot_label, cells: Array.isArray(slot?.cells) ? slot.cells.length : 0, unavailable: timelineSlotIsUnavailable(slot, day) })));
       if (!slots.length) {
