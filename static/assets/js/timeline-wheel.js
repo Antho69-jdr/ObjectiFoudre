@@ -100,38 +100,21 @@
 
       // DÉJÀ centré (<1px) : NE RIEN écrire. Réécrire scrollLeft (même une no-op)
       // déclenche un `scrollend` sur Firefox → wheelCommit → wheelScrollTo →
-      // boucle infinie de snap (tremblement + molette bloquée sur l'heure
-      // présélectionnée, cf. log Firefox : scrollend→commit en continu). Chromium
-      // ne déclenche pas ce scrollend, d'où l'invisibilité du bug côté tests.
+      // boucle infinie de snap. Chromium ne déclenche pas ce scrollend.
       if (Math.abs(target - scroller.scrollLeft) < 1) return false;
 
-      if (!animated) {
-        // Écriture instantanée gardée : le `scrollend` qui en découle doit être
-        // ignoré (wheelProgrammatic) pour ne pas relancer un commit. Reset après
-        // 2 frames pour couvrir le scrollend asynchrone de Firefox.
-        wheelProgrammatic = true;
+      // Centrage NATIF, comme la frise CHASSE (scrollTo behavior:'smooth') au lieu
+      // d'une animation JS manuelle (scrollLeft frame par frame) : sous Firefox
+      // chaque frame déclenchait un `scrollend` (tempête d'événements + ressenti
+      // de « rebond »). Le natif est fluide et intégré à la physique du scroll.
+      wheelProgrammatic = true;
+      if (animated && typeof scroller.scrollTo === 'function') {
+        scroller.scrollTo({ left: target, behavior: 'smooth' });
+        setTimeout(() => { wheelProgrammatic = false; }, 400);
+      } else {
         scroller.scrollLeft = target;
         requestAnimationFrame(() => requestAnimationFrame(() => { wheelProgrammatic = false; }));
-        return true;
       }
-
-      const startLeft = scroller.scrollLeft;
-      const distance = target - startLeft;
-      const duration = 220;
-      const startTime = performance.now();
-
-      wheelProgrammatic = true;
-      function step(now) {
-        if (!scroller.isConnected) { wheelProgrammatic = false; return; }
-        const t = Math.min((now - startTime) / duration, 1);
-        const ease = 1 - Math.pow(1 - t, 4); // easeOutQuart
-        scroller.scrollLeft = startLeft + distance * ease;
-        if (t < 1) { requestAnimationFrame(step); }
-        // Fin d'anim : garder le drapeau prog encore 2 frames pour absorber le
-        // `scrollend` de fin (Firefox), sinon il relance un commit.
-        else { scroller.scrollLeft = target; requestAnimationFrame(() => requestAnimationFrame(() => { wheelProgrammatic = false; })); }
-      }
-      requestAnimationFrame(step);
       return true;
     }
 
