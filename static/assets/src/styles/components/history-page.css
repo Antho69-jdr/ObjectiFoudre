@@ -733,25 +733,46 @@
     width: 34px; min-width: 34px; max-width: 34px;
     height: 34px; min-height: 34px; max-height: 34px;
   }
-  /* Analyse VISIBLE (avant écrasée) + catégories CÔTE À CÔTE en 2 colonnes. */
+  /* Analyse VISIBLE (avant écrasée) + catégories CÔTE À CÔTE.
+     Placement en ZONES pour équilibrer des hauteurs très inégales : la Synthèse
+     (+ sa liste « zones à surveiller ») est ~3× plus haute que la Vérification.
+     → Synthèse = une colonne pleine hauteur ; Vérification (score) puis
+     Auto-calibration empilées dans l'autre. Plus de trou béant sous la courte. */
   #historyPage .prediction-analysis-panel {
     grid-area: analysis;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px 14px;
-    align-content: start;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "verif synthese"
+      "autocalib synthese";
+    grid-auto-rows: min-content;
     align-items: start;
+    gap: 14px 18px;
     min-height: 0;
     overflow: visible;
     border-top: 1px solid rgba(148, 163, 184, 0.18);
-    padding: 10px 2px 4px;
+    padding: 12px 2px 6px;
   }
   #historyPage .history-analysis-cat {
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 8px;
     min-width: 0;
   }
+  #historyPage .history-analysis-cat:nth-child(1) { grid-area: verif; }      /* Vérification */
+  #historyPage .history-analysis-cat:nth-child(2) { grid-area: synthese; }   /* Synthèse (haute) */
+  #historyPage .history-analysis-cat:nth-child(3) { grid-area: autocalib; }  /* Auto-calibration */
+  /* Les titres deviennent des têtes de colonne : la marge sup est gérée par la
+     grille, on retire les margin-top ad hoc (sinon décalage vertical inégal). */
+  #historyPage .prediction-analysis-panel .prediction-analysis-title { margin-top: 0; }
+  #historyPage .history-synthese-title,
+  #historyPage .history-learning-title { margin-top: 0; }
+  /* Typo héros ramenée à l'échelle du paysage (38px/23px détonnaient face au
+     12,5px des métriques → rendu « inégal »). */
+  #historyPage .history-verif-fidelity { font-size: 26px; }
+  #historyPage .history-verif-fidelity span { font-size: 13px; }
+  #historyPage .history-verif-score { padding: 10px; border-radius: 12px; }
+  #historyPage .prediction-summary-date { font-size: 16px; margin-bottom: 6px; }
   #historyPage .history-player {
     grid-area: player;
     height: auto;
