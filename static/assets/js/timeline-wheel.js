@@ -18,6 +18,27 @@
       return (performance.now() - wheelUserLastAt) < 700;
     }
 
+    // ── Debug TEMPORAIRE (?frisedebug=1) : overlay à l'écran qui liste les
+    // événements de la molette — diagnostic du « rebond » signalé sur Firefox
+    // vue téléphone, que les tests Chromium ne reproduisent pas. À RETIRER. ──
+    const wheelDebugEl = (() => {
+      try {
+        if (!/frisedebug/.test(location.search)) return null;
+        const el = document.createElement('div');
+        el.style.cssText = 'position:fixed;left:4px;top:4px;z-index:99999;background:rgba(0,0,0,.85);color:#7dd3fc;font:10px/1.5 monospace;padding:5px 7px;border-radius:6px;pointer-events:none;max-width:80vw;white-space:pre;';
+        (document.body || document.documentElement).appendChild(el);
+        return el;
+      } catch (_) { return null; }
+    })();
+    const wheelDbgLines = [];
+    function wheelDbg(msg) {
+      if (!wheelDebugEl) return;
+      const t = (performance.now() / 1000).toFixed(1);
+      wheelDbgLines.push(t + ' ' + msg);
+      if (wheelDbgLines.length > 10) wheelDbgLines.shift();
+      wheelDebugEl.textContent = wheelDbgLines.join('\n');
+    }
+
     // O(1) : trouve l'index de l'item centré via scrollLeft arithmétique
     // Utilisé uniquement au commit (après scroll terminé), getBoundingClientRect fiable
     function wheelCenteredItem(scroller) {
@@ -81,10 +102,12 @@
       const item = wheelCenteredItem(scroller);
       if (!item) return;
       const slotKey = item.dataset.slotKey;
+      wheelDbg('commit ' + slotKey + ' (sel=' + selectedSlotKey + ')');
       wheelSetActive(scroller, slotKey);
       wheelScrollTo(scroller, slotKey, true);
       if (slotKey !== selectedSlotKey && typeof selectTimelineSlot === 'function') {
-        selectTimelineSlot(slotKey, { render: false, stopPlayback: true, loadCached: true });
+        const ok = selectTimelineSlot(slotKey, { render: false, stopPlayback: true, loadCached: true });
+        wheelDbg('select→' + (ok ? 'OK' : 'REFUS') + ' sel=' + selectedSlotKey);
       }
       if (typeof maybeLoadCachedMeteoFranceGribForSelectedSlot === 'function') {
         maybeLoadCachedMeteoFranceGribForSelectedSlot({ quiet: true });
@@ -99,6 +122,7 @@
     function syncTimelineWheelScrollToSelected({ smooth = false } = {}) {
       const scroller = slotButtons?.querySelector?.('.timeline-wheel-scroller');
       if (!scroller) return;
+      wheelDbg('SYNC→' + selectedSlotKey);
       wheelScrollTo(scroller, selectedSlotKey, smooth);
     }
 
@@ -171,8 +195,17 @@
       // Marque le début de geste (le scroll seul ne suffit pas : il peut être
       // déclenché par l'inertie APRÈS relâcher, mais c'est voulu — l'inertie
       // fait partie du geste utilisateur).
-      scroller.addEventListener('pointerdown', () => { wheelUserLastAt = performance.now(); }, { passive: true });
-      scroller.addEventListener('touchstart', () => { wheelUserLastAt = performance.now(); }, { passive: true });
+      scroller.addEventListener('pointerdown', (e) => { wheelUserLastAt = performance.now(); wheelDbg('pointerdown ' + e.pointerType); }, { passive: true });
+      scroller.addEventListener('touchstart', () => { wheelUserLastAt = performance.now(); wheelDbg('touchstart'); }, { passive: true });
+      if (wheelDebugEl) {
+        scroller.addEventListener('pointerup', (e) => wheelDbg('pointerup ' + e.pointerType), { passive: true });
+        scroller.addEventListener('pointercancel', (e) => wheelDbg('pointercancel ' + e.pointerType), { passive: true });
+        let dbgScrollRaf = 0;
+        scroller.addEventListener('scroll', () => {
+          if (dbgScrollRaf) return;
+          dbgScrollRaf = requestAnimationFrame(() => { dbgScrollRaf = 0; wheelDbg('scroll sl=' + Math.round(scroller.scrollLeft) + (wheelProgrammatic ? ' (prog)' : '')); });
+        }, { passive: true });
+      }
 
       scroller.addEventListener('scroll', () => {
         if (wheelProgrammatic) return;
@@ -194,13 +227,14 @@
 
       // Primary: scrollend fire après que l'inertie soit terminée
       scroller.addEventListener('scrollend', () => {
+        wheelDbg('scrollend' + (wheelProgrammatic ? ' (prog)' : ''));
         if (wheelProgrammatic) return;
         if (wheelSnapTimer) { clearTimeout(wheelSnapTimer); wheelSnapTimer = null; }
         wheelCommit(scroller);
       }, { passive: true });
 
       // Fallback long (inertie mobile ~300-500ms) pour navigateurs sans scrollend
-      scroller.addEventListener('touchend', () => { wheelScheduleSnap(scroller, 600); }, { passive: true });
+      scroller.addEventListener('touchend', () => { wheelDbg('touchend'); wheelScheduleSnap(scroller, 600); }, { passive: true });
       scroller.addEventListener('pointercancel', () => { wheelScheduleSnap(scroller, 600); });
 
       // Molette souris
@@ -223,6 +257,7 @@
       // combat le geste. On réessaie une fois le geste terminé.
       const liveScroller = slotButtons.querySelector('.timeline-wheel-scroller');
       if (liveScroller && liveScroller.offsetParent !== null && timelineWheelUserBusy()) {
+        wheelDbg('render DIFFÉRÉ');
         if (!wheelRenderRetryTimer) {
           wheelRenderRetryTimer = setTimeout(() => {
             wheelRenderRetryTimer = null;
@@ -231,6 +266,7 @@
         }
         return;
       }
+      if (wheelDebugEl && liveScroller && liveScroller.offsetParent !== null) wheelDbg('render RUN');
       const day = getCurrentDay();
       slotButtons.innerHTML = '';
       slotButtons.classList.add('timeline-slider');
