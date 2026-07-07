@@ -25,8 +25,9 @@
     max-height: none;
     padding: 10px;
     border-radius: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
+    /* Contrôles (titre + dates + périodes) ANCRÉS : le shell ne défile plus.
+       Seul le corps (carte + analyse) défile — cf. .prediction-page-body. */
+    overflow: hidden;
   }
   body.mobile-ui .prediction-page-header {
     display: grid;
@@ -42,17 +43,43 @@
     line-height: 1.05;
     margin: 2px 0;
   }
+  /* Sous-titre (métadonnée de génération, verbeux) : borné à 1 ligne sur
+     téléphone pour rendre la hauteur à la carte. La date utile est déjà portée
+     par le chip actif du carrousel. */
   body.mobile-ui .prediction-page-header p {
     font-size: 0.72rem;
     line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
   body.mobile-ui .prediction-page-actions {
     gap: 6px;
   }
+  /* Export = action secondaire sur téléphone → bouton ICÔNE carré (garde le
+     look chip cyan), le libellé « Exporter PNG » masqué (font-size:0). min+max
+     verrouillés pour ne pas être étiré par body.mobile-ui button (0,1,1). */
   body.mobile-ui .prediction-download-btn {
+    width: 42px;
+    min-width: 42px;
+    max-width: 42px;
+    height: 42px;
     min-height: 42px;
-    padding: 0 11px;
-    font-size: 0.7rem;
+    max-height: 42px;
+    padding: 0;
+    font-size: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  body.mobile-ui .prediction-download-btn::before {
+    content: "";
+    width: 18px;
+    height: 18px;
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v11'/%3E%3Cpath d='M8 11l4 4 4-4'/%3E%3Cpath d='M5 20h14'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v11'/%3E%3Cpath d='M8 11l4 4 4-4'/%3E%3Cpath d='M5 20h14'/%3E%3C/svg%3E") center / contain no-repeat;
   }
   body.mobile-ui .prediction-close-btn,
   body.mobile-ui #predictionPageCloseBtn {
@@ -66,41 +93,91 @@
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: auto auto;
   }
+  /* DATES = carrousel horizontal à défilement (snap), full-bleed jusqu'aux bords
+     du shell : une seule rangée au lieu de la grille 4-rangées qui mangeait
+     ~200px. Le chip actif est amené au centre par le JS (highlightPredictionDateChip). */
+  body.mobile-ui .prediction-date-strip {
+    grid-column: 1 / -1;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    min-width: 0;
+    gap: 6px;
+    margin: 8px -10px 0;
+    padding: 2px 10px 4px;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 40%;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  body.mobile-ui .prediction-date-strip::-webkit-scrollbar {
+    display: none;
+  }
+  body.mobile-ui .prediction-date-chip {
+    flex: 0 0 auto;
+    scroll-snap-align: center;
+    min-width: 60px;
+    min-height: 44px;
+    justify-content: center;
+  }
+  /* PÉRIODES = barre segmentée sur UNE ligne (4 segments égaux), au lieu de
+     « Journée » seule puis 3 dessous. */
   body.mobile-ui .prediction-period-tabs {
     grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
     width: 100%;
-    margin-top: 4px;
-    padding: 3px;
-    gap: 3px;
+    margin-top: 8px;
+    padding: 0;
+    gap: 5px;
     overflow: visible;
-    flex-wrap: unset;
-  }
-  body.mobile-ui .prediction-period-tab:first-child {
-    grid-column: 1 / -1;
   }
   body.mobile-ui .prediction-period-tab {
-    min-height: 30px;
-    padding: 0 8px;
-    font-size: 0.68rem;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 4px;
+    font-size: 0.66rem;
     text-align: center;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
+  /* CORPS = UNE SEULE zone défilante contenant la carte PUIS l'analyse (colonne).
+     Avant, l'analyse était piégée dans un cadre ~176px à scroll interne, carte
+     figée au-dessus → illisible dès qu'il y a plusieurs zones. Ici carte +
+     analyse défilent ensemble sous les contrôles ancrés. */
   body.mobile-ui .prediction-page-body {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 10px;
-    overflow: visible;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
   }
+  /* CARTE HÉROS : premier contenu de la zone défilante (au-dessus du pli),
+     hauteur naturelle qui épouse le rendu France ; défile avec l'analyse.
+     flex:0 0 auto = ne se comprime pas. */
   body.mobile-ui .prediction-map-panel {
-    min-height: 220px;
+    flex: 0 0 auto;
+    min-height: 38svh;
+    padding: 6px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.02);
   }
   body.mobile-ui .prediction-image {
     width: 100%;
-    max-height: 45svh;
+    max-height: 46svh;
     object-fit: contain;
   }
+  /* Analyse = coule à sa hauteur naturelle dans la zone défilante partagée
+     (plus de scroll interne piégé) : flex:0 0 auto + overflow visible. */
   body.mobile-ui .prediction-analysis-panel {
+    flex: 0 0 auto;
+    min-height: 0;
+    overflow: visible;
     border-left: 0;
     border-top: 1px solid rgba(148, 163, 184, 0.18);
     padding: 10px 0 0;
@@ -172,6 +249,60 @@
     font-size: 0.78rem;
   }
 }
+/* ── Tablette (768–1024), Prévision uniquement ─────────────────────────────
+   Le header flex de base tasse le titre à gauche et REJETTE / COUPE les onglets
+   de période hors du cadre. On repasse en chrome EMPILÉ (titre+actions, puis
+   dates en carrousel, puis périodes sur une ligne) ; le corps reste en
+   2 colonnes (carte | analyse), qui fonctionne bien à cette largeur.
+   Scopé #predictionPage (1,x,0) → n'affecte PAS le header Historique (contenu
+   différent) et bat la tactile body.mobile-ui button (0,1,1). */
+@media (min-width: 768px) and (max-width: 1024px) {
+  #predictionPage .prediction-page-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 6px 16px;
+  }
+  #predictionPage .prediction-page-actions {
+    justify-self: end;
+  }
+  #predictionPage .prediction-date-strip {
+    grid-column: 1 / -1;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    min-width: 0;
+    margin-top: 8px;
+    padding-bottom: 4px;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 40%;
+    scrollbar-width: none;
+  }
+  #predictionPage .prediction-date-strip::-webkit-scrollbar {
+    display: none;
+  }
+  #predictionPage .prediction-date-chip {
+    flex: 0 0 auto;
+    scroll-snap-align: center;
+    min-width: 64px;
+    max-width: 96px;
+  }
+  #predictionPage .prediction-period-tabs {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: nowrap;
+    width: 100%;
+    margin-top: 8px;
+    gap: 6px;
+    overflow: visible;
+  }
+  #predictionPage .prediction-period-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 42px;
+  }
+}
+
 @media (min-width: 768px) {
   #predictionPage.prediction-page,
   #historyPage.prediction-page {

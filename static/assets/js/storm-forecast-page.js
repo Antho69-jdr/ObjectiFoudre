@@ -666,11 +666,18 @@ function buildPredictionDateStrip() {
 function highlightPredictionDateChip() {
   const strip = predictionDateStripEl();
   if (!strip) return;
+  let activeBtn = null;
   strip.querySelectorAll('.prediction-date-chip').forEach((btn) => {
     const active = btn.dataset.predictionDate === predictionSelectedDate;
     btn.classList.toggle('active', active);
     btn.setAttribute('aria-current', active ? 'date' : 'false');
+    if (active) activeBtn = btn;
   });
+  // Carrousel mobile : amener le chip actif au centre quand la bande défile
+  // horizontalement (téléphone). Sans effet si la bande n'est pas scrollable (desktop).
+  if (activeBtn && strip.scrollWidth > strip.clientWidth + 4) {
+    activeBtn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  }
 }
 
 async function renderActivePrediction() {
