@@ -334,3 +334,44 @@
 @media (orientation: landscape) and (max-height: 600px) {
   #historyPage .prediction-analysis-panel { grid-area: analysis; }
 }
+
+/* ── Téléphone PAYSAGE (Prévision) ─────────────────────────────────────────
+   Peu de hauteur, beaucoup de largeur. Cible orientation+hauteur (pas la
+   largeur : selon le tel le paysage tombe à 667 [mobile] ou 844 [tablette]).
+   Objectif user : (1) l'EN-TÊTE entre dans la zone défilante (il ne monopolise
+   plus la hauteur, on le fait glisser pour dégager la carte) ; (2) carte et
+   analyse CÔTE À CÔTE. Résultat : la carte occupe ~toute la hauteur de l'écran.
+   Scopé #predictionPage (1,x,0) + placé en DERNIER → bat les blocs mobile
+   (0,2,0) et tablette ; n'affecte pas l'Historique. */
+@media (orientation: landscape) and (max-height: 600px) {
+  #predictionPage .prediction-page-shell {
+    grid-template-rows: auto auto;   /* header + corps, tous deux à hauteur de contenu */
+    overflow-y: auto;                /* LE shell défile → l'en-tête peut glisser hors champ */
+    overflow-x: hidden;
+  }
+  #predictionPage .prediction-page-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(230px, 0.82fr);
+    gap: 12px;
+    height: 100svh;                  /* la rangée carte|analyse = un plein écran → carte grande */
+    min-height: 0;
+    overflow: visible;
+  }
+  #predictionPage .prediction-map-panel {
+    min-height: 0;                   /* remplit la hauteur de sa colonne (France aussi grande que possible) */
+  }
+  /* Lève le plafond 58vh (règle ≤920) : la France remplit la hauteur de l'écran
+     (unité svh = définie, se résout de façon fiable, ≠ max-height:100% dans une
+     cellule grid sans hauteur explicite). */
+  #predictionPage .prediction-image {
+    max-height: 94svh;
+    max-width: 100%;
+  }
+  #predictionPage .prediction-analysis-panel {
+    min-height: 0;
+    overflow-y: auto;                /* colonne de droite : scroll interne si l'analyse est longue */
+    border-top: 0;
+    border-left: 1px solid rgba(148, 163, 184, 0.18);
+    padding: 4px 4px 4px 14px;
+  }
+}
