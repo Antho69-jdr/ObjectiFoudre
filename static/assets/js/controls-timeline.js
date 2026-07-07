@@ -54,6 +54,15 @@
       const selectableTimelineSlots = () => (typeof getSelectableSlots === 'function' ? getSelectableSlots(getCurrentDay()) : timelineSlots());
       const selectedTimelineIndex = (slots = selectableTimelineSlots()) => Math.max(0, slots.findIndex((slot) => slot?.slot_key === selectedSlotKey));
       const isTimelineWheelTarget = (event) => !!event?.target?.closest?.('.timeline-wheel');
+      // Le drag/scroll du RAIL (curseur) n'a de sens que quand le rail est
+      // VISIBLE (desktop/tablette). En régime molette (mobile, rail display:none),
+      // ces handlers sur #slotButtons ne doivent RIEN faire : sinon ils captent le
+      // pointeur et empêchent le scroll natif tactile de la molette (la frise
+      // chasse marche justement parce que son conteneur n'a aucun handler de drag).
+      const railIsActive = () => {
+        const rail = slotButtons.querySelector('.timeline-rail');
+        return !!rail && rail.offsetParent !== null;
+      };
       const slotKeyAtClientX = (clientX) => {
         const day = getCurrentDay();
         const slots = timelineSlots();
@@ -86,6 +95,7 @@
       };
 
       slotButtons.addEventListener('wheel', (event) => {
+        if (!railIsActive()) return;
         if (isTimelineWheelTarget(event)) return;
         const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
         if (!delta) return;
@@ -97,6 +107,7 @@
       }, { passive: false });
 
       slotButtons.addEventListener('pointerdown', (event) => {
+        if (!railIsActive()) return;
         if (isTimelineWheelTarget(event)) return;
         if (event.button !== undefined && event.button !== 0) return;
         activePointerId = event.pointerId;
@@ -108,6 +119,7 @@
       }, { passive: false });
 
       slotButtons.addEventListener('pointermove', (event) => {
+        if (!railIsActive()) return;
         if (isTimelineWheelTarget(event)) return;
         if (activePointerId === null || event.pointerId !== activePointerId) return;
         selectAtClientX(event.clientX);

@@ -416,6 +416,12 @@ body.chase-mode #chaseSlots {
     height: 76px;
     min-height: 76px;
     max-height: 76px;
+    /* En régime MOLETTE (rail masqué), #slotButtons doit se comporter comme le
+       conteneur de la frise chasse (#chaseSlots, simple flex qui scrolle) : pas
+       de `touch-action:none` (posé pour le drag du rail desktop) qui, en ANCÊTRE,
+       annule le pan-x tactile du scroller interne, ni de `cursor:grab`. */
+    touch-action: pan-x;
+    cursor: auto;
   }
   .timeline-wheel {
     --timeline-wheel-visible-hours: 8;
