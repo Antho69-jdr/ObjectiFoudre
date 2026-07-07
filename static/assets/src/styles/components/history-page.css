@@ -679,9 +679,29 @@
     max-height: 44px;
     font-size: 15px;
   }
-  #historyPage .history-hour-label { min-width: 44px; font-size: 13px; }
-  #historyPage .history-player-controls { flex-wrap: wrap; gap: 8px 10px; }
-  #historyPage .history-scrubber { order: 10; flex: 1 0 100%; min-width: 0; }
+  /* Player sur UNE ligne, scrubber MAXIMAL : play · scrubber(pleine largeur) ·
+     flash · download. L'heure sort du flux (flotte en haut à droite) pour ne pas
+     rogner le scrubber. */
+  #historyPage .history-player-controls {
+    position: relative;
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 20px 9px 8px;
+  }
+  #historyPage .history-play-btn { order: 0; }
+  #historyPage .history-scrubber { order: 1; flex: 1 1 auto; min-width: 0; }
+  #historyPage .history-flash-btn { order: 2; }
+  #historyPage .history-download-btn { order: 3; }
+  #historyPage .history-hour-label {
+    position: absolute;
+    top: 4px;
+    right: 12px;
+    order: 0;
+    min-width: 0;
+    padding: 0;
+    font-size: 12px;
+    opacity: 0.9;
+  }
 }
 @media (orientation: landscape) and (max-height: 600px) {
   #historyPage .history-cal-toggle { display: none; }
