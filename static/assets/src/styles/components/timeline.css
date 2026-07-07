@@ -454,6 +454,14 @@ body.chase-mode #chaseSlots {
   }
   .timeline-wheel-scroller::-webkit-scrollbar { display: none; }
 
+  /* Frise NORMALE : SNAP NATIF du navigateur (intégré à l'inertie) au lieu du
+     snap JS de wheelCommit — qui, après l'inertie du doigt, re-tirait le scroll
+     vers le centre pendant que l'inertie continuait → bagarre = « rebond ». Le
+     natif décélère PILE sur le créneau, sans dépassement ni re-tirage. Scopé
+     #slotButtons pour ne pas toucher la chasse (qui garde son snap JS). */
+  #slotButtons .timeline-wheel-scroller { scroll-snap-type: x mandatory; }
+  #slotButtons .timeline-wheel-item { scroll-snap-align: center; }
+
   .timeline-wheel-item {
     position: relative;
     flex: 0 0 var(--timeline-wheel-item-width);

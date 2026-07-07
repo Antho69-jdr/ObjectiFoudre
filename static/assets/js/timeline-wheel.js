@@ -124,13 +124,14 @@
       if (!item) return;
       const slotKey = item.dataset.slotKey;
       wheelSetActive(scroller, slotKey);
-      const moved = wheelScrollTo(scroller, slotKey, true);
       const changed = slotKey !== selectedSlotKey;
-      wheelDbg('commit ' + slotKey + ' (sel=' + selectedSlotKey + ') moved=' + moved);
-      // Rien n'a bougé ET déjà sur le bon créneau → NE RIEN relancer (ni select
-      // ni chargement) : c'est le cas de la boucle scrollend résiduelle.
-      if (!changed && !moved) return;
-      if (changed && typeof selectTimelineSlot === 'function') {
+      wheelDbg('commit ' + slotKey + ' (sel=' + selectedSlotKey + ') changed=' + changed);
+      // PAS de re-centrage JS ici : le SNAP NATIF CSS (scroll-snap) a déjà arrêté
+      // le scroll pile sur le créneau centré, sans bagarrer avec l'inertie. On se
+      // contente de VALIDER le créneau. (Le re-centrage JS wheelScrollTo faisait
+      // le « rebond » : il re-tirait le scroll après l'inertie.)
+      if (!changed) return;
+      if (typeof selectTimelineSlot === 'function') {
         selectTimelineSlot(slotKey, { render: false, stopPlayback: true, loadCached: true });
       }
       if (typeof maybeLoadCachedMeteoFranceGribForSelectedSlot === 'function') {
