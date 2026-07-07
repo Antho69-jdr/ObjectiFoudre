@@ -78,12 +78,6 @@
         refreshMap();
         return true;
       };
-      const selectAtClientX = (clientX) => {
-        const slotKey = slotKeyAtClientX(clientX);
-        if (!slotKey) return false;
-        if (typeof selectTimelineSlot === 'function') return selectTimelineSlot(slotKey, { stopPlayback: true });
-        return false;
-      };
 
       slotButtons.addEventListener('wheel', (event) => {
         if (isTimelineWheelTarget(event)) return;
@@ -96,21 +90,50 @@
         selectByDelta(delta > 0 ? 1 : -1);
       }, { passive: false });
 
+      // Drag du rail = APERÇU visuel pendant le glissé (curseur / remplissage /
+      // marque active / aria mis à jour EN PLACE, sans reconstruire #slotButtons),
+      // puis COMMIT unique au relâcher. Reconstruire le rail à chaque move
+      // (renderSlotButtons via selectTimelineSlot) cassait la capture pointeur →
+      // drag inopérant. La frise chasse fait pareil (setCursor léger).
+      let pendingKey = null;
+      const previewRailAt = (clientX) => {
+        const rail = slotButtons.querySelector('.timeline-rail');
+        const track = slotButtons.querySelector('.timeline-rail-track');
+        if (!rail || !track) return;
+        const slots = timelineSlots();
+        const key = slotKeyAtClientX(clientX);
+        if (!key) return;
+        pendingKey = key;
+        const index = slots.findIndex((s) => s?.slot_key === key);
+        if (index < 0) return;
+        const denom = Math.max(1, slots.length - 1);
+        track.style.setProperty('--timeline-active-pct', `${(index / denom) * 100}%`);
+        track.querySelectorAll('.timeline-hour-mark.active').forEach((m) => m.classList.remove('active'));
+        const escKey = (window.CSS && CSS.escape) ? CSS.escape(key) : key;
+        track.querySelector(`.timeline-hour-mark[data-slot-key="${escKey}"]`)?.classList.add('active');
+        const slot = slots[index];
+        const hour = String(slot?.slot_label || slot?.slot_key || '').replace(/^h/, '').replace('h', '');
+        const span = track.querySelector('.timeline-rail-cursor span');
+        if (span) span.textContent = `${String(hour).padStart(2, '0')}h`;
+        rail.setAttribute('aria-valuenow', String(index));
+        rail.setAttribute('aria-valuetext', slot?.slot_label || slot?.slot_key || '');
+      };
+
       slotButtons.addEventListener('pointerdown', (event) => {
         if (isTimelineWheelTarget(event)) return;
         if (event.button !== undefined && event.button !== 0) return;
         activePointerId = event.pointerId;
+        pendingKey = null;
         slotButtons.classList.add('dragging');
         try { slotButtons.querySelector('.timeline-rail')?.focus({ preventScroll: true }); } catch (_) {}
         try { slotButtons.setPointerCapture(event.pointerId); } catch (_) {}
-        selectAtClientX(event.clientX);
+        previewRailAt(event.clientX);
         event.preventDefault();
       }, { passive: false });
 
       slotButtons.addEventListener('pointermove', (event) => {
-        if (isTimelineWheelTarget(event)) return;
         if (activePointerId === null || event.pointerId !== activePointerId) return;
-        selectAtClientX(event.clientX);
+        previewRailAt(event.clientX);
         event.preventDefault();
       }, { passive: false });
 
@@ -120,6 +143,15 @@
         try { slotButtons.releasePointerCapture(activePointerId); } catch (_) {}
         activePointerId = null;
         slotButtons.classList.remove('dragging');
+        // Commit unique de la position finale (rebuild complet + carte). Si rien
+        // n'a changé, on resynchronise juste le rail (aperçu → état réel).
+        const key = pendingKey;
+        pendingKey = null;
+        if (key && key !== selectedSlotKey && typeof selectTimelineSlot === 'function') {
+          selectTimelineSlot(key, { stopPlayback: true });
+        } else if (typeof renderSlotButtons === 'function') {
+          renderSlotButtons();
+        }
       };
 
       slotButtons.addEventListener('pointerup', stopDrag);
