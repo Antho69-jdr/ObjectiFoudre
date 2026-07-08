@@ -1,27 +1,46 @@
-// timeline-wheel.js — issu du découpage de timeline.js (Phase 3).
-// Molette de créneaux (scroll/snap/centrage) + buildTimelineWheel + renderSlotButtons.
-    // ── Wheel scroll state ──────────────────────────────────────────────────
+// timeline-wheel.js — molette de créneaux (mobile) + rail (desktop).
+// ARCHITECTURE (alignée sur la frise chasse, qui est la référence de fluidité) :
+// la frise est CONSTRUITE UNE FOIS par structure (jour + jeu de créneaux), puis
+// MISE À JOUR EN PLACE pour tout le reste (sélection, GRIB chargé, cache, dispo).
+// renderSlotButtons est appelé par de nombreux sites (chargements GRIB,
+// hydratation, lecture…) : ces appels ne détruisent plus jamais le DOM que
+// l'utilisateur manipule — ils basculent des classes sur les éléments existants.
+// Le snap de la molette est le SCROLL-SNAP CSS NATIF (timeline.css) : le JS ne
+// re-scrolle pas après un geste, il ne fait que VALIDER le créneau centré.
+    // ── État ────────────────────────────────────────────────────────────────
     let wheelSnapTimer = null;
-    let wheelProgrammatic = false;
+    let wheelProgrammatic = false;      // scroll déclenché par nous (à ignorer)
     let wheelActiveSlotKey = null;
-    // Horodatage de la dernière manipulation UTILISATEUR de la molette (geste
-    // tactile / scroll non programmatique). Tant que c'est récent, on DIFFÈRE
-    // les rebuilds de renderSlotButtons : de nombreux chargements asynchrones
-    // (GRIB, hydratation, lecture) re-render la frise, et le rAF de fin de
-    // render re-scrolle la molette sur le slot sélectionné → en plein geste, la
-    // molette « se téléporte » en arrière (aimantation excessive signalée sur
-    // mobile). La frise chasse n'a pas ce problème : elle n'est jamais
-    // reconstruite pendant le geste.
-    let wheelUserLastAt = 0;
-    let wheelRenderRetryTimer = null;
-    let lastRenderSig = null;   // signature du dernier rendu (anti-rebuild inutile)
+    let wheelUserLastAt = 0;            // dernière manipulation utilisateur de la molette
+    let wheelRenderRetryTimer = null;   // rebuild structurel différé pendant un geste
+    let timelineStructureSig = null;    // jour + jeu de slot_keys du dernier BUILD
+
     function timelineWheelUserBusy() {
       return (performance.now() - wheelUserLastAt) < 700;
     }
 
+    // ── État visuel d'un créneau (partagé molette + rail) ───────────────────
+    function timelineSlotRenderState(slot, day) {
+      const cached = typeof meteoFranceGribCachedSlotKeys !== 'undefined' && meteoFranceGribCachedSlotKeys.has(slot.slot_key);
+      const loaded = Array.isArray(slot.cells) && slot.cells.some((cell) => cell?.source_provider === 'meteofrance_arome_grib');
+      const unavailable = timelineSlotIsUnavailable(slot, day);
+      const title = unavailable
+        ? `${slot.slot_label} · échéance non publiée par le run AROME`
+        : (loaded
+          ? `${slot.slot_label} · AROME GRIB chargé`
+          : (cached ? `${slot.slot_label} · AROME GRIB en cache serveur` : slot.slot_label));
+      return { cached, loaded, unavailable, title };
+    }
 
-    // O(1) : trouve l'index de l'item centré via scrollLeft arithmétique
-    // Utilisé uniquement au commit (après scroll terminé), getBoundingClientRect fiable
+    function applyTimelineSlotState(el, st) {
+      el.classList.toggle('is-arome-cached', st.cached);
+      el.classList.toggle('is-arome-loaded', st.loaded);
+      el.classList.toggle('is-arome-unavailable', st.unavailable);
+      el.title = st.title;
+    }
+
+    // ── Molette : géométrie / sélection ─────────────────────────────────────
+    // O(1) : item le plus proche du centre (au commit, après scroll terminé)
     function wheelCenteredItem(scroller) {
       if (!scroller.isConnected) return null;
       const rect = scroller.getBoundingClientRect();
@@ -47,8 +66,10 @@
       wheelActiveSlotKey = slotKey;
     }
 
-    // Snap vers un slot — easeOutQuart (aimant : décélération rapide vers la cible)
-    // Renvoie true si un déplacement a été (ou est) réellement effectué.
+    // Centrage NATIF (scrollTo smooth, comme la chasse). Renvoie true si un
+    // déplacement a réellement eu lieu. Si DÉJÀ centré (<1px) : NE RIEN écrire —
+    // réécrire scrollLeft (même à l'identique) déclenche un `scrollend` sur
+    // Firefox → commit → boucle de snap infinie.
     function wheelScrollTo(scroller, slotKey, animated) {
       if (!scroller.isConnected) return false;
       const item = scroller.querySelector(`[data-slot-key="${slotKey}"]`);
@@ -56,39 +77,30 @@
       const sr = scroller.getBoundingClientRect();
       const ir = item.getBoundingClientRect();
       const target = Math.max(0, scroller.scrollLeft + ir.left - sr.left - sr.width / 2 + ir.width / 2);
-
-      // DÉJÀ centré (<1px) : NE RIEN écrire. Réécrire scrollLeft (même une no-op)
-      // déclenche un `scrollend` sur Firefox → wheelCommit → wheelScrollTo →
-      // boucle infinie de snap. Chromium ne déclenche pas ce scrollend.
       if (Math.abs(target - scroller.scrollLeft) < 1) return false;
 
-      // Centrage NATIF, comme la frise CHASSE (scrollTo behavior:'smooth') au lieu
-      // d'une animation JS manuelle (scrollLeft frame par frame) : sous Firefox
-      // chaque frame déclenchait un `scrollend` (tempête d'événements + ressenti
-      // de « rebond »). Le natif est fluide et intégré à la physique du scroll.
       wheelProgrammatic = true;
       if (animated && typeof scroller.scrollTo === 'function') {
         scroller.scrollTo({ left: target, behavior: 'smooth' });
         setTimeout(() => { wheelProgrammatic = false; }, 400);
       } else {
         scroller.scrollLeft = target;
+        // 2 frames : absorbe le scrollend asynchrone de Firefox.
         requestAnimationFrame(() => requestAnimationFrame(() => { wheelProgrammatic = false; }));
       }
       return true;
     }
 
+    // Valide le créneau centré après un geste. PAS de re-centrage JS : le
+    // scroll-snap CSS natif a déjà arrêté le scroll pile sur un créneau (le
+    // re-centrage JS bagarrait avec l'inertie → « rebond »).
     function wheelCommit(scroller) {
       if (!scroller.isConnected) return;
       const item = wheelCenteredItem(scroller);
       if (!item) return;
       const slotKey = item.dataset.slotKey;
       wheelSetActive(scroller, slotKey);
-      const changed = slotKey !== selectedSlotKey;
-      // PAS de re-centrage JS ici : le SNAP NATIF CSS (scroll-snap) a déjà arrêté
-      // le scroll pile sur le créneau centré, sans bagarrer avec l'inertie. On se
-      // contente de VALIDER le créneau. (Le re-centrage JS wheelScrollTo faisait
-      // le « rebond » : il re-tirait le scroll après l'inertie.)
-      if (!changed) return;
+      if (slotKey === selectedSlotKey) return;
       if (typeof selectTimelineSlot === 'function') {
         selectTimelineSlot(slotKey, { render: false, stopPlayback: true, loadCached: true });
       }
@@ -108,6 +120,7 @@
       wheelScrollTo(scroller, selectedSlotKey, smooth);
     }
 
+    // ── Construction (une fois par structure) ───────────────────────────────
     function buildTimelineWheel(slots, day) {
       wheelActiveSlotKey = selectedSlotKey || null;
 
@@ -122,30 +135,18 @@
 
       const phases = timelinePhaseMapForSlots(day?.day_key || selectedBaseDate, slots, day);
       for (const slot of slots) {
-        const hasAromeCache = typeof meteoFranceGribCachedSlotKeys !== 'undefined' && meteoFranceGribCachedSlotKeys.has(slot.slot_key);
-        const isAromeLoaded = Array.isArray(slot.cells) && slot.cells.some((cell) => cell?.source_provider === 'meteofrance_arome_grib');
-        const isUnavailable = timelineSlotIsUnavailable(slot, day);
+        const st = timelineSlotRenderState(slot, day);
         const hourText = timelineSlotHourLabel(slot);
         const phase = phases.get(slot.slot_key);
         const item = document.createElement('button');
         item.type = 'button';
-        item.className = [
-          'timeline-wheel-item',
-          slot.slot_key === selectedSlotKey ? 'active' : '',
-          hasAromeCache ? 'is-arome-cached' : '',
-          isAromeLoaded ? 'is-arome-loaded' : '',
-          isUnavailable ? 'is-arome-unavailable' : '',
-        ].filter(Boolean).join(' ');
+        item.className = 'timeline-wheel-item' + (slot.slot_key === selectedSlotKey ? ' active' : '');
         item.dataset.slotKey = slot.slot_key;
         item.setAttribute('role', 'option');
         item.setAttribute('aria-selected', slot.slot_key === selectedSlotKey ? 'true' : 'false');
         item.setAttribute('aria-label', `${String(hourText).padStart(2, '0')}h`);
-        item.title = isUnavailable
-          ? `${slot.slot_label} · échéance non publiée par le run AROME`
-          : (isAromeLoaded
-            ? `${slot.slot_label} · AROME GRIB chargé`
-            : (hasAromeCache ? `${slot.slot_label} · AROME GRIB en cache serveur` : slot.slot_label));
-        if (isUnavailable) item.disabled = true;
+        applyTimelineSlotState(item, st);
+        item.disabled = st.unavailable;
         if (phase) {
           const phaseIcon = document.createElement('span');
           phaseIcon.className = [`timeline-wheel-light-icon`, `timeline-wheel-light-icon-${phase.type}`, phase.unavailable ? 'is-arome-unavailable' : ''].filter(Boolean).join(' ');
@@ -163,20 +164,19 @@
         item.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
-          if (isUnavailable) return;
-          // Annule le snap en attente (évite snap sur ancien scroller après re-render)
+          // item.disabled (état COURANT, mis à jour en place) — pas la valeur du build
+          if (item.disabled) return;
           if (wheelSnapTimer) { clearTimeout(wheelSnapTimer); wheelSnapTimer = null; }
           if (typeof selectTimelineSlot === 'function') selectTimelineSlot(slot.slot_key, { stopPlayback: true });
         });
         scroller.appendChild(item);
       }
 
-      // Mise à jour visuelle pendant le scroll — throttlée rAF, O(1) par index
+      // Surbrillance de l'item centré pendant le scroll — throttlée rAF
       const visibleHours = 8;
       let scrollRafId = null;
-      // Marque le début de geste (le scroll seul ne suffit pas : il peut être
-      // déclenché par l'inertie APRÈS relâcher, mais c'est voulu — l'inertie
-      // fait partie du geste utilisateur).
+      // Début de geste utilisateur (l'inertie qui suit compte aussi : le scroll
+      // non programmatique rafraîchit l'horodatage).
       scroller.addEventListener('pointerdown', () => { wheelUserLastAt = performance.now(); }, { passive: true });
       scroller.addEventListener('touchstart', () => { wheelUserLastAt = performance.now(); }, { passive: true });
 
@@ -198,14 +198,14 @@
         });
       }, { passive: true });
 
-      // Primary: scrollend fire après que l'inertie soit terminée
+      // scrollend : fin de geste + inertie + snap CSS → valider le créneau centré
       scroller.addEventListener('scrollend', () => {
         if (wheelProgrammatic) return;
         if (wheelSnapTimer) { clearTimeout(wheelSnapTimer); wheelSnapTimer = null; }
         wheelCommit(scroller);
       }, { passive: true });
 
-      // Fallback long (inertie mobile ~300-500ms) pour navigateurs sans scrollend
+      // Fallback (navigateurs sans scrollend) : commit différé après l'inertie
       scroller.addEventListener('touchend', () => { wheelScheduleSnap(scroller, 600); }, { passive: true });
       scroller.addEventListener('pointercancel', () => { wheelScheduleSnap(scroller, 600); });
 
@@ -222,63 +222,9 @@
       return wheel;
     }
 
-    function renderSlotButtons() {
-      // Molette en cours de manipulation (mobile) : DIFFÉRER le rebuild.
-      // Reconstruire détruirait le scroller sous le doigt et le rAF final
-      // re-scrollerait sur le slot sélectionné → molette « aimantée » qui
-      // combat le geste. On réessaie une fois le geste terminé.
-      const liveScroller = slotButtons.querySelector('.timeline-wheel-scroller');
-      if (liveScroller && liveScroller.offsetParent !== null && timelineWheelUserBusy()) {
-        if (!wheelRenderRetryTimer) {
-          wheelRenderRetryTimer = setTimeout(() => {
-            wheelRenderRetryTimer = null;
-            renderSlotButtons();
-          }, 350);
-        }
-        return;
-      }
-      const day = getCurrentDay();
-      const slots = getRenderableSlots(day);
-      // Signature du contenu : ne RECONSTRUIRE que si quelque chose de visible a
-      // changé (créneaux / dispo / cache serveur / GRIB chargé / sélection / jour).
-      // Sinon les nombreux appels de fond (polls serveur d'automation, cache GRIB)
-      // rebuildaient la molette à vide puis la re-centraient en boucle → churn
-      // permanent + « rollback »/tremblement pendant un geste sur mobile. La frise
-      // chasse n'a pas ce souci (jamais reconstruite en arrière-plan).
-      const wheelLive = slotButtons.querySelector('.timeline-wheel');
-      const sig = (day?.day_key || '') + '|' + selectedSlotKey + '|' + slots.map((s) =>
-        s.slot_key
-        + (timelineSlotIsUnavailable(s, day) ? 'u' : '')
-        + ((typeof meteoFranceGribCachedSlotKeys !== 'undefined' && meteoFranceGribCachedSlotKeys.has(s.slot_key)) ? 'c' : '')
-        + ((Array.isArray(s.cells) && s.cells.some((c) => c?.source_provider === 'meteofrance_arome_grib')) ? 'L' : '')
-      ).join(',');
-      if (wheelLive && sig === lastRenderSig) {
-        syncTimelinePlaybackUi();   // maj légère des boutons lecture, sans rebuild ni re-scroll
-        return;
-      }
-      lastRenderSig = sig;
-      // Molette visible : mémoriser la position de scroll pour la RESTAURER après
-      // reconstruction (au lieu de repartir de 0 puis re-centrer → saut visible =
-      // « rollback »). Rend le rebuild invisible pour le scroll, comme la chasse
-      // qui ne reconstruit jamais.
-      const preserveScrollLeft = (liveScroller && liveScroller.offsetParent !== null)
-        ? liveScroller.scrollLeft : null;
-      slotButtons.innerHTML = '';
-      slotButtons.classList.add('timeline-slider');
-      const selectableSlots = timelineSelectableSlots(day);
-      debugLog('renderSlotButtons', slots.map(slot => ({ slotKey: slot?.slot_key, label: slot?.slot_label, cells: Array.isArray(slot?.cells) ? slot.cells.length : 0, unavailable: timelineSlotIsUnavailable(slot, day) })));
-      if (!slots.length) {
-        syncTimelinePlaybackUi();
-        return;
-      }
-      const selectedSlot = slots.find(s => s.slot_key === selectedSlotKey);
-      if (!selectedSlotKey || !selectedSlot || timelineSlotIsUnavailable(selectedSlot, day)) {
-        selectedSlotKey = selectableSlots[0]?.slot_key || slots[0].slot_key;
-      }
-
+    function buildTimelineRail(slots, day) {
       const activeIndex = Math.max(0, slots.findIndex((slot) => slot?.slot_key === selectedSlotKey));
       const denominator = Math.max(1, slots.length - 1);
-      const activePct = (activeIndex / denominator) * 100;
       const activeSlot = slots[activeIndex] || slots[0];
       const activeHour = String(activeSlot?.slot_label || activeSlot?.slot_key || '').replace(/^h/, '').replace('h', '');
 
@@ -294,7 +240,7 @@
 
       const track = document.createElement('div');
       track.className = 'timeline-rail-track';
-      track.style.setProperty('--timeline-active-pct', `${activePct}%`);
+      track.style.setProperty('--timeline-active-pct', `${(activeIndex / denominator) * 100}%`);
       addTimelinePhaseIcons(track, day?.day_key || selectedBaseDate);
 
       const fill = document.createElement('div');
@@ -309,24 +255,11 @@
       for (let index = 0; index < slots.length; index += 1) {
         const slot = slots[index];
         const pct = (index / denominator) * 100;
-        const hasAromeCache = typeof meteoFranceGribCachedSlotKeys !== 'undefined' && meteoFranceGribCachedSlotKeys.has(slot.slot_key);
-        const isAromeLoaded = Array.isArray(slot.cells) && slot.cells.some((cell) => cell?.source_provider === 'meteofrance_arome_grib');
-        const isUnavailable = timelineSlotIsUnavailable(slot, day);
         const mark = document.createElement('div');
-        mark.className = [
-          'timeline-hour-mark',
-          slot.slot_key === selectedSlotKey ? 'active' : '',
-          hasAromeCache ? 'is-arome-cached' : '',
-          isAromeLoaded ? 'is-arome-loaded' : '',
-          isUnavailable ? 'is-arome-unavailable' : '',
-        ].filter(Boolean).join(' ');
+        mark.className = 'timeline-hour-mark' + (slot.slot_key === selectedSlotKey ? ' active' : '');
         mark.dataset.slotKey = slot.slot_key;
         mark.style.left = `${pct}%`;
-        mark.title = isUnavailable
-          ? `${slot.slot_label} · échéance non publiée par le run AROME`
-          : (isAromeLoaded
-            ? `${slot.slot_label} · AROME GRIB chargé`
-            : (hasAromeCache ? `${slot.slot_label} · AROME GRIB en cache serveur` : slot.slot_label));
+        applyTimelineSlotState(mark, timelineSlotRenderState(slot, day));
 
         const line = document.createElement('span');
         line.className = 'timeline-hour-line';
@@ -338,22 +271,97 @@
         track.appendChild(mark);
       }
 
-      const wheel = buildTimelineWheel(slots, day);
-      slotButtons.appendChild(wheel);
       rail.appendChild(track);
-      slotButtons.appendChild(rail);
-      syncTimelinePlaybackUi();
-      requestAnimationFrame(() => {
-        // Reconstruction alors que la molette était visible : RESTAURER la
-        // position de scroll (pas de saut 0 → re-centrage). Sinon (1er rendu,
-        // desktop) : centrer sur la sélection comme avant.
-        const newScroller = slotButtons.querySelector('.timeline-wheel-scroller');
-        if (preserveScrollLeft != null && newScroller && newScroller.offsetParent !== null) {
-          wheelProgrammatic = true;
-          newScroller.scrollLeft = preserveScrollLeft;
-          requestAnimationFrame(() => requestAnimationFrame(() => { wheelProgrammatic = false; }));
-        } else {
-          syncTimelineWheelScrollToSelected({ smooth: false });
+      return rail;
+    }
+
+    // ── Mise à jour EN PLACE (structure identique) ──────────────────────────
+    function updateTimelineInPlace(slots, day) {
+      const activeIndex = Math.max(0, slots.findIndex((slot) => slot?.slot_key === selectedSlotKey));
+      const denominator = Math.max(1, slots.length - 1);
+      const activeSlot = slots[activeIndex] || slots[0];
+
+      // Molette : états par item ; sélection/centrage SEULEMENT hors geste (sinon
+      // on écraserait la surbrillance de suivi du doigt).
+      const scroller = slotButtons.querySelector('.timeline-wheel-scroller');
+      if (scroller) {
+        for (const slot of slots) {
+          const item = scroller.querySelector(`[data-slot-key="${slot.slot_key}"]`);
+          if (!item) continue;
+          const st = timelineSlotRenderState(slot, day);
+          applyTimelineSlotState(item, st);
+          item.disabled = st.unavailable;
         }
-      });
+        if (!timelineWheelUserBusy()) {
+          wheelSetActive(scroller, selectedSlotKey);
+          // Sélection venue d'ailleurs (lecture, clic, rail desktop) → suivre en
+          // douceur, comme la chasse. No-op si déjà centré (<1px, rien n'est écrit).
+          if (scroller.offsetParent !== null) wheelScrollTo(scroller, selectedSlotKey, true);
+        }
+      }
+
+      // Rail : curseur / remplissage / aria / états des repères
+      const rail = slotButtons.querySelector('.timeline-rail');
+      const track = slotButtons.querySelector('.timeline-rail-track');
+      if (rail && track) {
+        track.style.setProperty('--timeline-active-pct', `${(activeIndex / denominator) * 100}%`);
+        const hour = String(activeSlot?.slot_label || activeSlot?.slot_key || '').replace(/^h/, '').replace('h', '');
+        const span = track.querySelector('.timeline-rail-cursor span');
+        if (span) span.textContent = `${String(hour).padStart(2, '0')}h`;
+        rail.setAttribute('aria-valuenow', String(activeIndex));
+        rail.setAttribute('aria-valuetext', activeSlot?.slot_label || activeSlot?.slot_key || '');
+        for (const slot of slots) {
+          const mark = track.querySelector(`.timeline-hour-mark[data-slot-key="${slot.slot_key}"]`);
+          if (!mark) continue;
+          applyTimelineSlotState(mark, timelineSlotRenderState(slot, day));
+          mark.classList.toggle('active', slot.slot_key === selectedSlotKey);
+        }
+      }
+    }
+
+    // ── Point d'entrée (appelé par toute l'app) ─────────────────────────────
+    function renderSlotButtons() {
+      const day = getCurrentDay();
+      const slots = getRenderableSlots(day);
+      if (!slots.length) {
+        slotButtons.innerHTML = '';
+        slotButtons.classList.add('timeline-slider');
+        timelineStructureSig = null;
+        syncTimelinePlaybackUi();
+        return;
+      }
+
+      // Normaliser la sélection (créneau retiré / indisponible) avant tout rendu
+      const selectableSlots = timelineSelectableSlots(day);
+      const selectedSlot = slots.find((s) => s.slot_key === selectedSlotKey);
+      if (!selectedSlotKey || !selectedSlot || timelineSlotIsUnavailable(selectedSlot, day)) {
+        selectedSlotKey = selectableSlots[0]?.slot_key || slots[0].slot_key;
+      }
+
+      // Structure identique (même jour, mêmes créneaux) → MISE À JOUR EN PLACE.
+      // C'est le chemin de ~tous les appels : rien n'est détruit, rien ne saute.
+      const structSig = (day?.day_key || '') + '|' + slots.map((s) => s.slot_key).join(',');
+      if (structSig === timelineStructureSig && slotButtons.querySelector('.timeline-wheel-scroller')) {
+        updateTimelineInPlace(slots, day);
+        syncTimelinePlaybackUi();
+        return;
+      }
+
+      // REBUILD structurel (changement de jour / de jeu de créneaux) — rare.
+      // Pendant un geste sur la molette : différer pour ne pas la détruire sous le doigt.
+      const liveScroller = slotButtons.querySelector('.timeline-wheel-scroller');
+      if (liveScroller && liveScroller.offsetParent !== null && timelineWheelUserBusy()) {
+        if (!wheelRenderRetryTimer) {
+          wheelRenderRetryTimer = setTimeout(() => { wheelRenderRetryTimer = null; renderSlotButtons(); }, 350);
+        }
+        return;
+      }
+      debugLog('renderSlotButtons(rebuild)', slots.map(slot => ({ slotKey: slot?.slot_key, label: slot?.slot_label, cells: Array.isArray(slot?.cells) ? slot.cells.length : 0, unavailable: timelineSlotIsUnavailable(slot, day) })));
+      slotButtons.innerHTML = '';
+      slotButtons.classList.add('timeline-slider');
+      slotButtons.appendChild(buildTimelineWheel(slots, day));
+      slotButtons.appendChild(buildTimelineRail(slots, day));
+      timelineStructureSig = structSig;
+      syncTimelinePlaybackUi();
+      requestAnimationFrame(() => syncTimelineWheelScrollToSelected({ smooth: false }));
     }
