@@ -100,11 +100,13 @@
       if (!item) return;
       const slotKey = item.dataset.slotKey;
       wheelSetActive(scroller, slotKey);
-      if (slotKey === selectedSlotKey) return;
-      if (typeof selectTimelineSlot === 'function') {
-        selectTimelineSlot(slotKey, { render: false, stopPlayback: true, loadCached: true });
-      }
-      if (typeof maybeLoadCachedMeteoFranceGribForSelectedSlot === 'function') {
+      if (slotKey !== selectedSlotKey) {
+        if (typeof selectTimelineSlot === 'function') {
+          selectTimelineSlot(slotKey, { render: false, stopPlayback: true, loadCached: true });
+        }
+      } else if (typeof maybeLoadCachedMeteoFranceGribForSelectedSlot === 'function') {
+        // L'aperçu live au passage a déjà posé la sélection SANS charger
+        // (loadCached:false) : le commit déclenche le chargement maintenant.
         maybeLoadCachedMeteoFranceGribForSelectedSlot({ quiet: true });
       }
     }
@@ -194,7 +196,17 @@
             scroller.querySelectorAll('.timeline-wheel-item').length - 1
           ));
           const items = scroller.querySelectorAll('.timeline-wheel-item');
-          if (items[idx]) wheelSetActive(scroller, items[idx].dataset.slotKey);
+          if (!items[idx]) return;
+          const key = items[idx].dataset.slotKey;
+          wheelSetActive(scroller, key);
+          // Aperçu LIVE au passage : la carte suit chaque heure traversée (visu
+          // immédiat de l'animation), SANS chargement réseau (loadCached:false) —
+          // le commit final (scrollend) déclenche le vrai chargement. Même
+          // logique que le drag du curseur du rail desktop. Throttle naturel :
+          // ne se déclenche qu'au changement d'heure centrée (rAF + key check).
+          if (key !== selectedSlotKey && !items[idx].disabled && typeof selectTimelineSlot === 'function') {
+            selectTimelineSlot(key, { render: false, stopPlayback: true, loadCached: false });
+          }
         });
       }, { passive: true });
 

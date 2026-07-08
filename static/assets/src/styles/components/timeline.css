@@ -15,8 +15,11 @@
   --tl-accent: 56, 189, 248;     /* cyan #38bdf8 */
   --tl-accent-2: 45, 212, 191;   /* teal #2dd4bf */
   --tl-bright: 224, 242, 254;    /* rgb(var(--tl-bright)) */
-  --tl-cursor: var(--tl-cursor);
-  --tl-ring: var(--tl-ring);
+  /* (fix : ces deux tokens étaient AUTO-RÉFÉRENCÉS → variables invalides → la
+     pastille de l'heure active de la molette n'avait NI fond NI bordure, texte
+     bleu nuit illisible. La chasse les override en rouge, d'où sa pastille OK.) */
+  --tl-cursor: #7dd3fc;
+  --tl-ring: #38bdf8;
 }
 body.chase-mode #chaseSlots {
   --tl-accent: 248, 113, 113;    /* rouge #f87171 */
@@ -579,8 +582,19 @@ body.chase-mode #chaseSlots {
     text-shadow: 0 1px 3px rgba(2, 6, 23, 0.86);
   }
 
-  /* Heure active : pastille cyan */
-  .timeline-wheel-item.active { opacity: 1; color: rgb(var(--tl-bright)); }
+  /* Heure active : pastille cyan (portée par le LABEL). L'item lui-même reste
+     transparent : neutralise le chip générique `button.active` (theme.css) qui
+     posait un rectangle bleu plein autour — la pastille est le seul marqueur. */
+  .timeline-wheel-item.active {
+    opacity: 1;
+    color: rgb(var(--tl-bright));
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+  /* Pas d'anneau de focus carré sur les items (le tap en pose un sur Firefox
+     mobile) : la pastille + aria-selected signalent déjà la sélection. */
+  .timeline-wheel-item:focus-visible { outline: none; }
   .timeline-wheel-item.active .timeline-wheel-label {
     width: 36px;
     min-width: 36px;
