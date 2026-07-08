@@ -175,7 +175,6 @@
       }
 
       // Surbrillance de l'item centré pendant le scroll — throttlée rAF
-      const visibleHours = 8;
       let scrollRafId = null;
       // Début de geste utilisateur (l'inertie qui suit compte aussi : le scroll
       // non programmatique rafraîchit l'horodatage).
@@ -189,22 +188,21 @@
         scrollRafId = requestAnimationFrame(() => {
           scrollRafId = null;
           if (!scroller.isConnected) return;
-          const itemWidth = scroller.clientWidth / visibleHours;
-          if (!itemWidth) return;
-          const idx = Math.max(0, Math.min(
-            Math.round(scroller.scrollLeft / itemWidth),
-            scroller.querySelectorAll('.timeline-wheel-item').length - 1
-          ));
-          const items = scroller.querySelectorAll('.timeline-wheel-item');
-          if (!items[idx]) return;
-          const key = items[idx].dataset.slotKey;
+          // Item centré GÉOMÉTRIQUE (comme le commit) — l'ancien calcul
+          // arithmétique scrollLeft/(clientWidth/8) dérivait d'un facteur ×4 :
+          // la largeur réelle des items est 88px (body.mobile-ui button
+          // {min-width:88} les élargit), pas clientWidth/8. La surbrillance
+          // filait devant le doigt puis se recalait au relâcher.
+          const item = wheelCenteredItem(scroller);
+          if (!item) return;
+          const key = item.dataset.slotKey;
           wheelSetActive(scroller, key);
           // Aperçu LIVE au passage : la carte suit chaque heure traversée (visu
           // immédiat de l'animation), SANS chargement réseau (loadCached:false) —
           // le commit final (scrollend) déclenche le vrai chargement. Même
           // logique que le drag du curseur du rail desktop. Throttle naturel :
           // ne se déclenche qu'au changement d'heure centrée (rAF + key check).
-          if (key !== selectedSlotKey && !items[idx].disabled && typeof selectTimelineSlot === 'function') {
+          if (key !== selectedSlotKey && !item.disabled && typeof selectTimelineSlot === 'function') {
             selectTimelineSlot(key, { render: false, stopPlayback: true, loadCached: false });
           }
         });
