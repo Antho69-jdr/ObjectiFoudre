@@ -169,7 +169,14 @@
           // item.disabled (état COURANT, mis à jour en place) — pas la valeur du build
           if (item.disabled) return;
           if (wheelSnapTimer) { clearTimeout(wheelSnapTimer); wheelSnapTimer = null; }
-          if (typeof selectTimelineSlot === 'function') selectTimelineSlot(slot.slot_key, { stopPlayback: true });
+          // Le pointerdown du tap vient de marquer « busy » (garde anti-geste) —
+          // ce qui bloquerait le centrage déclenché par ce même tap. Un tap n'est
+          // pas un geste de scroll : on libère le flag et on centre NOUS-MÊMES,
+          // comme la chasse (setCursor + wheelScrollTo smooth).
+          wheelUserLastAt = 0;
+          wheelSetActive(scroller, slot.slot_key);
+          wheelScrollTo(scroller, slot.slot_key, true);
+          if (typeof selectTimelineSlot === 'function') selectTimelineSlot(slot.slot_key, { render: false, stopPlayback: true });
         });
         scroller.appendChild(item);
       }
