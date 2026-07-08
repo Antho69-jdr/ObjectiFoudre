@@ -389,17 +389,18 @@ body.chase-mode #chaseSlots {
     width: calc(100vw - 16px);
     max-width: none;
     bottom: max(var(--sp-3), env(safe-area-inset-bottom));
-    height: 92px;
-    min-height: 92px;
-    max-height: 92px;
-    padding: 7px 8px 9px;
+    /* Affinée (92 → 63px, −32%) : la frise mangeait 11% de l'écran téléphone. */
+    height: 63px;
+    min-height: 63px;
+    max-height: 63px;
+    padding: 5px 8px 6px;
     border-radius: var(--r-xl);
   }
 
   /* Barre frise : prev | next | molette | play | export */
   .timeline-bar.timeline-bar-frise {
     grid-template-columns: 38px 38px minmax(0, 1fr) 38px 38px;
-    grid-template-rows: 76px;
+    grid-template-rows: 52px;
     grid-template-areas: "prev next slots play export";
     gap: 6px;
   }
@@ -416,9 +417,9 @@ body.chase-mode #chaseSlots {
      et se fait rogner par le bas du dock. */
   #slotButtons.timeline-slot-strip.timeline-slider,
   .timeline-slot-strip.timeline-slider {
-    height: 76px;
-    min-height: 76px;
-    max-height: 76px;
+    height: 52px;
+    min-height: 52px;
+    max-height: 52px;
     /* En régime MOLETTE (rail masqué), #slotButtons doit se comporter comme le
        conteneur de la frise chasse (#chaseSlots, simple flex qui scrolle) : pas
        de `touch-action:none` (posé pour le drag du rail desktop) qui, en ANCÊTRE,
@@ -467,6 +468,32 @@ body.chase-mode #chaseSlots {
      un geste s'arrête au créneau suivant. Frise moins sensible / moins « rapide »
      (défilement délibéré, pas de fuite à travers plusieurs heures d'un coup). */
   #slotButtons .timeline-wheel-item { scroll-snap-align: center; scroll-snap-stop: always; }
+
+  /* ── Frise NORMALE affinée (dock 63px) — scopé #slotButtons, la molette
+     CHASSE garde ses dimensions (barre chasse séparée). min-height posé partout
+     pour battre body.mobile-ui button{min-height:46}. ── */
+  #slotButtons .timeline-wheel-scroller {
+    height: 52px;
+    padding: 3px 0;
+  }
+  #slotButtons .timeline-wheel-item {
+    height: 46px;
+    min-height: 46px;
+    grid-template-rows: 11px 11px 20px;   /* icône phase · trait · libellé */
+  }
+  #slotButtons .timeline-wheel-light-icon svg { width: 11px; height: 11px; }
+  #slotButtons .timeline-wheel-line { height: 11px; }
+  #slotButtons .timeline-wheel-item:nth-child(2n) .timeline-wheel-line { height: 8px; }
+  #slotButtons .timeline-wheel-label { height: 20px; }
+  #slotButtons .timeline-wheel-item.active .timeline-wheel-label {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    margin-top: -4px;
+    border-width: 2px;
+    font-size: 12.5px;
+    box-shadow: 0 0 0 3px rgba(8, 47, 73, 0.58), 0 6px 16px rgba(var(--tl-accent), 0.36);
+  }
 
   .timeline-wheel-item {
     position: relative;
