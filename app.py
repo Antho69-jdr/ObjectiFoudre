@@ -14248,6 +14248,12 @@ def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_
     spec = AROMEPI_LAYERS.get(layer_key)
     if spec is None:
         return None
+    if spec.get("analysis_only") and run_iso:
+        # Analyse-seule (MOCON) : le seul GetMap valide est l'instant d'analyse du run
+        # (time == reference_time) ; toute échéance de prévision → « No Dataset ». Quel
+        # que soit le temps demandé par la frise, on sert l'analyse du run courant
+        # (champ quasi-statique, une seule image par run — le cache s'aligne dessus).
+        time_iso = run_iso
     cache_key = f"aromepi:image:{layer_key}:{time_iso}:{run_iso}"
     # Image immuable pour un (couche, échéance, run) donné → cache long (le run change
     # chaque heure, la clé inclut le run). Évite de re-rendre lors de la navigation /
@@ -14399,6 +14405,8 @@ def _aromepi_activity_sync(layer_key: str, time_iso: str, run_iso: str | None) -
     spec = AROMEPI_LAYERS.get(layer_key)
     if not api_key or spec is None:
         return {"ok": False}
+    if spec.get("analysis_only") and run_iso:
+        time_iso = run_iso  # analyse-seule (MOCON) : cf. _aromepi_domain_image_sync
     params = [
         ("service", "WMS"), ("version", "1.3.0"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
@@ -14554,8 +14562,9 @@ def _aromepi_prewarm_pending(run_iso: str, times: list[str]) -> list[tuple[str, 
     """(couche, échéance) du run encore absentes du cache. Réflectivité (primaire)
     d'abord, et pour chaque couche les échéances proches d'abord : la frise est
     utilisable avant la fin de la passe. Ignorées : les échéances déjà passées (le
-    front ne garde que le futur en nowcast), les couches analysis_only (MOCON n'a
-    aucune échéance de prévision en WMS) et les combos abandonnés après échecs répétés."""
+    front ne garde que le futur en nowcast) et les combos abandonnés après échecs
+    répétés. Les couches analysis_only (MOCON) comptent pour UNE image par run
+    (l'instant d'analyse, cf. la normalisation dans _aromepi_domain_image_sync)."""
     now_dt = datetime.now(timezone.utc)
     future: list[str] = []
     for t in sorted(times):
@@ -14563,10 +14572,11 @@ def _aromepi_prewarm_pending(run_iso: str, times: list[str]) -> list[tuple[str, 
         if tdt is not None and tdt > now_dt:
             future.append(t)
     layer_keys = [k for k, v in AROMEPI_LAYERS.items() if v.get("primary")]
-    layer_keys += [k for k, v in AROMEPI_LAYERS.items() if not v.get("primary") and not v.get("analysis_only")]
+    layer_keys += [k for k, v in AROMEPI_LAYERS.items() if not v.get("primary")]
     out: list[tuple[str, str]] = []
     for key in layer_keys:
-        for t in future:
+        analysis_only = bool(AROMEPI_LAYERS[key].get("analysis_only"))
+        for t in ([run_iso] if analysis_only else future):
             if _aromepi_prewarm_failures.get(f"{key}:{t}:{run_iso}", 0) >= AROMEPI_PREWARM_MAX_ATTEMPTS:
                 continue
             if _get_cached_value(f"aromepi:image:{key}:{t}:{run_iso}", ttl=AROMEPI_IMAGE_CACHE_TTL_SECONDS) is None:
