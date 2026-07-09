@@ -94,13 +94,17 @@
       const dates = getAromeSelectableDates();
       const minDate = dates[0].value;
       const maxDate = dates[dates.length - 1].value;
+      // Boutons désactivés : PAS de tooltip (les explications longues « jour le
+      // plus ancien / date la plus lointaine » encombraient le mode « révéler »).
       if (prevDayBtn) {
         prevDayBtn.disabled = selected <= minDate;
-        prevDayBtn.title = prevDayBtn.disabled ? 'Aujourd’hui est le jour le plus ancien (la veille est dans les Archives)' : 'Jour précédent';
+        if (prevDayBtn.disabled) { prevDayBtn.removeAttribute('title'); prevDayBtn.removeAttribute('data-tooltip'); }
+        else prevDayBtn.title = 'Jour précédent';
       }
       if (nextDayBtn) {
         nextDayBtn.disabled = selected >= maxDate;
-        nextDayBtn.title = nextDayBtn.disabled ? 'J+4 (ARPEGE) est la date la plus lointaine disponible' : 'Jour suivant';
+        if (nextDayBtn.disabled) { nextDayBtn.removeAttribute('title'); nextDayBtn.removeAttribute('data-tooltip'); }
+        else nextDayBtn.title = 'Jour suivant';
       }
       if (todayBtn) {
         todayBtn.disabled = selected === getTodayIsoDate();
@@ -115,7 +119,8 @@
       selectedBaseDate = nextDate;
       if (typeof timelineDateLabel !== 'undefined' && timelineDateLabel) {
         timelineDateLabel.textContent = formatTimelineDateLabel(nextDate);
-        timelineDateLabel.title = formatAromeDateLabel(nextDate);
+        // Pas de title/tooltip : le badge affiche déjà la date en toutes lettres.
+        timelineDateLabel.removeAttribute('data-tooltip');
       }
       if (dateInput) {
         if (dateInput.tagName === 'SELECT') {

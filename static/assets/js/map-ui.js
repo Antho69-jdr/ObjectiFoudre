@@ -62,7 +62,8 @@
       gridSourceBadge.hidden = false;
       gridSourceBadge.className = 'grid-source-badge current-time-badge';
       gridSourceBadge.textContent = formatCurrentClockTime();
-      gridSourceBadge.title = 'Heure actuelle';
+      // Pas de title/tooltip « Heure actuelle » : le contenu du badge EST l'info.
+      gridSourceBadge.removeAttribute('data-tooltip');
     }
 
     function startCurrentTimeBadge() {

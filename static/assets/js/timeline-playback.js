@@ -21,7 +21,7 @@
       playTimelineBtn.setAttribute('aria-pressed', isRunning ? 'true' : 'false');
       playTimelineBtn.innerHTML = timelinePlaybackIcon(isRunning);
       playTimelineBtn.setAttribute('aria-label', isRunning ? 'Mettre en pause la lecture des horaires' : 'Lire les horaires du jour');
-      playTimelineBtn.title = isRunning ? 'Mettre en pause la lecture des horaires' : 'Lire les horaires du jour';
+      playTimelineBtn.title = 'Play/Pause';
       const hasPlayableSlots = timelineSelectableSlots(getCurrentDay()).length > 1;
       playTimelineBtn.disabled = !hasPlayableSlots;
     }

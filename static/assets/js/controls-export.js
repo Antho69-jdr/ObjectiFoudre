@@ -791,7 +791,7 @@
       return !!(exportCanvasSupported() && canvas.captureStream && selectMp4MimeType());
     }
 
-    function setExportButtonBusy(active, title = 'Exporter animation') {
+    function setExportButtonBusy(active, title = 'Export Gif') {
       if (!exportGifBtn) return;
       exportGifBtn.disabled = !!active;
       exportGifBtn.classList.toggle('active', !!active);
@@ -913,7 +913,7 @@
         return;
       }
 
-      const previousTitle = exportGifBtn?.getAttribute('title') || 'Exporter animation';
+      const previousTitle = exportGifBtn?.getAttribute('title') || 'Export Gif';
       try {
         if (exportGifBtn) {
           exportGifBtn.disabled = true;
@@ -977,7 +977,7 @@
         return;
       }
 
-      const previousTitle = exportGifBtn?.getAttribute('title') || 'Exporter animation';
+      const previousTitle = exportGifBtn?.getAttribute('title') || 'Export Gif';
       let stream = null;
       try {
         setExportButtonBusy(true, 'Export MP4 en cours');

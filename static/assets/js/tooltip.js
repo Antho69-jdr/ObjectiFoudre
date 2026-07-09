@@ -145,6 +145,25 @@
     const M = 4;    // marge viewport
     const GAP = 8;  // écart bulle ↔ source
 
+    // Part RÉELLEMENT visible d'un élément : son rect clippé par tous les
+    // ancêtres à overflow non-visible (ex. le rail droit scrollable en mobile
+    // paysage : les boutons sous le pli ne doivent pas révéler de bulle).
+    function visibleRatio(el, r) {
+      let left = r.left, top = r.top, right = r.right, bottom = r.bottom;
+      let p = el.parentElement;
+      while (p && p !== document.body) {
+        const cs = getComputedStyle(p);
+        if (/(auto|scroll|hidden|clip)/.test(cs.overflowX + cs.overflowY)) {
+          const pr = p.getBoundingClientRect();
+          left = Math.max(left, pr.left); top = Math.max(top, pr.top);
+          right = Math.min(right, pr.right); bottom = Math.min(bottom, pr.bottom);
+        }
+        p = p.parentElement;
+      }
+      const area = Math.max(0, right - left) * Math.max(0, bottom - top);
+      return area / Math.max(1, r.width * r.height);
+    }
+
     // 1) Collecte des cibles visibles.
     const targets = [];
     document.querySelectorAll('[data-tooltip]').forEach((el) => {
@@ -156,6 +175,7 @@
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) return;                 // caché
       if (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) return; // hors écran
+      if (visibleRatio(el, r) < 0.6) return;                       // rogné par un conteneur scrollable
       targets.push({ text, r });
     });
 

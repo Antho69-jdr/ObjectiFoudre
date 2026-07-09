@@ -173,7 +173,9 @@
       const icon = timelineToggleBtn.querySelector('.timeline-toggle-icon');
       if (icon) icon.textContent = collapsed ? '↑' : '↓';
       timelineToggleBtn.setAttribute('aria-label', collapsed ? 'Afficher la frise' : 'Masquer la frise');
-      timelineToggleBtn.setAttribute('title', collapsed ? 'Afficher la frise' : 'Masquer la frise');
+      // Pas de title/tooltip : la poignée est auto-explicative (grip + chevron),
+      // et sa bulle encombrait le mode « révéler les info-bulles ».
+      timelineToggleBtn.removeAttribute('data-tooltip');
       timelineToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     }
 
