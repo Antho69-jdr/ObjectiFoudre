@@ -14041,6 +14041,10 @@ AROMEPI_TRANSPARENT_PNG = _aromepi_make_transparent_png()
 METEOFRANCE_AROMEPI_WCS_URL = "https://public-api.meteofrance.fr/public/aromepi/1.0/wcs/MF-NWP-HIGHRES-AROMEPI-001-FRANCE-WCS"
 AROMEPI_NOWCAST_HORIZON_HOURS = 6
 AROMEPI_CAPABILITIES_TTL_SECONDS = 300
+# Une image plein-domaine est immuable pour un (couche, échéance, run) et ne pèse que
+# ~45 Ko → cache long (2 h) : un run pré-généré reste chaud jusqu'à son remplacement
+# (run horaire, souvent en retard), là où 45 min faisait re-payer des rendus WMS.
+AROMEPI_IMAGE_CACHE_TTL_SECONDS = 7200
 # clé -> couche WMS / préfixe WCS (= même nom) / libellé / unité. La réflectivité est la
 # couche maîtresse (radar simulé). styles WMS = défaut (vide) → rendu ombré officiel.
 # Par couche : nom WMS, libellé, unité, et options de requête WCS au point :
@@ -14056,7 +14060,10 @@ AROMEPI_LAYERS = {
     "graupel": {"layer": "GRAUPEL__GROUND_OR_WATER_SURFACE", "label": "Graupel", "unit": "kg/m²", "wcs_accum": "_PT15M"},
     "gusts": {"layer": "WIND_SPEED_GUST_15MIN__SPECIFIC_HEIGHT_LEVEL_ABOVE_GROUND", "label": "Rafales 15 min", "unit": "km/h", "wcs_accum": "_PT15M", "wcs_height": 10, "wcs_scale": 3.6},
     "cape": {"layer": "CONVECTIVE_AVAILABLE_POTENTIAL_ENERGY__GROUND_OR_WATER_SURFACE", "label": "CAPE", "unit": "J/kg"},
-    "mocon": {"layer": "MOCON__GROUND_OR_WATER_SURFACE", "label": "MOCON", "unit": "g/kg/s", "point": False},
+    # MOCON est ANALYSE-SEULE aussi en WMS : sa dimension time == reference_time (un
+    # instant par run, aucune échéance de prévision) → GetMap à une échéance de prévision
+    # = ServiceException « No Dataset ». analysis_only exclut la couche de la pré-génération.
+    "mocon": {"layer": "MOCON__GROUND_OR_WATER_SURFACE", "label": "MOCON", "unit": "g/kg/s", "point": False, "analysis_only": True},
 }
 
 # Emprise des données AROME-PI (lat 37.5–55.4, lon -12–16). Sert de bbox unique pour
@@ -14244,8 +14251,9 @@ def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_
     cache_key = f"aromepi:image:{layer_key}:{time_iso}:{run_iso}"
     # Image immuable pour un (couche, échéance, run) donné → cache long (le run change
     # chaque heure, la clé inclut le run). Évite de re-rendre lors de la navigation /
-    # préchargement (clé API limitée à 50 req/min).
-    cached = _get_cached_value(cache_key, ttl=2700)
+    # préchargement (clé API limitée à 50 req/min). Le thread de pré-génération
+    # (_aromepi_prewarm_loop) remplit ce même cache en avance.
+    cached = _get_cached_value(cache_key, ttl=AROMEPI_IMAGE_CACHE_TTL_SECONDS)
     if cached is not None:
         return cached.get("payload")
     d = AROMEPI_DOMAIN
@@ -14378,6 +14386,7 @@ def _aromepi_status_sync() -> dict[str, Any]:
         "horizon_hours": AROMEPI_NOWCAST_HORIZON_HOURS,
         "layers": [{"key": k, "label": v["label"], "unit": v["unit"], "primary": bool(v.get("primary"))} for k, v in AROMEPI_LAYERS.items()],
         "attribution": "Météo-France AROME-PI",
+        "prewarm": _aromepi_prewarm_snapshot(),
     }
 
 
@@ -14500,6 +14509,162 @@ async def aromepi_point(payload: AromepiPointRequest) -> dict[str, Any]:
         run = caps.get("run")
     values = await asyncio.to_thread(_aromepi_point_sync, api_key, payload.lat, payload.lon, payload.time, run, keys)
     return {"ok": True, "lat": payload.lat, "lon": payload.lon, "time": payload.time, "run": run, "values": values}
+
+
+# ── Pré-génération AROME-PI (mode chasse) ────────────────────────────────────────
+# Le PREMIER rendu d'une échéance coûte ~4 s (GetMap WMS Météo-France + reprojection
+# 2400 px) ; sans pré-génération, l'utilisateur les paye une à une en naviguant la
+# frise. Ce thread rend en avance toutes les échéances à venir du run courant
+# (réflectivité d'abord, échéances proches d'abord, puis les autres couches), en
+# SÉRIE et espacé : le rendu ~4 s + l'espacement donnent ~9-12 req/min, loin du
+# quota 50 req/min partagé avec les requêtes live (point WCS, activity). Les images
+# atterrissent dans le cache de _aromepi_domain_image_sync → les requêtes
+# /api/aromepi/image deviennent quasi instantanées (~45 Ko servis de mémoire).
+AROMEPI_PREWARM_ENABLED = _env_flag("OBJECTIFOUDRE_AROMEPI_PREWARM", True)
+AROMEPI_PREWARM_TICK_SECONDS = 90        # cadence de re-scan quand tout est chaud
+AROMEPI_PREWARM_SPACING_SECONDS = 2.5    # entre 2 rendus (couche primaire)
+AROMEPI_PREWARM_SECONDARY_SPACING_SECONDS = 4.0  # couches secondaires (moins pressées)
+AROMEPI_PREWARM_FAILURE_BACKOFF_SECONDS = 30
+AROMEPI_PREWARM_MAX_ATTEMPTS = 3  # par (couche, échéance, run) : au-delà, on abandonne le combo
+
+_aromepi_prewarm_thread: threading.Thread | None = None
+_aromepi_prewarm_stop = threading.Event()
+_aromepi_prewarm_lock = threading.Lock()
+_aromepi_prewarm_state: dict[str, Any] = {"enabled": AROMEPI_PREWARM_ENABLED, "running": False}
+# Échecs de rendu par "layer:time:run" → nb de tentatives. Un combo qui échoue
+# AROMEPI_PREWARM_MAX_ATTEMPTS fois (échéance jamais publiée, dataset absent…) est
+# abandonné pour ce run : la passe converge au lieu de retenter indéfiniment. Vidé au
+# changement de run. (Les échecs transitoires — 504 de warmup passerelle — réussissent
+# en général à la 2e tentative.)
+_aromepi_prewarm_failures: dict[str, int] = {}
+
+
+def _update_aromepi_prewarm_state(**fields: Any) -> None:
+    with _aromepi_prewarm_lock:
+        _aromepi_prewarm_state.update(fields)
+        _aromepi_prewarm_state["updated_at"] = time.time()
+
+
+def _aromepi_prewarm_snapshot() -> dict[str, Any]:
+    with _aromepi_prewarm_lock:
+        return dict(_aromepi_prewarm_state)
+
+
+def _aromepi_prewarm_pending(run_iso: str, times: list[str]) -> list[tuple[str, str]]:
+    """(couche, échéance) du run encore absentes du cache. Réflectivité (primaire)
+    d'abord, et pour chaque couche les échéances proches d'abord : la frise est
+    utilisable avant la fin de la passe. Ignorées : les échéances déjà passées (le
+    front ne garde que le futur en nowcast), les couches analysis_only (MOCON n'a
+    aucune échéance de prévision en WMS) et les combos abandonnés après échecs répétés."""
+    now_dt = datetime.now(timezone.utc)
+    future: list[str] = []
+    for t in sorted(times):
+        tdt = _parse_meteofrance_datetime(t)
+        if tdt is not None and tdt > now_dt:
+            future.append(t)
+    layer_keys = [k for k, v in AROMEPI_LAYERS.items() if v.get("primary")]
+    layer_keys += [k for k, v in AROMEPI_LAYERS.items() if not v.get("primary") and not v.get("analysis_only")]
+    out: list[tuple[str, str]] = []
+    for key in layer_keys:
+        for t in future:
+            if _aromepi_prewarm_failures.get(f"{key}:{t}:{run_iso}", 0) >= AROMEPI_PREWARM_MAX_ATTEMPTS:
+                continue
+            if _get_cached_value(f"aromepi:image:{key}:{t}:{run_iso}", ttl=AROMEPI_IMAGE_CACHE_TTL_SECONDS) is None:
+                out.append((key, t))
+    return out
+
+
+def _aromepi_prewarm_loop() -> None:
+    _update_aromepi_prewarm_state(running=True, message="Pré-génération AROME-PI active.")
+    prev_run: str | None = None
+    try:
+        while not _aromepi_prewarm_stop.is_set():
+            api_key = _aromepi_api_key()
+            if not api_key:
+                _update_aromepi_prewarm_state(message="En attente : clé AROME-PI absente.")
+                if _aromepi_prewarm_stop.wait(300):
+                    break
+                continue
+            try:
+                caps = _aromepi_capabilities_sync(api_key)
+            except Exception as exc:
+                _update_aromepi_prewarm_state(last_error=f"capabilities: {exc}")
+                if _aromepi_prewarm_stop.wait(120):
+                    break
+                continue
+            run_iso = str(caps.get("run") or "")
+            times = list(caps.get("forecast_times") or [])
+            if not caps.get("ok") or not run_iso or not times:
+                _update_aromepi_prewarm_state(message="Catalogue AROME-PI indisponible.")
+                if _aromepi_prewarm_stop.wait(120):
+                    break
+                continue
+            if run_iso != prev_run:
+                _aromepi_prewarm_failures.clear()
+                prev_run = run_iso
+            pending = _aromepi_prewarm_pending(run_iso, times)
+            if not pending:
+                _update_aromepi_prewarm_state(run=run_iso, pending=0, message="Run pré-généré (images en cache).")
+                if _aromepi_prewarm_stop.wait(AROMEPI_PREWARM_TICK_SECONDS):
+                    break
+                continue
+            _update_aromepi_prewarm_state(run=run_iso, pending=len(pending), message=f"Pré-génération : {len(pending)} images à rendre.")
+            rendered = 0
+            for i, (layer_key, t) in enumerate(pending):
+                if _aromepi_prewarm_stop.is_set():
+                    break
+                started = time.time()
+                png = None
+                try:
+                    png = _aromepi_domain_image_sync(api_key, layer_key, t, run_iso)
+                except Exception as exc:
+                    _update_aromepi_prewarm_state(last_error=f"{layer_key} {t}: {exc}")
+                if png:
+                    rendered += 1
+                    _update_aromepi_prewarm_state(
+                        run=run_iso, pending=len(pending) - i - 1, rendered=rendered,
+                        last_render_seconds=round(time.time() - started, 2),
+                        message=f"Pré-génération en cours ({len(pending) - i - 1} restantes).",
+                    )
+                    spacing = AROMEPI_PREWARM_SPACING_SECONDS if AROMEPI_LAYERS.get(layer_key, {}).get("primary") else AROMEPI_PREWARM_SECONDARY_SPACING_SECONDS
+                    if _aromepi_prewarm_stop.wait(spacing):
+                        break
+                else:
+                    # échec (quota, passerelle en warmup, 504, dataset absent) → pause puis
+                    # on continue ; le combo sera retenté aux passes suivantes, au plus
+                    # AROMEPI_PREWARM_MAX_ATTEMPTS fois pour ce run (cf. _aromepi_prewarm_failures).
+                    fail_key = f"{layer_key}:{t}:{run_iso}"
+                    _aromepi_prewarm_failures[fail_key] = _aromepi_prewarm_failures.get(fail_key, 0) + 1
+                    _update_aromepi_prewarm_state(last_error=f"rendu vide: {layer_key} {t} (tentative {_aromepi_prewarm_failures[fail_key]})")
+                    if _aromepi_prewarm_stop.wait(AROMEPI_PREWARM_FAILURE_BACKOFF_SECONDS):
+                        break
+            # courte pause puis re-scan (rattrape un run changé en cours de passe et les
+            # nouvelles échéances publiées au fil de l'eau).
+            if _aromepi_prewarm_stop.wait(5):
+                break
+    finally:
+        _update_aromepi_prewarm_state(running=False)
+
+
+def _start_aromepi_prewarm_thread() -> None:
+    global _aromepi_prewarm_thread
+    if not AROMEPI_PREWARM_ENABLED:
+        return
+    if _aromepi_prewarm_thread is not None and _aromepi_prewarm_thread.is_alive():
+        return
+    _aromepi_prewarm_stop.clear()
+    _aromepi_prewarm_thread = threading.Thread(target=_aromepi_prewarm_loop, name="aromepi-prewarm", daemon=True)
+    _aromepi_prewarm_thread.start()
+
+
+@app.on_event("startup")
+def _startup_aromepi_prewarm() -> None:
+    _start_aromepi_prewarm_thread()
+
+
+@app.on_event("shutdown")
+def _shutdown_aromepi_prewarm() -> None:
+    _aromepi_prewarm_stop.set()
 
 
 # ── Radar observé Météo-France (paquet DPPaquetRadar) ───────────────────────────
