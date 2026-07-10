@@ -25,10 +25,14 @@
   let nowTimer = null;
   let savedMetaRun = null;
 
-  const RADAR_SRC = 'chase-radar';
+  // Radar observé : UNE source/couche raster PAR frame (préfixe + epoch), toutes créées
+  // visibility:visible à raster-opacity:0 → MapLibre charge les tuiles des frames même
+  // invisibles, et le scrub n'est plus qu'un flip d'opacité (instantané). L'ancien modèle
+  // (une source unique + setTiles) vidait le cache de tuiles à CHAQUE changement de frame
+  // → ~1,3 s de carte vide mesurée, même tuiles déjà vues.
+  const RADAR_SRC_PREFIX = 'chase-radar-f';
   const NOWCAST_SRC = 'chase-nowcast';
   const MFRADAR_SRC = 'chase-mfradar';   // radar observé Météo-France (lame d'eau), France
-  const CHASE_LAYERS = [NOWCAST_SRC, RADAR_SRC, MFRADAR_SRC];
   const RAINVIEWER_INDEX = 'https://api.rainviewer.com/public/weather-maps.json';
   // Domaine de la mosaïque radar MF (métropole), coins source `image` MapLibre.
   const MFRADAR_CORNERS = [[-10, 53.7], [17.6, 53.7], [17.6, 37.4], [-10, 37.4]];
@@ -51,8 +55,10 @@
   let playing = false;
   let playTimer = null;
   let radarVisible = true;
-  let lastRadarUrl = null;     // évite les setTiles/updateImage redondants (→ AbortError)
-  let lastNowcastUrl = null;
+  let lastNowcastUrl = null;   // évite les updateImage redondants (→ AbortError)
+  let nowcastSwapToken = 0;    // annule le « masquer le radar une fois le nowcast décodé »
+  const radarLayerIds = new Set();   // couches radar par frame actuellement sur la carte
+  const radarLayerPaths = new Map(); // id de couche → path RainViewer (détecte un path changé)
   let mfRadarTimes = [];       // échéances radar MF dispo (ISO), dernier 1/4h
   let lastMfRadarUrl = null;
   const prefetched = new Set(); // URLs déjà préchargées (cache navigateur/serveur chaud)
@@ -146,13 +152,63 @@
     const before = sym ? sym.id : undefined;
     map.addSource(NOWCAST_SRC, { type: 'image', url: TRANSPARENT_PX, coordinates: AROMEPI_CORNERS });
     map.addLayer({ id: NOWCAST_SRC, type: 'raster', source: NOWCAST_SRC, paint: { 'raster-opacity': 0.82 }, layout: { visibility: 'none' } }, before);
-    map.addSource(RADAR_SRC, { type: 'raster', tiles: [TRANSPARENT_TILE], tileSize: 256 });
-    map.addLayer({ id: RADAR_SRC, type: 'raster', source: RADAR_SRC, paint: { 'raster-opacity': 0.7 }, layout: { visibility: 'none' } }, before);
     // Radar MF (lame d'eau) au-dessus de RainViewer : prioritaire sur la France.
+    // (Les couches radar par frame sont insérées SOUS cette couche, cf. syncRadarLayers.)
     map.addSource(MFRADAR_SRC, { type: 'image', url: TRANSPARENT_PX, coordinates: MFRADAR_CORNERS });
     map.addLayer({ id: MFRADAR_SRC, type: 'raster', source: MFRADAR_SRC, paint: { 'raster-opacity': 0.85 }, layout: { visibility: 'none' } }, before);
     layersReady = true;
     return true;
+  }
+
+  function radarLayerId(fr) { return RADAR_SRC_PREFIX + fr.epoch; }
+
+  // Aligne les couches radar par frame sur `frames` : crée les nouvelles (tuiles chargées
+  // en avance grâce à visibility:visible + opacity 0), retire celles des frames disparues
+  // (fenêtre glissante du refresh), met à jour un path qui aurait changé. Idempotent.
+  function syncRadarLayers() {
+    if (!layersReady || !radarHost) return;
+    const want = new Map();
+    for (const fr of frames) if (fr.kind === 'radar') want.set(radarLayerId(fr), fr.path);
+    for (const id of Array.from(radarLayerIds)) {
+      if (want.has(id)) continue;
+      try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {}
+      try { if (map.getSource(id)) map.removeSource(id); } catch (_) {}
+      radarLayerIds.delete(id); radarLayerPaths.delete(id);
+    }
+    const before = map.getLayer(MFRADAR_SRC) ? MFRADAR_SRC : undefined;
+    for (const [id, path] of want) {
+      if (radarLayerIds.has(id)) {
+        if (radarLayerPaths.get(id) !== path) { safeSetTiles(id, radarTileUrl(path)); radarLayerPaths.set(id, path); }
+        setVis(id, true);   // ré-activation du mode chasse : les couches restent en place
+        continue;
+      }
+      try {
+        map.addSource(id, { type: 'raster', tiles: [radarTileUrl(path)], tileSize: 256 });
+        map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 0, 'raster-opacity-transition': { duration: 150 } }, layout: { visibility: 'visible' } }, before);
+        radarLayerIds.add(id); radarLayerPaths.set(id, path);
+      } catch (_) {}
+    }
+  }
+
+  function setRadarFrameOpacity(activeId) {
+    for (const id of radarLayerIds) {
+      try { map.setPaintProperty(id, 'raster-opacity', id === activeId ? 0.7 : 0); } catch (_) {}
+    }
+  }
+
+  // Appelle cb une fois la source (re)chargée — sert à ne masquer l'ancienne couche
+  // qu'une fois la nouvelle image du nowcast décodée (sinon : trou visuel pendant le
+  // fetch+decode, ~640 ms mesurés même en cache). Poll rAF : isSourceLoaded passe à
+  // false dès l'updateImage, redevient true au décodage. Garde-fou 2,5 s.
+  function whenSourceLoaded(id, cb) {
+    const t0 = performance.now();
+    const tick = () => {
+      let ok = false;
+      try { ok = map.isSourceLoaded(id); } catch (_) {}
+      if (ok || performance.now() - t0 > 2500) { cb(); return; }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   }
 
   function setVis(id, on) {
@@ -265,14 +321,10 @@
       timeLabel.classList.toggle('is-future', isFuture);
     }
     updateActive();
+    syncRadarLayers();
     if (fr.kind === 'radar') {
-      if (radarVisible && radarHost) {
-        const u = radarTileUrl(fr.path);
-        if (u !== lastRadarUrl) { safeSetTiles(RADAR_SRC, u); lastRadarUrl = u; }
-        setVis(RADAR_SRC, true);
-      } else {
-        setVis(RADAR_SRC, false);
-      }
+      nowcastSwapToken++;   // annule un « masquer le radar au décodage » en attente
+      setRadarFrameOpacity(radarVisible ? radarLayerId(fr) : null);
       // Radar MF (lame d'eau) sur la France, par-dessus RainViewer, si une mosaïque MF
       // correspond à cette échéance (dernier 1/4h seulement).
       const mfIso = radarVisible ? nearestMfRadar(fr.epoch) : null;
@@ -292,9 +344,22 @@
         const u = nowcastImageUrl(activeLayer, fr.t, status.run);
         if (u !== lastNowcastUrl) { safeUpdateImage(NOWCAST_SRC, u); lastNowcastUrl = u; }
         setVis(NOWCAST_SRC, true);
+        // Ne masquer le radar (et la mosaïque MF) qu'une fois la nouvelle image DÉCODÉE :
+        // pendant le fetch+decode, l'ancienne couche reste affichée → plus de trou visuel
+        // à la jonction observé→prévu. Jeton : un scrub qui repart sur du radar entre-temps
+        // annule le masquage différé.
+        const tok = ++nowcastSwapToken;
+        whenSourceLoaded(NOWCAST_SRC, () => {
+          if (tok !== nowcastSwapToken || !active) return;
+          const cur = frames[cursor];
+          if (!cur || cur.kind !== 'nowcast') return;
+          setRadarFrameOpacity(null);
+          setVis(MFRADAR_SRC, false);
+        });
+      } else {
+        setRadarFrameOpacity(null);
+        setVis(MFRADAR_SRC, false);
       }
-      setVis(RADAR_SRC, false);
-      setVis(MFRADAR_SRC, false);
       schedulePointForCurrent();
       updateActivity(fr);
     }
@@ -848,7 +913,11 @@
     setChaseMapTint(false);
     if (nowTimer) { window.clearInterval(nowTimer); nowTimer = null; }
     if (metaRunEl && savedMetaRun != null) { metaRunEl.textContent = savedMetaRun; savedMetaRun = null; }
-    for (const id of CHASE_LAYERS) setVis(id, false);
+    for (const id of [NOWCAST_SRC, MFRADAR_SRC]) setVis(id, false);
+    // masquer AUSSI les couches radar par frame (sinon elles continueraient à charger
+    // des tuiles à chaque déplacement de carte hors mode chasse).
+    for (const id of radarLayerIds) setVis(id, false);
+    nowcastSwapToken++;
     if (layersReady) hideGrid(false);   // réafficher la grille de score
     if (refreshTimer) { window.clearInterval(refreshTimer); refreshTimer = null; }
     prefetchGen++;
@@ -883,4 +952,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
+  window.__chaseV = '263';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
