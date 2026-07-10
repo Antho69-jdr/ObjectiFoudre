@@ -124,6 +124,10 @@
 
     function setMetaRunText(message) {
       if (!metaRun) return;
+      // En mode chasse, #metaRun porte l'attribution radar/nowcast (posée par chase.js) :
+      // les mises à jour de la grille de base ne doivent pas l'écraser (elles reprennent
+      // la main à la sortie du mode, au tick suivant).
+      if (document.body.classList.contains('chase-mode')) return;
       const text = String(message ?? '');
       metaRun.dataset.fullText = text;
       metaRun.title = text;
