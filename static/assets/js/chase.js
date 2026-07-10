@@ -818,29 +818,50 @@
     if (fromTap) { userPos = userPos || { lat, lon }; }
     showPopup(lat, lon, '<div class="chase-pop-loading">Lecture AROME-PI…</div>');
     const token = ++loadToken;
-    let data = null;
+    let data = null, obs = null;
     try {
-      const resp = await fetch('/api/aromepi/point', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat, lon, time: t, run: status && status.run, layers: ['reflectivity', 'cape', 'gusts', 'hail', 'graupel'] }),
-      });
-      data = await resp.json();
+      // valeurs prévues (AROME-PI) + valeurs OBSERVÉES (mosaïque radar MF) en parallèle
+      const [rp, ro] = await Promise.all([
+        fetch('/api/aromepi/point', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lon, time: t, run: status && status.run, layers: ['reflectivity', 'cape', 'gusts', 'hail', 'graupel'] }),
+        }),
+        frRadarTimes.length ? fetch('/api/radar/fr/point?lat=' + lat + '&lon=' + lon) : Promise.resolve(null),
+      ]);
+      data = await rp.json();
+      if (ro) obs = await ro.json();
     } catch (_) {}
     if (token !== loadToken) return;
     if (!popup || !popup.isOpen()) return;        // popup fermé entre-temps
     if (!data || !data.ok) { showPopup(lat, lon, '<div class="chase-pop-empty">Conditions indisponibles ici.</div>'); return; }
-    showPopup(lat, lon, renderPositionHTML(data.values || {}, t));
+    showPopup(lat, lon, renderPositionHTML(data.values || {}, t, (obs && obs.ok && obs.in_domain) ? obs : null));
   }
 
-  function renderPositionHTML(v, t) {
+  function renderPositionHTML(v, t, obs) {
     const dbz = v.reflectivity, cape = v.cape, gust = v.gusts, hail = v.hail, graupel = v.graupel;
-    const echo = (typeof dbz === 'number') ? Math.max(0, dbz) : null;
+    // verdict : priorité à l'observé (dBZ mesuré) si disponible, sinon nowcast AROME-PI.
+    const obsV = obs && obs.values || {};
+    const echoObs = (typeof obsV.reflectivity === 'number') ? obsV.reflectivity : null;
+    const echo = (echoObs !== null) ? echoObs : ((typeof dbz === 'number') ? Math.max(0, dbz) : null);
     let verdict, cls;
     if (echo !== null && echo >= 45) { verdict = '⛈ Cellule active'; cls = 'sev-high'; }
     else if (echo !== null && echo >= 20) { verdict = '🌧 Précipitations'; cls = 'sev-mid'; }
     else if (typeof cape === 'number' && cape >= 800) { verdict = '⚡ Air instable'; cls = 'sev-watch'; }
     else { verdict = '🌤 Calme'; cls = 'sev-low'; }
     const hailTxt = (typeof hail === 'number' && hail > 0.5) ? ' · grêle probable' : '';
+    let html = `<div class="chase-verdict ${cls}">${verdict}${hailTxt}<span class="chase-verdict-time">${fmtClock(Math.floor(new Date(t).getTime() / 1000))}</span></div>`;
+    // Bloc OBSERVÉ (radar MF) — les valeurs mesurées au sol, si la mosaïque couvre le point.
+    if (obs && (typeof obsV.reflectivity === 'number' || typeof obsV.echo_top_km === 'number' || typeof obsV.rain_prob === 'number')) {
+      const obsRows = [
+        ['Réflectivité', typeof obsV.reflectivity === 'number' ? Math.round(Math.max(0, obsV.reflectivity)) : '—', ' dBZ'],
+        ['Sommet d’écho', typeof obsV.echo_top_km === 'number' ? obsV.echo_top_km.toFixed(1) : '—', ' km'],
+        ['Proba pluie', typeof obsV.rain_prob === 'number' ? obsV.rain_prob : '—', ' %'],
+      ];
+      const obsClock = fmtClock(Math.floor(new Date(obs.time).getTime() / 1000));
+      html += `<div class="chase-pos-head">Observé · radar MF <span>${obsClock}</span></div>`;
+      html += '<ul class="chase-pos-list">' + obsRows.map((r) => `<li><span>${r[0]}</span><strong>${r[1]}${(r[2] && r[1] !== '—') ? `<span class="chase-unit">${r[2]}</span>` : ''}</strong></li>`).join('') + '</ul>';
+    }
+    // Bloc PRÉVU (AROME-PI).
     const rows = [
       ['Réflectivité', echo !== null ? Math.round(echo) : '—', ' dBZ'],
       ['CAPE', typeof cape === 'number' ? Math.round(cape) : '—', ' J/kg'],
@@ -848,8 +869,9 @@
       ['Grêle (diag)', typeof hail === 'number' ? (hail > 0.5 ? 'oui' : 'non') : '—', ''],
       ['Graupel', typeof graupel === 'number' ? graupel.toFixed(2) : '—', ''],
     ];
-    return `<div class="chase-verdict ${cls}">${verdict}${hailTxt}<span class="chase-verdict-time">${fmtClock(Math.floor(new Date(t).getTime() / 1000))}</span></div>` +
-      '<ul class="chase-pos-list">' + rows.map((r) => `<li><span>${r[0]}</span><strong>${r[1]}${(r[2] && r[1] !== '—') ? `<span class="chase-unit">${r[2]}</span>` : ''}</strong></li>`).join('') + '</ul>';
+    if (obs) html += '<div class="chase-pos-head">Prévu · AROME-PI</div>';
+    html += '<ul class="chase-pos-list">' + rows.map((r) => `<li><span>${r[0]}</span><strong>${r[1]}${(r[2] && r[1] !== '—') ? `<span class="chase-unit">${r[2]}</span>` : ''}</strong></li>`).join('') + '</ul>';
+    return html;
   }
 
   function placeUserMarker() {
@@ -1033,5 +1055,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '272';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '273';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

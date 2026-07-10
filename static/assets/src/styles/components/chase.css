@@ -368,6 +368,10 @@ body.chase-mode .meta-stack .meta-version {
 .chase-pos-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; font-size: 0.82rem; color: rgba(190, 205, 226, 0.82); }
 .chase-pos-list strong { color: #ecfeff; font-weight: 700; font-variant-numeric: tabular-nums; }
 .chase-pos-list .chase-unit { margin-left: 1px; font-weight: 500; color: rgba(190, 205, 226, 0.6); }
+/* Sous-titre de section dans le popup (Observé radar MF / Prévu AROME-PI). */
+.chase-pos-head { margin: 9px 0 5px; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(148, 173, 204, 0.72); display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.chase-pos-head span { font-variant-numeric: tabular-nums; font-weight: 700; color: rgba(190, 205, 226, 0.6); letter-spacing: 0; }
+.chase-pos-head:first-child { margin-top: 0; }
 
 /* ===== Mobile (<768) : la frise de base bascule du rail vers la MOLETTE tactile
    (le rail est masque par body.mobile-ui) → idem en chasse. L'overlay est deja

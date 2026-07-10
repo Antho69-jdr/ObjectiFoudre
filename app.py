@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.272"
+APP_VERSION = "1.2.273"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -14707,6 +14707,10 @@ _fr_radar_tables: tuple[dict, dict] | None = None
 _fr_radar_index = None      # (row, col, inb, ow, oh) grille Mercator→stéréo, calculée une fois
 _fr_radar_lock = threading.Lock()
 _fr_radar_frames: dict[str, bytes] = {}   # iso → PNG Mercator (ring buffer ~2 h)
+# Plans décodés de la DERNIÈRE mosaïque seulement (~14 Mo en int16) : réflectivité,
+# écho top et probabilité de pluie au point (popup « à ta position », valeurs OBSERVÉES).
+# On ne garde que la plus récente (le popup live interroge le présent, pas l'archive).
+_fr_radar_last_planes: dict[str, Any] | None = None
 _fr_radar_state: dict[str, Any] = {"running": False}
 _fr_radar_thread: threading.Thread | None = None
 _fr_radar_stop = threading.Event()
@@ -14990,14 +14994,42 @@ def _fr_radar_render_png(msg: dict[str, Any]) -> bytes | None:
         return None
 
 
+def _fr_radar_extract_planes(msg: dict[str, Any]) -> dict[str, Any] | None:
+    """Plans « au point » de la mosaïque, en grille SOURCE (stéréo) — pour l'échantillonnage
+    d'un lat/lon. On garde les valeurs BRUTES en int16 (raw < 4096) + géométrie ; la
+    conversion physique (dBZ, m, proba) se fait à la requête. ~14 Mo (3 plans)."""
+    try:
+        import numpy as np
+        d = msg["datas"]
+        nx = int(d["Number of pixels per row"][0])
+        ny = int(d["Number of pixels per column"][0])
+        out: dict[str, Any] = {
+            "time": msg["time"], "nx": nx, "ny": ny,
+            "pixel_m": float(d["Pixel size on horizontal - 1"][0]),
+            "nw_lat": float(d["Latitude (high accuracy)"][0]),
+            "nw_lon": float(d["Longitude (high accuracy)"][0]),
+        }
+        for key, plane in (("reflectivity", "Horizontal reflectivity"), ("echotop", "Height"), ("proba", "Probability of rain")):
+            arr = msg["arrays"].get(plane)
+            if arr is None:
+                continue
+            vals, ref, scale, w = arr
+            out[key] = {"raw": vals.astype(np.int16).reshape(ny, nx), "ref": ref, "scale": scale, "missing": (1 << w) - 1}
+        return out if "reflectivity" in out else None
+    except Exception:
+        return None
+
+
 def _fr_radar_poll_once(api_key: str) -> tuple[int, int]:
     """Télécharge le paquet radar, décode/rend les mosaïques réflectivité France
     ABSENTES du ring buffer, purge l'historique au-delà de 2 h. → (nouvelles, total)."""
+    global _fr_radar_last_planes
     import tarfile
     status, _ct, raw = _aromepi_http_get(METEOFRANCE_RADAR_PACKAGE_URL, api_key, timeout=90)
     if status != 200 or not raw or raw[:2] != b"\x1f\x8b":
         raise RuntimeError(f"paquet radar HTTP {status}")
     new_count = 0
+    latest_msg: dict[str, Any] | None = None
     tf = tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz")
     for member in tf.getmembers():
         name = member.name
@@ -15009,8 +15041,12 @@ def _fr_radar_poll_once(api_key: str) -> tuple[int, int]:
         s = stamp.group(1)
         iso = f"{s[0:4]}-{s[4:6]}-{s[6:8]}T{s[8:10]}:{s[10:12]}:{s[12:14]}Z"
         with _fr_radar_lock:
-            if iso in _fr_radar_frames:
-                continue
+            already = iso in _fr_radar_frames
+        # même déjà en cache PNG, on décode la plus récente pour rafraîchir les plans au point
+        newest_iso = latest_msg["time"] if latest_msg else None
+        need_planes = (newest_iso is None) or (iso > newest_iso)
+        if already and not need_planes:
+            continue
         extracted = tf.extractfile(member)
         if extracted is None:
             continue
@@ -15018,12 +15054,21 @@ def _fr_radar_poll_once(api_key: str) -> tuple[int, int]:
         msg = _fr_radar_decode_bufr(bufr)
         if not msg:
             continue
+        if latest_msg is None or msg["time"] > latest_msg["time"]:
+            latest_msg = msg
+        if already:
+            continue
         png = _fr_radar_render_png(msg)
         if not png:
             continue
         with _fr_radar_lock:
             _fr_radar_frames[msg["time"]] = png
         new_count += 1
+    # plans « au point » de la mosaïque la plus récente du paquet
+    if latest_msg is not None:
+        planes = _fr_radar_extract_planes(latest_msg)
+        if planes is not None:
+            _fr_radar_last_planes = planes
     # purge du ring buffer (~2 h)
     now = datetime.now(timezone.utc)
     with _fr_radar_lock:
@@ -15103,6 +15148,55 @@ async def fr_radar_image(time: str = Query(..., min_length=10, max_length=40)) -
     if not png:
         return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=30"})
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+
+_fr_radar_point_transformer = None   # pyproj Transformer 4326→stéréo, cache
+
+
+def _fr_radar_point_sync(lat: float, lon: float) -> dict[str, Any]:
+    """Valeurs OBSERVÉES au point (dernière mosaïque) : réflectivité dBZ, écho top km,
+    proba de pluie %. Reprojection lat/lon → grille stéréo polaire → pixel."""
+    global _fr_radar_point_transformer
+    planes = _fr_radar_last_planes
+    if planes is None:
+        return {"ok": False, "reason": "no_data"}
+    try:
+        import numpy as np
+        import pyproj
+        if _fr_radar_point_transformer is None:
+            stere = pyproj.CRS.from_proj4("+proj=stere +lat_0=90 +lon_0=0 +lat_ts=45 +ellps=WGS84 +datum=WGS84")
+            _fr_radar_point_transformer = pyproj.Transformer.from_crs("EPSG:4326", stere, always_xy=True)
+        x_nw, y_nw = _fr_radar_point_transformer.transform(planes["nw_lon"], planes["nw_lat"])
+        gx, gy = _fr_radar_point_transformer.transform(lon, lat)
+        col = int((gx - x_nw) / planes["pixel_m"])
+        row = int((y_nw - gy) / planes["pixel_m"])
+        if not (0 <= col < planes["nx"] and 0 <= row < planes["ny"]):
+            return {"ok": True, "time": planes["time"], "in_domain": False, "values": {}}
+        values: dict[str, Any] = {}
+        for key, out_key, conv in (
+            ("reflectivity", "reflectivity", lambda v: round(v, 1)),
+            ("echotop", "echo_top_km", lambda v: round(v / 1000.0, 1)),
+            ("proba", "rain_prob", lambda v: round(v * 100.0)),
+        ):
+            p = planes.get(key)
+            if p is None:
+                continue
+            raw = int(p["raw"][row, col])
+            if raw < 0:
+                raw += 1 << 16  # int16 signé → non signé (raw d'origine < 4096)
+            values[out_key] = None if raw >= p["missing"] else conv((raw + p["ref"]) / 10 ** p["scale"])
+        return {"ok": True, "time": planes["time"], "in_domain": True, "values": values}
+    except Exception as exc:
+        return {"ok": False, "reason": str(exc)}
+
+
+@app.get("/api/radar/fr/point")
+async def fr_radar_point(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+) -> dict[str, Any]:
+    """Valeurs radar OBSERVÉES au point (dernière mosaïque) : dBZ, écho top, proba pluie."""
+    return await asyncio.to_thread(_fr_radar_point_sync, lat, lon)
 
 
 @app.post('/api/server/arome-automation-start')
