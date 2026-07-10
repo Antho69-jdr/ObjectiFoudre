@@ -36,6 +36,11 @@
   const RADAR_EAGER_NEIGHBORS = 3;   // frames radar préchargées de part et d'autre du curseur
   const NOWCAST_SRC = 'chase-nowcast';
   const RAINVIEWER_INDEX = 'https://api.rainviewer.com/public/weather-maps.json';
+  // Radar France = mosaïque réflectivité Météo-France 1 km (décodée/reprojetée serveur,
+  // ring buffer ~2 h), AU-DESSUS de RainViewer (repli mondial, ~2 km plafonné z7).
+  const FRRADAR_SRC = 'chase-frradar';
+  const FRRADAR_CORNERS = [[-9.965, 53.67], [14.4, 53.67], [14.4, 39.4], [-9.965, 39.4]];
+  const FRRADAR_TOLERANCE_S = 330;   // apparier une frame RainViewer (pas 10 min) à une mosaïque (pas 5 min)
   // Coins du domaine AROME-PI (lat 37.5–55.4, lon -12–16), ordre image source : HG, HD, BD, BG.
   const AROMEPI_CORNERS = [[-12, 55.4], [16, 55.4], [16, 37.5], [-12, 37.5]];
   // PNG 256×256 transparent : placeholder décodable pour les sources image/raster.
@@ -59,6 +64,8 @@
   const radarLayerIds = new Set();   // couches radar par frame actuellement sur la carte
   const radarLayerPaths = new Map(); // id de couche → path RainViewer (détecte un path changé)
   let symbolAnchorId = null;   // 1er calque symbol du style : les couches chasse s'insèrent dessous
+  let frRadarTimes = [];       // échéances mosaïque France dispo (ISO, ~2 h)
+  let lastFrRadarUrl = null;
   const prefetched = new Set(); // URLs déjà préchargées (cache navigateur/serveur chaud)
   let prefetchGen = 0;          // jeton pour annuler un préchargement en cours
   let prefetchRun = null;       // run AROME-PI préchargé (réinit du set si le run change)
@@ -92,6 +99,19 @@
     return '/api/aromepi/image?' + params.toString();
   }
 
+  function frRadarImageUrl(iso) { return '/api/radar/fr/image?time=' + encodeURIComponent(iso); }
+
+  // Mosaïque France la plus proche d'une échéance observée (≤ tolérance), sinon null.
+  function nearestFrRadar(epoch) {
+    let best = null, bestD = Infinity;
+    for (const iso of frRadarTimes) {
+      const e = Math.floor(new Date(iso).getTime() / 1000);
+      const d = Math.abs(e - epoch);
+      if (d < bestD) { bestD = d; best = iso; }
+    }
+    return (best && bestD <= FRRADAR_TOLERANCE_S) ? best : null;
+  }
+
   // ── Préchargement (navigation fluide) ───────────────────────────────────────
   // Clé API limitée à 50 req/min → préchargement LENT (file séquentielle) et dédupliqué ;
   // le cache serveur (long) rend les revisites gratuites. Priorités : (1) couche active
@@ -100,6 +120,7 @@
   function buildPrefetchList() {
     const out = [];
     const run = status && status.run;
+    for (const iso of frRadarTimes) out.push(frRadarImageUrl(iso));   // mosaïques France (serveur local, léger)
     const nowcast = frames.filter((f) => f.kind === 'nowcast');
     if (run) for (const f of nowcast) out.push(nowcastImageUrl(activeLayer, f.t, run));
     const keys = layerTabs ? Array.from(layerTabs.querySelectorAll('[data-chase-layer]')).map((b) => b.dataset.chaseLayer) : [];
@@ -137,6 +158,10 @@
     symbolAnchorId = sym ? sym.id : null;
     map.addSource(NOWCAST_SRC, { type: 'image', url: TRANSPARENT_PX, coordinates: AROMEPI_CORNERS });
     map.addLayer({ id: NOWCAST_SRC, type: 'raster', source: NOWCAST_SRC, paint: { 'raster-opacity': 0.82 }, layout: { visibility: 'none' } }, symbolAnchorId || undefined);
+    // Mosaïque France AU-DESSUS de RainViewer : les couches radar par frame sont
+    // insérées SOUS cette couche (cf. syncRadarLayers).
+    map.addSource(FRRADAR_SRC, { type: 'image', url: TRANSPARENT_PX, coordinates: FRRADAR_CORNERS });
+    map.addLayer({ id: FRRADAR_SRC, type: 'raster', source: FRRADAR_SRC, paint: { 'raster-opacity': 0.85 }, layout: { visibility: 'none' } }, symbolAnchorId || undefined);
     layersReady = true;
     return true;
   }
@@ -157,14 +182,17 @@
       try { if (map.getSource(id)) map.removeSource(id); } catch (_) {}
       radarLayerIds.delete(id); radarLayerPaths.delete(id);
     }
-    const before = (symbolAnchorId && map.getLayer(symbolAnchorId)) ? symbolAnchorId : undefined;
+    const before = map.getLayer(FRRADAR_SRC) ? FRRADAR_SRC : ((symbolAnchorId && map.getLayer(symbolAnchorId)) ? symbolAnchorId : undefined);
     for (const [id, path] of want) {
       if (radarLayerIds.has(id)) {
         if (radarLayerPaths.get(id) !== path) { safeSetTiles(id, radarTileUrl(path)); radarLayerPaths.set(id, path); }
         continue;
       }
       try {
-        map.addSource(id, { type: 'raster', tiles: [radarTileUrl(path)], tileSize: 256 });
+        // maxzoom 7 = plafond RÉEL des tuiles RainViewer : au-delà il sert des tuiles
+        // « Zoom Level Not Supported » (filigrane gris) — MapLibre suréchantillonne
+        // les tuiles z7 à la place, et ne demande plus rien au-delà.
+        map.addSource(id, { type: 'raster', tiles: [radarTileUrl(path)], tileSize: 256, maxzoom: 7 });
         map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 0, 'raster-opacity-transition': { duration: 150 } }, layout: { visibility: 'none' } }, before);
         radarLayerIds.add(id); radarLayerPaths.set(id, path);
       } catch (_) {}
@@ -249,9 +277,12 @@
     try { st = await (await fetch('/api/aromepi/status')).json(); } catch (_) {}
     let rv = null;
     try { rv = await (await fetch(RAINVIEWER_INDEX, { cache: 'no-store' })).json(); } catch (_) {}
+    let fr = null;
+    try { fr = await (await fetch('/api/radar/fr/status')).json(); } catch (_) {}
     if (token !== loadToken) return;
     status = (st && st.ok) ? st : status;
     radarHost = (rv && rv.host) || radarHost;
+    frRadarTimes = (fr && fr.ok && Array.isArray(fr.times)) ? fr.times : [];
     if (status && status.run !== prefetchRun) { prefetched.clear(); prefetchRun = status.run; }
     if (rv && rv.radar && Array.isArray(rv.radar.past)) {
       // PASSÉ observé uniquement (RainViewer past) : le futur vient d'AROME-PI, sinon les
@@ -267,7 +298,7 @@
     await fetchSources(token);
     if (token !== loadToken) return;
     // attribution dans la meta-stack (ligne #metaRun, restaurée à la sortie)
-    if (metaRunEl) metaRunEl.textContent = 'Radar : RainViewer · Nowcast : ' + ((status && status.attribution) || 'Météo-France AROME-PI');
+    if (metaRunEl) metaRunEl.textContent = 'Radar : ' + (frRadarTimes.length ? 'Météo-France 1 km + RainViewer' : 'RainViewer') + ' · Nowcast : ' + ((status && status.attribution) || 'Météo-France AROME-PI');
     if (!frames.length) {
       if (emptyHint) { emptyHint.hidden = false; emptyHint.textContent = 'Aucune donnée radar / nowcast disponible.'; }
       return;
@@ -343,6 +374,8 @@
       if (!radarVisible) {
         setRadarFrameOpacity(null);
         setVis(NOWCAST_SRC, false);
+        setVis(FRRADAR_SRC, false);
+        if (activityEl) { activityEl.textContent = ''; activityEl.className = 'chase-activity'; }
       } else {
         const reveal = () => {
           if (tok !== swapToken || !active) return;
@@ -352,6 +385,17 @@
           setVis(NOWCAST_SRC, false);
           updateRadarWindow();   // évince l'ancienne frame gardée visible hors fenêtre
         };
+        // Mosaïque France (réflectivité 1 km) par-dessus RainViewer pour cette échéance.
+        // Pas de bascule différée nécessaire : RainViewer reste dessous pendant le décodage.
+        const frIso = nearestFrRadar(fr.epoch);
+        if (frIso) {
+          const fu = frRadarImageUrl(frIso);
+          if (fu !== lastFrRadarUrl) { safeUpdateImage(FRRADAR_SRC, fu); lastFrRadarUrl = fu; }
+          setVis(FRRADAR_SRC, true);
+        } else {
+          setVis(FRRADAR_SRC, false);
+        }
+        if (activityEl) { activityEl.textContent = frIso ? 'MF 1 km' : ''; activityEl.className = frIso ? 'chase-activity lvl-low' : 'chase-activity'; }
         if (ready) {
           reveal();   // tuiles déjà là (fenêtre éagère) → flip immédiat
         } else {
@@ -364,8 +408,6 @@
           whenSourceLoaded(targetId, reveal, 5);
         }
       }
-      // sur l'observé, le badge horaire dit déjà « observé » → pas de badge d'activité.
-      if (activityEl) { activityEl.textContent = ''; activityEl.className = 'chase-activity'; }
       schedulePointForCurrent();
     } else {
       updateRadarWindow();   // garde la fenêtre éagère près de la jonction observé/prévu
@@ -383,9 +425,11 @@
           const cur = frames[cursor];
           if (!cur || cur.kind !== 'nowcast') return;
           setRadarFrameOpacity(null);
+          setVis(FRRADAR_SRC, false);
         });
       } else {
         setRadarFrameOpacity(null);
+        setVis(FRRADAR_SRC, false);
       }
       schedulePointForCurrent();
       updateActivity(fr);
@@ -950,6 +994,7 @@
     if (nowTimer) { window.clearInterval(nowTimer); nowTimer = null; }
     if (metaRunEl && savedMetaRun != null) { metaRunEl.textContent = savedMetaRun; savedMetaRun = null; }
     setVis(NOWCAST_SRC, false);
+    setVis(FRRADAR_SRC, false);
     // masquer AUSSI les couches radar par frame (sinon elles continueraient à charger
     // des tuiles à chaque déplacement de carte hors mode chasse).
     for (const id of radarLayerIds) setVis(id, false);
@@ -988,5 +1033,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '269';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '271';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

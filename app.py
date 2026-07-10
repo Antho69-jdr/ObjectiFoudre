@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.269"
+APP_VERSION = "1.2.271"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -14675,6 +14675,434 @@ def _startup_aromepi_prewarm() -> None:
 @app.on_event("shutdown")
 def _shutdown_aromepi_prewarm() -> None:
     _aromepi_prewarm_stop.set()
+
+
+# ── Radar observé France : mosaïque RÉFLECTIVITÉ Météo-France (BUFR) ─────────────
+# Remplace RainViewer (plafonné z7, composite ~2 km) comme source principale sur la
+# France : mosaïque officielle `Mosaique_metropole_Z_1km` (dBZ, 1536×1536 @ 1 km,
+# stéréo polaire lat_ts=45 — MÊME référentiel que l'ex-lame d'eau), fichiers
+# T_IMFR27_*.bufr.gz du paquet DPPaquetRadar (3 pas de 5 min par paquet).
+# ⚠ BUFR à descripteurs LOCAUX MF (centre 85, tables locales v14) : eccodes ne les
+# gère pas (réplication « super élargie » 0-31-192 sur 32 bits → explosion mémoire).
+# Décodeur ciblé maison : flux de bits + expansion de descripteurs + lecture
+# VECTORISÉE numpy des 3 plans de pixels (~0,3 s/mosaïque). Tables committées dans
+# bufr_tables/ (format OPERA CSV, source Météo-France).
+# L'HISTORIQUE n'existe pas côté MF (paquet = dernier ¼ h) → ring buffer serveur :
+# un thread télécharge le paquet toutes les 150 s et accumule ~2 h de PNG Mercator.
+METEOFRANCE_RADAR_PACKAGE_URL = "https://public-api.meteofrance.fr/public/DPPaquetRadar/v1/mosaique/paquet"
+FR_RADAR_TABLES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bufr_tables")
+FR_RADAR_POLL_SECONDS = 150
+FR_RADAR_HISTORY_SECONDS = 2 * 3600 + 900   # ~2 h de frises + marge
+FR_RADAR_OUT_WIDTH = 2400                   # ≈1,15 km/px en sortie ≈ maille native 1 km
+# Emprise de sortie Mercator (couvre la grille 1536 km × 1536 km depuis le coin NW).
+FR_RADAR_DOMAIN = {"min_lon": -9.965, "max_lon": 14.4, "min_lat": 39.4, "max_lat": 53.67}
+# Bandes dBZ → couleurs type radar (proches du schéma RainViewer 4, cohérence visuelle).
+_FR_RADAR_BANDS = [8.0, 16.0, 24.0, 32.0, 40.0, 48.0, 56.0, 64.0]
+_FR_RADAR_COLORS = [
+    (60, 160, 255, 160), (40, 210, 220, 190), (60, 220, 110, 210), (250, 230, 60, 230),
+    (250, 160, 40, 240), (240, 70, 45, 250), (200, 40, 160, 255), (255, 255, 255, 255),
+]
+
+_fr_radar_tables: tuple[dict, dict] | None = None
+_fr_radar_index = None      # (row, col, inb, ow, oh) grille Mercator→stéréo, calculée une fois
+_fr_radar_lock = threading.Lock()
+_fr_radar_frames: dict[str, bytes] = {}   # iso → PNG Mercator (ring buffer ~2 h)
+_fr_radar_state: dict[str, Any] = {"running": False}
+_fr_radar_thread: threading.Thread | None = None
+_fr_radar_stop = threading.Event()
+
+
+def _fr_radar_api_key() -> str | None:
+    raw = os.environ.get("METEOFRANCE_RADAR_API_KEY")
+    if not raw:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Clef API RADAR.txt")
+        try:
+            with open(path, encoding="utf-8") as handle:
+                raw = handle.read().strip()
+        except OSError:
+            return None
+    if not raw:
+        return None
+    try:
+        return _clean_meteofrance_api_key(raw)
+    except HTTPException:
+        return None
+
+
+class _BufrBitReader:
+    """Lecture de n bits en O(1) par appel (offset de bits sur un buffer mémoire)."""
+
+    __slots__ = ("data", "pos")
+
+    def __init__(self, data: bytes):
+        self.data = data
+        self.pos = 0
+
+    def read(self, n: int) -> int:
+        p = self.pos
+        self.pos = p + n
+        start = p >> 3
+        end = (p + n + 7) >> 3
+        chunk = int.from_bytes(self.data[start:end], "big")
+        return (chunk >> ((end << 3) - (p + n))) & ((1 << n) - 1)
+
+    def read_block(self, count: int, width: int):
+        """count valeurs de width bits, vectorisé (unpackbits + produit de poids)."""
+        import numpy as np
+        p = self.pos
+        total = count * width
+        self.pos = p + total
+        start = p >> 3
+        end = (p + total + 7) >> 3
+        bits = np.unpackbits(np.frombuffer(self.data[start:end], np.uint8))
+        offset = p - (start << 3)
+        bits = bits[offset:offset + total].reshape(count, width)
+        weights = (1 << np.arange(width - 1, -1, -1)).astype(np.int64)
+        return bits.astype(np.int64) @ weights
+
+
+def _fr_radar_load_tables() -> tuple[dict, dict]:
+    """Tables B (éléments) et D (séquences) : maître v16 + locales MF centre 85 v14."""
+    global _fr_radar_tables
+    if _fr_radar_tables is not None:
+        return _fr_radar_tables
+    tab_b: dict = {}
+    tab_d: dict = {}
+    for fname in ("bufrtabb_16.csv", "localtabb_85_14.csv"):
+        for line in open(os.path.join(FR_RADAR_TABLES_DIR, fname), encoding="utf-8", errors="replace"):
+            parts = [x.strip() for x in line.split(";")]
+            if len(parts) < 8 or not parts[0].isdigit():
+                continue
+            tab_b[(int(parts[0]), int(parts[1]), int(parts[2]))] = {
+                "name": parts[3], "unit": parts[4],
+                "scale": int(parts[5] or 0), "ref": int(parts[6] or 0), "width": int(parts[7] or 0),
+            }
+    for fname in ("bufrtabd_16.csv", "localtabd_85_14.csv"):
+        cur = None
+        for line in open(os.path.join(FR_RADAR_TABLES_DIR, fname), encoding="utf-8", errors="replace"):
+            parts = [x.strip() for x in line.split(";")]
+            if len(parts) >= 6:
+                if parts[0] == "3" and parts[1] and parts[2]:
+                    cur = (3, int(parts[1]), int(parts[2]))
+                    tab_d[cur] = []
+                if cur is not None and parts[3] != "" and parts[4] != "" and parts[5] != "":
+                    tab_d[cur].append((int(parts[3]), int(parts[4]), int(parts[5])))
+    _fr_radar_tables = (tab_b, tab_d)
+    return _fr_radar_tables
+
+
+def _fr_radar_body_fixed_width(tab_b, body, width_plus, scale_plus, new_width):
+    """Si le corps d'une réplication ne contient qu'UN élément à largeur fixe (et des
+    opérateurs 2-01/2-02 constants), renvoie (desc, width, scale, ref) — vectorisable."""
+    wp, sp, nw = width_plus, scale_plus, new_width
+    elems = []
+    for (f, x, y) in body:
+        if f == 2:
+            if x == 1:
+                wp = (y - 128) if y else 0
+            elif x == 2:
+                sp = (y - 128) if y else 0
+            else:
+                return None
+        elif f == 0:
+            spec = tab_b.get((f, x, y))
+            if spec is None or spec["unit"].startswith("CCITT"):
+                return None
+            w = nw if nw else spec["width"] + wp
+            elems.append(((f, x, y), w, spec["scale"] + sp, spec["ref"]))
+        else:
+            return None
+    return elems[0] if len(elems) == 1 else None
+
+
+def _fr_radar_decode_bufr(data: bytes) -> dict[str, Any] | None:
+    """Décode UN message BUFR mosaïque (édition 4). Renvoie {time, datas, arrays} —
+    arrays = plans de pixels bruts numpy + (ref, scale, width) pour les convertir."""
+    tab_b, tab_d = _fr_radar_load_tables()
+    r = _BufrBitReader(data)
+    if r.read(32) != int.from_bytes(b"BUFR", "big"):
+        return None
+    r.read(24)
+    if r.read(8) != 4:
+        return None
+    sec1_start = r.pos
+    len1 = r.read(24)
+    r.read(8); r.read(16); r.read(16); r.read(8)
+    sect2 = r.read(8) >> 7
+    r.read(8); r.read(8); r.read(8); r.read(8); r.read(8)
+    year = r.read(16); month = r.read(8); day = r.read(8)
+    hour = r.read(8); minute = r.read(8); second = r.read(8)
+    r.pos = sec1_start + len1 * 8
+    if sect2:
+        l2s = r.pos
+        len2 = r.read(24)
+        r.pos = l2s + len2 * 8
+    # section 3 — ⚠ octet de bourrage final possible : TOUJOURS repartir de la
+    # longueur annoncée (8 bits de désynchro vécus sinon).
+    sec3_start = r.pos
+    len3 = r.read(24)
+    r.read(8); r.read(16); r.read(8)
+    descriptors = []
+    for _ in range((len3 - 7) // 2):
+        b1 = r.read(8); b2 = r.read(8)
+        descriptors.append((b1 >> 6, b1 & 0x3F, b2))
+    r.pos = sec3_start + len3 * 8
+    sec4_start = r.pos
+    len4 = r.read(24)
+    r.read(8)
+
+    datas: dict[str, list] = {}
+    arrays: dict[str, tuple] = {}
+    width_plus = scale_plus = new_width = 0
+    new_refs: dict = {}
+    seq = list(descriptors)
+    i = 0
+    while i < len(seq):
+        f, x, y = seq[i]
+        if f == 0:
+            spec = tab_b[(f, x, y)]
+            width = new_width if new_width else spec["width"] + width_plus
+            raw = r.read(width)
+            if spec["unit"].startswith("CCITT"):
+                val: Any = raw.to_bytes((width + 7) // 8, "big").strip(b"\x00").decode("latin-1", "replace")
+            else:
+                ref = new_refs.get((f, x, y), spec["ref"])
+                val = (raw + ref) / 10 ** (spec["scale"] + scale_plus)
+            datas.setdefault(spec["name"], []).append(val)
+        elif f == 3:
+            seq[i:i + 1] = tab_d[(f, x, y)]
+            continue
+        elif f == 2:
+            if x == 1:
+                width_plus = (y - 128) if y else 0
+            elif x == 2:
+                scale_plus = (y - 128) if y else 0
+            elif x == 3:
+                # 2-03-YYY : nouvelles valeurs de référence jusqu'au 2-03-255
+                if y and y != 255:
+                    j = i + 1
+                    while seq[j] != (2, 3, 255):
+                        raw = r.read(y)
+                        if raw >= 1 << (y - 1):
+                            raw = -(raw - (1 << (y - 1)))
+                        new_refs[seq[j]] = raw
+                        j += 1
+                    i = j
+                elif y == 0:
+                    new_refs = {}
+            elif x == 8:
+                new_width = 8 * y if y else 0
+        elif f == 1:
+            nd = seq[i + 1]
+            if nd[0] == 0 and nd[1] == 31:
+                # réplication différée — y compris la « super élargie » LOCALE 0-31-192
+                # (32 bits), que les tables locales rendent lisible comme les autres.
+                count = r.read(tab_b[nd]["width"])
+                body = seq[i + 2:i + 2 + x]
+                fixed = _fr_radar_body_fixed_width(tab_b, body, width_plus, scale_plus, new_width) if count > 1000 else None
+                if fixed:
+                    (desc, w, scale, ref) = fixed
+                    rawv = r.read_block(count, w)
+                    arrays[tab_b[desc]["name"]] = (rawv, new_refs.get(desc, ref), scale, w)
+                    seq[i:i + 2 + x] = []
+                    continue
+                seq[i:i + 2 + x] = body * count
+                continue
+            else:
+                body = seq[i + 1:i + 1 + x]
+                seq[i:i + 1 + x] = body * y
+                continue
+        i += 1
+
+    r.pos = sec4_start + len4 * 8
+    if r.read(32) != int.from_bytes(b"7777", "big"):
+        return None
+    iso = f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:{second:02d}Z"
+    return {"time": iso, "datas": datas, "arrays": arrays}
+
+
+def _fr_radar_index_map(nw_lat: float, nw_lon: float, nx: int, ny: int, pixel_m: float):
+    """(row, col, inb, ow, oh) : pour chaque pixel de sortie (grille Mercator sur
+    FR_RADAR_DOMAIN), l'indice source dans la grille stéréo polaire. Géométrie pure,
+    calculée une fois (le coin NW de la mosaïque est stable d'un message à l'autre)."""
+    global _fr_radar_index
+    if _fr_radar_index is not None:
+        return _fr_radar_index
+    import numpy as np
+    import pyproj
+    stere = pyproj.CRS.from_proj4("+proj=stere +lat_0=90 +lon_0=0 +lat_ts=45 +ellps=WGS84 +datum=WGS84")
+    tr = pyproj.Transformer.from_crs("EPSG:4326", stere, always_xy=True)
+    x_nw, y_nw = tr.transform(nw_lon, nw_lat)
+    d = FR_RADAR_DOMAIN
+    r_e = 6378137.0
+    mx0 = r_e * math.radians(d["min_lon"]); mx1 = r_e * math.radians(d["max_lon"])
+    my0 = r_e * math.log(math.tan(math.pi / 4 + math.radians(d["min_lat"]) / 2))
+    my1 = r_e * math.log(math.tan(math.pi / 4 + math.radians(d["max_lat"]) / 2))
+    ow = FR_RADAR_OUT_WIDTH
+    oh = int(round(ow * (my1 - my0) / (mx1 - mx0)))
+    xs = mx0 + (np.arange(ow) + 0.5) / ow * (mx1 - mx0)
+    lon = np.degrees(xs / r_e)
+    ys = my1 - (np.arange(oh) + 0.5) / oh * (my1 - my0)
+    lat = np.degrees(2.0 * np.arctan(np.exp(ys / r_e)) - np.pi / 2.0)
+    # par blocs de lignes pour borner le transitoire mémoire (cf. ex-lame d'eau)
+    row = np.empty(oh * ow, np.int32)
+    col = np.empty(oh * ow, np.int32)
+    inb = np.empty(oh * ow, bool)
+    block = max(1, 1_000_000 // ow)
+    for r0 in range(0, oh, block):
+        r1 = min(oh, r0 + block)
+        lon2d = np.broadcast_to(lon, (r1 - r0, ow)).ravel()
+        lat2d = np.repeat(lat[r0:r1], ow)
+        pxs, pys = tr.transform(lon2d, lat2d)
+        c = ((np.asarray(pxs) - x_nw) / pixel_m).astype(np.int32)
+        rr = ((y_nw - np.asarray(pys)) / pixel_m).astype(np.int32)
+        sl = slice(r0 * ow, r1 * ow)
+        col[sl] = c; row[sl] = rr
+        inb[sl] = (c >= 0) & (c < nx) & (rr >= 0) & (rr < ny)
+    _fr_radar_index = (row, col, inb, ow, oh)
+    return _fr_radar_index
+
+
+def _fr_radar_render_png(msg: dict[str, Any]) -> bytes | None:
+    """Mosaïque décodée → PNG RGBA Web Mercator colorisé par bandes dBZ."""
+    try:
+        import numpy as np
+        from PIL import Image
+        d = msg["datas"]
+        nx = int(d["Number of pixels per row"][0])
+        ny = int(d["Number of pixels per column"][0])
+        pixel_m = float(d["Pixel size on horizontal - 1"][0])
+        nw_lat = float(d["Latitude (high accuracy)"][0])
+        nw_lon = float(d["Longitude (high accuracy)"][0])
+        vals, ref, scale, w = msg["arrays"]["Horizontal reflectivity"]
+        missing = (1 << w) - 1
+        dbz = np.where(vals == missing, -999.0, (vals + ref) / 10 ** scale).astype(np.float32).reshape(ny, nx)
+        row, col, inb, ow, oh = _fr_radar_index_map(nw_lat, nw_lon, nx, ny, pixel_m)
+        samp = np.full(oh * ow, -999.0, np.float32)
+        samp[inb] = dbz[row[inb], col[inb]]
+        palette = np.array([(0, 0, 0, 0)] + _FR_RADAR_COLORS, np.uint8)
+        idx = np.digitize(samp, np.array(_FR_RADAR_BANDS, np.float32))
+        out = palette[idx].reshape(oh, ow, 4)
+        buf = io.BytesIO()
+        Image.fromarray(out, "RGBA").save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _fr_radar_poll_once(api_key: str) -> tuple[int, int]:
+    """Télécharge le paquet radar, décode/rend les mosaïques réflectivité France
+    ABSENTES du ring buffer, purge l'historique au-delà de 2 h. → (nouvelles, total)."""
+    import tarfile
+    status, _ct, raw = _aromepi_http_get(METEOFRANCE_RADAR_PACKAGE_URL, api_key, timeout=90)
+    if status != 200 or not raw or raw[:2] != b"\x1f\x8b":
+        raise RuntimeError(f"paquet radar HTTP {status}")
+    new_count = 0
+    tf = tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz")
+    for member in tf.getmembers():
+        name = member.name
+        if "IMFR27" not in name or not name.endswith(".bufr.gz"):
+            continue
+        stamp = re.search(r"_(\d{14})\.bufr\.gz", name)
+        if not stamp:
+            continue
+        s = stamp.group(1)
+        iso = f"{s[0:4]}-{s[4:6]}-{s[6:8]}T{s[8:10]}:{s[10:12]}:{s[12:14]}Z"
+        with _fr_radar_lock:
+            if iso in _fr_radar_frames:
+                continue
+        extracted = tf.extractfile(member)
+        if extracted is None:
+            continue
+        bufr = gzip.decompress(extracted.read())
+        msg = _fr_radar_decode_bufr(bufr)
+        if not msg:
+            continue
+        png = _fr_radar_render_png(msg)
+        if not png:
+            continue
+        with _fr_radar_lock:
+            _fr_radar_frames[msg["time"]] = png
+        new_count += 1
+    # purge du ring buffer (~2 h)
+    now = datetime.now(timezone.utc)
+    with _fr_radar_lock:
+        for iso in list(_fr_radar_frames):
+            t = _parse_meteofrance_datetime(iso)
+            if t is None or (now - t).total_seconds() > FR_RADAR_HISTORY_SECONDS:
+                _fr_radar_frames.pop(iso, None)
+        total = len(_fr_radar_frames)
+    return new_count, total
+
+
+def _fr_radar_loop() -> None:
+    _fr_radar_state.update(running=True, message="Radar France (réflectivité) actif.")
+    try:
+        while not _fr_radar_stop.is_set():
+            api_key = _fr_radar_api_key()
+            if not api_key:
+                _fr_radar_state.update(message="En attente : clé radar absente.")
+                if _fr_radar_stop.wait(300):
+                    break
+                continue
+            try:
+                new_count, total = _fr_radar_poll_once(api_key)
+                _fr_radar_state.update(
+                    message=f"{total} mosaïques en mémoire (+{new_count}).",
+                    frames=total, last_error=None, updated_at=time.time(),
+                )
+            except Exception as exc:
+                _fr_radar_state.update(last_error=str(exc), updated_at=time.time())
+                if _fr_radar_stop.wait(60):
+                    break
+                continue
+            if _fr_radar_stop.wait(FR_RADAR_POLL_SECONDS):
+                break
+    finally:
+        _fr_radar_state.update(running=False)
+
+
+def _start_fr_radar_thread() -> None:
+    global _fr_radar_thread
+    if _fr_radar_thread is not None and _fr_radar_thread.is_alive():
+        return
+    _fr_radar_stop.clear()
+    _fr_radar_thread = threading.Thread(target=_fr_radar_loop, name="fr-radar", daemon=True)
+    _fr_radar_thread.start()
+
+
+@app.on_event("startup")
+def _startup_fr_radar() -> None:
+    _start_fr_radar_thread()
+
+
+@app.on_event("shutdown")
+def _shutdown_fr_radar() -> None:
+    _fr_radar_stop.set()
+
+
+@app.get("/api/radar/fr/status")
+async def fr_radar_status() -> dict[str, Any]:
+    """Échéances disponibles du radar France réflectivité (ring buffer ~2 h) + domaine."""
+    with _fr_radar_lock:
+        times = sorted(_fr_radar_frames)
+    return {
+        "ok": bool(times),
+        "times": times,
+        "domain": FR_RADAR_DOMAIN,
+        "state": dict(_fr_radar_state),
+        "attribution": "Météo-France — mosaïque réflectivité 1 km",
+    }
+
+
+@app.get("/api/radar/fr/image")
+async def fr_radar_image(time: str = Query(..., min_length=10, max_length=40)) -> Response:
+    """PNG Mercator d'une mosaïque réflectivité (immuable par échéance → cache long)."""
+    with _fr_radar_lock:
+        png = _fr_radar_frames.get(time)
+    if not png:
+        return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=30"})
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.post('/api/server/arome-automation-start')
