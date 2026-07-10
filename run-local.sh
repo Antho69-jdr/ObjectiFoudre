@@ -9,7 +9,6 @@ set -a; [ -f .env ] && . ./.env; set +a
 # Clés Météo-France (fichiers gitignored)
 export METEOFRANCE_API_KEY="$(cat 'Clef API.txt')"
 export METEOFRANCE_AROME_PI_API_KEY="$(cat 'Clef API AROME PI.txt')"
-export METEOFRANCE_RADAR_API_KEY="$(cat 'Clef API RADAR.txt')"
 export METEOFRANCE_ARPEGE_API_KEY="$(cat 'Clef API ARPEGE.txt')"
 
 # Préchargement AROME au démarrage (J0 → J+2 ; J-1 servi à la demande depuis l'archive)

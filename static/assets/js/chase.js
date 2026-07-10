@@ -1,9 +1,9 @@
 // Mode « En chasse » — superposé À LA CARTE DE BASE (plus de fenêtre dédiée).
 // Un bouton bascule la vue : la grille de score est masquée et on affiche le RADAR OBSERVÉ
-// (Météo-France lame d'eau sur la France + RainViewer en repli, animé) et le NOWCAST
-// AROME-PI (réflectivité simulée, grêle, rafales, CAPE, MOCON ; 0–6 h, pas 15 min) servi
-// via le proxy serveur (clé Météo-France côté serveur). Barre de contrôle compacte (onglets
-// + frise) et popup « conditions au point » au clic. Réutilise la carte `map` (state.js).
+// (tuiles RainViewer, animé) et le NOWCAST AROME-PI (réflectivité simulée, grêle, rafales,
+// CAPE, MOCON ; 0–6 h, pas 15 min) servi via le proxy serveur (clé Météo-France côté
+// serveur). Barre de contrôle compacte (onglets + frise) et popup « conditions au point »
+// au clic. Réutilise la carte `map` (state.js).
 (function () {
   if (typeof maplibregl === 'undefined' || typeof map === 'undefined' || !map) return;
   const controls = document.getElementById('chaseControls');
@@ -25,18 +25,17 @@
   let nowTimer = null;
   let savedMetaRun = null;
 
-  // Radar observé : UNE source/couche raster PAR frame (préfixe + epoch), toutes créées
-  // visibility:visible à raster-opacity:0 → MapLibre charge les tuiles des frames même
-  // invisibles, et le scrub n'est plus qu'un flip d'opacité (instantané). L'ancien modèle
+  // Radar observé : UNE source/couche raster PAR frame (préfixe + epoch). L'ancien modèle
   // (une source unique + setTiles) vidait le cache de tuiles à CHAQUE changement de frame
-  // → ~1,3 s de carte vide mesurée, même tuiles déjà vues.
+  // → ~1,3 s de carte vide mesurée, même tuiles déjà vues. Les frames dans une FENÊTRE
+  // autour du curseur sont visibles à raster-opacity:0 → MapLibre précharge leurs tuiles,
+  // et le scrub proche n'est qu'un flip d'opacité (instantané). ⚠️ Ne PAS rendre les 13
+  // frames éagères d'un coup : ~200 requêtes simultanées → RainViewer (tier gratuit)
+  // refuse ~17 % des tuiles en rafale (ERR_FAILED mesuré) → trous dans les frames.
   const RADAR_SRC_PREFIX = 'chase-radar-f';
+  const RADAR_EAGER_NEIGHBORS = 3;   // frames radar préchargées de part et d'autre du curseur
   const NOWCAST_SRC = 'chase-nowcast';
-  const MFRADAR_SRC = 'chase-mfradar';   // radar observé Météo-France (lame d'eau), France
   const RAINVIEWER_INDEX = 'https://api.rainviewer.com/public/weather-maps.json';
-  // Domaine de la mosaïque radar MF (métropole), coins source `image` MapLibre.
-  const MFRADAR_CORNERS = [[-10, 53.7], [17.6, 53.7], [17.6, 37.4], [-10, 37.4]];
-  const MFRADAR_TOLERANCE_S = 600;       // apparier une frame observée à une mosaïque MF (≤10 min)
   // Coins du domaine AROME-PI (lat 37.5–55.4, lon -12–16), ordre image source : HG, HD, BD, BG.
   const AROMEPI_CORNERS = [[-12, 55.4], [16, 55.4], [16, 37.5], [-12, 37.5]];
   // PNG 256×256 transparent : placeholder décodable pour les sources image/raster.
@@ -56,11 +55,10 @@
   let playTimer = null;
   let radarVisible = true;
   let lastNowcastUrl = null;   // évite les updateImage redondants (→ AbortError)
-  let nowcastSwapToken = 0;    // annule le « masquer le radar une fois le nowcast décodé »
+  let swapToken = 0;           // invalide les bascules différées (masquage après décodage/chargement)
   const radarLayerIds = new Set();   // couches radar par frame actuellement sur la carte
   const radarLayerPaths = new Map(); // id de couche → path RainViewer (détecte un path changé)
-  let mfRadarTimes = [];       // échéances radar MF dispo (ISO), dernier 1/4h
-  let lastMfRadarUrl = null;
+  let symbolAnchorId = null;   // 1er calque symbol du style : les couches chasse s'insèrent dessous
   const prefetched = new Set(); // URLs déjà préchargées (cache navigateur/serveur chaud)
   let prefetchGen = 0;          // jeton pour annuler un préchargement en cours
   let prefetchRun = null;       // run AROME-PI préchargé (réinit du set si le run change)
@@ -94,27 +92,14 @@
     return '/api/aromepi/image?' + params.toString();
   }
 
-  function mfRadarImageUrl(iso) { return '/api/radar/mf/image?time=' + encodeURIComponent(iso); }
-
-  // Mosaïque MF la plus proche d'une échéance observée (≤ tolérance), sinon null.
-  function nearestMfRadar(epoch) {
-    let best = null, bestD = Infinity;
-    for (const iso of mfRadarTimes) {
-      const e = Math.floor(new Date(iso).getTime() / 1000);
-      const d = Math.abs(e - epoch);
-      if (d < bestD) { bestD = d; best = iso; }
-    }
-    return (best && bestD <= MFRADAR_TOLERANCE_S) ? best : null;
-  }
-
   // ── Préchargement (navigation fluide) ───────────────────────────────────────
   // Clé API limitée à 50 req/min → préchargement LENT (file séquentielle) et dédupliqué ;
-  // le cache serveur (long) rend les revisites gratuites. Priorités : (1) radar MF, (2)
-  // couche active sur toute la frise, (3) échéance courante des autres onglets.
+  // le cache serveur (long) rend les revisites gratuites. Priorités : (1) couche active
+  // sur toute la frise, (2) échéance courante des autres onglets. (Les tuiles radar sont
+  // préchargées par MapLibre lui-même : couches par frame visibles à opacité 0.)
   function buildPrefetchList() {
     const out = [];
     const run = status && status.run;
-    for (const iso of mfRadarTimes) out.push(mfRadarImageUrl(iso));
     const nowcast = frames.filter((f) => f.kind === 'nowcast');
     if (run) for (const f of nowcast) out.push(nowcastImageUrl(activeLayer, f.t, run));
     const keys = layerTabs ? Array.from(layerTabs.querySelectorAll('[data-chase-layer]')).map((b) => b.dataset.chaseLayer) : [];
@@ -149,22 +134,19 @@
     if (map.getSource(NOWCAST_SRC)) { layersReady = true; return true; }
     // insérer SOUS le premier calque de libellés → noms de villes/régions lisibles au-dessus.
     const sym = ((map.getStyle() || {}).layers || []).find((l) => l.type === 'symbol');
-    const before = sym ? sym.id : undefined;
+    symbolAnchorId = sym ? sym.id : null;
     map.addSource(NOWCAST_SRC, { type: 'image', url: TRANSPARENT_PX, coordinates: AROMEPI_CORNERS });
-    map.addLayer({ id: NOWCAST_SRC, type: 'raster', source: NOWCAST_SRC, paint: { 'raster-opacity': 0.82 }, layout: { visibility: 'none' } }, before);
-    // Radar MF (lame d'eau) au-dessus de RainViewer : prioritaire sur la France.
-    // (Les couches radar par frame sont insérées SOUS cette couche, cf. syncRadarLayers.)
-    map.addSource(MFRADAR_SRC, { type: 'image', url: TRANSPARENT_PX, coordinates: MFRADAR_CORNERS });
-    map.addLayer({ id: MFRADAR_SRC, type: 'raster', source: MFRADAR_SRC, paint: { 'raster-opacity': 0.85 }, layout: { visibility: 'none' } }, before);
+    map.addLayer({ id: NOWCAST_SRC, type: 'raster', source: NOWCAST_SRC, paint: { 'raster-opacity': 0.82 }, layout: { visibility: 'none' } }, symbolAnchorId || undefined);
     layersReady = true;
     return true;
   }
 
   function radarLayerId(fr) { return RADAR_SRC_PREFIX + fr.epoch; }
 
-  // Aligne les couches radar par frame sur `frames` : crée les nouvelles (tuiles chargées
-  // en avance grâce à visibility:visible + opacity 0), retire celles des frames disparues
-  // (fenêtre glissante du refresh), met à jour un path qui aurait changé. Idempotent.
+  // Aligne les couches radar par frame sur `frames` : crée les nouvelles (masquées ;
+  // c'est updateRadarWindow qui rend éagère la fenêtre autour du curseur), retire celles
+  // des frames disparues (fenêtre glissante du refresh), met à jour un path qui aurait
+  // changé. Idempotent.
   function syncRadarLayers() {
     if (!layersReady || !radarHost) return;
     const want = new Map();
@@ -175,18 +157,41 @@
       try { if (map.getSource(id)) map.removeSource(id); } catch (_) {}
       radarLayerIds.delete(id); radarLayerPaths.delete(id);
     }
-    const before = map.getLayer(MFRADAR_SRC) ? MFRADAR_SRC : undefined;
+    const before = (symbolAnchorId && map.getLayer(symbolAnchorId)) ? symbolAnchorId : undefined;
     for (const [id, path] of want) {
       if (radarLayerIds.has(id)) {
         if (radarLayerPaths.get(id) !== path) { safeSetTiles(id, radarTileUrl(path)); radarLayerPaths.set(id, path); }
-        setVis(id, true);   // ré-activation du mode chasse : les couches restent en place
         continue;
       }
       try {
         map.addSource(id, { type: 'raster', tiles: [radarTileUrl(path)], tileSize: 256 });
-        map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 0, 'raster-opacity-transition': { duration: 150 } }, layout: { visibility: 'visible' } }, before);
+        map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 0, 'raster-opacity-transition': { duration: 150 } }, layout: { visibility: 'none' } }, before);
         radarLayerIds.add(id); radarLayerPaths.set(id, path);
       } catch (_) {}
+    }
+  }
+
+  // Fenêtre de préchargement : la frame radar la plus proche du curseur ± N voisines
+  // sont visibles (opacity 0 → tuiles chargées en avance, scrub proche instantané),
+  // les autres masquées (borne le débit vers RainViewer à l'activation ET au pan/zoom).
+  function updateRadarWindow() {
+    if (!radarLayerIds.size) return;
+    const radarIdx = [];
+    frames.forEach((f, i) => { if (f.kind === 'radar') radarIdx.push(i); });
+    if (!radarIdx.length) return;
+    let pos = 0, bd = Infinity;
+    radarIdx.forEach((fi, p) => { const d = Math.abs(fi - cursor); if (d < bd) { bd = d; pos = p; } });
+    const keep = new Set();
+    for (let p = Math.max(0, pos - RADAR_EAGER_NEIGHBORS); p <= Math.min(radarIdx.length - 1, pos + RADAR_EAGER_NEIGHBORS); p += 1) {
+      keep.add(radarLayerId(frames[radarIdx[p]]));
+    }
+    for (const id of radarLayerIds) {
+      // ne JAMAIS expulser la frame actuellement affichée (saut lointain : elle doit
+      // rester visible jusqu'à ce que la cible soit chargée — l'éviction se fait à la
+      // bascule, cf. reveal() dans applyCursor).
+      let displayed = false;
+      try { displayed = (map.getPaintProperty(id, 'raster-opacity') || 0) > 0.05; } catch (_) {}
+      setVis(id, keep.has(id) || displayed);
     }
   }
 
@@ -197,15 +202,22 @@
   }
 
   // Appelle cb une fois la source (re)chargée — sert à ne masquer l'ancienne couche
-  // qu'une fois la nouvelle image du nowcast décodée (sinon : trou visuel pendant le
-  // fetch+decode, ~640 ms mesurés même en cache). Poll rAF : isSourceLoaded passe à
-  // false dès l'updateImage, redevient true au décodage. Garde-fou 2,5 s.
-  function whenSourceLoaded(id, cb) {
+  // qu'une fois la nouvelle donnée décodée (sinon : trou visuel pendant le fetch+decode,
+  // ~640 ms mesurés même en cache). Poll rAF : isSourceLoaded passe à false dès
+  // l'updateImage, redevient true au décodage. Garde-fou 2,5 s. skipFrames : pour une
+  // couche raster qui VIENT d'être rendue visible, isSourceLoaded répond true tant que
+  // MapLibre n'a pas calculé les tuiles requises (aucune tuile demandée = « chargé ») —
+  // sauter ~2 frames de rendu laisse l'état de chargement se poser (863 ms de trou
+  // mesurés sans ça, au saut lointain).
+  function whenSourceLoaded(id, cb, stableFrames) {
     const t0 = performance.now();
+    const need = Math.max(1, stableFrames || 1);
+    let okStreak = 0;
     const tick = () => {
       let ok = false;
       try { ok = map.isSourceLoaded(id); } catch (_) {}
-      if (ok || performance.now() - t0 > 2500) { cb(); return; }
+      okStreak = ok ? okStreak + 1 : 0;   // un faux « chargé » précoce retombe à false → reset
+      if (okStreak >= need || performance.now() - t0 > 2500) { cb(); return; }
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -237,12 +249,9 @@
     try { st = await (await fetch('/api/aromepi/status')).json(); } catch (_) {}
     let rv = null;
     try { rv = await (await fetch(RAINVIEWER_INDEX, { cache: 'no-store' })).json(); } catch (_) {}
-    let mf = null;
-    try { mf = await (await fetch('/api/radar/mf/status')).json(); } catch (_) {}
     if (token !== loadToken) return;
     status = (st && st.ok) ? st : status;
     radarHost = (rv && rv.host) || radarHost;
-    mfRadarTimes = (mf && mf.ok && Array.isArray(mf.times)) ? mf.times : [];
     if (status && status.run !== prefetchRun) { prefetched.clear(); prefetchRun = status.run; }
     if (rv && rv.radar && Array.isArray(rv.radar.past)) {
       // PASSÉ observé uniquement (RainViewer past) : le futur vient d'AROME-PI, sinon les
@@ -258,7 +267,7 @@
     await fetchSources(token);
     if (token !== loadToken) return;
     // attribution dans la meta-stack (ligne #metaRun, restaurée à la sortie)
-    if (metaRunEl) metaRunEl.textContent = 'Radar : ' + (mfRadarTimes.length ? 'Météo-France + RainViewer' : 'RainViewer') + ' · Nowcast : ' + ((status && status.attribution) || 'Météo-France AROME-PI');
+    if (metaRunEl) metaRunEl.textContent = 'Radar : RainViewer · Nowcast : ' + ((status && status.attribution) || 'Météo-France AROME-PI');
     if (!frames.length) {
       if (emptyHint) { emptyHint.hidden = false; emptyHint.textContent = 'Aucune donnée radar / nowcast disponible.'; }
       return;
@@ -323,42 +332,60 @@
     updateActive();
     syncRadarLayers();
     if (fr.kind === 'radar') {
-      nowcastSwapToken++;   // annule un « masquer le radar au décodage » en attente
-      setRadarFrameOpacity(radarVisible ? radarLayerId(fr) : null);
-      // Radar MF (lame d'eau) sur la France, par-dessus RainViewer, si une mosaïque MF
-      // correspond à cette échéance (dernier 1/4h seulement).
-      const mfIso = radarVisible ? nearestMfRadar(fr.epoch) : null;
-      if (mfIso) {
-        const mu = mfRadarImageUrl(mfIso);
-        if (mu !== lastMfRadarUrl) { safeUpdateImage(MFRADAR_SRC, mu); lastMfRadarUrl = mu; }
-        setVis(MFRADAR_SRC, true);
+      const tok = ++swapToken;   // invalide toute bascule différée précédente
+      const targetId = radarLayerId(fr);
+      // « prête » = déjà éagère (visible AVANT le déplacement de la fenêtre) ET chargée.
+      // ⚠️ isSourceLoaded seul ment pour une couche encore masquée (aucune tuile
+      // demandée = « chargé ») → on capture la visibilité avant updateRadarWindow.
+      let ready = false;
+      try { ready = map.getLayoutProperty(targetId, 'visibility') === 'visible' && map.isSourceLoaded(targetId); } catch (_) {}
+      updateRadarWindow();
+      if (!radarVisible) {
+        setRadarFrameOpacity(null);
+        setVis(NOWCAST_SRC, false);
       } else {
-        setVis(MFRADAR_SRC, false);
+        const reveal = () => {
+          if (tok !== swapToken || !active) return;
+          const cur = frames[cursor];
+          if (!cur || cur.kind !== 'radar' || radarLayerId(cur) !== targetId) return;
+          setRadarFrameOpacity(targetId);
+          setVis(NOWCAST_SRC, false);
+          updateRadarWindow();   // évince l'ancienne frame gardée visible hors fenêtre
+        };
+        if (ready) {
+          reveal();   // tuiles déjà là (fenêtre éagère) → flip immédiat
+        } else {
+          // frame hors fenêtre (saut lointain) : l'ancienne couche reste affichée le
+          // temps que les tuiles arrivent (updateRadarWindow vient de rendre la cible
+          // visible → chargement lancé), puis on bascule. Pas de trou. stableFrames=5 :
+          // isSourceLoaded ment (true) tant que MapLibre n'a pas calculé la couverture
+          // de tuiles de la couche fraîchement visible → exiger 5 frames consécutives
+          // « chargé » (un vrai chargement retombe à false entre-temps et reset la série).
+          whenSourceLoaded(targetId, reveal, 5);
+        }
       }
-      setVis(NOWCAST_SRC, false);
-      // sur l'observé, le badge horaire dit déjà « observé » → on n'ajoute que la source MF.
-      if (activityEl) { activityEl.textContent = mfIso ? 'MF' : ''; activityEl.className = mfIso ? 'chase-activity lvl-low' : 'chase-activity'; }
+      // sur l'observé, le badge horaire dit déjà « observé » → pas de badge d'activité.
+      if (activityEl) { activityEl.textContent = ''; activityEl.className = 'chase-activity'; }
       schedulePointForCurrent();
     } else {
+      updateRadarWindow();   // garde la fenêtre éagère près de la jonction observé/prévu
       if (status && status.run) {
         const u = nowcastImageUrl(activeLayer, fr.t, status.run);
         if (u !== lastNowcastUrl) { safeUpdateImage(NOWCAST_SRC, u); lastNowcastUrl = u; }
         setVis(NOWCAST_SRC, true);
-        // Ne masquer le radar (et la mosaïque MF) qu'une fois la nouvelle image DÉCODÉE :
-        // pendant le fetch+decode, l'ancienne couche reste affichée → plus de trou visuel
-        // à la jonction observé→prévu. Jeton : un scrub qui repart sur du radar entre-temps
+        // Ne masquer le radar qu'une fois la nouvelle image DÉCODÉE : pendant le
+        // fetch+decode, l'ancienne couche reste affichée → plus de trou visuel à la
+        // jonction observé→prévu. Jeton : un scrub qui repart sur du radar entre-temps
         // annule le masquage différé.
-        const tok = ++nowcastSwapToken;
+        const tok = ++swapToken;
         whenSourceLoaded(NOWCAST_SRC, () => {
-          if (tok !== nowcastSwapToken || !active) return;
+          if (tok !== swapToken || !active) return;
           const cur = frames[cursor];
           if (!cur || cur.kind !== 'nowcast') return;
           setRadarFrameOpacity(null);
-          setVis(MFRADAR_SRC, false);
         });
       } else {
         setRadarFrameOpacity(null);
-        setVis(MFRADAR_SRC, false);
       }
       schedulePointForCurrent();
       updateActivity(fr);
@@ -893,8 +920,17 @@
     if (ensureLayers()) {
       hideGrid(true);
     } else {
-      // style pas encore prêt : on (ré)essaie une fois chargé.
-      map.once('idle', () => { if (active && ensureLayers()) { hideGrid(true); applyCursor(); } });
+      // Style pas encore prêt. ⚠️ PAS un simple once('idle') : isStyleLoaded() repasse à
+      // false à chaque chargement de la carte de base (grille en cours de matérialisation
+      // → setData périodiques), et un retry unique peut retomber pile à un mauvais moment
+      // → mode chasse SANS AUCUNE couche, définitivement (vécu). On réessaie en boucle
+      // tant que le mode est actif.
+      const retryLayers = () => {
+        if (!active) return;
+        if (ensureLayers()) { hideGrid(true); applyCursor(); return; }
+        window.setTimeout(retryLayers, 250);
+      };
+      window.setTimeout(retryLayers, 250);
     }
     if (!chaseClickBound) { map.on('click', onChaseClick); chaseClickBound = true; }
     if (refreshTimer) window.clearInterval(refreshTimer);
@@ -913,11 +949,11 @@
     setChaseMapTint(false);
     if (nowTimer) { window.clearInterval(nowTimer); nowTimer = null; }
     if (metaRunEl && savedMetaRun != null) { metaRunEl.textContent = savedMetaRun; savedMetaRun = null; }
-    for (const id of [NOWCAST_SRC, MFRADAR_SRC]) setVis(id, false);
+    setVis(NOWCAST_SRC, false);
     // masquer AUSSI les couches radar par frame (sinon elles continueraient à charger
     // des tuiles à chaque déplacement de carte hors mode chasse).
     for (const id of radarLayerIds) setVis(id, false);
-    nowcastSwapToken++;
+    swapToken++;
     if (layersReady) hideGrid(false);   // réafficher la grille de score
     if (refreshTimer) { window.clearInterval(refreshTimer); refreshTimer = null; }
     prefetchGen++;
@@ -952,5 +988,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '263';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '269';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
