@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.278"
+APP_VERSION = "1.2.279"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -14236,6 +14236,49 @@ def _aromepi_reproject_domain(png_bytes: bytes, dom: dict, out_width: int) -> by
         return None
 
 
+# Calibration couleur→dBZ du style WMS RÉFLECTIVITÉ d'AROME-PI (mesurée en appariant une
+# image WMS et le champ dBZ brut WCS de la même échéance : cf. spike-blend). Le style MF est
+# INHABITUEL (violet=faible, jaune-vert=fort, plafond ~52 dBZ) → recoloriser vers notre
+# palette dBZ radar rend le fort en chaud (lisible) ET aligne les couleurs observé→prévu.
+# (dBZ, RGB_du_style_MF) ; le plateau violet 0-12 dBZ est sous notre seuil d'affichage (8).
+AROMEPI_REFLECTIVITY_RAMP = [
+    (5, (74, 0, 151)), (11, (73, 0, 153)), (13, (68, 3, 158)), (15, (56, 10, 172)),
+    (17, (43, 17, 186)), (19, (35, 24, 195)), (21, (22, 45, 215)), (23, (14, 56, 225)),
+    (25, (9, 78, 234)), (27, (7, 99, 241)), (29, (7, 125, 245)), (31, (14, 151, 242)),
+    (33, (27, 175, 234)), (35, (35, 195, 229)), (37, (60, 217, 207)), (39, (75, 231, 195)),
+    (41, (112, 245, 160)), (43, (123, 251, 151)), (45, (171, 251, 102)), (47, (175, 251, 99)),
+    (49, (196, 239, 75)), (51, (212, 232, 58)),
+]
+
+
+def _aromepi_recolor_reflectivity(png_bytes: bytes) -> bytes:
+    """Recolorise l'image réflectivité AROME-PI (style WMS MF) vers NOTRE palette dBZ (celle
+    du radar, `_FR_RADAR_COLORS`) : chaque couleur du style MF → son dBZ calibré (rampe) →
+    bande de notre palette. Continuité observé→prévu + alphas graduées = opacité par
+    intensité. Repli : image inchangée si numpy/PIL absents ou format inattendu."""
+    try:
+        import numpy as np
+        from PIL import Image
+        a = np.asarray(Image.open(io.BytesIO(png_bytes)).convert("RGBA"))
+        h, w = a.shape[:2]
+        alpha = a[:, :, 3].reshape(-1)
+        px = a[:, :, :3].reshape(-1, 3).astype(np.int32)
+        ramp_rgb = np.array([c for _d, c in AROMEPI_REFLECTIVITY_RAMP], np.int32)
+        ramp_dbz = np.array([d for d, _c in AROMEPI_REFLECTIVITY_RAMP], np.float32)
+        palette = np.array([(0, 0, 0, 0)] + _FR_RADAR_COLORS, np.uint8)
+        # nearest-couleur sur les COULEURS UNIQUES (rapide) → dBZ → bande de notre palette.
+        upx, uinv = np.unique(px, axis=0, return_inverse=True)
+        nd = ramp_dbz[((upx[:, None, :] - ramp_rgb[None, :, :]) ** 2).sum(2).argmin(1)]
+        band = np.digitize(nd, np.array(_FR_RADAR_BANDS, np.float32))
+        out = palette[band][uinv].reshape(h, w, 4)
+        out[(alpha < 60).reshape(h, w)] = (0, 0, 0, 0)   # transparent MF → rien
+        buf = io.BytesIO()
+        Image.fromarray(out, "RGBA").save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return png_bytes
+
+
 def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_iso: str | None) -> bytes | None:
     """Image AROME-PI couvrant tout le domaine, reprojetée plate-carrée→Web Mercator.
 
@@ -14254,7 +14297,9 @@ def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_
         # que soit le temps demandé par la frise, on sert l'analyse du run courant
         # (champ quasi-statique, une seule image par run — le cache s'aligne dessus).
         time_iso = run_iso
-    cache_key = f"aromepi:image:{layer_key}:{time_iso}:{run_iso}"
+    # v-suffixe cache pour la couche réflectivité recoloriée (invalide l'ancien cache WMS).
+    cache_suffix = ":ourpal" if layer_key == "reflectivity" else ""
+    cache_key = f"aromepi:image:{layer_key}{cache_suffix}:{time_iso}:{run_iso}"
     # Image immuable pour un (couche, échéance, run) donné → cache long (le run change
     # chaque heure, la clé inclut le run). Évite de re-rendre lors de la navigation /
     # préchargement (clé API limitée à 50 req/min). Le thread de pré-génération
@@ -14282,6 +14327,10 @@ def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_
     status, _ct, raw = _aromepi_http_get(url, api_key, timeout=35)
     if status != 200 or raw[:4] != b"\x89PNG":
         return None
+    if layer_key == "reflectivity":
+        # Style WMS MF → NOTRE palette dBZ (celle du radar) : continuité de couleurs
+        # observé→prévu + lisibilité (fort = chaud, pas cyan) + opacité par intensité.
+        raw = _aromepi_recolor_reflectivity(raw)
     png = _aromepi_reproject_domain(raw, d, out_width)
     if png:
         _set_cached_value(cache_key, png)
