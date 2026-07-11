@@ -26,10 +26,8 @@ body.chase-mode #chaseControls { display: flex; }
 body.chase-mode #chaseLayerRail { display: flex; }
 body.chase-mode #chaseTopInfo { display: inline-flex; }
 body.chase-mode #chaseLegend { display: flex; }
-/* Masquée hors réflectivité (1,1,0 bat body.chase-mode #chaseLegend 0,1,1). */
-#chaseLegend.is-hidden { display: none; }
 
-/* --- Légende de réflectivité radar (rampe faible→violent) --- */
+/* --- Légende dynamique par couche (titre + gradient + échelle + seuil chasse) --- */
 .chase-legend {
   position: fixed;
   left: 14px;
@@ -69,6 +67,15 @@ body.chase-mode #chaseLegend { display: flex; }
   font-weight: 600;
   color: var(--text-dim);
 }
+/* Seuil chasse (info actionnable) : liseré ambre discret sous l'échelle. */
+.chase-legend-note {
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.02em;
+  color: rgba(251, 191, 36, 0.92);
+}
+.chase-legend-note[hidden] { display: none; }
 
 /* bouton barre laterale (droite) en etat « chasse active » → rouge */
 /* Bouton « en chasse » actif (rail droit) : rouge plat chip (identité chasse). */

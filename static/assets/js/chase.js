@@ -955,6 +955,31 @@
     }
   }
 
+  // Légende par couche. Gradient EXACT (couleurs = ce qui est peint sur la carte) pour la
+  // réflectivité (notre palette dBZ) et la CAPE (style MF calibré vs WCS). Pour les autres
+  // (rafales/grêle/graupel/mocon), on ne peut pas calibrer l'échelle complète sur données
+  // faibles → gradient indicatif + SEUIL CHASSE (l'info actionnable ; les valeurs exactes
+  // au point sont dans le popup au clic).
+  const LAYER_LEGENDS = {
+    reflectivity: { title: 'Réflectivité', grad: ['#3ca0ff', '#28d2dc', '#3cdc6e', '#fae63c', '#faa028', '#f0462d', '#c828a0'], scale: ['8 dBZ', '32', '56+'], note: 'Cellule active > 45 dBZ' },
+    cape: { title: 'CAPE · instabilité', grad: ['#00fe00', '#b1fe00', '#fefa00', '#e58700', '#e70d00', '#e00080', '#8c00c3'], scale: ['0', '1500', '3000+ J/kg'], note: 'Orages probables > 1000 J/kg' },
+    gusts: { title: 'Rafales 15 min', grad: ['#00d7ff', '#38b6f2', '#8fd14b', '#fae63c', '#faa028', '#f0462d'], scale: ['faible', '', 'violente'], note: 'Rafale sévère > 90 km/h' },
+    hail: { title: 'Grêle · diagnostic', grad: ['#3ca0ff', '#8fd14b', '#fae63c', '#f0462d'], scale: ['possible', '', 'probable'], note: 'Zones de grêle diagnostiquée' },
+    graupel: { title: 'Graupel (grésil)', grad: ['#3ca0ff', '#28d2dc', '#8fd14b', '#fae63c'], scale: ['0', '', '+ kg/m²'], note: null },
+    mocon: { title: 'Convergence humidité', grad: ['#5a6b8c', '#3cdc6e', '#fae63c', '#f0462d'], scale: ['−', '', '+'], note: 'Convergence (analyse du run)' },
+  };
+  function renderLegend(key) {
+    const cfg = LAYER_LEGENDS[key] || LAYER_LEGENDS.reflectivity;
+    const titleEl = document.getElementById('chaseLegendTitle');
+    const barEl = document.getElementById('chaseLegendBar');
+    const scaleEl = document.getElementById('chaseLegendScale');
+    const noteEl = document.getElementById('chaseLegendNote');
+    if (titleEl) titleEl.textContent = cfg.title;
+    if (barEl) barEl.style.background = 'linear-gradient(90deg, ' + cfg.grad.join(', ') + ')';
+    if (scaleEl) scaleEl.innerHTML = cfg.scale.map((s) => `<span>${s}</span>`).join('');
+    if (noteEl) { noteEl.textContent = cfg.note || ''; noteEl.hidden = !cfg.note; }
+  }
+
   function setLayer(key) {
     activeLayer = key;
     if (layerTabs) layerTabs.querySelectorAll('.chase-layer-btn').forEach((b) => {
@@ -962,10 +987,7 @@
       b.classList.toggle('active', on);
       b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-    // La légende de réflectivité (palette en-app) n'est valable que pour cette
-    // couche ; les autres (CAPE, rafales…) utilisent des palettes WMS Météo-France.
-    const legendEl = document.getElementById('chaseLegend');
-    if (legendEl) legendEl.classList.toggle('is-hidden', key !== 'reflectivity');
+    renderLegend(key);   // légende dynamique (toujours affichée)
     applyCursor();
     schedulePrefetch();  // précharge la frise de la nouvelle couche active
   }
@@ -1014,6 +1036,7 @@
     controls.setAttribute('aria-hidden', 'false');
     document.body.classList.add('chase-mode');
     setChaseMapTint(true);
+    renderLegend(activeLayer);   // légende de la couche courante (réflectivité au départ)
     // on garde la meta-stack visible : sa ligne #metaRun reçoit l'attribution (sauvegarde
     // pour restauration à la sortie). Badge haut-centre : horloge live.
     savedMetaRun = metaRunEl ? metaRunEl.textContent : null;
@@ -1098,5 +1121,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '279';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '280';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
