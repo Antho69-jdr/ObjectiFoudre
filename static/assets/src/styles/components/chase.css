@@ -184,11 +184,11 @@ body.chase-mode .meta-stack .meta-version {
   }
 }
 
-/* frise : play | rail/molette | export | geo, sur UNE ligne, tout centre.
-   Grille a gouttieres egales (88px de chaque cote) → rail centre. */
+/* frise : play | direct | rail/molette | export | geo, sur UNE ligne, tout centre.
+   Deux boutons de chaque cote (gouttieres egales) → rail centre. */
 .chase-frise {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr) 40px 40px;
+  grid-template-columns: 40px 40px minmax(0, 1fr) 40px 40px;
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
@@ -197,7 +197,6 @@ body.chase-mode .meta-stack .meta-version {
   min-width: 0;
   margin: 0 auto;
 }
-.chase-frise .chase-play-btn { justify-self: center; }
 
 /* boutons de la frise chasse (play · export · géo) : LOOK IDENTIQUE aux boutons
    du rail droit (.grid-focus-btn) → verre dégradé, coins 14, survol/actif CYAN.
