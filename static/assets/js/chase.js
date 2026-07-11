@@ -36,13 +36,16 @@
   // couvre désormais TOUTE l'amplitude passée de la frise.)
   const RADAR_SRC_PREFIX = 'chase-radar-f';
   const RADAR_EAGER_NEIGHBORS = 3;   // frames radar préchargées de part et d'autre du curseur
-  const NOWCAST_SRC = 'chase-nowcast';
+  // AROME-PI (nowcast) : MÊME modèle par-frame que le radar (source image par échéance,
+  // texture pré-décodée → scrub instantané), mais MATÉRIALISÉ dans une fenêtre bornée
+  // autour du curseur : une image AROME-PI ≈ 22 Mo décodée, ×22 frames = trop (surtout
+  // mobile). On ne garde que ±NOWCAST_RADIUS frames matérialisées (créées à l'approche,
+  // détruites en s'éloignant). L'id inclut la couche active → changer d'onglet reconstruit.
+  const NOWCAST_PREFIX = 'chase-nc-';
+  const NOWCAST_RADIUS = 3;          // frames nowcast matérialisées de part et d'autre du curseur
   const FRRADAR_CORNERS = [[-9.965, 53.67], [14.4, 53.67], [14.4, 39.4], [-9.965, 39.4]];
   // Coins du domaine AROME-PI (lat 37.5–55.4, lon -12–16), ordre image source : HG, HD, BD, BG.
   const AROMEPI_CORNERS = [[-12, 55.4], [16, 55.4], [16, 37.5], [-12, 37.5]];
-  // PNG 256×256 transparent : placeholder décodable pour les sources image/raster.
-  const TRANSPARENT_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAABFUlEQVR4nO3BMQEAAADCoPVP7WsIoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAMBPAABPO1TCQAAAABJRU5ErkJggg==';
-  const TRANSPARENT_PX = TRANSPARENT_TILE;
 
   let active = false;
   let layersReady = false;
@@ -54,9 +57,9 @@
   let playing = false;
   let playTimer = null;
   let radarVisible = true;
-  let lastNowcastUrl = null;   // évite les updateImage redondants (→ AbortError)
   let swapToken = 0;           // invalide les bascules différées (masquage après décodage/chargement)
   const radarLayerIds = new Set();   // couches radar (mosaïque MF) par frame sur la carte
+  const nowcastLayerIds = new Set(); // couches nowcast (AROME-PI) matérialisées (fenêtre)
   let symbolAnchorId = null;   // 1er calque symbol du style : les couches chasse s'insèrent dessous
   let frRadarTimes = [];       // échéances mosaïque France dispo (ISO, ~2 h)
   const prefetched = new Set(); // URLs déjà préchargées (cache navigateur/serveur chaud)
@@ -126,22 +129,20 @@
   }
 
   // ── Couches chasse sur la carte de base ─────────────────────────────────────
+  // Radar (mosaïque MF) ET nowcast (AROME-PI) sont désormais des couches `image` PAR
+  // frame, créées à la demande (cf. syncRadarLayers / syncNowcastLayers). ensureLayers
+  // ne fait que repérer l'ancre d'insertion (sous les libellés) une fois le style prêt.
   function ensureLayers() {
     if (layersReady) return true;
     if (!map.isStyleLoaded || !map.isStyleLoaded()) return false;
-    if (map.getSource(NOWCAST_SRC)) { layersReady = true; return true; }
-    // insérer SOUS le premier calque de libellés → noms de villes/régions lisibles au-dessus.
     const sym = ((map.getStyle() || {}).layers || []).find((l) => l.type === 'symbol');
     symbolAnchorId = sym ? sym.id : null;
-    // AROME-PI (nowcast) : raster-resampling NEAREST → cellules à arêtes NETTES au zoom
-    // (au lieu de l'interpolation bilinéaire par défaut qui les rend floues).
-    map.addSource(NOWCAST_SRC, { type: 'image', url: TRANSPARENT_PX, coordinates: AROMEPI_CORNERS });
-    map.addLayer({ id: NOWCAST_SRC, type: 'raster', source: NOWCAST_SRC, paint: { 'raster-opacity': 0.82, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } }, symbolAnchorId || undefined);
     layersReady = true;
     return true;
   }
 
   function radarLayerId(fr) { return RADAR_SRC_PREFIX + fr.epoch; }
+  function nowcastLayerId(fr) { return NOWCAST_PREFIX + activeLayer + '-' + fr.epoch; }
 
   // Aligne les couches radar (mosaïque MF, une source `image` par frame) sur `frames` :
   // crée les nouvelles (masquées ; c'est updateRadarWindow qui rend éagère la fenêtre
@@ -162,7 +163,7 @@
       if (radarLayerIds.has(id)) continue;
       try {
         map.addSource(id, { type: 'image', url: frRadarImageUrl(iso), coordinates: FRRADAR_CORNERS });
-        // raster-resampling NEAREST : arêtes nettes des cellules (cf. NOWCAST_SRC).
+        // raster-resampling NEAREST : arêtes nettes des cellules.
         map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 0, 'raster-opacity-transition': { duration: 150 }, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } }, before);
         radarLayerIds.add(id);
       } catch (_) {}
@@ -199,6 +200,59 @@
     }
   }
 
+  // ── Nowcast AROME-PI : couches image par frame, fenêtre matérialisée bornée ──
+  // Crée les frames nowcast DANS ±NOWCAST_RADIUS du curseur (couche active), visibles à
+  // opacité 0 (texture décodée en avance → scrub instantané) ; retire celles hors fenêtre,
+  // d'une autre couche ou d'un autre run — SAUF la frame actuellement affichée (gardée
+  // jusqu'à la bascule pour ne pas laisser de trou). Idempotent.
+  function syncNowcastLayers() {
+    if (!layersReady) return;
+    const run = status && status.run;
+    // Fenêtre en INDEX GLOBAL (rien de matérialisé loin dans le radar ; près de la jonction,
+    // les 1res frames nowcast sont prêtes). HYSTÉRÉSIS : on MATÉRIALISE ±NOWCAST_RADIUS mais
+    // on ne RETIRE qu'au-delà de ±(NOWCAST_RADIUS+2) → moins de va-et-vient création/destruction
+    // sur les petits mouvements.
+    const want = new Map();   // à matérialiser (fenêtre serrée)
+    const keep = new Set();   // à garder si déjà présent (fenêtre large)
+    if (run) {
+      for (let i = Math.max(0, cursor - NOWCAST_RADIUS - 2); i <= Math.min(frames.length - 1, cursor + NOWCAST_RADIUS + 2); i += 1) {
+        const fr = frames[i];
+        if (fr.kind !== 'nowcast') continue;
+        const id = nowcastLayerId(fr);
+        keep.add(id);
+        if (Math.abs(i - cursor) <= NOWCAST_RADIUS) want.set(id, fr);
+      }
+    }
+    for (const id of Array.from(nowcastLayerIds)) {
+      if (keep.has(id)) continue;
+      let displayed = false, loaded = true;
+      try { displayed = (map.getPaintProperty(id, 'raster-opacity') || 0) > 0.05; } catch (_) {}
+      try { loaded = !map.getSource(id) || map.isSourceLoaded(id); } catch (_) { loaded = true; }
+      // ⚠ ne JAMAIS retirer une frame affichée (gardée jusqu'à la bascule) NI une source
+      // encore en chargement (removeSource interromprait le fetch → « no source » à la fin).
+      if (displayed || !loaded) continue;
+      try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {}
+      try { if (map.getSource(id)) map.removeSource(id); } catch (_) {}
+      nowcastLayerIds.delete(id);
+    }
+    const before = (symbolAnchorId && map.getLayer(symbolAnchorId)) ? symbolAnchorId : undefined;
+    for (const [id, fr] of want) {
+      if (nowcastLayerIds.has(id)) { setVis(id, true); continue; }
+      try {
+        map.addSource(id, { type: 'image', url: nowcastImageUrl(activeLayer, fr.t, run), coordinates: AROMEPI_CORNERS });
+        // raster-resampling NEAREST : arêtes nettes (cf. radar).
+        map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 0, 'raster-opacity-transition': { duration: 150 }, 'raster-resampling': 'nearest' }, layout: { visibility: 'visible' } }, before);
+        nowcastLayerIds.add(id);
+      } catch (_) {}
+    }
+  }
+
+  function setNowcastFrameOpacity(activeId) {
+    for (const id of nowcastLayerIds) {
+      try { map.setPaintProperty(id, 'raster-opacity', id === activeId ? 0.82 : 0); } catch (_) {}
+    }
+  }
+
   // Appelle cb une fois la source (re)chargée — sert à ne masquer l'ancienne couche
   // qu'une fois la nouvelle donnée décodée (sinon : trou visuel pendant le fetch+decode,
   // ~640 ms mesurés même en cache). Poll rAF : isSourceLoaded passe à false dès
@@ -212,6 +266,10 @@
     const need = Math.max(1, stableFrames || 1);
     let okStreak = 0;
     const tick = () => {
+      // Source retirée entre-temps (fenêtre nowcast glissante) → abandon SILENCIEUX.
+      // ⚠ getSource ne lève PAS d'erreur pour un id absent (contrairement à isSourceLoaded,
+      // qui émet en plus un event d'erreur loggé) → on teste l'existence AVANT.
+      if (!map.getSource(id)) return;
       let ok = false;
       try { ok = map.isSourceLoaded(id); } catch (_) {}
       okStreak = ok ? okStreak + 1 : 0;   // un faux « chargé » précoce retombe à false → reset
@@ -221,14 +279,19 @@
     requestAnimationFrame(tick);
   }
 
+  // Frame « prête » = couche présente, visible, source chargée — SANS lever d'erreur
+  // MapLibre (getLayer/getSource testés avant getLayoutProperty/isSourceLoaded).
+  function frameReady(id) {
+    try {
+      return !!map.getLayer(id)
+        && map.getLayoutProperty(id, 'visibility') === 'visible'
+        && !!map.getSource(id) && map.isSourceLoaded(id);
+    } catch (_) { return false; }
+  }
+
   function setVis(id, on) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
   }
-
-  // Changer la source vite (scrub rapide / export) annule le chargement en cours : MapLibre
-  // lève une AbortError SYNCHRONE (via l'AbortSignal). La nouvelle valeur est quand même
-  // posée → on avale l'erreur. (Le rejet de promesse éventuel est géré par unhandledrejection.)
-  function safeUpdateImage(id, url) { try { const s = map.getSource(id); if (s) s.updateImage({ url }); } catch (_) {} }
 
   // Masquer / réafficher la grille de score (toutes les couches `grid*`). La visibilité
   // persiste aux mises à jour de données (setData), donc régler une fois à la bascule suffit.
@@ -328,18 +391,18 @@
     }
     updateActive();
     syncRadarLayers();
+    syncNowcastLayers();
     if (fr.kind === 'radar') {
       const tok = ++swapToken;   // invalide toute bascule différée précédente
       const targetId = radarLayerId(fr);
       // « prête » = déjà éagère (visible AVANT le déplacement de la fenêtre) ET chargée.
-      // ⚠️ isSourceLoaded seul ment pour une couche encore masquée (aucune tuile
-      // demandée = « chargé ») → on capture la visibilité avant updateRadarWindow.
-      let ready = false;
-      try { ready = map.getLayoutProperty(targetId, 'visibility') === 'visible' && map.isSourceLoaded(targetId); } catch (_) {}
+      // ⚠️ isSourceLoaded seul ment pour une couche encore masquée → on capture la
+      // visibilité avant updateRadarWindow.
+      const ready = frameReady(targetId);
       updateRadarWindow();
       if (!radarVisible) {
         setRadarFrameOpacity(null);
-        setVis(NOWCAST_SRC, false);
+        setNowcastFrameOpacity(null);
         if (activityEl) { activityEl.textContent = ''; activityEl.className = 'chase-activity'; }
       } else {
         const reveal = () => {
@@ -347,39 +410,46 @@
           const cur = frames[cursor];
           if (!cur || cur.kind !== 'radar' || radarLayerId(cur) !== targetId) return;
           setRadarFrameOpacity(targetId);
-          setVis(NOWCAST_SRC, false);
-          updateRadarWindow();   // évince l'ancienne frame gardée visible hors fenêtre
+          setNowcastFrameOpacity(null);   // masque le nowcast une fois le radar prêt
+          updateRadarWindow();            // évince l'ancienne frame radar hors fenêtre
+          syncNowcastLayers();            // libère les couches nowcast désormais masquées
         };
         if (activityEl) { activityEl.textContent = 'MF 1 km'; activityEl.className = 'chase-activity lvl-low'; }
         if (ready) {
           reveal();   // texture déjà décodée (fenêtre éagère) → flip immédiat
         } else {
           // frame hors fenêtre (saut lointain) : l'ancienne couche reste affichée le
-          // temps que la texture de la cible se décode (updateRadarWindow vient de la
-          // rendre visible → chargement lancé), puis on bascule. Pas de trou.
+          // temps que la texture de la cible se décode, puis on bascule. Pas de trou.
           whenSourceLoaded(targetId, reveal, 5);
         }
       }
       schedulePointForCurrent();
     } else {
-      updateRadarWindow();   // garde la fenêtre éagère près de la jonction observé/prévu
+      // NOWCAST (AROME-PI) : MÊME mécanique par-frame que le radar → scrub instantané
+      // (texture pré-décodée dans la fenêtre) au lieu de l'updateImage ~434 ms d'avant.
+      const tok = ++swapToken;
+      const targetId = nowcastLayerId(fr);
+      const ready = frameReady(targetId);
+      updateRadarWindow();   // garde la fenêtre radar éagère près de la jonction
       if (status && status.run) {
-        const u = nowcastImageUrl(activeLayer, fr.t, status.run);
-        if (u !== lastNowcastUrl) { safeUpdateImage(NOWCAST_SRC, u); lastNowcastUrl = u; }
-        setVis(NOWCAST_SRC, true);
-        // Ne masquer le radar qu'une fois la nouvelle image DÉCODÉE : pendant le
-        // fetch+decode, l'ancienne couche reste affichée → plus de trou visuel à la
-        // jonction observé→prévu. Jeton : un scrub qui repart sur du radar entre-temps
-        // annule le masquage différé.
-        const tok = ++swapToken;
-        whenSourceLoaded(NOWCAST_SRC, () => {
+        const reveal = () => {
           if (tok !== swapToken || !active) return;
           const cur = frames[cursor];
-          if (!cur || cur.kind !== 'nowcast') return;
+          if (!cur || cur.kind !== 'nowcast' || nowcastLayerId(cur) !== targetId) return;
+          setNowcastFrameOpacity(targetId);
           setRadarFrameOpacity(null);
-        });
+          syncNowcastLayers();   // évince les frames hors fenêtre / d'une autre couche
+        };
+        if (ready) {
+          reveal();
+        } else {
+          // saut lointain / changement de couche : l'ancienne image reste affichée le
+          // temps que la cible se décode (syncNowcastLayers l'a créée), puis bascule.
+          whenSourceLoaded(targetId, reveal, 5);
+        }
       } else {
         setRadarFrameOpacity(null);
+        setNowcastFrameOpacity(null);
       }
       schedulePointForCurrent();
       updateActivity(fr);
@@ -985,9 +1055,13 @@
     setChaseMapTint(false);
     if (nowTimer) { window.clearInterval(nowTimer); nowTimer = null; }
     if (metaRunEl && savedMetaRun != null) { metaRunEl.textContent = savedMetaRun; savedMetaRun = null; }
-    setVis(NOWCAST_SRC, false);
-    // masquer AUSSI les couches radar par frame.
+    // masquer les couches radar par frame + libérer les couches nowcast (mémoire).
     for (const id of radarLayerIds) setVis(id, false);
+    for (const id of Array.from(nowcastLayerIds)) {
+      try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {}
+      try { if (map.getSource(id)) map.removeSource(id); } catch (_) {}
+      nowcastLayerIds.delete(id);
+    }
     swapToken++;
     if (layersReady) hideGrid(false);   // réafficher la grille de score
     if (refreshTimer) { window.clearInterval(refreshTimer); refreshTimer = null; }
@@ -1024,5 +1098,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '275';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '278';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
