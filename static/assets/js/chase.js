@@ -967,7 +967,10 @@
     }
     if (!chaseClickBound) { map.on('click', onChaseClick); chaseClickBound = true; }
     if (refreshTimer) window.clearInterval(refreshTimer);
-    refreshTimer = window.setInterval(refreshData, 120000);
+    // 60 s (au lieu de 120) : le radar MF publie une échéance /5 min avec ~13 min de
+    // latence de production ; un refresh plus prompt fait suivre le « direct » au plus
+    // près de la dernière mosaïque ingérée (status = JSON léger, coût négligeable).
+    refreshTimer = window.setInterval(refreshData, 60000);
     await loadData();
   }
 
@@ -1021,5 +1024,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '274';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '275';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
