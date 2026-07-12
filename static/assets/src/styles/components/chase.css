@@ -374,6 +374,8 @@ body.chase-mode .meta-stack .meta-version {
 .chase-pos-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; font-size: 0.82rem; color: rgba(190, 205, 226, 0.82); }
 .chase-pos-list strong { color: #ecfeff; font-weight: 700; font-variant-numeric: tabular-nums; }
 .chase-pos-list .chase-unit { margin-left: 1px; font-weight: 500; color: rgba(190, 205, 226, 0.6); }
+/* Alerte d'approche (moteur cellules) : bandeau ambre sous le verdict du popup position. */
+.chase-pos-eta { margin: 6px 0 2px; padding: 5px 8px; border-radius: 8px; font-size: 0.72rem; font-weight: 600; color: #ffd28a; background: rgba(240, 160, 40, 0.14); border: 1px solid rgba(240, 160, 40, 0.35); }
 /* Sous-titre de section dans le popup (Observé radar MF / Prévu AROME-PI). */
 .chase-pos-head { margin: 9px 0 5px; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(148, 173, 204, 0.72); display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .chase-pos-head span { font-variant-numeric: tabular-nums; font-weight: 700; color: rgba(190, 205, 226, 0.6); letter-spacing: 0; }

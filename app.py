@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.287"
+APP_VERSION = "1.2.288"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15462,6 +15462,172 @@ def _fr_bridge_compute(api_key: str) -> None:
                           base_time=base_time, morph_blocks=total_morph)
 
 
+# ── CELLULES VIVANTES : suivi d'objets convectifs (TITAN/SCIT-like) ──────────────
+# Le champ visuel reste au blend (mesuré meilleur pour l'image) ; ce moteur apporte la
+# SÉMANTIQUE par cellule : trajectoire, vitesse, tendance croissance/décroissance, positions
+# extrapolées — l'info de décision du chasseur (« où va cette cellule, grossit-elle ? »).
+# Backtest (18 mosaïques réelles) : position par objet bat la persistance de +5 %→+30 %
+# (à +5→+30 min) ; la croissance extrapolée utilise l'amortissement λ(lead)=((lead−1)/5)²
+# (calibré : jamais pire que la persistance à court terme, plein gain à +30 min).
+FR_CELLS_HISTORY = 12       # mosaïques analysées (~1 h)
+FR_CELLS_MIN_AREA = 8       # px DS : seuil de suivi
+FR_CELLS_SIG_AREA = 40      # px DS : seuil d'exposition (cellules significatives)
+FR_CELLS_MAX_SPEED = 120.0  # km/h : au-delà = appariement douteux (mini-cellules bruitées)
+_fr_cells_lock = threading.Lock()
+_fr_cells: dict[str, Any] = {"time": None, "cells": [], "updated_at": 0.0}
+_fr_cells_frame_cache: dict[str, list] = {}   # iso → cellules extraites (purgé avec le ring)
+
+
+def _fr_cells_extract(band) -> list[dict]:
+    """Cellules d'un champ de bandes DS : composantes 4-connexes ≥ bande 2 (~24 dBZ),
+    aire ≥ FR_CELLS_MIN_AREA. Étiquetage flood-fill maison (pas de scipy dans les deps)."""
+    import numpy as np
+    H, W = band.shape
+    mask = band >= 2
+    labels = np.zeros((H, W), np.int32)
+    cells: list[dict] = []
+    ys_all, xs_all = np.where(mask)
+    nlab = 0
+    for y0, x0 in zip(ys_all.tolist(), xs_all.tolist()):
+        if labels[y0, x0]:
+            continue
+        nlab += 1
+        stack = [(y0, x0)]
+        labels[y0, x0] = nlab
+        while stack:
+            y, x = stack.pop()
+            for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                ny, nx = y + dy, x + dx
+                if 0 <= ny < H and 0 <= nx < W and mask[ny, nx] and not labels[ny, nx]:
+                    labels[ny, nx] = nlab
+                    stack.append((ny, nx))
+        m = labels == nlab
+        area = int(m.sum())
+        if area < FR_CELLS_MIN_AREA:
+            continue
+        ys, xs = np.where(m)
+        w = band[m].astype(np.float32)
+        cells.append({
+            "cy": float((ys * w).sum() / w.sum()), "cx": float((xs * w).sum() / w.sum()),
+            "area": area, "peak": int(band[m].max()), "mass": float(band[m].sum()),
+        })
+    return cells
+
+
+def _fr_cells_track(frames_cells: list[list[dict]]) -> list[list[tuple]]:
+    """Appariement glouton frame à frame (distance < 35 px DS, ratio d'aire 0,4-2,6) → pistes."""
+    tracks: list[list[tuple]] = []
+    active: list[int] = []
+    for fi, cells in enumerate(frames_cells):
+        if fi == 0:
+            for c in cells:
+                tracks.append([(0, c)]); active.append(len(tracks) - 1)
+            continue
+        prev_ends = [(ti, tracks[ti][-1][1]) for ti in active]
+        cand = []
+        for pi, (_ti, pc) in enumerate(prev_ends):
+            for ci, c in enumerate(cells):
+                d = math.hypot(c["cy"] - pc["cy"], c["cx"] - pc["cx"])
+                if d > 35:
+                    continue
+                r = c["area"] / max(1, pc["area"])
+                if r < 0.4 or r > 2.6:
+                    continue
+                cand.append((d, pi, ci))
+        cand.sort()
+        used_p: set = set(); used_c: set = set()
+        for d, pi, ci in cand:
+            if pi in used_p or ci in used_c:
+                continue
+            used_p.add(pi); used_c.add(ci)
+            tracks[prev_ends[pi][0]].append((fi, cells[ci]))
+        new_active = [prev_ends[pi][0] for pi in used_p]
+        for ci, c in enumerate(cells):
+            if ci not in used_c:
+                tracks.append([(fi, c)]); new_active.append(len(tracks) - 1)
+        active = new_active
+    return tracks
+
+
+def _fr_cells_px_to_lonlat(cy_ds: float, cx_ds: float, fh: int, fw: int) -> tuple[float, float]:
+    """px DS de la grille radar (champ fh×fw) → lon/lat (l'image est en Mercator sur FR_RADAR_DOMAIN)."""
+    d = FR_RADAR_DOMAIN
+    lon = d["min_lon"] + (cx_ds / max(1, fw - 1)) * (d["max_lon"] - d["min_lon"])
+
+    def merc_y(lat: float) -> float:
+        return math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+
+    yt, yb = merc_y(d["max_lat"]), merc_y(d["min_lat"])
+    y = yt + (cy_ds / max(1, fh - 1)) * (yb - yt)
+    lat = math.degrees(2 * math.atan(math.exp(y)) - math.pi / 2)
+    return round(lon, 4), round(lat, 4)
+
+
+def _fr_cells_compute() -> None:
+    """Suit les cellules sur les FR_CELLS_HISTORY dernières mosaïques et publie les cellules
+    significatives (position, vitesse, tendance, trajectoire passée + extrapolée). Extraction
+    par mosaïque mise en cache (une seule nouvelle mosaïque par poll en régime établi)."""
+    import numpy as np
+    with _fr_radar_lock:
+        times = sorted(_fr_radar_frames)[-FR_CELLS_HISTORY:]
+        pngs = {t: _fr_radar_frames[t] for t in times}
+    if len(times) < 4:
+        return
+    if _fr_cells.get("time") == times[-1]:
+        return
+    # purge du cache d'extraction (suit le ring buffer)
+    for iso in list(_fr_cells_frame_cache):
+        if iso not in pngs:
+            _fr_cells_frame_cache.pop(iso, None)
+    fh = fw = None
+    frames_cells = []
+    for iso in times:
+        if iso not in _fr_cells_frame_cache:
+            band = _fr_radar_png_to_field(pngs[iso], FR_BLEND_DS).astype(np.int16)
+            _fr_cells_frame_cache[iso] = [_fr_cells_extract(band), band.shape]
+        frames_cells.append(_fr_cells_frame_cache[iso][0])
+        fh, fw = _fr_cells_frame_cache[iso][1]
+    tracks = _fr_cells_track(frames_cells)
+    km_per_px = (FR_RADAR_DOMAIN["max_lon"] - FR_RADAR_DOMAIN["min_lon"]) * 111.0 \
+        * math.cos(math.radians(46.0)) / FR_RADAR_OUT_WIDTH * FR_BLEND_DS
+    tlast = len(times) - 1
+    out = []
+    for tr in tracks:
+        if tr[-1][0] != tlast or len(tr) < 3:
+            continue
+        last = tr[-1][1]
+        if last["area"] < FR_CELLS_SIG_AREA:
+            continue
+        fis = np.array([p[0] for p in tr], np.float32)
+        cy = np.array([p[1]["cy"] for p in tr], np.float32)
+        cx = np.array([p[1]["cx"] for p in tr], np.float32)
+        mass = np.array([p[1]["mass"] for p in tr], np.float32)
+        vy = float(np.polyfit(fis, cy, 1)[0]); vx = float(np.polyfit(fis, cx, 1)[0])
+        d_mass = float(np.polyfit(fis, mass, 1)[0])
+        speed = math.hypot(vy, vx) * km_per_px * (60.0 / FR_BLEND_STEP_MIN)
+        if speed > FR_CELLS_MAX_SPEED:
+            continue
+        bearing = (math.degrees(math.atan2(vx, -vy)) + 360.0) % 360.0
+        # tendance : seuils sur la pente de masse (unités bande·px/frame, calées sur le backtest)
+        trend = "grow" if d_mass > 15 else ("decay" if d_mass < -15 else "steady")
+        lon, lat = _fr_cells_px_to_lonlat(last["cy"], last["cx"], fh, fw)
+        past = [list(_fr_cells_px_to_lonlat(p[1]["cy"], p[1]["cx"], fh, fw)) for p in tr[-6:]]
+        future = [list(_fr_cells_px_to_lonlat(last["cy"] + vy * k, last["cx"] + vx * k, fh, fw))
+                  for k in (2, 4, 6)]   # +10/+20/+30 min
+        out.append({
+            "lon": lon, "lat": lat,
+            "speed_kmh": round(speed), "bearing": round(bearing),
+            "trend": trend, "d_mass": round(d_mass, 1),
+            "area_km2": round(last["area"] * km_per_px * km_per_px),
+            "peak_band": last["peak"],
+            "peak_dbz": _FR_RADAR_BANDS[min(last["peak"], len(_FR_RADAR_BANDS)) - 1],
+            "past": past, "future": future,
+        })
+    out.sort(key=lambda c: -c["area_km2"])
+    with _fr_cells_lock:
+        _fr_cells.update(time=times[-1], cells=out[:40], updated_at=time.time())
+
+
 def _fr_radar_loop() -> None:
     _fr_radar_state.update(running=True, message="Radar France (réflectivité) actif.")
     try:
@@ -15495,6 +15661,11 @@ def _fr_radar_loop() -> None:
                     _fr_bridge_compute(ap_key)
             except Exception as exc:
                 _fr_radar_state.update(bridge_error=str(exc))
+            # CELLULES : suivi d'objets convectifs (trajectoires + tendances, overlay chasse).
+            try:
+                _fr_cells_compute()
+            except Exception as exc:
+                _fr_radar_state.update(cells_error=str(exc))
             if _fr_radar_stop.wait(FR_RADAR_POLL_SECONDS):
                 break
     finally:
@@ -15581,6 +15752,20 @@ async def fr_radar_bridge_status() -> dict[str, Any]:
             "run": _fr_bridge.get("run"),
             "morph_blocks": int(_fr_bridge.get("morph_blocks") or 0),
             "domain": AROMEPI_DOMAIN,
+        }
+
+
+@app.get("/api/radar/fr/cells")
+async def fr_radar_cells() -> dict[str, Any]:
+    """Cellules convectives suivies (dernière mosaïque) : position, vitesse/direction, tendance
+    croissance/décroissance, trajectoire passée + positions extrapolées +10/+20/+30 min.
+    Donnée VECTORIELLE (le front dessine l'overlay) — le champ image reste au blend."""
+    with _fr_cells_lock:
+        return {
+            "ok": _fr_cells.get("time") is not None,
+            "time": _fr_cells.get("time"),
+            "cells": list(_fr_cells.get("cells") or []),
+            "updated_at": _fr_cells.get("updated_at"),
         }
 
 

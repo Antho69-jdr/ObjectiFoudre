@@ -64,6 +64,8 @@
   let frRadarTimes = [];       // échéances mosaïque France dispo (ISO, ~2 h)
   let frBlend = { times: [], speed_kmh: 0, advected: false };  // nowcast par advection radar (0-30 min)
   let frBridge = { times: [] };  // PONT blend→AROME-PI (réflectivité) : morph gaté + fondu pondéré
+  let frCells = { time: null, cells: [] };   // cellules suivies (moteur objets serveur)
+  let cellsVisible = true;                    // toggle overlay cellules (bouton rail gauche)
   const prefetched = new Set(); // URLs déjà préchargées (cache navigateur/serveur chaud)
   let prefetchGen = 0;          // jeton pour annuler un préchargement en cours
   let prefetchRun = null;       // run AROME-PI préchargé (réinit du set si le run change)
@@ -269,6 +271,91 @@
     }
   }
 
+  // ── Overlay CELLULES SUIVIES (moteur objets serveur) ──────────────────────────
+  // Donnée vectorielle /api/radar/fr/cells : le champ image reste au blend (mesuré meilleur),
+  // les cellules apportent la SÉMANTIQUE — trajectoire passée (trait plein), prévue +30 min
+  // (pointillés), point coloré par TENDANCE (rouge=croissance, bleu=décroissance) + vitesse.
+  const CELLS_SRC = 'chase-cells';
+  const CELL_TREND = { grow: '#ff5a3c', decay: '#4ea0ff', steady: '#e6e05f' };
+  const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+  function bearingCard(b) { return CARDINALS[Math.round(((b % 360) + 360) % 360 / 45) % 8]; }
+
+  function cellsGeojson() {
+    const feats = [];
+    for (const c of (frCells.cells || [])) {
+      const color = CELL_TREND[c.trend] || CELL_TREND.steady;
+      if (Array.isArray(c.past) && c.past.length > 1) {
+        feats.push({ type: 'Feature', properties: { kind: 'past', color }, geometry: { type: 'LineString', coordinates: c.past } });
+      }
+      if (Array.isArray(c.future) && c.future.length && c.speed_kmh > 5) {
+        feats.push({ type: 'Feature', properties: { kind: 'future', color }, geometry: { type: 'LineString', coordinates: [[c.lon, c.lat]].concat(c.future) } });
+      }
+      const arrow = c.trend === 'grow' ? ' ▲' : (c.trend === 'decay' ? ' ▼' : '');
+      const label = c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}${arrow}` : `statique${arrow}`;
+      feats.push({ type: 'Feature', properties: { kind: 'pt', color, label }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } });
+    }
+    return { type: 'FeatureCollection', features: feats };
+  }
+
+  function syncCellsOverlay() {
+    if (!layersReady || !active) return;
+    const gj = cellsGeojson();
+    const src = map.getSource(CELLS_SRC);
+    if (src) {
+      try { src.setData(gj); } catch (_) {}
+    } else {
+      try {
+        map.addSource(CELLS_SRC, { type: 'geojson', data: gj });
+        // au-dessus de tout (labels villes inclus) : c'est l'info de décision, elle prime.
+        map.addLayer({ id: CELLS_SRC + '-past', type: 'line', source: CELLS_SRC,
+          filter: ['==', ['get', 'kind'], 'past'],
+          paint: { 'line-color': ['get', 'color'], 'line-width': 1.5, 'line-opacity': 0.55 } });
+        map.addLayer({ id: CELLS_SRC + '-traj', type: 'line', source: CELLS_SRC,
+          filter: ['==', ['get', 'kind'], 'future'],
+          paint: { 'line-color': ['get', 'color'], 'line-width': 2, 'line-opacity': 0.9, 'line-dasharray': [2, 2] } });
+        map.addLayer({ id: CELLS_SRC + '-pt', type: 'circle', source: CELLS_SRC,
+          filter: ['==', ['get', 'kind'], 'pt'],
+          paint: { 'circle-radius': 5, 'circle-color': ['get', 'color'],
+                   'circle-stroke-color': '#0b0f14', 'circle-stroke-width': 1.5, 'circle-opacity': 0.95 } });
+        map.addLayer({ id: CELLS_SRC + '-lbl', type: 'symbol', source: CELLS_SRC,
+          filter: ['==', ['get', 'kind'], 'pt'],
+          layout: { 'text-field': ['get', 'label'], 'text-font': ['Montserrat Medium', 'Open Sans Bold'],
+                    'text-size': 11, 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-allow-overlap': false },
+          paint: { 'text-color': ['get', 'color'], 'text-halo-color': '#0b0f14', 'text-halo-width': 1.3 } });
+      } catch (_) {}
+    }
+    applyCellsVisibility();
+  }
+
+  function applyCellsVisibility() {
+    const vis = (active && cellsVisible) ? 'visible' : 'none';
+    for (const suf of ['-past', '-traj', '-pt', '-lbl']) {
+      try { if (map.getLayer(CELLS_SRC + suf)) map.setLayoutProperty(CELLS_SRC + suf, 'visibility', vis); } catch (_) {}
+    }
+  }
+
+  // Menace pour un point (popup position) : cellule dont la trajectoire passe à < 15 km,
+  // ETA = instant d'approche minimale (approx plate carrée locale, largement suffisant).
+  function cellThreat(lat, lon) {
+    let best = null;
+    for (const c of (frCells.cells || [])) {
+      if (!(c.speed_kmh > 8)) continue;
+      const br = c.bearing * Math.PI / 180;
+      const vN = c.speed_kmh * Math.cos(br), vE = c.speed_kmh * Math.sin(br);
+      const dN = (lat - c.lat) * 111.0;
+      const dE = (lon - c.lon) * 111.0 * Math.cos(lat * Math.PI / 180);
+      const v2 = vN * vN + vE * vE;
+      const tStar = (dN * vN + dE * vE) / v2;          // heures avant approche minimale
+      if (tStar <= 0 || tStar > 1.5) continue;          // s'éloigne, ou > 90 min
+      const cN = dN - vN * tStar, cE = dE - vE * tStar;
+      const dMin = Math.hypot(cN, cE);
+      if (dMin > 15) continue;
+      const eta = Math.max(1, Math.round(tStar * 60));
+      if (!best || eta < best.eta) best = { eta, cell: c };
+    }
+    return best;
+  }
+
   // Appelle cb une fois la source (re)chargée — sert à ne masquer l'ancienne couche
   // qu'une fois la nouvelle donnée décodée (sinon : trou visuel pendant le fetch+decode,
   // ~640 ms mesurés même en cache). Poll rAF : isSourceLoaded passe à false dès
@@ -329,11 +416,15 @@
     try { bl = await (await fetch('/api/radar/fr/blend/status')).json(); } catch (_) {}
     let br = null;
     try { br = await (await fetch('/api/radar/fr/bridge/status')).json(); } catch (_) {}
+    let ce = null;
+    try { ce = await (await fetch('/api/radar/fr/cells')).json(); } catch (_) {}
     if (token !== loadToken) return;
     status = (st && st.ok) ? st : status;
     frRadarTimes = (fr && fr.ok && Array.isArray(fr.times)) ? fr.times : [];
     frBlend = (bl && bl.ok) ? bl : { times: [], speed_kmh: 0, advected: false };
     frBridge = (br && br.ok && Array.isArray(br.times)) ? br : { times: [] };
+    frCells = (ce && ce.ok && Array.isArray(ce.cells)) ? ce : { time: null, cells: [] };
+    syncCellsOverlay();
     if (status && status.run !== prefetchRun) { prefetched.clear(); prefetchRun = status.run; }
     buildTimeline();
   }
@@ -916,10 +1007,10 @@
     if (token !== loadToken) return;
     if (!popup || !popup.isOpen()) return;        // popup fermé entre-temps
     if (!data || !data.ok) { showPopup(lat, lon, '<div class="chase-pop-empty">Conditions indisponibles ici.</div>'); return; }
-    showPopup(lat, lon, renderPositionHTML(data.values || {}, t, (obs && obs.ok && obs.in_domain) ? obs : null));
+    showPopup(lat, lon, renderPositionHTML(data.values || {}, t, (obs && obs.ok && obs.in_domain) ? obs : null, { lat, lon }));
   }
 
-  function renderPositionHTML(v, t, obs) {
+  function renderPositionHTML(v, t, obs, pos) {
     const dbz = v.reflectivity, cape = v.cape, gust = v.gusts, hail = v.hail, graupel = v.graupel;
     // verdict : priorité à l'observé (dBZ mesuré) si disponible, sinon nowcast AROME-PI.
     const obsV = obs && obs.values || {};
@@ -932,6 +1023,13 @@
     else { verdict = '🌤 Calme'; cls = 'sev-low'; }
     const hailTxt = (typeof hail === 'number' && hail > 0.5) ? ' · grêle probable' : '';
     let html = `<div class="chase-verdict ${cls}">${verdict}${hailTxt}<span class="chase-verdict-time">${fmtClock(Math.floor(new Date(t).getTime() / 1000))}</span></div>`;
+    // Alerte d'approche (moteur cellules) : trajectoire passant à < 15 km de ce point.
+    const threat = pos ? cellThreat(pos.lat, pos.lon) : null;
+    if (threat) {
+      const tc = threat.cell;
+      const trendTxt = tc.trend === 'grow' ? 'en intensification' : (tc.trend === 'decay' ? 'en affaiblissement' : 'stable');
+      html += `<div class="chase-pos-eta">⚠ Cellule en approche · ~${threat.eta} min · ${tc.speed_kmh} km/h ${bearingCard(tc.bearing)} · ${trendTxt}</div>`;
+    }
     // Bloc OBSERVÉ (radar MF) — les valeurs mesurées au sol, si la mosaïque couvre le point.
     if (obs && (typeof obsV.reflectivity === 'number' || typeof obsV.echo_top_km === 'number' || typeof obsV.rain_prob === 'number')) {
       const obsRows = [
@@ -1131,6 +1229,7 @@
       nowcastLayerIds.delete(id);
     }
     swapToken++;
+    applyCellsVisibility();              // masque l'overlay cellules (active=false)
     if (layersReady) hideGrid(false);   // réafficher la grille de score
     if (refreshTimer) { window.clearInterval(refreshTimer); refreshTimer = null; }
     prefetchGen++;
@@ -1150,6 +1249,13 @@
     const btn = e.target.closest('[data-chase-layer]');
     if (btn) setLayer(btn.dataset.chaseLayer);
   });
+  const cellsBtn = document.getElementById('chaseCellsBtn');
+  cellsBtn?.addEventListener('click', () => {
+    cellsVisible = !cellsVisible;
+    cellsBtn.classList.toggle('active', cellsVisible);
+    cellsBtn.setAttribute('aria-pressed', cellsVisible ? 'true' : 'false');
+    applyCellsVisibility();
+  });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && active) deactivate(); });
   // Remplacer vite l'image/les tuiles d'une source (scrub rapide / export) annule le
   // chargement en cours → AbortError, que MapLibre journalise directement via console.error
@@ -1166,5 +1272,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '287';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '288';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
