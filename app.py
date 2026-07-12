@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.285"
+APP_VERSION = "1.2.286"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15253,12 +15253,14 @@ def _fr_radar_blend_compute() -> None:
     km_per_px = (d["max_lon"] - d["min_lon"]) * 111.0 * math.cos(math.radians(46.0)) / FR_RADAR_OUT_WIDTH
     advected = False
     fy_full = fx_full = None
+    flow_ds = None            # flux DS du blend, réutilisé par le PONT pour advecter au-delà de +30
     speed_kmh = 0.0
     if base >= 1:
         f0 = _fr_radar_png_to_field(recent[ordered[-1 - base]], FR_BLEND_DS)
         f1 = _fr_radar_png_to_field(recent[ordered[-1]], FR_BLEND_DS)
         fy, fx, advected = _fr_radar_dense_flow(f0.astype(np.float32), f1.astype(np.float32), base)
         if advected:
+            flow_ds = (fy, fx)
             # champ DS → full-res (taille ×FR_BLEND_DS, valeurs ×FR_BLEND_DS).
             fh, fw = latest_arr.shape[:2]
             fy_full = np.asarray(Image.fromarray(fy).resize((fw, fh), Image.BILINEAR), np.float32) * FR_BLEND_DS
@@ -15279,7 +15281,7 @@ def _fr_radar_blend_compute() -> None:
         blend_times.append(iso)
     with _fr_blend_lock:
         _fr_blend.update(base_time=latest, speed_kmh=round(speed_kmh), frames=frames,
-                         times=blend_times, advected=advected)
+                         times=blend_times, advected=advected, flow_ds=flow_ds)
 
 
 # ── PONT blend/radar → AROME-PI : morph gaté + fondu pondéré par skill ────────────
@@ -15375,22 +15377,32 @@ def _fr_bridge_compute(api_key: str) -> None:
     run = caps.get("run")
     ftimes = list(caps.get("forecast_times") or [])
     with _fr_blend_lock:
-        blend_frames = dict(_fr_blend.get("frames") or {})
         blend_times = list(_fr_blend.get("times") or [])
         base_time = _fr_blend.get("base_time")
+        flow_ds = _fr_blend.get("flow_ds")
     if not run or not ftimes or not blend_times or not base_time:
         return
     with _fr_bridge_lock:
-        if _fr_bridge.get("base_time") == base_time and _fr_bridge.get("run") == run:
+        # ne PAS sauter si le dernier calcul n'a rien produit (échec AROME-PI transitoire à froid
+        # : images WMS pas encore rendues → on retente au poll suivant, sinon on resterait vide).
+        if (_fr_bridge.get("base_time") == base_time and _fr_bridge.get("run") == run
+                and _fr_bridge.get("times")):
             return
     import numpy as np
     from PIL import Image
-    last_blend_iso = blend_times[-1]
-    radar_png = blend_frames.get(last_blend_iso)
-    last_blend_dt = _parse_meteofrance_datetime(last_blend_iso)
-    if not radar_png or last_blend_dt is None:
+    with _fr_radar_lock:
+        base_png = _fr_radar_frames.get(base_time)
+    base_dt = _parse_meteofrance_datetime(base_time)
+    last_blend_dt = _parse_meteofrance_datetime(blend_times[-1])
+    if not base_png or base_dt is None or last_blend_dt is None:
         return
-    radar_rgba = np.asarray(Image.open(io.BytesIO(radar_png)).convert("RGBA"))
+    base_rgba = np.asarray(Image.open(io.BytesIO(base_png)).convert("RGBA"))
+    bh, bw = base_rgba.shape[:2]
+    # flux blend full-res (advection radar) — None si persistance (radar tenu en place).
+    fyb = fxb = None
+    if flow_ds is not None:
+        fyb = np.asarray(Image.fromarray(flow_ds[0]).resize((bw, bh), Image.BILINEAR), np.float32) * FR_BLEND_DS
+        fxb = np.asarray(Image.fromarray(flow_ds[1]).resize((bw, bh), Image.BILINEAR), np.float32) * FR_BLEND_DS
     bridge_ts = []
     for t in ftimes:
         dt = _parse_meteofrance_datetime(t)
@@ -15406,7 +15418,12 @@ def _fr_bridge_compute(api_key: str) -> None:
             continue
         arome_rgba = np.asarray(Image.open(io.BytesIO(arome_png)).convert("RGBA"))
         fh, fw = arome_rgba.shape[:2]
-        radar_on_aro = _fr_radar_to_aromepi_grid(radar_rgba, fh, fw)
+        # côté radar = mosaïque de base ADVECTÉE jusqu'à l'échéance t (advection Lagrangienne
+        # CONTINUE au-delà de +30, au lieu de figer la dernière frame du blend).
+        dt = _parse_meteofrance_datetime(t)
+        k = (dt - base_dt).total_seconds() / (60.0 * FR_BLEND_STEP_MIN) if dt else 0.0
+        radar_adv = _fr_radar_warp(base_rgba, fyb, fxb, k) if fyb is not None else base_rgba
+        radar_on_aro = _fr_radar_to_aromepi_grid(radar_adv, fh, fw)
         # poids skill : radar décroît sur la fenêtre (continuité avec le blend ≈1 → AROME-PI).
         w = 0.85 - 0.70 * (i / max(1, FR_BRIDGE_LEADS - 1))
         fr = _fr_radar_field_from_rgba(radar_on_aro, FR_BLEND_DS)
@@ -15415,10 +15432,19 @@ def _fr_bridge_compute(api_key: str) -> None:
         total_morph += n
         fyf = np.asarray(Image.fromarray(fy).resize((fw, fh), Image.BILINEAR), np.float32) * FR_BLEND_DS
         fxf = np.asarray(Image.fromarray(fx).resize((fw, fh), Image.BILINEAR), np.float32) * FR_BLEND_DS
-        # morph croisé : radar poussé vers AROME de (1-w), AROME reculé vers radar de w.
-        Ir = _fr_radar_warp(radar_on_aro, fyf, fxf, 1.0 - w).astype(np.float32)
-        Ia = _fr_radar_warp(arome_rgba, fyf, fxf, -w).astype(np.float32)
-        out = (w * Ir + (1.0 - w) * Ia).astype(np.uint8)
+        # morph croisé : cellules CORRESPONDANTES alignées (radar avancé (1-w), AROME reculé w).
+        Ir = _fr_radar_warp(radar_on_aro, fyf, fxf, 1.0 - w)
+        Ia = _fr_radar_warp(arome_rgba, fyf, fxf, -w)
+        # COMPOSITION AU VAINQUEUR (fin du fondu-fantôme) : chaque pixel prend la COULEUR de la
+        # source dont l'opacité PONDÉRÉE est la plus forte (pas de moyenne des couleurs = plus de
+        # boue) ; alpha de sortie = cette opacité max (le radar s'estompe / AROME se renforce sur
+        # la fenêtre). Là où ça se correspond, le morph a déjà aligné les deux → sélection cohérente.
+        ra = Ir[:, :, 3].astype(np.float32) * w
+        aa = Ia[:, :, 3].astype(np.float32) * (1.0 - w)
+        use_r = ra >= aa
+        out = np.zeros((fh, fw, 4), np.uint8)
+        out[:, :, :3] = np.where(use_r[:, :, None], Ir[:, :, :3], Ia[:, :, :3])
+        out[:, :, 3] = np.maximum(ra, aa).astype(np.uint8)
         buf = io.BytesIO()
         Image.fromarray(out, "RGBA").save(buf, format="PNG")
         frames[t] = buf.getvalue()
