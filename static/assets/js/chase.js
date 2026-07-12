@@ -378,11 +378,17 @@
     }
     // BLEND : frames advectées (radar extrapolé) qui comblent le trou de latence et le
     // 0-30 min à venir, ancrées sur l'observation. Priment sur AROME-PI dans leur plage.
+    // Si le mouvement n'est PAS fiable (persistance), les frames FUTURES seraient identiques
+    // à la dernière mosaïque → on ne garde que le comblement du trou jusqu'à ~maintenant
+    // (AROME-PI, qui a de la physique, couvre le proche futur).
     let lastBlendEpoch = 0;
     const blendTimes = (frBlend && Array.isArray(frBlend.times)) ? frBlend.times : [];
+    const blendAdvected = !!(frBlend && frBlend.advected);
     for (const iso of blendTimes) {
       const epoch = Math.floor(new Date(iso).getTime() / 1000);
-      if (Number.isFinite(epoch)) { out.push({ kind: 'blend', epoch, iso }); lastBlendEpoch = Math.max(lastBlendEpoch, epoch); }
+      if (!Number.isFinite(epoch)) continue;
+      if (!blendAdvected && epoch > nowSec + 60) continue;   // persistance : pas de futur identique
+      out.push({ kind: 'blend', epoch, iso }); lastBlendEpoch = Math.max(lastBlendEpoch, epoch);
     }
     if (status && Array.isArray(status.forecast_times)) {
       for (const t of status.forecast_times) {
@@ -433,9 +439,10 @@
           updateRadarWindow();            // évince l'ancienne frame radar hors fenêtre
           syncNowcastLayers();            // libère les couches nowcast désormais masquées
         };
-        // badge : « MF 1 km » (observé) ou « extrapolé +vitesse » (blend advecté).
+        // badge : « MF 1 km » (observé) / « extrapolé · N km/h » (advection réelle) /
+        // « obs. maintenue » (persistance, mouvement non fiable → comblement du trou).
         if (activityEl) {
-          if (isBlend) { activityEl.textContent = frBlend.advected ? ('extrapolé · ' + frBlend.speed_kmh + ' km/h') : 'extrapolé'; activityEl.className = 'chase-activity lvl-low'; }
+          if (isBlend) { activityEl.textContent = frBlend.advected ? ('extrapolé · ' + frBlend.speed_kmh + ' km/h') : 'obs. maintenue'; activityEl.className = 'chase-activity lvl-low'; }
           else { activityEl.textContent = 'MF 1 km'; activityEl.className = 'chase-activity lvl-low'; }
         }
         if (ready) {
@@ -482,7 +489,9 @@
   // Indicateur d'activité : part du domaine portant de la donnée → « rien / faible / … ».
   const ACTIVITY_LABELS = { none: 'rien à signaler', low: 'activité faible', moderate: 'activité modérée', high: 'activité forte' };
   function updateActivity(fr) {
-    if (!activityEl || !status || !status.run) return;
+    // garde-fou : l'activité n'a de sens que pour une VRAIE échéance AROME-PI (nowcast, qui
+    // porte `.t`). Sans ça, une frame sans `.t` déclenche `activity?time=undefined` → 422.
+    if (!activityEl || !status || !status.run || !fr || !fr.t) return;
     if (activityTimer) window.clearTimeout(activityTimer);
     activityEl.textContent = '…'; activityEl.className = 'chase-activity';
     const key = activeLayer, t = fr.t, run = status.run;
@@ -1144,5 +1153,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '281';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '282';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
