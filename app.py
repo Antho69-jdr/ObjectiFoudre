@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.286"
+APP_VERSION = "1.2.287"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15424,23 +15424,32 @@ def _fr_bridge_compute(api_key: str) -> None:
         k = (dt - base_dt).total_seconds() / (60.0 * FR_BLEND_STEP_MIN) if dt else 0.0
         radar_adv = _fr_radar_warp(base_rgba, fyb, fxb, k) if fyb is not None else base_rgba
         radar_on_aro = _fr_radar_to_aromepi_grid(radar_adv, fh, fw)
-        # poids skill : radar décroît sur la fenêtre (continuité avec le blend ≈1 → AROME-PI).
-        w = 0.85 - 0.70 * (i / max(1, FR_BRIDGE_LEADS - 1))
+        # POIDS SKILL (C) — décroissance selon la CONFIANCE : advection RÉELLE → radar fiable plus
+        # longtemps ; persistance (radar figé) → main à AROME-PI plus tôt. Base temporelle w_t :
+        w0, w1 = (0.90, 0.25) if fyb is not None else (0.65, 0.10)
+        w_t = w0 - (w0 - w1) * (i / max(1, FR_BRIDGE_LEADS - 1))
         fr = _fr_radar_field_from_rgba(radar_on_aro, FR_BLEND_DS)
         fa = _fr_radar_field_from_rgba(arome_rgba, FR_BLEND_DS)
         fy, fx, n = _fr_bridge_morph_flow(fr, fa)
         total_morph += n
         fyf = np.asarray(Image.fromarray(fy).resize((fw, fh), Image.BILINEAR), np.float32) * FR_BLEND_DS
         fxf = np.asarray(Image.fromarray(fx).resize((fw, fh), Image.BILINEAR), np.float32) * FR_BLEND_DS
-        # morph croisé : cellules CORRESPONDANTES alignées (radar avancé (1-w), AROME reculé w).
-        Ir = _fr_radar_warp(radar_on_aro, fyf, fxf, 1.0 - w)
-        Ia = _fr_radar_warp(arome_rgba, fyf, fxf, -w)
+        # POIDS SPATIALEMENT VARIABLE (C) : là où SEUL le radar a de l'écho (observé — à garder
+        # visible), w monte ; là où SEUL AROME en a (croissance/naissance que le radar ne voit pas
+        # encore — à laisser paraître plus tôt), w baisse. Ailleurs (les deux / aucun) = w_t. Champ
+        # DS puis monté full-res (le resize bilinéaire lisse les coutures).
+        wf = np.full(fr.shape, w_t, np.float32)
+        wf[(fr > 0) & (fa <= 0)] = min(0.97, w_t + 0.12)
+        wf[(fa > 0) & (fr <= 0)] = max(0.08, w_t - 0.25)
+        wfield = np.asarray(Image.fromarray(wf).resize((fw, fh), Image.BILINEAR), np.float32)
+        # morph croisé : cellules CORRESPONDANTES alignées (radar avancé (1-w_t), AROME reculé w_t).
+        Ir = _fr_radar_warp(radar_on_aro, fyf, fxf, 1.0 - w_t)
+        Ia = _fr_radar_warp(arome_rgba, fyf, fxf, -w_t)
         # COMPOSITION AU VAINQUEUR (fin du fondu-fantôme) : chaque pixel prend la COULEUR de la
-        # source dont l'opacité PONDÉRÉE est la plus forte (pas de moyenne des couleurs = plus de
-        # boue) ; alpha de sortie = cette opacité max (le radar s'estompe / AROME se renforce sur
-        # la fenêtre). Là où ça se correspond, le morph a déjà aligné les deux → sélection cohérente.
-        ra = Ir[:, :, 3].astype(np.float32) * w
-        aa = Ia[:, :, 3].astype(np.float32) * (1.0 - w)
+        # source dont l'opacité PONDÉRÉE (par le champ w spatial) est la plus forte (pas de moyenne
+        # des couleurs = plus de boue) ; alpha de sortie = cette opacité max.
+        ra = Ir[:, :, 3].astype(np.float32) * wfield
+        aa = Ia[:, :, 3].astype(np.float32) * (1.0 - wfield)
         use_r = ra >= aa
         out = np.zeros((fh, fw, 4), np.uint8)
         out[:, :, :3] = np.where(use_r[:, :, None], Ir[:, :, :3], Ia[:, :, :3])
