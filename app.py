@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.289"
+APP_VERSION = "1.2.290"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15677,7 +15677,27 @@ def _fr_radar_loop() -> None:
                 _fr_cells_compute()
             except Exception as exc:
                 _fr_radar_state.update(cells_error=str(exc))
-            if _fr_radar_stop.wait(FR_RADAR_POLL_SECONDS):
+            # ── POLL SYNCHRONISÉ sur le cycle de publication (mesuré 2026-07-13) ──────────
+            # Le paquet est régénéré par QUART D'HEURE : les mesures [Q, Q+5, Q+10] sont
+            # publiées ensemble à ~Q+20 (soit ~5 min après la dernière mesure — vérifié :
+            # quart 23:15/20/25 apparu à 23:30:37). Un poll aveugle à 150 s ajoutait en
+            # moyenne +75 s et jusqu'à +150 s de retard d'ingestion. Désormais : on dort
+            # jusqu'à la publication ESTIMÉE (dernière échéance + 20 min − marge), puis on
+            # sonde en cadence rapide (25 s) jusqu'à l'ingestion du nouveau quart. Garde-fou
+            # publication en retard (> 25 min d'âge) : 60 s pour ménager le quota (50/min).
+            with _fr_radar_lock:
+                _times_sync = sorted(_fr_radar_frames)
+            _latest_sync = _parse_meteofrance_datetime(_times_sync[-1]) if _times_sync else None
+            if _latest_sync is None:
+                sleep_s = float(FR_RADAR_POLL_SECONDS)          # rien ingéré : rythme de base
+            elif new_count > 0:
+                next_pub = _latest_sync.timestamp() + 20 * 60 - 45
+                sleep_s = max(20.0, min(900.0, next_pub - time.time()))
+            else:
+                age = time.time() - _latest_sync.timestamp()
+                sleep_s = 25.0 if age < 25 * 60 else 60.0       # fenêtre chaude / retard MF
+            _fr_radar_state.update(next_poll_s=round(sleep_s))
+            if _fr_radar_stop.wait(sleep_s):
                 break
     finally:
         _fr_radar_state.update(running=False)
