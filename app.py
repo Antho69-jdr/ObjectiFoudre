@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.283"
+APP_VERSION = "1.2.284"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15174,17 +15174,24 @@ def _fr_radar_phase_shift(a, b):
 
 def _fr_radar_dense_flow(f0, f1, base: int):
     """Champ de mouvement DENSE (fy, fx) par bloc : corrélation de phase LOCALE sur une grille
-    de blocs (là où il y a de l'écho), diffusion aux blocs sans vecteur, lissage bilinéaire à
-    la taille du champ. Divisé par `base` (nb de pas) → vecteur par pas (sous-pixel). Remplace
-    le vecteur GLOBAL unique du v1 (qui appliquait une translation rigide parfois parasite,
-    pire que la persistance) : chaque cellule suit désormais son mouvement local."""
+    de blocs LÀ OÙ L'ÉCHO EST DENSE (peak net, ≥2 % de couverture) ; les blocs sans vecteur
+    fiable héritent du mouvement GLOBAL médian (des blocs actifs). → mouvement DIFFÉRENTIEL là
+    où l'écho porte l'info (cœurs orageux, lignes de grains), dérive globale ailleurs (mieux que
+    la persistance quand il y a un flux synoptique cohérent), persistance pure si rien ne bouge.
+    Divisé par `base` (nb de pas) → vecteur par pas (sous-pixel).
+
+    Remplace la DIFFUSION du v2 : sur une dérive cohérente et un écho épars (peu de blocs
+    actifs), la diffusion laissait un champ « en damier » (vecteurs locaux bruités étalés,
+    reste figé à 0) qui advectait MOINS bien que le vecteur global — mesuré (CSI < persistance
+    à plusieurs échéances). Le remplissage médiane-globale est ≥ persistance sur les données
+    réelles et capte le différentiel dans les zones denses (validé sur structure radar réelle)."""
     import numpy as np
     from PIL import Image
     H, W = f0.shape
     nby, nbx = 8, 10
     by, bx = max(1, H // nby), max(1, W // nbx)
     vy = np.zeros((nby, nbx), np.float32); vx = np.zeros((nby, nbx), np.float32)
-    wt = np.zeros((nby, nbx), np.float32)
+    active = np.zeros((nby, nbx), bool)
     for iy in range(nby):
         for ix in range(nbx):
             y0, x0 = iy * by, ix * bx
@@ -15198,19 +15205,13 @@ def _fr_radar_dense_flow(f0, f1, base: int):
                 continue
             # NÉGATION : la corrélation de phase renvoie l'OPPOSÉ du mouvement f0→f1 ; on veut
             # le vrai mouvement pour advecter EN AVANT (bug de direction du v1 corrigé au passage).
-            vy[iy, ix] = -dy / base; vx[iy, ix] = -dx / base; wt[iy, ix] = (b1 > 0).mean()
-    # diffusion douce : les blocs sans vecteur héritent de la moyenne pondérée des voisins.
-    for _ in range(6):
-        den = None
-        for arr in (vy, vx):
-            pad = np.pad(arr, 1, mode="edge"); wpad = np.pad(wt, 1, mode="constant")
-            num = (pad[:-2, 1:-1] * wpad[:-2, 1:-1] + pad[2:, 1:-1] * wpad[2:, 1:-1]
-                   + pad[1:-1, :-2] * wpad[1:-1, :-2] + pad[1:-1, 2:] * wpad[1:-1, 2:])
-            den = (wpad[:-2, 1:-1] + wpad[2:, 1:-1] + wpad[1:-1, :-2] + wpad[1:-1, 2:])
-            fill = (wt < 0.01) & (den > 0)
-            arr[fill] = num[fill] / den[fill]
-        wt = np.where(wt < 0.01, (den > 0) * 0.3, wt)
-    advected = bool(np.hypot(vy, vx).max() > 0.15)   # au moins un bloc a un vrai mouvement
+            vy[iy, ix] = -dy / base; vx[iy, ix] = -dx / base; active[iy, ix] = True
+    if not active.any():
+        return None, None, False   # aucun bloc fiable → persistance (dégradation sûre)
+    # blocs sans vecteur fiable → mouvement GLOBAL médian (des blocs actifs), pas 0 ni damier.
+    gy = float(np.median(vy[active])); gx = float(np.median(vx[active]))
+    vy[~active] = gy; vx[~active] = gx
+    advected = bool(max(abs(gy), abs(gx), float(np.hypot(vy, vx).max())) > 0.15)
     fy = np.asarray(Image.fromarray(vy).resize((W, H), Image.BILINEAR), np.float32)
     fx = np.asarray(Image.fromarray(vx).resize((W, H), Image.BILINEAR), np.float32)
     return fy, fx, advected
