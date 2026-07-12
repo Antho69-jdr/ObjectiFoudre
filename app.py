@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.288"
+APP_VERSION = "1.2.289"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15611,13 +15611,24 @@ def _fr_cells_compute() -> None:
         # tendance : seuils sur la pente de masse (unités bande·px/frame, calées sur le backtest)
         trend = "grow" if d_mass > 15 else ("decay" if d_mass < -15 else "steady")
         lon, lat = _fr_cells_px_to_lonlat(last["cy"], last["cx"], fh, fw)
-        past = [list(_fr_cells_px_to_lonlat(p[1]["cy"], p[1]["cx"], fh, fw)) for p in tr[-6:]]
+        # trajectoires HORODATÉES ([lon, lat, epoch]) : le front positionne la cellule à l'heure
+        # sélectionnée sur la frise (interpolation sur la piste passée, extrapolation au futur).
+        epochs = []
+        for p in tr:
+            dtp = _parse_meteofrance_datetime(times[p[0]])
+            epochs.append(int(dtp.timestamp()) if dtp else 0)
+        past = [list(_fr_cells_px_to_lonlat(p[1]["cy"], p[1]["cx"], fh, fw)) + [epochs[i]]
+                for i, p in enumerate(tr)]
+        last_epoch = epochs[-1]
         future = [list(_fr_cells_px_to_lonlat(last["cy"] + vy * k, last["cx"] + vx * k, fh, fw))
+                  + [last_epoch + int(k * FR_BLEND_STEP_MIN * 60)]
                   for k in (2, 4, 6)]   # +10/+20/+30 min
+        growth_pct = round(d_mass * 2.0 / last["mass"] * 100.0) if last["mass"] > 0 else 0
         out.append({
-            "lon": lon, "lat": lat,
+            "lon": lon, "lat": lat, "epoch": last_epoch,
             "speed_kmh": round(speed), "bearing": round(bearing),
             "trend": trend, "d_mass": round(d_mass, 1),
+            "growth_pct_10min": growth_pct,   # variation de masse ~%/10 min (2 frames)
             "area_km2": round(last["area"] * km_per_px * km_per_px),
             "peak_band": last["peak"],
             "peak_dbz": _FR_RADAR_BANDS[min(last["peak"], len(_FR_RADAR_BANDS)) - 1],

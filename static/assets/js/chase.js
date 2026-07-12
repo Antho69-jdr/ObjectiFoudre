@@ -280,19 +280,58 @@
   const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
   function bearingCard(b) { return CARDINALS[Math.round(((b % 360) + 360) % 360 / 45) % 8]; }
 
+  // Position d'une cellule À L'HEURE t (epoch s) : interpolation sur la piste passée
+  // (points [lon,lat,epoch]), extrapolation linéaire au-delà de la dernière observation
+  // (vecteur dérivé des points `future`, bornée à +45 min), null avant la naissance de la
+  // piste (la cellule n'existait pas) ou au-delà de l'horizon d'extrapolation → masquée.
+  function cellPosAt(c, t) {
+    const past = Array.isArray(c.past) ? c.past : [];
+    if (!past.length || !Number.isFinite(t)) return [c.lon, c.lat];
+    const born = past[0][2], lastT = past[past.length - 1][2];
+    if (t < born - 300) return null;                       // pas encore née (marge 5 min)
+    if (t <= lastT) {
+      let i = 0;
+      while (i < past.length - 1 && past[i + 1][2] <= t) i += 1;
+      if (i >= past.length - 1) return [past[past.length - 1][0], past[past.length - 1][1]];
+      const a = past[i], b = past[i + 1];
+      const f = (b[2] > a[2]) ? Math.max(0, Math.min(1, (t - a[2]) / (b[2] - a[2]))) : 0;
+      return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+    }
+    const dt = t - lastT;
+    if (dt > 45 * 60) return null;                          // extrapolation bornée à +45 min
+    const fut = Array.isArray(c.future) ? c.future : [];
+    if (!fut.length) return [c.lon, c.lat];
+    const fin = fut[fut.length - 1];
+    const span = Math.max(1, fin[2] - lastT);
+    return [c.lon + (fin[0] - c.lon) / span * dt, c.lat + (fin[1] - c.lat) / span * dt];
+  }
+
   function cellsGeojson() {
     const feats = [];
-    for (const c of (frCells.cells || [])) {
+    const fr = frames[cursor];
+    const t = fr ? fr.epoch : (Date.now() / 1000);          // heure de la frame sélectionnée
+    for (let ci = 0; ci < (frCells.cells || []).length; ci += 1) {
+      const c = frCells.cells[ci];
       const color = CELL_TREND[c.trend] || CELL_TREND.steady;
-      if (Array.isArray(c.past) && c.past.length > 1) {
-        feats.push({ type: 'Feature', properties: { kind: 'past', color }, geometry: { type: 'LineString', coordinates: c.past } });
+      const pos = cellPosAt(c, t);
+      if (!pos) continue;                                    // pas née / au-delà de l'horizon
+      const past = Array.isArray(c.past) ? c.past : [];
+      // trace passée : les points de piste antérieurs à t, raccordés à la position affichée.
+      const trail = past.filter((p) => p[2] <= t).map((p) => [p[0], p[1]]);
+      trail.push(pos);
+      if (trail.length > 1) {
+        feats.push({ type: 'Feature', properties: { kind: 'past', color }, geometry: { type: 'LineString', coordinates: trail } });
       }
-      if (Array.isArray(c.future) && c.future.length && c.speed_kmh > 5) {
-        feats.push({ type: 'Feature', properties: { kind: 'future', color }, geometry: { type: 'LineString', coordinates: [[c.lon, c.lat]].concat(c.future) } });
+      // trajectoire prévue : +30 min DEPUIS la position affichée (vecteur constant).
+      if (c.speed_kmh > 5) {
+        const p30 = cellPosAt(c, t + 30 * 60);
+        if (p30) {
+          feats.push({ type: 'Feature', properties: { kind: 'future', color }, geometry: { type: 'LineString', coordinates: [pos, p30] } });
+        }
       }
       const arrow = c.trend === 'grow' ? ' ▲' : (c.trend === 'decay' ? ' ▼' : '');
       const label = c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}${arrow}` : `statique${arrow}`;
-      feats.push({ type: 'Feature', properties: { kind: 'pt', color, label }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } });
+      feats.push({ type: 'Feature', properties: { kind: 'pt', color, label, cellIdx: ci }, geometry: { type: 'Point', coordinates: pos } });
     }
     return { type: 'FeatureCollection', features: feats };
   }
@@ -322,6 +361,9 @@
           layout: { 'text-field': ['get', 'label'], 'text-font': ['Montserrat Medium', 'Open Sans Bold'],
                     'text-size': 11, 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-allow-overlap': false },
           paint: { 'text-color': ['get', 'color'], 'text-halo-color': '#0b0f14', 'text-halo-width': 1.3 } });
+        // les points sont CLIQUABLES (fiche cellule) → curseur pointer au survol.
+        map.on('mouseenter', CELLS_SRC + '-pt', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', CELLS_SRC + '-pt', () => { map.getCanvas().style.cursor = ''; });
       } catch (_) {}
     }
     applyCellsVisibility();
@@ -521,6 +563,7 @@
     updateActive();
     syncRadarLayers();
     syncNowcastLayers();
+    syncCellsOverlay();   // repositionne les cellules à l'heure de la frame (setData léger)
     if (isRadarLike(fr)) {
       const tok = ++swapToken;   // invalide toute bascule différée précédente
       const targetId = radarLayerId(fr);
@@ -1136,7 +1179,57 @@
   }
 
   function onChaseClick(e) {
+    // PRIORITÉ à une cellule suivie sous le clic (tolérance 8 px) : fiche cellule au lieu
+    // du popup position. La couche peut ne pas exister (overlay off / pas de données).
+    try {
+      if (cellsVisible && map.getLayer(CELLS_SRC + '-pt')) {
+        const bb = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
+        const hits = map.queryRenderedFeatures(bb, { layers: [CELLS_SRC + '-pt'] });
+        if (hits && hits.length) {
+          const idx = hits[0].properties && hits[0].properties.cellIdx;
+          const c = (frCells.cells || [])[idx];
+          if (c) {
+            const g = hits[0].geometry && hits[0].geometry.coordinates;
+            showPopup(g ? g[1] : c.lat, g ? g[0] : c.lon, renderCellHTML(c));
+            return;
+          }
+        }
+      }
+    } catch (_) {}
     queryPoint(e.lngLat.lat, e.lngLat.lng, true);
+  }
+
+  // Fiche CELLULE (clic sur un point de l'overlay) : identité + cinématique + tendance,
+  // et si la géoloc est active, l'approche vers TA position (même math que cellThreat).
+  function renderCellHTML(c) {
+    const color = CELL_TREND[c.trend] || CELL_TREND.steady;
+    const trendTxt = c.trend === 'grow' ? 'En intensification' : (c.trend === 'decay' ? 'En affaiblissement' : 'Stable');
+    const trendCls = c.trend === 'grow' ? 'sev-high' : (c.trend === 'decay' ? 'sev-mid' : 'sev-watch');
+    const upd = c.epoch ? fmtClock(c.epoch) : '—';
+    let html = `<div class="chase-verdict ${trendCls}" style="border-color:${color}">⛈ Cellule suivie · ${trendTxt}<span class="chase-verdict-time">${upd}</span></div>`;
+    const rows = [
+      ['Déplacement', c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}` : 'quasi statique', ''],
+      ['Pic mesuré', c.peak_dbz != null ? Math.round(c.peak_dbz) : '—', ' dBZ'],
+      ['Étendue', c.area_km2 != null ? c.area_km2.toLocaleString('fr-FR') : '—', ' km²'],
+      ['Évolution', (typeof c.growth_pct_10min === 'number' && c.growth_pct_10min !== 0) ? `${c.growth_pct_10min > 0 ? '+' : ''}${c.growth_pct_10min} %/10 min` : 'stable', ''],
+    ];
+    html += '<ul class="chase-pos-list">' + rows.map((r) => `<li><span>${r[0]}</span><strong>${r[1]}${(r[2] && r[1] !== '—') ? `<span class="chase-unit">${r[2]}</span>` : ''}</strong></li>`).join('') + '</ul>';
+    // approche vers la position suivie (si géoloc active)
+    if (userPos && c.speed_kmh > 8) {
+      const br = c.bearing * Math.PI / 180;
+      const vN = c.speed_kmh * Math.cos(br), vE = c.speed_kmh * Math.sin(br);
+      const dN = (userPos.lat - c.lat) * 111.0;
+      const dE = (userPos.lon - c.lon) * 111.0 * Math.cos(userPos.lat * Math.PI / 180);
+      const v2 = vN * vN + vE * vE;
+      const tStar = (dN * vN + dE * vE) / v2;
+      const dMin = Math.hypot(dN - vN * tStar, dE - vE * tStar);
+      if (tStar > 0 && tStar <= 1.5 && dMin <= 15) {
+        html += `<div class="chase-pos-eta">⚠ Sur ta position dans ~${Math.max(1, Math.round(tStar * 60))} min (passe à ${Math.round(dMin)} km)</div>`;
+      } else {
+        html += `<div class="chase-pos-head">Ne se dirige pas vers ta position</div>`;
+      }
+    }
+    return html;
   }
 
   function updateNow() {
@@ -1272,5 +1365,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '288';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '289';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
