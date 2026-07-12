@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.284"
+APP_VERSION = "1.2.285"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15143,6 +15143,8 @@ FR_BLEND_LEADS = 6          # +5..+30 min (6 pas de 5 min)
 FR_BLEND_DS = 4            # sous-échantillonnage pour l'estimation de mouvement
 _fr_blend_lock = threading.Lock()
 _fr_blend: dict[str, Any] = {"base_time": None, "speed_kmh": 0.0, "frames": {}, "times": [], "advected": False}
+_fr_bridge_lock = threading.Lock()
+_fr_bridge: dict[str, Any] = {"base_time": None, "run": None, "frames": {}, "times": [], "morph_blocks": 0}
 
 
 def _fr_radar_png_to_field(png: bytes, ds: int):
@@ -15280,6 +15282,151 @@ def _fr_radar_blend_compute() -> None:
                          times=blend_times, advected=advected)
 
 
+# ── PONT blend/radar → AROME-PI : morph gaté + fondu pondéré par skill ────────────
+# Au raccord observé→prévu, le radar (vérité) et AROME-PI (modèle) portent des infos
+# DIFFÉRENTES : l'advection radar domine 0-30 min, AROME-PI reprend l'avantage au-delà de ~1 h
+# (il modélise la croissance/naissance que l'advection ignore). Dans le RECOUVREMENT on fond
+# les deux pondéré par leur skill (poids radar décroissant), et LÀ OÙ les deux montrent la même
+# structure (correspondance forte : gate écho+pic+déplacement plausible) on MORPHE (glissement
+# cohérent) au lieu d'un fondu qui fantômerait. Là où ça ne correspond pas (fréquent en convection
+# éparse), le flux gaté est NUL → simple fondu pondéré propre. Mesuré : sans gate le morph fait
+# des traînées (radar et AROME-PI se recouvraient à 5 % un jour de test). Rendu sur la grille
+# AROME-PI (le radar y est résamplé) → identique au nowcast : le front n'échange que l'URL.
+FR_BRIDGE_LEADS = 3          # échéances AROME-PI pontées après le blend (~+30..+75 min)
+
+
+def _fr_radar_field_from_rgba(rgba, ds: int):
+    """Champ d'intensité (index de bande 0-8) depuis un tableau RGBA (≡ _fr_radar_png_to_field
+    mais sans re-décoder un PNG). Couleur → bande la plus proche de _FR_RADAR_COLORS."""
+    import numpy as np
+    a = rgba[::ds, ::ds]
+    palette = np.array([(0, 0, 0)] + [c[:3] for c in _FR_RADAR_COLORS], np.int32)
+    rgb = a[:, :, :3].astype(np.int32)
+    d = ((rgb[:, :, None, :] - palette[None, None, :, :]) ** 2).sum(3)
+    idx = d.argmin(2).astype(np.uint8)
+    idx[a[:, :, 3] < 30] = 0
+    return idx.astype(np.float32)
+
+
+def _fr_radar_to_aromepi_grid(radar_rgba, aro_h: int, aro_w: int):
+    """Ré-échantillonne une image RADAR (domaine FR_RADAR, Mercator) sur la grille AROME-PI
+    (domaine AROMEPI, Mercator, plus large → le radar occupe un rectangle interne, transparent
+    ailleurs). Les deux sont en Mercator → mapping linéaire en x (longitude) et en Y Mercator."""
+    import numpy as np
+    rh, rw = radar_rgba.shape[:2]
+
+    def mercY(lat):
+        return math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+
+    R = FR_RADAR_DOMAIN
+    A = AROMEPI_DOMAIN
+    lon = A["min_lon"] + (A["max_lon"] - A["min_lon"]) * (np.arange(aro_w) / (aro_w - 1))
+    aYt, aYb = mercY(A["max_lat"]), mercY(A["min_lat"])
+    Y = aYt + (aYb - aYt) * (np.arange(aro_h) / (aro_h - 1))
+    rYt, rYb = mercY(R["max_lat"]), mercY(R["min_lat"])
+    r_col = (lon - R["min_lon"]) / (R["max_lon"] - R["min_lon"]) * (rw - 1)
+    r_row = (rYt - Y) / (rYt - rYb) * (rh - 1)
+    out = np.zeros((aro_h, aro_w, 4), np.uint8)
+    vc = (r_col >= 0) & (r_col <= rw - 1)
+    vr = (r_row >= 0) & (r_row <= rh - 1)
+    rc = np.clip(np.round(r_col).astype(np.int32), 0, rw - 1)
+    rr = np.clip(np.round(r_row).astype(np.int32), 0, rh - 1)
+    sub = radar_rgba[rr[:, None], rc[None, :]]
+    mask = vr[:, None] & vc[None, :]
+    out[mask] = sub[mask]
+    return out
+
+
+def _fr_bridge_morph_flow(f0, f1, nby: int = 12, nbx: int = 14):
+    """Flux de CORRESPONDANCE gaté (champ DS) : un vecteur par bloc SEULEMENT si LES DEUX champs
+    ont de l'écho (≥3 %), pic de corrélation net et déplacement plausible ; 0 ailleurs (→ fondu,
+    pas de warp). PAS de remplissage global (contrairement à l'advection) : on ne morphe QUE là
+    où la correspondance radar↔AROME-PI est réelle, sinon on fantômerait."""
+    import numpy as np
+    from PIL import Image
+    H, W = f0.shape
+    by, bx = max(1, H // nby), max(1, W // nbx)
+    vy = np.zeros((nby, nbx), np.float32); vx = np.zeros((nby, nbx), np.float32)
+    for iy in range(nby):
+        for ix in range(nbx):
+            y0, x0 = iy * by, ix * bx
+            ys, xs = max(0, y0 - by // 2), max(0, x0 - bx // 2)
+            y1, x1 = min(H, y0 + 2 * by), min(W, x0 + 2 * bx)
+            b0 = f0[ys:y1, xs:x1]; b1 = f1[ys:y1, xs:x1]
+            if b0.shape[0] < 8 or b0.shape[1] < 8:
+                continue
+            if (b0 > 0).mean() < 0.03 or (b1 > 0).mean() < 0.03:
+                continue
+            dy, dx, peak = _fr_radar_phase_shift(b0, b1)
+            if peak < 4.0 or abs(dy) > 8 or abs(dx) > 8:
+                continue
+            vy[iy, ix] = -dy; vx[iy, ix] = -dx
+    n = int(((np.abs(vy) + np.abs(vx)) > 0).sum())
+    fy = np.asarray(Image.fromarray(vy).resize((W, H), Image.BILINEAR), np.float32)
+    fx = np.asarray(Image.fromarray(vx).resize((W, H), Image.BILINEAR), np.float32)
+    return fy, fx, n
+
+
+def _fr_bridge_compute(api_key: str) -> None:
+    """Recalcule les images de pont (couche réflectivité) pour les premières échéances AROME-PI
+    après le blend. Appelé dans la boucle radar. Recalcule quand la dernière mosaïque (base du
+    blend) OU le run AROME-PI change. Dégrade en fondu pondéré si aucune correspondance."""
+    caps = _aromepi_capabilities_sync(api_key)
+    run = caps.get("run")
+    ftimes = list(caps.get("forecast_times") or [])
+    with _fr_blend_lock:
+        blend_frames = dict(_fr_blend.get("frames") or {})
+        blend_times = list(_fr_blend.get("times") or [])
+        base_time = _fr_blend.get("base_time")
+    if not run or not ftimes or not blend_times or not base_time:
+        return
+    with _fr_bridge_lock:
+        if _fr_bridge.get("base_time") == base_time and _fr_bridge.get("run") == run:
+            return
+    import numpy as np
+    from PIL import Image
+    last_blend_iso = blend_times[-1]
+    radar_png = blend_frames.get(last_blend_iso)
+    last_blend_dt = _parse_meteofrance_datetime(last_blend_iso)
+    if not radar_png or last_blend_dt is None:
+        return
+    radar_rgba = np.asarray(Image.open(io.BytesIO(radar_png)).convert("RGBA"))
+    bridge_ts = []
+    for t in ftimes:
+        dt = _parse_meteofrance_datetime(t)
+        if dt is not None and dt > last_blend_dt:
+            bridge_ts.append(t)
+        if len(bridge_ts) >= FR_BRIDGE_LEADS:
+            break
+    frames: dict[str, bytes] = {}
+    total_morph = 0
+    for i, t in enumerate(bridge_ts):
+        arome_png = _aromepi_domain_image_sync(api_key, "reflectivity", t, run)
+        if not arome_png:
+            continue
+        arome_rgba = np.asarray(Image.open(io.BytesIO(arome_png)).convert("RGBA"))
+        fh, fw = arome_rgba.shape[:2]
+        radar_on_aro = _fr_radar_to_aromepi_grid(radar_rgba, fh, fw)
+        # poids skill : radar décroît sur la fenêtre (continuité avec le blend ≈1 → AROME-PI).
+        w = 0.85 - 0.70 * (i / max(1, FR_BRIDGE_LEADS - 1))
+        fr = _fr_radar_field_from_rgba(radar_on_aro, FR_BLEND_DS)
+        fa = _fr_radar_field_from_rgba(arome_rgba, FR_BLEND_DS)
+        fy, fx, n = _fr_bridge_morph_flow(fr, fa)
+        total_morph += n
+        fyf = np.asarray(Image.fromarray(fy).resize((fw, fh), Image.BILINEAR), np.float32) * FR_BLEND_DS
+        fxf = np.asarray(Image.fromarray(fx).resize((fw, fh), Image.BILINEAR), np.float32) * FR_BLEND_DS
+        # morph croisé : radar poussé vers AROME de (1-w), AROME reculé vers radar de w.
+        Ir = _fr_radar_warp(radar_on_aro, fyf, fxf, 1.0 - w).astype(np.float32)
+        Ia = _fr_radar_warp(arome_rgba, fyf, fxf, -w).astype(np.float32)
+        out = (w * Ir + (1.0 - w) * Ia).astype(np.uint8)
+        buf = io.BytesIO()
+        Image.fromarray(out, "RGBA").save(buf, format="PNG")
+        frames[t] = buf.getvalue()
+    with _fr_bridge_lock:
+        _fr_bridge.update(times=list(frames.keys()), frames=frames, run=run,
+                          base_time=base_time, morph_blocks=total_morph)
+
+
 def _fr_radar_loop() -> None:
     _fr_radar_state.update(running=True, message="Radar France (réflectivité) actif.")
     try:
@@ -15306,6 +15453,13 @@ def _fr_radar_loop() -> None:
                 _fr_radar_blend_compute()
             except Exception as exc:
                 _fr_radar_state.update(blend_error=str(exc))
+            # PONT : morph gaté + fondu pondéré blend→AROME-PI sur le recouvrement (réflectivité).
+            try:
+                ap_key = _aromepi_api_key()
+                if ap_key:
+                    _fr_bridge_compute(ap_key)
+            except Exception as exc:
+                _fr_radar_state.update(bridge_error=str(exc))
             if _fr_radar_stop.wait(FR_RADAR_POLL_SECONDS):
                 break
     finally:
@@ -15375,6 +15529,31 @@ async def fr_radar_blend_image(time: str = Query(..., min_length=10, max_length=
     """PNG Mercator d'une frame advectée (radar extrapolé). Cache court (change à chaque run)."""
     with _fr_blend_lock:
         png = (_fr_blend.get("frames") or {}).get(time)
+    if not png:
+        return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=30"})
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/api/radar/fr/bridge/status")
+async def fr_radar_bridge_status() -> dict[str, Any]:
+    """Échéances du PONT blend→AROME-PI (couche réflectivité) : morph gaté + fondu pondéré, rendu
+    sur la grille AROME-PI. `morph_blocks` = combien de blocs correspondants ont été morphés
+    (0 = fondu pondéré pur, cas des champs non correspondants)."""
+    with _fr_bridge_lock:
+        return {
+            "ok": bool(_fr_bridge.get("times")),
+            "times": list(_fr_bridge.get("times") or []),
+            "run": _fr_bridge.get("run"),
+            "morph_blocks": int(_fr_bridge.get("morph_blocks") or 0),
+            "domain": AROMEPI_DOMAIN,
+        }
+
+
+@app.get("/api/radar/fr/bridge/image")
+async def fr_radar_bridge_image(time: str = Query(..., min_length=10, max_length=40)) -> Response:
+    """PNG (grille AROME-PI) d'une frame de pont. Cache court (change à chaque run / mosaïque)."""
+    with _fr_bridge_lock:
+        png = (_fr_bridge.get("frames") or {}).get(time)
     if not png:
         return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=30"})
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=300"})

@@ -63,6 +63,7 @@
   let symbolAnchorId = null;   // 1er calque symbol du style : les couches chasse s'insèrent dessous
   let frRadarTimes = [];       // échéances mosaïque France dispo (ISO, ~2 h)
   let frBlend = { times: [], speed_kmh: 0, advected: false };  // nowcast par advection radar (0-30 min)
+  let frBridge = { times: [] };  // PONT blend→AROME-PI (réflectivité) : morph gaté + fondu pondéré
   const prefetched = new Set(); // URLs déjà préchargées (cache navigateur/serveur chaud)
   let prefetchGen = 0;          // jeton pour annuler un préchargement en cours
   let prefetchRun = null;       // run AROME-PI préchargé (réinit du set si le run change)
@@ -93,6 +94,13 @@
 
   function frRadarImageUrl(iso) { return '/api/radar/fr/image?time=' + encodeURIComponent(iso); }
   function frBlendImageUrl(iso) { return '/api/radar/fr/blend/image?time=' + encodeURIComponent(iso); }
+  function frBridgeImageUrl(iso) { return '/api/radar/fr/bridge/image?time=' + encodeURIComponent(iso); }
+  // PONT : une frame nowcast (réflectivité) dont l'échéance est dans la fenêtre de recouvrement
+  // → image = morph gaté + fondu pondéré blend→AROME-PI (mêmes coins que le nowcast).
+  function isBridgeFrame(fr) {
+    return fr && fr.kind === 'nowcast' && activeLayer === 'reflectivity'
+      && Array.isArray(frBridge.times) && frBridge.times.indexOf(fr.t) !== -1;
+  }
   // « observé/extrapolé » = radar réel OU frame advectée (blend) : mêmes domaine, palette et
   // rendu (par frame), mutuellement exclusifs avec le nowcast AROME-PI à l'affichage.
   function isRadarLike(fr) { return fr && (fr.kind === 'radar' || fr.kind === 'blend'); }
@@ -107,6 +115,7 @@
     const run = status && status.run;
     for (const iso of frRadarTimes) out.push(frRadarImageUrl(iso));   // mosaïques France (serveur local, léger)
     for (const iso of (frBlend.times || [])) out.push(frBlendImageUrl(iso));   // frames advectées (blend)
+    if (activeLayer === 'reflectivity') for (const iso of (frBridge.times || [])) out.push(frBridgeImageUrl(iso));   // pont (raccord)
     const nowcast = frames.filter((f) => f.kind === 'nowcast');
     if (run) for (const f of nowcast) out.push(nowcastImageUrl(activeLayer, f.t, run));
     const keys = layerTabs ? Array.from(layerTabs.querySelectorAll('[data-chase-layer]')).map((b) => b.dataset.chaseLayer) : [];
@@ -148,7 +157,7 @@
   }
 
   function radarLayerId(fr) { return RADAR_SRC_PREFIX + fr.epoch; }
-  function nowcastLayerId(fr) { return NOWCAST_PREFIX + activeLayer + '-' + fr.epoch; }
+  function nowcastLayerId(fr) { return NOWCAST_PREFIX + activeLayer + '-' + fr.epoch + (isBridgeFrame(fr) ? '-br' : ''); }
 
   // Aligne les couches radar (mosaïque MF, une source `image` par frame) sur `frames` :
   // crée les nouvelles (masquées ; c'est updateRadarWindow qui rend éagère la fenêtre
@@ -245,7 +254,8 @@
     for (const [id, fr] of want) {
       if (nowcastLayerIds.has(id)) { setVis(id, true); continue; }
       try {
-        map.addSource(id, { type: 'image', url: nowcastImageUrl(activeLayer, fr.t, run), coordinates: AROMEPI_CORNERS });
+        const srcUrl = isBridgeFrame(fr) ? frBridgeImageUrl(fr.t) : nowcastImageUrl(activeLayer, fr.t, run);
+        map.addSource(id, { type: 'image', url: srcUrl, coordinates: AROMEPI_CORNERS });
         // raster-resampling NEAREST : arêtes nettes (cf. radar).
         map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 0, 'raster-opacity-transition': { duration: 150 }, 'raster-resampling': 'nearest' }, layout: { visibility: 'visible' } }, before);
         nowcastLayerIds.add(id);
@@ -317,10 +327,13 @@
     try { fr = await (await fetch('/api/radar/fr/status')).json(); } catch (_) {}
     let bl = null;
     try { bl = await (await fetch('/api/radar/fr/blend/status')).json(); } catch (_) {}
+    let br = null;
+    try { br = await (await fetch('/api/radar/fr/bridge/status')).json(); } catch (_) {}
     if (token !== loadToken) return;
     status = (st && st.ok) ? st : status;
     frRadarTimes = (fr && fr.ok && Array.isArray(fr.times)) ? fr.times : [];
     frBlend = (bl && bl.ok) ? bl : { times: [], speed_kmh: 0, advected: false };
+    frBridge = (br && br.ok && Array.isArray(br.times)) ? br : { times: [] };
     if (status && status.run !== prefetchRun) { prefetched.clear(); prefetchRun = status.run; }
     buildTimeline();
   }
@@ -1153,5 +1166,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '284';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '285';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
