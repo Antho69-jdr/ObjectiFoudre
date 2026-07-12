@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.280"
+APP_VERSION = "1.2.281"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15129,6 +15129,106 @@ def _fr_radar_poll_once(api_key: str) -> tuple[int, int]:
     return new_count, total
 
 
+# ── BLEND : nowcast 0-30 min par ADVECTION du radar réel ─────────────────────────
+# Aux toutes premières échéances, faire AVANCER le radar observé (extrapolation du
+# mouvement des cellules) est souvent meilleur qu'AROME-PI (qui part d'une analyse déjà
+# vieille de ~13-60 min). On estime UN vecteur de déplacement global par corrélation de
+# phase (FFT) sur les 2-4 dernières mosaïques, puis on décale la plus récente pour combler
+# le trou de latence (~13 min) ET fournir un 0-30 min ancré sur l'observation. Dégradation
+# GRACIEUSE : si le mouvement est peu fiable (pic de corrélation faible / implausible) ou
+# s'il n'y a qu'une frame, on retombe sur la PERSISTANCE (mouvement nul = dernière mosaïque
+# tenue en place) — inoffensif. Palette unifiée → transition douce vers AROME-PI (30 min+).
+FR_BLEND_STEP_MIN = 5
+FR_BLEND_LEADS = 6          # +5..+30 min (6 pas de 5 min)
+FR_BLEND_DS = 4            # sous-échantillonnage pour l'estimation de mouvement
+_fr_blend_lock = threading.Lock()
+_fr_blend: dict[str, Any] = {"base_time": None, "speed_kmh": 0.0, "frames": {}, "times": [], "advected": False}
+
+
+def _fr_radar_png_to_field(png: bytes, ds: int):
+    """PNG (notre palette) → champ d'intensité (index de bande 0-8) sous-échantillonné ×ds
+    (pour l'estimation de mouvement). Couleur → bande par plus proche de _FR_RADAR_COLORS."""
+    import numpy as np
+    from PIL import Image
+    a = np.asarray(Image.open(io.BytesIO(png)).convert("RGBA"))[::ds, ::ds]
+    palette = np.array([(0, 0, 0)] + [c[:3] for c in _FR_RADAR_COLORS], np.int32)
+    rgb = a[:, :, :3].astype(np.int32)
+    d = ((rgb[:, :, None, :] - palette[None, None, :, :]) ** 2).sum(3)
+    idx = d.argmin(2).astype(np.uint8)
+    idx[a[:, :, 3] < 30] = 0
+    return idx
+
+
+def _fr_radar_phase_shift(a, b):
+    """Décalage (dy, dx) alignant a→b par corrélation de phase + netteté du pic (confiance)."""
+    import numpy as np
+    fa = np.fft.fft2(a.astype(np.float32)); fb = np.fft.fft2(b.astype(np.float32))
+    r = fa * np.conj(fb); r /= np.abs(r) + 1e-6
+    c = np.fft.ifft2(r).real
+    p = np.unravel_index(int(np.argmax(c)), c.shape)
+    dy = p[0] if p[0] <= a.shape[0] // 2 else p[0] - a.shape[0]
+    dx = p[1] if p[1] <= a.shape[1] // 2 else p[1] - a.shape[1]
+    peak = float(c.max() / (abs(c.mean()) + 1e-9))
+    return dy, dx, peak
+
+
+def _fr_radar_shift_fill(a, dy: int, dx: int):
+    """Décale l'image RGBA de (dy, dx) px en remplissant de TRANSPARENT (pas de wrap :
+    une cellule qui sort du domaine ne doit pas réapparaître de l'autre côté)."""
+    import numpy as np
+    out = np.zeros_like(a)
+    h, w = a.shape[:2]
+    sy0, sy1 = max(0, -dy), min(h, h - dy)
+    sx0, sx1 = max(0, -dx), min(w, w - dx)
+    dy0, dx0 = max(0, dy), max(0, dx)
+    out[dy0:dy0 + (sy1 - sy0), dx0:dx0 + (sx1 - sx0)] = a[sy0:sy1, sx0:sx1]
+    return out
+
+
+def _fr_radar_blend_compute() -> None:
+    """Recalcule les frames advectées si une NOUVELLE mosaïque est arrivée. Estimation de
+    mouvement (base longue → sous-pixel) + advection full-res de la dernière mosaïque."""
+    with _fr_radar_lock:
+        times = sorted(_fr_radar_frames)
+        latest = times[-1] if times else None
+        recent = {t: _fr_radar_frames[t] for t in times[-4:]}
+    if not latest or _fr_blend.get("base_time") == latest:
+        return
+    import numpy as np
+    from PIL import Image
+    ordered = sorted(recent)
+    fields = {t: _fr_radar_png_to_field(recent[t], FR_BLEND_DS) for t in ordered}
+    mdy = mdx = 0.0
+    advected = False
+    base = min(4, len(ordered) - 1)
+    if base >= 1:
+        dy, dx, peak = _fr_radar_phase_shift(fields[ordered[-1 - base]], fields[ordered[-1]])
+        # confiance : pic net ET déplacement plausible (< ~20 px/pas au DS → ~90 km/pas max).
+        if peak > 3.0 and abs(dy) <= base * 20 and abs(dx) <= base * 20 and (dy or dx):
+            mdy, mdx, advected = dy / base, dx / base, True
+    base_dt = _parse_meteofrance_datetime(latest)
+    if base_dt is None:
+        return
+    latest_arr = np.asarray(Image.open(io.BytesIO(recent[latest])).convert("RGBA"))
+    # km/px de la grille de sortie (domaine ~24,4° lon sur FR_RADAR_OUT_WIDTH px).
+    d = FR_RADAR_DOMAIN
+    km_per_px = (d["max_lon"] - d["min_lon"]) * 111.0 * math.cos(math.radians(46.0)) / FR_RADAR_OUT_WIDTH
+    speed_kmh = math.hypot(mdy, mdx) * FR_BLEND_DS * km_per_px * (60.0 / FR_BLEND_STEP_MIN)
+    frames: dict[str, bytes] = {}
+    blend_times: list[str] = []
+    for k in range(1, FR_BLEND_LEADS + 1):
+        fy = int(round(mdy * FR_BLEND_DS * k)); fx = int(round(mdx * FR_BLEND_DS * k))
+        adv = _fr_radar_shift_fill(latest_arr, fy, fx) if (fy or fx) else latest_arr
+        buf = io.BytesIO()
+        Image.fromarray(adv, "RGBA").save(buf, format="PNG")
+        iso = (base_dt + timedelta(minutes=FR_BLEND_STEP_MIN * k)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        frames[iso] = buf.getvalue()
+        blend_times.append(iso)
+    with _fr_blend_lock:
+        _fr_blend.update(base_time=latest, speed_kmh=round(speed_kmh), frames=frames,
+                         times=blend_times, advected=advected)
+
+
 def _fr_radar_loop() -> None:
     _fr_radar_state.update(running=True, message="Radar France (réflectivité) actif.")
     try:
@@ -15150,6 +15250,11 @@ def _fr_radar_loop() -> None:
                 if _fr_radar_stop.wait(60):
                     break
                 continue
+            # BLEND : advection de la dernière mosaïque (comble le trou de latence + 0-30 min).
+            try:
+                _fr_radar_blend_compute()
+            except Exception as exc:
+                _fr_radar_state.update(blend_error=str(exc))
             if _fr_radar_stop.wait(FR_RADAR_POLL_SECONDS):
                 break
     finally:
@@ -15197,6 +15302,31 @@ async def fr_radar_image(time: str = Query(..., min_length=10, max_length=40)) -
     if not png:
         return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=30"})
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/api/radar/fr/blend/status")
+async def fr_radar_blend_status() -> dict[str, Any]:
+    """Échéances du nowcast par advection (0-30 min ancré sur le radar observé) : times,
+    vitesse estimée, et si c'est de la vraie advection ou une persistance de repli."""
+    with _fr_blend_lock:
+        return {
+            "ok": bool(_fr_blend.get("times")),
+            "times": list(_fr_blend.get("times") or []),
+            "base_time": _fr_blend.get("base_time"),
+            "speed_kmh": _fr_blend.get("speed_kmh"),
+            "advected": bool(_fr_blend.get("advected")),
+            "domain": FR_RADAR_DOMAIN,
+        }
+
+
+@app.get("/api/radar/fr/blend/image")
+async def fr_radar_blend_image(time: str = Query(..., min_length=10, max_length=40)) -> Response:
+    """PNG Mercator d'une frame advectée (radar extrapolé). Cache court (change à chaque run)."""
+    with _fr_blend_lock:
+        png = (_fr_blend.get("frames") or {}).get(time)
+    if not png:
+        return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=30"})
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=300"})
 
 
 _fr_radar_point_transformer = None   # pyproj Transformer 4326→stéréo, cache
