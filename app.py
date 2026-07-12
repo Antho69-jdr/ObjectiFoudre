@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.282"
+APP_VERSION = "1.2.283"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15172,16 +15172,60 @@ def _fr_radar_phase_shift(a, b):
     return dy, dx, peak
 
 
-def _fr_radar_shift_fill(a, dy: int, dx: int):
-    """Décale l'image RGBA de (dy, dx) px en remplissant de TRANSPARENT (pas de wrap :
-    une cellule qui sort du domaine ne doit pas réapparaître de l'autre côté)."""
+def _fr_radar_dense_flow(f0, f1, base: int):
+    """Champ de mouvement DENSE (fy, fx) par bloc : corrélation de phase LOCALE sur une grille
+    de blocs (là où il y a de l'écho), diffusion aux blocs sans vecteur, lissage bilinéaire à
+    la taille du champ. Divisé par `base` (nb de pas) → vecteur par pas (sous-pixel). Remplace
+    le vecteur GLOBAL unique du v1 (qui appliquait une translation rigide parfois parasite,
+    pire que la persistance) : chaque cellule suit désormais son mouvement local."""
     import numpy as np
-    out = np.zeros_like(a)
-    h, w = a.shape[:2]
-    sy0, sy1 = max(0, -dy), min(h, h - dy)
-    sx0, sx1 = max(0, -dx), min(w, w - dx)
-    dy0, dx0 = max(0, dy), max(0, dx)
-    out[dy0:dy0 + (sy1 - sy0), dx0:dx0 + (sx1 - sx0)] = a[sy0:sy1, sx0:sx1]
+    from PIL import Image
+    H, W = f0.shape
+    nby, nbx = 8, 10
+    by, bx = max(1, H // nby), max(1, W // nbx)
+    vy = np.zeros((nby, nbx), np.float32); vx = np.zeros((nby, nbx), np.float32)
+    wt = np.zeros((nby, nbx), np.float32)
+    for iy in range(nby):
+        for ix in range(nbx):
+            y0, x0 = iy * by, ix * bx
+            ys, xs = max(0, y0 - by // 2), max(0, x0 - bx // 2)
+            y1, x1 = min(H, y0 + 2 * by), min(W, x0 + 2 * bx)
+            b0 = f0[ys:y1, xs:x1]; b1 = f1[ys:y1, xs:x1]
+            if b0.shape[0] < 8 or b0.shape[1] < 8 or (b1 > 0).mean() < 0.02:
+                continue
+            dy, dx, peak = _fr_radar_phase_shift(b0, b1)
+            if peak < 2.5 or abs(dy) > by or abs(dx) > bx:
+                continue
+            # NÉGATION : la corrélation de phase renvoie l'OPPOSÉ du mouvement f0→f1 ; on veut
+            # le vrai mouvement pour advecter EN AVANT (bug de direction du v1 corrigé au passage).
+            vy[iy, ix] = -dy / base; vx[iy, ix] = -dx / base; wt[iy, ix] = (b1 > 0).mean()
+    # diffusion douce : les blocs sans vecteur héritent de la moyenne pondérée des voisins.
+    for _ in range(6):
+        den = None
+        for arr in (vy, vx):
+            pad = np.pad(arr, 1, mode="edge"); wpad = np.pad(wt, 1, mode="constant")
+            num = (pad[:-2, 1:-1] * wpad[:-2, 1:-1] + pad[2:, 1:-1] * wpad[2:, 1:-1]
+                   + pad[1:-1, :-2] * wpad[1:-1, :-2] + pad[1:-1, 2:] * wpad[1:-1, 2:])
+            den = (wpad[:-2, 1:-1] + wpad[2:, 1:-1] + wpad[1:-1, :-2] + wpad[1:-1, 2:])
+            fill = (wt < 0.01) & (den > 0)
+            arr[fill] = num[fill] / den[fill]
+        wt = np.where(wt < 0.01, (den > 0) * 0.3, wt)
+    advected = bool(np.hypot(vy, vx).max() > 0.15)   # au moins un bloc a un vrai mouvement
+    fy = np.asarray(Image.fromarray(vy).resize((W, H), Image.BILINEAR), np.float32)
+    fx = np.asarray(Image.fromarray(vx).resize((W, H), Image.BILINEAR), np.float32)
+    return fy, fx, advected
+
+
+def _fr_radar_warp(rgba, fy, fx, k: int):
+    """Advection par DÉFORMATION : chaque pixel de sortie échantillonne l'entrée à
+    (pos − flux·k). Remplissage transparent hors domaine (pas de wrap)."""
+    import numpy as np
+    h, w = rgba.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w]
+    ty = yy - fy * k; tx = xx - fx * k
+    sy = np.clip(ty.astype(np.int32), 0, h - 1); sx = np.clip(tx.astype(np.int32), 0, w - 1)
+    out = rgba[sy, sx]
+    out[(ty < 0) | (ty >= h) | (tx < 0) | (tx >= w)] = 0
     return out
 
 
@@ -15196,29 +15240,35 @@ def _fr_radar_blend_compute() -> None:
         return
     import numpy as np
     from PIL import Image
-    ordered = sorted(recent)
-    fields = {t: _fr_radar_png_to_field(recent[t], FR_BLEND_DS) for t in ordered}
-    mdy = mdx = 0.0
-    advected = False
-    base = min(4, len(ordered) - 1)
-    if base >= 1:
-        dy, dx, peak = _fr_radar_phase_shift(fields[ordered[-1 - base]], fields[ordered[-1]])
-        # confiance : pic net ET déplacement plausible (< ~20 px/pas au DS → ~90 km/pas max).
-        if peak > 3.0 and abs(dy) <= base * 20 and abs(dx) <= base * 20 and (dy or dx):
-            mdy, mdx, advected = dy / base, dx / base, True
     base_dt = _parse_meteofrance_datetime(latest)
     if base_dt is None:
         return
+    ordered = sorted(recent)
+    base = min(4, len(ordered) - 1)
     latest_arr = np.asarray(Image.open(io.BytesIO(recent[latest])).convert("RGBA"))
-    # km/px de la grille de sortie (domaine ~24,4° lon sur FR_RADAR_OUT_WIDTH px).
     d = FR_RADAR_DOMAIN
     km_per_px = (d["max_lon"] - d["min_lon"]) * 111.0 * math.cos(math.radians(46.0)) / FR_RADAR_OUT_WIDTH
-    speed_kmh = math.hypot(mdy, mdx) * FR_BLEND_DS * km_per_px * (60.0 / FR_BLEND_STEP_MIN)
+    advected = False
+    fy_full = fx_full = None
+    speed_kmh = 0.0
+    if base >= 1:
+        f0 = _fr_radar_png_to_field(recent[ordered[-1 - base]], FR_BLEND_DS)
+        f1 = _fr_radar_png_to_field(recent[ordered[-1]], FR_BLEND_DS)
+        fy, fx, advected = _fr_radar_dense_flow(f0.astype(np.float32), f1.astype(np.float32), base)
+        if advected:
+            # champ DS → full-res (taille ×FR_BLEND_DS, valeurs ×FR_BLEND_DS).
+            fh, fw = latest_arr.shape[:2]
+            fy_full = np.asarray(Image.fromarray(fy).resize((fw, fh), Image.BILINEAR), np.float32) * FR_BLEND_DS
+            fx_full = np.asarray(Image.fromarray(fx).resize((fw, fh), Image.BILINEAR), np.float32) * FR_BLEND_DS
+            # vitesse « typique » = flux médian là où il bouge (px/pas au DS → km/h).
+            mag = np.hypot(fy, fx)
+            moving = mag[mag > 0.15]
+            typ = float(np.median(moving)) if moving.size else 0.0
+            speed_kmh = typ * FR_BLEND_DS * km_per_px * (60.0 / FR_BLEND_STEP_MIN)
     frames: dict[str, bytes] = {}
     blend_times: list[str] = []
     for k in range(1, FR_BLEND_LEADS + 1):
-        fy = int(round(mdy * FR_BLEND_DS * k)); fx = int(round(mdx * FR_BLEND_DS * k))
-        adv = _fr_radar_shift_fill(latest_arr, fy, fx) if (fy or fx) else latest_arr
+        adv = _fr_radar_warp(latest_arr, fy_full, fx_full, k) if advected else latest_arr
         buf = io.BytesIO()
         Image.fromarray(adv, "RGBA").save(buf, format="PNG")
         iso = (base_dt + timedelta(minutes=FR_BLEND_STEP_MIN * k)).strftime("%Y-%m-%dT%H:%M:%SZ")
