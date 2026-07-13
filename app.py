@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.293"
+APP_VERSION = "1.2.294"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15579,7 +15579,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.2.293) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.2.294) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -15797,7 +15797,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.2.293) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.2.294) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
@@ -15969,8 +15969,28 @@ def _start_li_live_thread() -> None:
     _li_live_thread.start()
 
 
+def _fr_radar_recent_gap() -> bool:
+    """Y a-t-il une échéance 5 min MANQUANTE dans les ~40 dernières minutes du ring ?
+    Arrive quand le serveur (re)démarre entre deux publications de paquet : le paquet du
+    boot couvre jusqu'à Q+10, le canal ciblé reprend au présent → les frames entre les
+    deux n'existent nulle part tant que le paquet suivant n'est pas ré-ingéré."""
+    with _fr_radar_lock:
+        times = sorted(_fr_radar_frames)
+    if len(times) < 2:
+        return False
+    epochs = []
+    for iso in times:
+        dt = _parse_meteofrance_datetime(iso)
+        if dt is not None:
+            epochs.append(dt.timestamp())
+    cutoff = epochs[-1] - 40 * 60
+    recent = [e for e in epochs if e >= cutoff]
+    return any(b - a > 5 * 60 + 30 for a, b in zip(recent, recent[1:]))
+
+
 def _fr_radar_loop() -> None:
     _fr_radar_state.update(running=True, message="Radar France (réflectivité) actif.")
+    last_gap_pkg_poll = 0.0   # anti-spam : le paquet (13 Mo) est figé 15 min
     try:
         while not _fr_radar_stop.is_set():
             api_key = _fr_radar_api_key()
@@ -16002,6 +16022,15 @@ def _fr_radar_loop() -> None:
                         _fr_radar_state.update(cible_error=str(exc_c))
                 if not used_cible and _n_before > 0 and api_key:
                     nc, total = _fr_radar_poll_once(api_key)   # secours (¼ h)
+                    new_count += nc
+                # COMBLEMENT DE TROU : en régime ciblé, si des échéances 5 min manquent
+                # dans les frames récentes (redémarrage entre deux paquets — vécu : boot
+                # à HH:55 → paquet jusqu'à HH:40 + ciblé HH:55, trou HH:45/HH:50 jamais
+                # comblé), on re-polle le paquet (qui les contient dès sa publication).
+                elif used_cible and api_key and _fr_radar_recent_gap() \
+                        and time.time() - last_gap_pkg_poll > 600:
+                    last_gap_pkg_poll = time.time()
+                    nc, total = _fr_radar_poll_once(api_key)
                     new_count += nc
                 _fr_radar_state.update(
                     message=f"{total} mosaïques en mémoire (+{new_count}).",
