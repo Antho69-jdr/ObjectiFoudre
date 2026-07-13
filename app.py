@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.294"
+APP_VERSION = "1.2.295"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15579,7 +15579,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.2.294) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.2.295) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -15755,6 +15755,17 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
                   + [last_epoch + int(k * FR_BLEND_STEP_MIN * 60)]
                   for k in (2, 4, 6)]   # +10/+20/+30 min
         growth_pct = round(d_mass * 2.0 / last["mass"] * 100.0) if last["mass"] > 0 else 0
+        # durée de vie : âge de la piste (borné par la fenêtre du ring → age_open) +
+        # dissipation estimée par la pente de masse RÉCENTE (~30 min) — publiée seulement
+        # si la cellule décline vraiment (pente négative franche), extrapolation linéaire
+        # masse→0 bornée à 120 min. Pas de pronostic pour une cellule stable/croissante.
+        age_min = int(round((epochs[-1] - epochs[0]) / 60)) if epochs[0] else 0
+        age_open = tr[0][0] == 0   # née avant le début de la fenêtre observée
+        kk = min(len(mass), 6)
+        slope_rec = float(np.polyfit(fis[-kk:], mass[-kk:], 1)[0]) if kk >= 3 else d_mass
+        life_min = None
+        if slope_rec < -1.0 and last["mass"] > 0:
+            life_min = int(min(last["mass"] / (-slope_rec) * FR_BLEND_STEP_MIN, 120.0))
         # bbox lon/lat de la cellule (y px croît vers le sud → ymax px = lat min)
         lon_min, lat_max = _fr_cells_px_to_lonlat(last["ymin"], last["xmin"], fh, fw)
         lon_max, lat_min = _fr_cells_px_to_lonlat(last["ymax"], last["xmax"], fh, fw)
@@ -15765,6 +15776,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
             "speed_kmh": round(speed), "bearing": round(bearing),
             "trend": trend, "d_mass": round(d_mass, 1),
             "growth_pct_10min": growth_pct,   # variation de masse ~%/10 min (2 frames)
+            "age_min": age_min, "age_open": age_open, "life_min": life_min,
             "area_km2": round(last["area"] * km_per_px * km_per_px),
             "peak_band": last["peak"],
             "peak_dbz": _FR_RADAR_BANDS[min(last["peak"], len(_FR_RADAR_BANDS)) - 1],
@@ -15797,7 +15809,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.2.294) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.2.295) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
@@ -15818,8 +15830,9 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
 # publié à ~T+10+35 s → un flash est visible entre ~1 et ~11 min après l'impact. Poll
 # synchronisé sur ce cycle. Contrairement à l'archive quotidienne (heure locale arrondie),
 # on garde ici l'EPOCH exact de chaque flash (flash_time = s depuis 2000-01-01 UTC).
-LI_LIVE_WINDOW_SECONDS = 45 * 60      # buffer RAM des impacts (~45 min)
-LI_LIVE_MAX_SERVED = 2500             # flashs max servis à l'overlay (décimation)
+LI_LIVE_WINDOW_SECONDS = 135 * 60     # buffer RAM des impacts (2 h 15, aligné ring radar 2 h)
+LI_LIVE_MAX_SERVED = 6000             # flashs max servis à l'overlay (décimation)
+LI_LIVE_KEEP_RECENT = 1500            # part récente JAMAIS décimée (fraîcheur du live)
 _li_live_lock = threading.Lock()
 _li_live: dict[str, Any] = {"flashes": [], "updated_at": 0.0, "latest_end": None}
 _li_live_seen: dict[str, float] = {}  # id produit → epoch d'ingestion (dédup)
@@ -15889,10 +15902,15 @@ def _li_live_poll_once() -> int:
     if not token:
         return 0
     now = datetime.now(timezone.utc)
-    start = (now - timedelta(minutes=35)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # premier poll (boot) : BACKFILL de toute la fenêtre servie — contrairement au radar,
+    # le Data Store sert le passé, donc le scrub arrière a de la foudre dès le démarrage.
+    first = not _li_live.get("updated_at")
+    lookback_min = (LI_LIVE_WINDOW_SECONDS // 60 + 10) if first else 35
+    count = 24 if first else 8
+    start = (now - timedelta(minutes=lookback_min)).strftime("%Y-%m-%dT%H:%M:%SZ")
     end = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     url = ("https://api.eumetsat.int/data/search-products/1.0.0/os?format=json"
-           f"&pi={LI_FLASH_COLLECTION}&dtstart={start}&dtend={end}&c=8")
+           f"&pi={LI_FLASH_COLLECTION}&dtstart={start}&dtend={end}&c={count}")
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(req, timeout=45) as resp:
         payload = json.loads(resp.read().decode("utf-8"))
@@ -16177,20 +16195,29 @@ async def fr_radar_bridge_status() -> dict[str, Any]:
 
 @app.get("/api/lightning/live")
 async def lightning_live() -> dict[str, Any]:
-    """Impacts de foudre MTG-LI en quasi temps réel (bbox France, ~30 dernières minutes,
-    epoch exact par flash). Décimé à LI_LIVE_MAX_SERVED (les plus récents d'abord)."""
-    cutoff = time.time() - 30 * 60
+    """Impacts de foudre MTG-LI (bbox France, toute la fenêtre buffer ~2 h, epoch exact
+    par flash) — le front filtre sur [t−30 min, t] de la frise. Décimation au-delà de
+    LI_LIVE_MAX_SERVED : les LI_LIVE_KEEP_RECENT plus récents intacts (fraîcheur du live),
+    le reste échantillonné uniformément (le scrub arrière garde une image représentative)."""
+    now = time.time()
+    cutoff = now - LI_LIVE_WINDOW_SECONDS
     with _li_live_lock:
         flashes = [f for f in _li_live.get("flashes") or [] if f[2] >= cutoff]
         updated_at = _li_live.get("updated_at")
         latest_end = _li_live.get("latest_end")
     flashes.sort(key=lambda f: -f[2])
     total = len(flashes)
-    flashes = flashes[:LI_LIVE_MAX_SERVED]
+    count_30 = sum(1 for f in flashes if f[2] >= now - 30 * 60)
+    if total > LI_LIVE_MAX_SERVED:
+        recent = flashes[:LI_LIVE_KEEP_RECENT]
+        rest = flashes[LI_LIVE_KEEP_RECENT:]
+        budget = LI_LIVE_MAX_SERVED - LI_LIVE_KEEP_RECENT
+        step = len(rest) / budget
+        flashes = recent + [rest[int(i * step)] for i in range(budget)]
     return {
         "ok": bool(updated_at),
         "flashes": [[f[0], f[1], round(f[2])] for f in flashes],
-        "count_30min": total,
+        "count_30min": count_30,
         "updated_at": updated_at,
         "latest_product_end": latest_end,
         "attribution": "EUMETSAT MTG-LI",

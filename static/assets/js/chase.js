@@ -97,8 +97,13 @@
   }
 
   function frRadarImageUrl(iso) { return '/api/radar/fr/image?time=' + encodeURIComponent(iso); }
-  function frBlendImageUrl(iso) { return '/api/radar/fr/blend/image?time=' + encodeURIComponent(iso); }
-  function frBridgeImageUrl(iso) { return '/api/radar/fr/bridge/image?time=' + encodeURIComponent(iso); }
+  // Génération du blend = epoch de l'obs source (base_time). Contrairement aux mosaïques
+  // observées (URL figée), une échéance blend/pont est RECALCULÉE toutes les 5 min avec un
+  // contenu différent → la génération versionne l'id de couche ET l'URL (cache-buster),
+  // sinon la texture d'origine reste affichée jusqu'au F5 (bug vécu).
+  let blendGen = 0;
+  function frBlendImageUrl(iso) { return '/api/radar/fr/blend/image?time=' + encodeURIComponent(iso) + '&v=' + blendGen; }
+  function frBridgeImageUrl(iso) { return '/api/radar/fr/bridge/image?time=' + encodeURIComponent(iso) + '&v=' + blendGen; }
   // PONT : une frame nowcast (réflectivité) dont l'échéance est dans la fenêtre de recouvrement
   // → image = morph gaté + fondu pondéré blend→AROME-PI (mêmes coins que le nowcast).
   function isBridgeFrame(fr) {
@@ -160,8 +165,8 @@
     return true;
   }
 
-  function radarLayerId(fr) { return RADAR_SRC_PREFIX + fr.epoch; }
-  function nowcastLayerId(fr) { return NOWCAST_PREFIX + activeLayer + '-' + fr.epoch + (isBridgeFrame(fr) ? '-br' : ''); }
+  function radarLayerId(fr) { return RADAR_SRC_PREFIX + fr.epoch + (fr.kind === 'blend' ? '-g' + blendGen : ''); }
+  function nowcastLayerId(fr) { return NOWCAST_PREFIX + activeLayer + '-' + fr.epoch + (isBridgeFrame(fr) ? '-br-g' + blendGen : ''); }
 
   // Aligne les couches radar (mosaïque MF, une source `image` par frame) sur `frames` :
   // crée les nouvelles (masquées ; c'est updateRadarWindow qui rend éagère la fenêtre
@@ -173,6 +178,12 @@
     for (const fr of frames) if (isRadarLike(fr)) want.set(radarLayerId(fr), fr.kind === 'blend' ? frBlendImageUrl(fr.iso) : frRadarImageUrl(fr.iso));
     for (const id of Array.from(radarLayerIds)) {
       if (want.has(id)) continue;
+      // frame affichée d'une génération blend précédente : la garder jusqu'à la bascule
+      // (applyCursor cible la nouvelle génération, puis elle passe à opacité 0 → retirée
+      // au sync suivant) — sinon trou visuel le temps du décodage de la remplaçante.
+      let displayed = false;
+      try { displayed = (map.getPaintProperty(id, 'raster-opacity') || 0) > 0.05; } catch (_) {}
+      if (displayed) continue;
       try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {}
       try { if (map.getSource(id)) map.removeSource(id); } catch (_) {}
       radarLayerIds.delete(id);
@@ -379,16 +390,19 @@
     }
   }
 
-  // ── Overlay FOUDRE LIVE (MTG-LI) : impacts des 30 dernières minutes, fondu par âge
-  // (<5 min vif, 5-15 atténué, >15 discret). Sous les cellules, au-dessus du radar.
+  // ── Overlay FOUDRE LIVE (MTG-LI) : impacts des 30 min PRÉCÉDANT l'heure de la frise
+  // (au « live » : maintenant, pour montrer les flashs plus frais que la mosaïque radar),
+  // fondu par âge (<5 min vif, 5-15 atténué, >15 discret). Sous les cellules.
   const LIGHTNING_SRC = 'chase-lightning';
 
   function lightningGeojson() {
     const now = Date.now() / 1000;
+    const fr = frames[cursor];
+    const t = (atLiveEdge || !fr) ? now : fr.epoch;   // référence temporelle = frise
     const feats = [];
     for (const f of (liveLightning.flashes || [])) {
-      const age = now - f[2];
-      if (age > 30 * 60) continue;
+      const age = t - f[2];
+      if (age < 0 || age > 30 * 60) continue;
       const cls = age < 5 * 60 ? 0 : (age < 15 * 60 ? 1 : 2);
       feats.push({ type: 'Feature', properties: { a: cls }, geometry: { type: 'Point', coordinates: [f[0], f[1]] } });
     }
@@ -404,12 +418,25 @@
     } else {
       try {
         map.addSource(LIGHTNING_SRC, { type: 'geojson', data: gj });
+        // halo lumineux dessous (les points seuls étaient quasi invisibles sur le radar)
+        map.addLayer({ id: LIGHTNING_SRC + '-glow', type: 'circle', source: LIGHTNING_SRC,
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'],
+              5, ['match', ['get', 'a'], 0, 8, 1, 5.5, 3.5],
+              9, ['match', ['get', 'a'], 0, 15, 1, 10, 6]],
+            'circle-color': ['match', ['get', 'a'], 0, '#ffe14d', 1, '#f0b93a', '#a8842e'],
+            'circle-blur': 1.1,
+            'circle-opacity': ['match', ['get', 'a'], 0, 0.6, 1, 0.32, 0.14],
+          } });
         map.addLayer({ id: LIGHTNING_SRC + '-pt', type: 'circle', source: LIGHTNING_SRC,
           paint: {
-            'circle-radius': ['match', ['get', 'a'], 0, 3, 1, 2.2, 1.6],
-            'circle-color': ['match', ['get', 'a'], 0, '#fff28a', 1, '#f5c74a', '#b98f3a'],
-            'circle-opacity': ['match', ['get', 'a'], 0, 0.95, 1, 0.55, 0.3],
-            'circle-stroke-color': '#7a5a10', 'circle-stroke-width': 0.5,
+            'circle-radius': ['interpolate', ['linear'], ['zoom'],
+              5, ['match', ['get', 'a'], 0, 3.6, 1, 2.6, 1.8],
+              9, ['match', ['get', 'a'], 0, 6, 1, 4.4, 3]],
+            'circle-color': ['match', ['get', 'a'], 0, '#fffbe0', 1, '#ffd54a', '#c49a3f'],
+            'circle-opacity': ['match', ['get', 'a'], 0, 1, 1, 0.75, 0.4],
+            'circle-stroke-color': '#7a5a10',
+            'circle-stroke-width': ['match', ['get', 'a'], 0, 1, 0.5],
           } });
         // les cellules restent AU-DESSUS de la foudre : re-hisser leurs couches si présentes.
         for (const suf of ['-past', '-traj', '-pt', '-lbl']) {
@@ -422,7 +449,9 @@
 
   function applyLightningVisibility() {
     const vis = (active && lightningVisible) ? 'visible' : 'none';
-    try { if (map.getLayer(LIGHTNING_SRC + '-pt')) map.setLayoutProperty(LIGHTNING_SRC + '-pt', 'visibility', vis); } catch (_) {}
+    for (const suf of ['-glow', '-pt']) {
+      try { if (map.getLayer(LIGHTNING_SRC + suf)) map.setLayoutProperty(LIGHTNING_SRC + suf, 'visibility', vis); } catch (_) {}
+    }
   }
 
   // Menace pour un point (popup position) : cellule dont la trajectoire passe à < 15 km,
@@ -515,6 +544,7 @@
     status = (st && st.ok) ? st : status;
     frRadarTimes = (fr && fr.ok && Array.isArray(fr.times)) ? fr.times : [];
     frBlend = (bl && bl.ok) ? bl : { times: [], speed_kmh: 0, advected: false };
+    blendGen = frBlend.base_time ? Math.floor(new Date(frBlend.base_time).getTime() / 1000) : 0;
     frBridge = (br && br.ok && Array.isArray(br.times)) ? br : { times: [] };
     frCells = (ce && ce.ok && Array.isArray(ce.cells)) ? ce : { time: null, cells: [] };
     liveLightning = (li && li.ok && Array.isArray(li.flashes)) ? li : { flashes: [] };
@@ -616,7 +646,8 @@
     updateActive();
     syncRadarLayers();
     syncNowcastLayers();
-    syncCellsOverlay();   // repositionne les cellules à l'heure de la frame (setData léger)
+    syncCellsOverlay();       // repositionne les cellules à l'heure de la frame (setData léger)
+    syncLightningOverlay();   // refiltre les impacts sur [t−30 min, t] de la frame
     if (isRadarLike(fr)) {
       const tok = ++swapToken;   // invalide toute bascule différée précédente
       const targetId = radarLayerId(fr);
@@ -1268,6 +1299,14 @@
       ['Évolution', (typeof c.growth_pct_10min === 'number' && c.growth_pct_10min !== 0) ? `${c.growth_pct_10min > 0 ? '+' : ''}${c.growth_pct_10min} %/10 min` : 'stable', ''],
       ['⚡ Foudre', (c.flashes_10min > 0) ? `${c.flashes_10min} écl./10 min${flashTrendTxt}` : 'aucune détectée', ''],
     ];
+    if (typeof c.age_min === 'number' && c.age_min > 0) {
+      rows.push(['Âge', `${c.age_open ? '> ' : '~'}${c.age_min} min`, '']);
+    }
+    // pronostic de dissipation : seulement quand il est SIGNIFICATIF — cellule en déclin,
+    // ou pronostic court (une « stable » au plafond de 120 min = bruit, pas une info).
+    if (typeof c.life_min === 'number' && (c.trend === 'decay' || c.life_min <= 60)) {
+      rows.push(['Dissipation estimée', `~${Math.max(5, c.life_min)} min`, '']);
+    }
     html += '<ul class="chase-pos-list">' + rows.map((r) => `<li><span>${r[0]}</span><strong>${r[1]}${(r[2] && r[1] !== '—') ? `<span class="chase-unit">${r[2]}</span>` : ''}</strong></li>`).join('') + '</ul>';
     // approche vers la position suivie (si géoloc active)
     if (userPos && c.speed_kmh > 8) {
@@ -1428,5 +1467,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '294';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '295';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
