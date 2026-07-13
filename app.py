@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.296"
+APP_VERSION = "1.2.297"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15356,6 +15356,7 @@ def _fr_radar_blend_compute() -> None:
 # des traînées (radar et AROME-PI se recouvraient à 5 % un jour de test). Rendu sur la grille
 # AROME-PI (le radar y est résamplé) → identique au nowcast : le front n'échange que l'URL.
 FR_BRIDGE_LEADS = 4          # échéances AROME-PI pontées DÈS la base du blend (~+15..+60 min)
+FR_BRIDGE_SCALE = 2          # facteur de réduction de la sortie du pont (coût warps/PNG ÷4)
 
 
 def _fr_radar_field_from_rgba(rgba, ds: int):
@@ -15474,30 +15475,63 @@ def _fr_bridge_compute(api_key: str) -> None:
             bridge_ts.append(t)
         if len(bridge_ts) >= FR_BRIDGE_LEADS:
             break
+    # ── RÉSOLUTION 5 MIN (D) : les images AROME sont récupérées par QUART D'HEURE, mais le
+    # pont produit une frame TOUTES LES 5 MIN de base+5 à la dernière échéance pontée — plus
+    # d'alternance extrapolé/prévu sur la frise, le futur proche est du pont continu. Pour un
+    # pas hors quart d'heure : AROME du quart le plus proche tel quel (écart ≤7,5 min, absorbé
+    # par le morph gaté et le côté radar advecté en continu qui porte le mouvement fin).
+    # Sortie à DEMI-RÉSOLUTION (BRIDGE_SCALE) : les 3 warps full-res par pas dominaient le
+    # temps de calcul (~26 s pour 11 pas sur 2400×2257) ; à ½ ils coûtent 4× moins et
+    # MapLibre étire proprement (frame prévisionnelle, le radar observé reste full-res).
+    aromes: dict[str, Any] = {}
+    for t in bridge_ts:
+        arome_png = _aromepi_domain_image_sync(api_key, "reflectivity", t, run)
+        if arome_png:
+            img = Image.open(io.BytesIO(arome_png)).convert("RGBA")
+            img = img.resize((img.width // FR_BRIDGE_SCALE, img.height // FR_BRIDGE_SCALE), Image.BILINEAR)
+            aromes[t] = np.asarray(img)
+    if not aromes:
+        return
+    t_start = time.time()
+    q_dts = {q: _parse_meteofrance_datetime(q) for q in aromes}
+    last_q_dt = max(d for d in q_dts.values() if d is not None)
+    lead_span = max(300.0, (last_q_dt - base_dt).total_seconds() - 300.0)
+    # pas de 5 min jusqu'à ~+30 (fenêtre où le pont remplace le blend), quarts d'heure au-delà
+    # (la frise est de toute façon au quart d'heure côté AROME pur).
+    steps: list[Any] = []
+    cur = base_dt + timedelta(minutes=FR_BLEND_STEP_MIN)
+    while cur <= last_q_dt:
+        within = (cur - base_dt).total_seconds() <= FR_BLEND_LEADS * FR_BLEND_STEP_MIN * 60
+        if within or cur.minute % 15 == 0:
+            steps.append(cur)
+        cur += timedelta(minutes=FR_BLEND_STEP_MIN)
     frames: dict[str, bytes] = {}
     total_morph = 0
-    for i, t in enumerate(bridge_ts):
-        arome_png = _aromepi_domain_image_sync(api_key, "reflectivity", t, run)
-        if not arome_png:
-            continue
-        arome_rgba = np.asarray(Image.open(io.BytesIO(arome_png)).convert("RGBA"))
+    morph_cache: dict[str, tuple] = {}   # quart → (fy, fx) : la correspondance évolue lentement
+    ds_eff = max(1, FR_BLEND_DS // FR_BRIDGE_SCALE)   # même grille DS de morph qu'en full-res
+    for dt in steps:
+        q = min(q_dts, key=lambda x: abs((q_dts[x] - dt).total_seconds()))
+        arome_rgba = aromes[q]
         fh, fw = arome_rgba.shape[:2]
-        # côté radar = mosaïque de base ADVECTÉE jusqu'à l'échéance t (advection Lagrangienne
-        # CONTINUE au-delà de +30, au lieu de figer la dernière frame du blend).
-        dt = _parse_meteofrance_datetime(t)
-        k = (dt - base_dt).total_seconds() / (60.0 * FR_BLEND_STEP_MIN) if dt else 0.0
+        # côté radar = mosaïque de base ADVECTÉE jusqu'au pas (advection Lagrangienne CONTINUE).
+        k = (dt - base_dt).total_seconds() / (60.0 * FR_BLEND_STEP_MIN)
         radar_adv = _fr_radar_warp(base_rgba, fyb, fxb, k) if fyb is not None else base_rgba
         radar_on_aro = _fr_radar_to_aromepi_grid(radar_adv, fh, fw)
-        # POIDS SKILL (C) — décroissance selon la CONFIANCE : advection RÉELLE → radar fiable plus
-        # longtemps ; persistance (radar figé) → main à AROME-PI plus tôt. Base temporelle w_t :
+        # POIDS SKILL (C) — décroissance CONTINUE selon la CONFIANCE : advection RÉELLE → radar
+        # fiable plus longtemps ; persistance (radar figé) → main à AROME-PI plus tôt.
         w0, w1 = (0.90, 0.25) if fyb is not None else (0.65, 0.10)
-        w_t = w0 - (w0 - w1) * (i / max(1, FR_BRIDGE_LEADS - 1))
-        fr = _fr_radar_field_from_rgba(radar_on_aro, FR_BLEND_DS)
-        fa = _fr_radar_field_from_rgba(arome_rgba, FR_BLEND_DS)
-        fy, fx, n = _fr_bridge_morph_flow(fr, fa)
-        total_morph += n
-        fyf = np.asarray(Image.fromarray(fy).resize((fw, fh), Image.BILINEAR), np.float32) * FR_BLEND_DS
-        fxf = np.asarray(Image.fromarray(fx).resize((fw, fh), Image.BILINEAR), np.float32) * FR_BLEND_DS
+        lead_frac = min(1.0, max(0.0, ((dt - base_dt).total_seconds() - 300.0) / lead_span))
+        w_t = w0 - (w0 - w1) * lead_frac
+        fr = _fr_radar_field_from_rgba(radar_on_aro, ds_eff)
+        fa = _fr_radar_field_from_rgba(arome_rgba, ds_eff)
+        if q in morph_cache:
+            fy, fx = morph_cache[q]
+        else:
+            fy, fx, n = _fr_bridge_morph_flow(fr, fa)
+            morph_cache[q] = (fy, fx)
+            total_morph += n
+        fyf = np.asarray(Image.fromarray(fy).resize((fw, fh), Image.BILINEAR), np.float32) * ds_eff
+        fxf = np.asarray(Image.fromarray(fx).resize((fw, fh), Image.BILINEAR), np.float32) * ds_eff
         # POIDS SPATIALEMENT VARIABLE (C) : là où SEUL le radar a de l'écho (observé — à garder
         # visible), w monte ; là où SEUL AROME en a (croissance/naissance que le radar ne voit pas
         # encore — à laisser paraître plus tôt), w baisse. Ailleurs (les deux / aucun) = w_t. Champ
@@ -15519,11 +15553,14 @@ def _fr_bridge_compute(api_key: str) -> None:
         out[:, :, :3] = np.where(use_r[:, :, None], Ir[:, :, :3], Ia[:, :, :3])
         out[:, :, 3] = np.maximum(ra, aa).astype(np.uint8)
         buf = io.BytesIO()
-        Image.fromarray(out, "RGBA").save(buf, format="PNG")
-        frames[t] = buf.getvalue()
+        # compress_level=1 : l'encodage PNG full-res dominait le temps de calcul (12 frames
+        # ~29 s) ; niveau 1 ≈ 5× plus rapide pour ~2× la taille (servie une fois puis cache).
+        Image.fromarray(out, "RGBA").save(buf, format="PNG", compress_level=1)
+        frames[dt.strftime("%Y-%m-%dT%H:%M:%SZ")] = buf.getvalue()
     with _fr_bridge_lock:
         _fr_bridge.update(times=list(frames.keys()), frames=frames, run=run,
-                          base_time=base_time, morph_blocks=total_morph)
+                          base_time=base_time, morph_blocks=total_morph,
+                          compute_s=round(time.time() - t_start, 2))
 
 
 # ── CELLULES VIVANTES : suivi d'objets convectifs (TITAN/SCIT-like) ──────────────
@@ -15582,7 +15619,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.2.296) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.2.297) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -15812,7 +15849,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.2.296) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.2.297) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
@@ -16192,6 +16229,7 @@ async def fr_radar_bridge_status() -> dict[str, Any]:
             "times": list(_fr_bridge.get("times") or []),
             "run": _fr_bridge.get("run"),
             "morph_blocks": int(_fr_bridge.get("morph_blocks") or 0),
+            "compute_s": _fr_bridge.get("compute_s"),
             "domain": AROMEPI_DOMAIN,
         }
 

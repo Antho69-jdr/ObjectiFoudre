@@ -632,13 +632,24 @@
       if (epoch > nowSec && bridgeEpochs.has(epoch)) continue;   // le pont porte cet instant
       out.push({ kind: 'blend', epoch, iso }); lastBlendEpoch = Math.max(lastBlendEpoch, epoch);
     }
+    const nowcastSeen = new Set();
     if (status && Array.isArray(status.forecast_times)) {
       for (const t of status.forecast_times) {
         const epoch = Math.floor(new Date(t).getTime() / 1000);
         // à venir ET (au-delà de la plage du blend OU portée par le pont — le pont, qui
         // contient déjà le radar advecté, a le droit d'entrer DANS la plage du blend).
         if (!Number.isFinite(epoch) || epoch <= nowSec) continue;
-        if (epoch > lastBlendEpoch || bridgeEpochs.has(epoch)) out.push({ kind: 'nowcast', epoch, t });
+        if (epoch > lastBlendEpoch || bridgeEpochs.has(epoch)) { out.push({ kind: 'nowcast', epoch, t }); nowcastSeen.add(epoch); }
+      }
+    }
+    // Échéances PONT absentes du run AROME (pas de 5 min entre les quarts d'heure) : frames
+    // nowcast à part entière → le futur proche est du pont CONTINU (fin de l'alternance
+    // extrapolé/prévu de v296).
+    if (frBridge && Array.isArray(frBridge.times)) {
+      for (const t of frBridge.times) {
+        const epoch = Math.floor(new Date(t).getTime() / 1000);
+        if (!Number.isFinite(epoch) || epoch <= nowSec || nowcastSeen.has(epoch)) continue;
+        out.push({ kind: 'nowcast', epoch, t });
       }
     }
     out.sort((a, b) => a.epoch - b.epoch);
@@ -738,6 +749,13 @@
     // garde-fou : l'activité n'a de sens que pour une VRAIE échéance AROME-PI (nowcast, qui
     // porte `.t`). Sans ça, une frame sans `.t` déclenche `activity?time=undefined` → 422.
     if (!activityEl || !status || !status.run || !fr || !fr.t) return;
+    // frame PONT à un pas 5 min : l'échéance n'existe pas dans le run AROME → pas de requête
+    // activity (422/ok:false garanti), badge composite à la place.
+    if (!(Array.isArray(status.forecast_times) && status.forecast_times.indexOf(fr.t) !== -1)) {
+      activityEl.textContent = 'radar + AROME-PI';
+      activityEl.className = 'chase-activity lvl-low';
+      return;
+    }
     if (activityTimer) window.clearTimeout(activityTimer);
     activityEl.textContent = '…'; activityEl.className = 'chase-activity';
     const key = activeLayer, t = fr.t, run = status.run;
@@ -1482,5 +1500,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '296';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '297';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
