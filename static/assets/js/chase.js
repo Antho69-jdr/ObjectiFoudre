@@ -605,8 +605,20 @@
       const epoch = Math.floor(new Date(iso).getTime() / 1000);
       if (Number.isFinite(epoch)) out.push({ kind: 'radar', epoch, iso });
     }
+    // Échéances portées par le PONT (composite radar advecté + AROME-PI pondéré par skill) :
+    // elles PRIMENT sur la frame blend au même instant — c'est le meilleur des deux, et ça
+    // met l'info AROME-PI dès le premier quart d'heure après le direct (écart ≤ 15 min,
+    // demande user : pas un trou de 30-45 min avant la première échéance « prévu »).
+    const bridgeEpochs = new Set();
+    if (frBridge && Array.isArray(frBridge.times)) {
+      for (const t of frBridge.times) {
+        const e = Math.floor(new Date(t).getTime() / 1000);
+        if (Number.isFinite(e)) bridgeEpochs.add(e);
+      }
+    }
     // BLEND : frames advectées (radar extrapolé) qui comblent le trou de latence et le
-    // 0-30 min à venir, ancrées sur l'observation. Priment sur AROME-PI dans leur plage.
+    // 0-30 min à venir, ancrées sur l'observation. Priment sur AROME-PI PUR dans leur plage
+    // (mesuré meilleur 0-30 min), mais s'effacent devant une frame PONT au même instant.
     // Si le mouvement n'est PAS fiable (persistance), les frames FUTURES seraient identiques
     // à la dernière mosaïque → on ne garde que le comblement du trou jusqu'à ~maintenant
     // (AROME-PI, qui a de la physique, couvre le proche futur).
@@ -617,13 +629,16 @@
       const epoch = Math.floor(new Date(iso).getTime() / 1000);
       if (!Number.isFinite(epoch)) continue;
       if (!blendAdvected && epoch > nowSec + 60) continue;   // persistance : pas de futur identique
+      if (epoch > nowSec && bridgeEpochs.has(epoch)) continue;   // le pont porte cet instant
       out.push({ kind: 'blend', epoch, iso }); lastBlendEpoch = Math.max(lastBlendEpoch, epoch);
     }
     if (status && Array.isArray(status.forecast_times)) {
       for (const t of status.forecast_times) {
         const epoch = Math.floor(new Date(t).getTime() / 1000);
-        // à venir ET au-delà de la plage du blend (le blend prime sur le proche futur).
-        if (Number.isFinite(epoch) && epoch > nowSec && epoch > lastBlendEpoch) out.push({ kind: 'nowcast', epoch, t });
+        // à venir ET (au-delà de la plage du blend OU portée par le pont — le pont, qui
+        // contient déjà le radar advecté, a le droit d'entrer DANS la plage du blend).
+        if (!Number.isFinite(epoch) || epoch <= nowSec) continue;
+        if (epoch > lastBlendEpoch || bridgeEpochs.has(epoch)) out.push({ kind: 'nowcast', epoch, t });
       }
     }
     out.sort((a, b) => a.epoch - b.epoch);
@@ -1467,5 +1482,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '295';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '296';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

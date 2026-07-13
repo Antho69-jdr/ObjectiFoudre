@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.295"
+APP_VERSION = "1.2.296"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15355,7 +15355,7 @@ def _fr_radar_blend_compute() -> None:
 # éparse), le flux gaté est NUL → simple fondu pondéré propre. Mesuré : sans gate le morph fait
 # des traînées (radar et AROME-PI se recouvraient à 5 % un jour de test). Rendu sur la grille
 # AROME-PI (le radar y est résamplé) → identique au nowcast : le front n'échange que l'URL.
-FR_BRIDGE_LEADS = 3          # échéances AROME-PI pontées après le blend (~+30..+75 min)
+FR_BRIDGE_LEADS = 4          # échéances AROME-PI pontées DÈS la base du blend (~+15..+60 min)
 
 
 def _fr_radar_field_from_rgba(rgba, ds: int):
@@ -15464,10 +15464,13 @@ def _fr_bridge_compute(api_key: str) -> None:
     if flow_ds is not None:
         fyb = np.asarray(Image.fromarray(flow_ds[0]).resize((bw, bh), Image.BILINEAR), np.float32) * FR_BLEND_DS
         fxb = np.asarray(Image.fromarray(flow_ds[1]).resize((bw, bh), Image.BILINEAR), np.float32) * FR_BLEND_DS
+    # échéances pontées DÈS la première après l'obs de base (donc DANS la fenêtre du blend,
+    # pas seulement après elle) : la frise a ainsi une frame « prévu » à ≤15 min du direct
+    # (demande user), et le poids skill démarre radar-dominant (w0) sur ces échéances-là.
     bridge_ts = []
     for t in ftimes:
         dt = _parse_meteofrance_datetime(t)
-        if dt is not None and dt > last_blend_dt:
+        if dt is not None and dt > base_dt:
             bridge_ts.append(t)
         if len(bridge_ts) >= FR_BRIDGE_LEADS:
             break
@@ -15579,7 +15582,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.2.295) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.2.296) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -15809,7 +15812,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.2.295) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.2.296) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
