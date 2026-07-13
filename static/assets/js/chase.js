@@ -66,6 +66,8 @@
   let frBridge = { times: [] };  // PONT blend→AROME-PI (réflectivité) : morph gaté + fondu pondéré
   let frCells = { time: null, cells: [] };   // cellules suivies (moteur objets serveur)
   let cellsVisible = true;                    // toggle overlay cellules (bouton rail gauche)
+  let liveLightning = { flashes: [] };        // foudre live MTG-LI ([lon,lat,epoch], ~30 min)
+  let lightningVisible = true;                // toggle overlay foudre (bouton rail gauche)
   const prefetched = new Set(); // URLs déjà préchargées (cache navigateur/serveur chaud)
   let prefetchGen = 0;          // jeton pour annuler un préchargement en cours
   let prefetchRun = null;       // run AROME-PI préchargé (réinit du set si le run change)
@@ -330,7 +332,8 @@
         }
       }
       const arrow = c.trend === 'grow' ? ' ▲' : (c.trend === 'decay' ? ' ▼' : '');
-      const label = c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}${arrow}` : `statique${arrow}`;
+      const zap = (c.flashes_10min > 0) ? '⚡ ' : '';   // électriquement active (foudre live)
+      const label = zap + (c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}${arrow}` : `statique${arrow}`);
       feats.push({ type: 'Feature', properties: { kind: 'pt', color, label, cellIdx: ci }, geometry: { type: 'Point', coordinates: pos } });
     }
     return { type: 'FeatureCollection', features: feats };
@@ -374,6 +377,52 @@
     for (const suf of ['-past', '-traj', '-pt', '-lbl']) {
       try { if (map.getLayer(CELLS_SRC + suf)) map.setLayoutProperty(CELLS_SRC + suf, 'visibility', vis); } catch (_) {}
     }
+  }
+
+  // ── Overlay FOUDRE LIVE (MTG-LI) : impacts des 30 dernières minutes, fondu par âge
+  // (<5 min vif, 5-15 atténué, >15 discret). Sous les cellules, au-dessus du radar.
+  const LIGHTNING_SRC = 'chase-lightning';
+
+  function lightningGeojson() {
+    const now = Date.now() / 1000;
+    const feats = [];
+    for (const f of (liveLightning.flashes || [])) {
+      const age = now - f[2];
+      if (age > 30 * 60) continue;
+      const cls = age < 5 * 60 ? 0 : (age < 15 * 60 ? 1 : 2);
+      feats.push({ type: 'Feature', properties: { a: cls }, geometry: { type: 'Point', coordinates: [f[0], f[1]] } });
+    }
+    return { type: 'FeatureCollection', features: feats };
+  }
+
+  function syncLightningOverlay() {
+    if (!layersReady || !active) return;
+    const gj = lightningGeojson();
+    const src = map.getSource(LIGHTNING_SRC);
+    if (src) {
+      try { src.setData(gj); } catch (_) {}
+    } else {
+      try {
+        map.addSource(LIGHTNING_SRC, { type: 'geojson', data: gj });
+        map.addLayer({ id: LIGHTNING_SRC + '-pt', type: 'circle', source: LIGHTNING_SRC,
+          paint: {
+            'circle-radius': ['match', ['get', 'a'], 0, 3, 1, 2.2, 1.6],
+            'circle-color': ['match', ['get', 'a'], 0, '#fff28a', 1, '#f5c74a', '#b98f3a'],
+            'circle-opacity': ['match', ['get', 'a'], 0, 0.95, 1, 0.55, 0.3],
+            'circle-stroke-color': '#7a5a10', 'circle-stroke-width': 0.5,
+          } });
+        // les cellules restent AU-DESSUS de la foudre : re-hisser leurs couches si présentes.
+        for (const suf of ['-past', '-traj', '-pt', '-lbl']) {
+          try { if (map.getLayer(CELLS_SRC + suf)) map.moveLayer(CELLS_SRC + suf); } catch (_) {}
+        }
+      } catch (_) {}
+    }
+    applyLightningVisibility();
+  }
+
+  function applyLightningVisibility() {
+    const vis = (active && lightningVisible) ? 'visible' : 'none';
+    try { if (map.getLayer(LIGHTNING_SRC + '-pt')) map.setLayoutProperty(LIGHTNING_SRC + '-pt', 'visibility', vis); } catch (_) {}
   }
 
   // Menace pour un point (popup position) : cellule dont la trajectoire passe à < 15 km,
@@ -460,13 +509,17 @@
     try { br = await (await fetch('/api/radar/fr/bridge/status')).json(); } catch (_) {}
     let ce = null;
     try { ce = await (await fetch('/api/radar/fr/cells')).json(); } catch (_) {}
+    let li = null;
+    try { li = await (await fetch('/api/lightning/live')).json(); } catch (_) {}
     if (token !== loadToken) return;
     status = (st && st.ok) ? st : status;
     frRadarTimes = (fr && fr.ok && Array.isArray(fr.times)) ? fr.times : [];
     frBlend = (bl && bl.ok) ? bl : { times: [], speed_kmh: 0, advected: false };
     frBridge = (br && br.ok && Array.isArray(br.times)) ? br : { times: [] };
     frCells = (ce && ce.ok && Array.isArray(ce.cells)) ? ce : { time: null, cells: [] };
+    liveLightning = (li && li.ok && Array.isArray(li.flashes)) ? li : { flashes: [] };
     syncCellsOverlay();
+    syncLightningOverlay();
     if (status && status.run !== prefetchRun) { prefetched.clear(); prefetchRun = status.run; }
     buildTimeline();
   }
@@ -1207,11 +1260,13 @@
     const trendCls = c.trend === 'grow' ? 'sev-high' : (c.trend === 'decay' ? 'sev-mid' : 'sev-watch');
     const upd = c.epoch ? fmtClock(c.epoch) : '—';
     let html = `<div class="chase-verdict ${trendCls}" style="border-color:${color}">⛈ Cellule suivie · ${trendTxt}<span class="chase-verdict-time">${upd}</span></div>`;
+    const flashTrendTxt = c.flash_trend === 'up' ? ' (en hausse)' : (c.flash_trend === 'down' ? ' (en baisse)' : '');
     const rows = [
       ['Déplacement', c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}` : 'quasi statique', ''],
       ['Pic mesuré', c.peak_dbz != null ? Math.round(c.peak_dbz) : '—', ' dBZ'],
       ['Étendue', c.area_km2 != null ? c.area_km2.toLocaleString('fr-FR') : '—', ' km²'],
       ['Évolution', (typeof c.growth_pct_10min === 'number' && c.growth_pct_10min !== 0) ? `${c.growth_pct_10min > 0 ? '+' : ''}${c.growth_pct_10min} %/10 min` : 'stable', ''],
+      ['⚡ Foudre', (c.flashes_10min > 0) ? `${c.flashes_10min} écl./10 min${flashTrendTxt}` : 'aucune détectée', ''],
     ];
     html += '<ul class="chase-pos-list">' + rows.map((r) => `<li><span>${r[0]}</span><strong>${r[1]}${(r[2] && r[1] !== '—') ? `<span class="chase-unit">${r[2]}</span>` : ''}</strong></li>`).join('') + '</ul>';
     // approche vers la position suivie (si géoloc active)
@@ -1323,6 +1378,7 @@
     }
     swapToken++;
     applyCellsVisibility();              // masque l'overlay cellules (active=false)
+    applyLightningVisibility();          // masque l'overlay foudre (active=false)
     if (layersReady) hideGrid(false);   // réafficher la grille de score
     if (refreshTimer) { window.clearInterval(refreshTimer); refreshTimer = null; }
     prefetchGen++;
@@ -1349,6 +1405,13 @@
     cellsBtn.setAttribute('aria-pressed', cellsVisible ? 'true' : 'false');
     applyCellsVisibility();
   });
+  const lightningBtn = document.getElementById('chaseLightningBtn');
+  lightningBtn?.addEventListener('click', () => {
+    lightningVisible = !lightningVisible;
+    lightningBtn.classList.toggle('active', lightningVisible);
+    lightningBtn.setAttribute('aria-pressed', lightningVisible ? 'true' : 'false');
+    applyLightningVisibility();
+  });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && active) deactivate(); });
   // Remplacer vite l'image/les tuiles d'une source (scrub rapide / export) annule le
   // chargement en cours → AbortError, que MapLibre journalise directement via console.error
@@ -1365,5 +1428,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '291';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '292';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

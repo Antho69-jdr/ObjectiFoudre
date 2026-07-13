@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.291"
+APP_VERSION = "1.2.292"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15535,6 +15535,7 @@ FR_CELLS_MIN_AREA = 8       # px DS : seuil de suivi
 FR_CELLS_SIG_AREA = 40      # px DS : seuil d'exposition (cellules significatives)
 FR_CELLS_MAX_SPEED = 120.0  # km/h : au-delà = appariement douteux (mini-cellules bruitées)
 _fr_cells_lock = threading.Lock()
+_fr_cells_calc_lock = threading.Lock()   # anti-recalcul concurrent (thread radar vs thread foudre)
 _fr_cells: dict[str, Any] = {"time": None, "cells": [], "updated_at": 0.0}
 _fr_cells_frame_cache: dict[str, list] = {}   # iso → cellules extraites (purgé avec le ring)
 
@@ -15571,6 +15572,8 @@ def _fr_cells_extract(band) -> list[dict]:
         cells.append({
             "cy": float((ys * w).sum() / w.sum()), "cx": float((xs * w).sum() / w.sum()),
             "area": area, "peak": int(band[m].max()), "mass": float(band[m].sum()),
+            "ymin": int(ys.min()), "ymax": int(ys.max()),
+            "xmin": int(xs.min()), "xmax": int(xs.max()),
         })
     return cells
 
@@ -15634,8 +15637,21 @@ def _fr_cells_compute() -> None:
         pngs = {t: _fr_radar_frames[t] for t in times}
     if len(times) < 4:
         return
-    if _fr_cells.get("time") == times[-1]:
+    # recalcule si NOUVELLE mosaïque OU foudre plus fraîche que le dernier calcul (le
+    # rattachement flashs↔cellules doit suivre le cycle foudre 10 min, pas que le radar).
+    li_at = float(_li_live.get("updated_at") or 0.0)
+    if _fr_cells.get("time") == times[-1] and li_at <= float(_fr_cells.get("li_at") or 0.0):
         return
+    if not _fr_cells_calc_lock.acquire(blocking=False):
+        return   # calcul déjà en cours (thread radar vs thread foudre)
+    try:
+        _fr_cells_compute_locked(times, pngs, li_at)
+    finally:
+        _fr_cells_calc_lock.release()
+
+
+def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: float) -> None:
+    import numpy as np
     # purge du cache d'extraction (suit le ring buffer)
     for iso in list(_fr_cells_frame_cache):
         if iso not in pngs:
@@ -15685,8 +15701,12 @@ def _fr_cells_compute() -> None:
                   + [last_epoch + int(k * FR_BLEND_STEP_MIN * 60)]
                   for k in (2, 4, 6)]   # +10/+20/+30 min
         growth_pct = round(d_mass * 2.0 / last["mass"] * 100.0) if last["mass"] > 0 else 0
+        # bbox lon/lat de la cellule (y px croît vers le sud → ymax px = lat min)
+        lon_min, lat_max = _fr_cells_px_to_lonlat(last["ymin"], last["xmin"], fh, fw)
+        lon_max, lat_min = _fr_cells_px_to_lonlat(last["ymax"], last["xmax"], fh, fw)
         out.append({
             "lon": lon, "lat": lat, "epoch": last_epoch,
+            "bbox": [lon_min, lat_min, lon_max, lat_max],
             "speed_kmh": round(speed), "bearing": round(bearing),
             "trend": trend, "d_mass": round(d_mass, 1),
             "growth_pct_10min": growth_pct,   # variation de masse ~%/10 min (2 frames)
@@ -15695,9 +15715,193 @@ def _fr_cells_compute() -> None:
             "peak_dbz": _FR_RADAR_BANDS[min(last["peak"], len(_FR_RADAR_BANDS)) - 1],
             "past": past, "future": future,
         })
+    # ── ACTIVITÉ ÉLECTRIQUE par cellule (foudre live MTG-LI) : flashs DANS LA BBOX de la
+    # cellule (élargie de ~15 km) sur [0-10 min] et [10-20 min] → taux + tendance (le
+    # « lightning jump » est un précurseur d'intensification). ⚠ PAS un rayon fixe autour
+    # du centroïde : un MCS de 20 000 km² a ses flashs à ~100 km du centroïde (vécu).
+    with _li_live_lock:
+        _fl = list(_li_live.get("flashes") or [])
+    if _fl and out:
+        now_s = time.time()
+        fl_lon = np.array([f[0] for f in _fl], np.float32)
+        fl_lat = np.array([f[1] for f in _fl], np.float32)
+        fl_age = now_s - np.array([f[2] for f in _fl], np.float64)
+        recent = fl_age <= 600
+        prev = (fl_age > 600) & (fl_age <= 1200)
+        for c in out:
+            b = c["bbox"]
+            mlat = 0.14                                     # ~15 km
+            mlon = 0.14 / max(0.2, math.cos(math.radians(c["lat"])))
+            inside = ((fl_lon >= b[0] - mlon) & (fl_lon <= b[2] + mlon)
+                      & (fl_lat >= b[1] - mlat) & (fl_lat <= b[3] + mlat))
+            n10 = int((inside & recent).sum())
+            n20 = int((inside & prev).sum())
+            c["flashes_10min"] = n10
+            c["flash_trend"] = "up" if n10 > n20 * 1.3 + 2 else ("down" if n10 * 1.3 + 2 < n20 else "flat")
+    else:
+        for c in out:
+            c["flashes_10min"] = 0
+            c["flash_trend"] = "flat"
     out.sort(key=lambda c: -c["area_km2"])
     with _fr_cells_lock:
-        _fr_cells.update(time=times[-1], cells=out[:40], updated_at=time.time())
+        _fr_cells.update(time=times[-1], cells=out[:40], updated_at=time.time(), li_at=li_at)
+
+
+# ── FOUDRE LIVE (MTG-LI) : impacts en quasi temps réel pour le mode chasse ───────
+# Réutilise le Data Store EUMETSAT du pipeline différé (collection LI Lightning Flashes,
+# produits full-disk de 10 min) mais EN DIRECT : mesuré, un produit couvrant [T, T+10] est
+# publié à ~T+10+35 s → un flash est visible entre ~1 et ~11 min après l'impact. Poll
+# synchronisé sur ce cycle. Contrairement à l'archive quotidienne (heure locale arrondie),
+# on garde ici l'EPOCH exact de chaque flash (flash_time = s depuis 2000-01-01 UTC).
+LI_LIVE_WINDOW_SECONDS = 45 * 60      # buffer RAM des impacts (~45 min)
+LI_LIVE_MAX_SERVED = 2500             # flashs max servis à l'overlay (décimation)
+_li_live_lock = threading.Lock()
+_li_live: dict[str, Any] = {"flashes": [], "updated_at": 0.0, "latest_end": None}
+_li_live_seen: dict[str, float] = {}  # id produit → epoch d'ingestion (dédup)
+_li_live_thread: threading.Thread | None = None
+_li_live_stop = threading.Event()
+_LI_EPOCH_2000 = 946684800.0          # 2000-01-01T00:00:00Z
+
+
+def _li_live_extract_flashes(zip_bytes: bytes) -> list[tuple[float, float, float]]:
+    """D'un produit LI (zip → .nc CHK-BODY) : flashs dans la bbox France en
+    (lon, lat, epoch_utc_exact). Variante temps réel de _eumdac_extract_france_flashes."""
+    import h5py
+    import numpy as np
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
+            body = next((n for n in archive.namelist() if "CHK-BODY" in n and n.endswith(".nc")), None)
+            if not body:
+                return []
+            nc_bytes = archive.read(body)
+    except Exception:
+        return []
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as tmp:
+            tmp.write(nc_bytes)
+            tmp_path = tmp.name
+        with h5py.File(tmp_path, "r") as handle:
+            if "latitude" not in handle or "longitude" not in handle:
+                return []
+
+            def _dec(name):
+                d = handle[name]
+                raw = d[:].astype("f8")
+                sc = d.attrs.get("scale_factor")
+                of = d.attrs.get("add_offset")
+                if sc is not None:
+                    raw = raw * float(np.asarray(sc).ravel()[0])
+                if of is not None:
+                    raw = raw + float(np.asarray(of).ravel()[0])
+                return raw
+
+            lat = _dec("latitude")
+            lon = _dec("longitude")
+            ftime = handle["flash_time"][:].astype("f8") if "flash_time" in handle else None
+    except Exception:
+        return []
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    if ftime is None:
+        return []
+    west, south, east, north = FRANCE_LIGHTNING_BBOX
+    mask = ((lon >= west) & (lon <= east) & (lat >= south) & (lat <= north)
+            & np.isfinite(lat) & np.isfinite(lon) & np.isfinite(ftime))
+    epochs = ftime[mask] + _LI_EPOCH_2000
+    return [(round(float(lo), 4), round(float(la), 4), float(e))
+            for lo, la, e in zip(lon[mask].tolist(), lat[mask].tolist(), epochs.tolist())]
+
+
+def _li_live_poll_once() -> int:
+    """Cherche les produits LI des ~35 dernières minutes, ingère ceux pas encore vus,
+    purge le buffer au-delà de LI_LIVE_WINDOW_SECONDS. → nb de nouveaux produits."""
+    token = _eumdac_token()
+    if not token:
+        return 0
+    now = datetime.now(timezone.utc)
+    start = (now - timedelta(minutes=35)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    end = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    url = ("https://api.eumetsat.int/data/search-products/1.0.0/os?format=json"
+           f"&pi={LI_FLASH_COLLECTION}&dtstart={start}&dtend={end}&c=8")
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    feats = payload.get("features", [])
+    feats.sort(key=lambda f: (f.get("properties", {}) or {}).get("date", ""))
+    new_products = 0
+    latest_end = _li_live.get("latest_end")
+    for feat in feats:
+        pid = feat.get("id") or ""
+        if not pid or pid in _li_live_seen:
+            continue
+        links = ((feat.get("properties", {}) or {}).get("links", {}) or {}).get("data") or []
+        href = links[0].get("href") if links else None
+        if not href:
+            continue
+        req = urllib.request.Request(href, headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            zip_bytes = resp.read()
+        flashes = _li_live_extract_flashes(zip_bytes)
+        _li_live_seen[pid] = time.time()
+        new_products += 1
+        cover = (feat.get("properties", {}) or {}).get("date", "")
+        if "/" in cover:
+            latest_end = cover.split("/")[-1]
+        if flashes:
+            with _li_live_lock:
+                _li_live["flashes"].extend(flashes)
+    cutoff = time.time() - LI_LIVE_WINDOW_SECONDS
+    with _li_live_lock:
+        _li_live["flashes"] = [f for f in _li_live["flashes"] if f[2] >= cutoff]
+        _li_live["flashes"].sort(key=lambda f: f[2])
+        _li_live.update(updated_at=time.time(), latest_end=latest_end)
+    for pid, seen_at in list(_li_live_seen.items()):
+        if time.time() - seen_at > 3 * 3600:
+            _li_live_seen.pop(pid, None)
+    return new_products
+
+
+def _li_live_loop() -> None:
+    _li_live_stop.wait(20)   # laisser le boot respirer
+    while not _li_live_stop.is_set():
+        sleep_s = 60.0
+        try:
+            new_products = _li_live_poll_once()
+            if new_products:
+                try:
+                    _fr_cells_compute()   # rafraîchit le rattachement flashs↔cellules
+                except Exception:
+                    pass
+            latest_end = _li_live.get("latest_end")
+            end_dt = _parse_meteofrance_datetime(latest_end.replace(".000Z", "Z")) if latest_end else None
+            if end_dt is not None:
+                # produit suivant publié ~fin de fenêtre + 10 min + 35 s (mesuré) ; sonde 20 s.
+                next_pub = end_dt.timestamp() + 10 * 60 + 30
+                delta = next_pub - time.time()
+                sleep_s = max(20.0, min(660.0, delta)) if new_products else 20.0
+                if not new_products and time.time() - end_dt.timestamp() > 25 * 60:
+                    sleep_s = 120.0   # flux en retard/panne : ménager l'API
+        except Exception as exc:
+            _fr_radar_state.update(lightning_error=str(exc)[:200])
+            sleep_s = 120.0
+        if _li_live_stop.wait(sleep_s):
+            break
+
+
+def _start_li_live_thread() -> None:
+    global _li_live_thread
+    if not (EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET):
+        return
+    if _li_live_thread is not None and _li_live_thread.is_alive():
+        return
+    _li_live_stop.clear()
+    _li_live_thread = threading.Thread(target=_li_live_loop, name="li-live", daemon=True)
+    _li_live_thread.start()
 
 
 def _fr_radar_loop() -> None:
@@ -15805,6 +16009,7 @@ def _start_fr_radar_thread() -> None:
 @app.on_event("startup")
 def _startup_fr_radar() -> None:
     _start_fr_radar_thread()
+    _start_li_live_thread()   # foudre live MTG-LI (no-op si identifiants EUMETSAT absents)
 
 
 @app.on_event("shutdown")
@@ -15874,6 +16079,28 @@ async def fr_radar_bridge_status() -> dict[str, Any]:
             "morph_blocks": int(_fr_bridge.get("morph_blocks") or 0),
             "domain": AROMEPI_DOMAIN,
         }
+
+
+@app.get("/api/lightning/live")
+async def lightning_live() -> dict[str, Any]:
+    """Impacts de foudre MTG-LI en quasi temps réel (bbox France, ~30 dernières minutes,
+    epoch exact par flash). Décimé à LI_LIVE_MAX_SERVED (les plus récents d'abord)."""
+    cutoff = time.time() - 30 * 60
+    with _li_live_lock:
+        flashes = [f for f in _li_live.get("flashes") or [] if f[2] >= cutoff]
+        updated_at = _li_live.get("updated_at")
+        latest_end = _li_live.get("latest_end")
+    flashes.sort(key=lambda f: -f[2])
+    total = len(flashes)
+    flashes = flashes[:LI_LIVE_MAX_SERVED]
+    return {
+        "ok": bool(updated_at),
+        "flashes": [[f[0], f[1], round(f[2])] for f in flashes],
+        "count_30min": total,
+        "updated_at": updated_at,
+        "latest_product_end": latest_end,
+        "attribution": "EUMETSAT MTG-LI",
+    }
 
 
 @app.get("/api/radar/fr/cells")
