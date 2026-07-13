@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.290"
+APP_VERSION = "1.2.291"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -14782,6 +14782,33 @@ def _fr_radar_api_key() -> str | None:
         return None
 
 
+# « API Ciblée Radar » (DPRadar) : mosaïque réflectivité 1 km SERVIE TOUTES LES 5 MIN
+# (latence mesurée ~4,6 min), MÊME produit BUFR que le paquet (décodeur maison réutilisé).
+# Canal PRINCIPAL du direct ; le paquet (¼ h) reste pour le boot (3 frames d'un coup) et
+# le secours. ⚠ le paramètre `date` est IGNORÉ par l'API (toujours le dernier produit).
+METEOFRANCE_RADAR_CIBLE_URL = (
+    "https://public-api.meteofrance.fr/public/DPRadar/v1/mosaiques/METROPOLE/"
+    "observations/REFLECTIVITE/produit?maille=1000"
+)
+
+
+def _fr_radar_cible_api_key() -> str | None:
+    raw = os.environ.get("METEOFRANCE_RADAR_CIBLE_API_KEY")
+    if not raw:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Clef API Radar Utilisé.txt")
+        try:
+            with open(path, encoding="utf-8") as handle:
+                raw = handle.read().strip()
+        except OSError:
+            return None
+    if not raw:
+        return None
+    try:
+        return _clean_meteofrance_api_key(raw)
+    except HTTPException:
+        return None
+
+
 class _BufrBitReader:
     """Lecture de n bits en O(1) par appel (offset de bits sur un buffer mémoire)."""
 
@@ -15119,6 +15146,40 @@ def _fr_radar_poll_once(api_key: str) -> tuple[int, int]:
         if planes is not None:
             _fr_radar_last_planes = planes
     # purge du ring buffer (~2 h)
+    now = datetime.now(timezone.utc)
+    with _fr_radar_lock:
+        for iso in list(_fr_radar_frames):
+            t = _parse_meteofrance_datetime(iso)
+            if t is None or (now - t).total_seconds() > FR_RADAR_HISTORY_SECONDS:
+                _fr_radar_frames.pop(iso, None)
+        total = len(_fr_radar_frames)
+    return new_count, total
+
+
+def _fr_radar_poll_cible_once(api_key: str) -> tuple[int, int]:
+    """Télécharge la DERNIÈRE mosaïque via l'API Ciblée Radar (produit unique ~1,1 Mo gzip,
+    servi toutes les 5 min avec ~4,6 min de latence) et l'ingère si nouvelle. Même pipeline
+    que le paquet : BUFR → décodeur maison → PNG Mercator + plans au point. → (nouvelles, total)."""
+    global _fr_radar_last_planes
+    status, _ct, raw = _aromepi_http_get(METEOFRANCE_RADAR_CIBLE_URL, api_key, timeout=45)
+    if status != 200 or not raw or raw[:2] != b"\x1f\x8b":
+        raise RuntimeError(f"mosaïque ciblée HTTP {status}")
+    bufr = gzip.decompress(raw)
+    msg = _fr_radar_decode_bufr(bufr)
+    if not msg:
+        raise RuntimeError("mosaïque ciblée : décodage BUFR vide")
+    new_count = 0
+    with _fr_radar_lock:
+        already = msg["time"] in _fr_radar_frames
+    if not already:
+        png = _fr_radar_render_png(msg)
+        if png:
+            with _fr_radar_lock:
+                _fr_radar_frames[msg["time"]] = png
+            new_count = 1
+        planes = _fr_radar_extract_planes(msg)
+        if planes is not None:
+            _fr_radar_last_planes = planes
     now = datetime.now(timezone.utc)
     with _fr_radar_lock:
         for iso in list(_fr_radar_frames):
@@ -15644,16 +15705,39 @@ def _fr_radar_loop() -> None:
     try:
         while not _fr_radar_stop.is_set():
             api_key = _fr_radar_api_key()
-            if not api_key:
+            cible_key = _fr_radar_cible_api_key()
+            if not api_key and not cible_key:
                 _fr_radar_state.update(message="En attente : clé radar absente.")
                 if _fr_radar_stop.wait(300):
                     break
                 continue
+            # ── INGESTION HYBRIDE : mosaïque CIBLÉE (5 min, ~4,6 min de latence) en canal
+            # principal ; PAQUET (¼ h) au boot (3 frames d'un coup) et en secours. Les deux
+            # alimentent le même ring buffer (mêmes échéances → déduplication naturelle).
+            with _fr_radar_lock:
+                _n_before = len(_fr_radar_frames)
+            new_count = 0
+            total = _n_before
+            used_cible = False
             try:
-                new_count, total = _fr_radar_poll_once(api_key)
+                if _n_before == 0 and api_key:
+                    nc, total = _fr_radar_poll_once(api_key)   # boot : remplit le dernier ¼ h
+                    new_count += nc
+                if cible_key:
+                    try:
+                        nc, total = _fr_radar_poll_cible_once(cible_key)
+                        new_count += nc
+                        used_cible = True
+                        _fr_radar_state.update(cible_error=None)
+                    except Exception as exc_c:
+                        _fr_radar_state.update(cible_error=str(exc_c))
+                if not used_cible and _n_before > 0 and api_key:
+                    nc, total = _fr_radar_poll_once(api_key)   # secours (¼ h)
+                    new_count += nc
                 _fr_radar_state.update(
                     message=f"{total} mosaïques en mémoire (+{new_count}).",
                     frames=total, last_error=None, updated_at=time.time(),
+                    source="ciblee" if used_cible else "paquet",
                 )
             except Exception as exc:
                 _fr_radar_state.update(last_error=str(exc), updated_at=time.time())
@@ -15678,18 +15762,24 @@ def _fr_radar_loop() -> None:
             except Exception as exc:
                 _fr_radar_state.update(cells_error=str(exc))
             # ── POLL SYNCHRONISÉ sur le cycle de publication (mesuré 2026-07-13) ──────────
-            # Le paquet est régénéré par QUART D'HEURE : les mesures [Q, Q+5, Q+10] sont
-            # publiées ensemble à ~Q+20 (soit ~5 min après la dernière mesure — vérifié :
-            # quart 23:15/20/25 apparu à 23:30:37). Un poll aveugle à 150 s ajoutait en
-            # moyenne +75 s et jusqu'à +150 s de retard d'ingestion. Désormais : on dort
-            # jusqu'à la publication ESTIMÉE (dernière échéance + 20 min − marge), puis on
-            # sonde en cadence rapide (25 s) jusqu'à l'ingestion du nouveau quart. Garde-fou
-            # publication en retard (> 25 min d'âge) : 60 s pour ménager le quota (50/min).
+            # CIBLÉE : produit T publié à ~T+4,6 min → après ingestion de T, dormir jusqu'à
+            # ~T+5min+3min50 (marge) puis sonder toutes les 15 s (≈2-3 requêtes/cycle).
+            # PAQUET : régénéré par QUART D'HEURE, les mesures [Q, Q+5, Q+10] publiées
+            # ensemble à ~Q+20 (vérifié : quart 23:15/20/25 apparu à 23:30:37) → dormir
+            # jusqu'à dernière échéance + 20 min − marge, puis sonder toutes les 25 s.
+            # Garde-fou publication en retard : 60 s pour ménager le quota (50/min).
             with _fr_radar_lock:
                 _times_sync = sorted(_fr_radar_frames)
             _latest_sync = _parse_meteofrance_datetime(_times_sync[-1]) if _times_sync else None
             if _latest_sync is None:
                 sleep_s = float(FR_RADAR_POLL_SECONDS)          # rien ingéré : rythme de base
+            elif used_cible:
+                age = time.time() - _latest_sync.timestamp()
+                if new_count > 0:
+                    next_pub = _latest_sync.timestamp() + 5 * 60 + 230
+                    sleep_s = max(15.0, min(320.0, next_pub - time.time()))
+                else:
+                    sleep_s = 15.0 if age < 12 * 60 else 60.0   # fenêtre chaude / retard MF
             elif new_count > 0:
                 next_pub = _latest_sync.timestamp() + 20 * 60 - 45
                 sleep_s = max(20.0, min(900.0, next_pub - time.time()))
