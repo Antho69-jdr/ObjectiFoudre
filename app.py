@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.292"
+APP_VERSION = "1.2.293"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15531,8 +15531,11 @@ def _fr_bridge_compute(api_key: str) -> None:
 # (à +5→+30 min) ; la croissance extrapolée utilise l'amortissement λ(lead)=((lead−1)/5)²
 # (calibré : jamais pire que la persistance à court terme, plein gain à +30 min).
 FR_CELLS_HISTORY = 12       # mosaïques analysées (~1 h)
-FR_CELLS_MIN_AREA = 8       # px DS : seuil de suivi
-FR_CELLS_SIG_AREA = 40      # px DS : seuil d'exposition (cellules significatives)
+FR_CELLS_MIN_AREA = 6       # px DS : seuil enveloppe (détection/suivi)
+FR_CELLS_CORE_BAND = 5      # bande cœur convectif (~40-48 dBZ)
+FR_CELLS_CORE_MIN = 3       # px DS : aire min d'un cœur
+FR_CELLS_SPLIT_KM = 25.0    # ≥2 cœurs distants de plus → scission de l'enveloppe
+FR_CELLS_EXPO_AREA = 25     # px DS : exposition par l'aire seule (~535 km²)
 FR_CELLS_MAX_SPEED = 120.0  # km/h : au-delà = appariement douteux (mini-cellules bruitées)
 _fr_cells_lock = threading.Lock()
 _fr_cells_calc_lock = threading.Lock()   # anti-recalcul concurrent (thread radar vs thread foudre)
@@ -15540,16 +15543,13 @@ _fr_cells: dict[str, Any] = {"time": None, "cells": [], "updated_at": 0.0}
 _fr_cells_frame_cache: dict[str, list] = {}   # iso → cellules extraites (purgé avec le ring)
 
 
-def _fr_cells_extract(band) -> list[dict]:
-    """Cellules d'un champ de bandes DS : composantes 4-connexes ≥ bande 2 (~24 dBZ),
-    aire ≥ FR_CELLS_MIN_AREA. Étiquetage flood-fill maison (pas de scipy dans les deps)."""
+def _fr_cells_label_cc(mask) -> tuple[Any, int]:
+    """Étiquetage 4-connexe flood-fill maison (pas de scipy dans les deps)."""
     import numpy as np
-    H, W = band.shape
-    mask = band >= 2
+    H, W = mask.shape
     labels = np.zeros((H, W), np.int32)
-    cells: list[dict] = []
-    ys_all, xs_all = np.where(mask)
     nlab = 0
+    ys_all, xs_all = np.where(mask)
     for y0, x0 in zip(ys_all.tolist(), xs_all.tolist()):
         if labels[y0, x0]:
             continue
@@ -15563,23 +15563,77 @@ def _fr_cells_extract(band) -> list[dict]:
                 if 0 <= ny < H and 0 <= nx < W and mask[ny, nx] and not labels[ny, nx]:
                     labels[ny, nx] = nlab
                     stack.append((ny, nx))
-        m = labels == nlab
-        area = int(m.sum())
-        if area < FR_CELLS_MIN_AREA:
+    return labels, nlab
+
+
+def _fr_cells_stats(band, m) -> dict:
+    import numpy as np
+    ys, xs = np.where(m)
+    w = band[m].astype(np.float32)
+    return {
+        "cy": float((ys * w).sum() / w.sum()), "cx": float((xs * w).sum() / w.sum()),
+        "area": int(m.sum()), "peak": int(band[m].max()), "mass": float(band[m].sum()),
+        "ymin": int(ys.min()), "ymax": int(ys.max()),
+        "xmin": int(xs.min()), "xmax": int(xs.max()),
+    }
+
+
+def _fr_cells_extract(band) -> list[dict]:
+    """Détection HIÉRARCHIQUE des cellules (v1.2.293) : enveloppes 4-connexes ≥ bande 2
+    (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
+    (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
+    FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
+    proche). Corrige la fusion des MCS/lignes de grains (vécu : une « cellule » de
+    12 000 km² sur 300 km) tout en gardant l'enveloppe entière quand elle est monocœur."""
+    import numpy as np
+    H, W = band.shape
+    km_per_px = (FR_RADAR_DOMAIN["max_lon"] - FR_RADAR_DOMAIN["min_lon"]) * 111.0 \
+        * math.cos(math.radians(46.0)) / FR_RADAR_OUT_WIDTH * FR_BLEND_DS
+    env_labels, n_env = _fr_cells_label_cc(band >= 2)
+    cells: list[dict] = []
+    for lab in range(1, n_env + 1):
+        env_m = env_labels == lab
+        if int(env_m.sum()) < FR_CELLS_MIN_AREA:
             continue
-        ys, xs = np.where(m)
-        w = band[m].astype(np.float32)
-        cells.append({
-            "cy": float((ys * w).sum() / w.sum()), "cx": float((xs * w).sum() / w.sum()),
-            "area": area, "peak": int(band[m].max()), "mass": float(band[m].sum()),
-            "ymin": int(ys.min()), "ymax": int(ys.max()),
-            "xmin": int(xs.min()), "xmax": int(xs.max()),
-        })
+        cores: list[dict] = []
+        core_mask = env_m & (band >= FR_CELLS_CORE_BAND)
+        if core_mask.any():
+            c_labels, n_c = _fr_cells_label_cc(core_mask)
+            for cl in range(1, n_c + 1):
+                cm = c_labels == cl
+                if int(cm.sum()) >= FR_CELLS_CORE_MIN:
+                    cores.append(_fr_cells_stats(band, cm))
+        do_split = False
+        if len(cores) >= 2:
+            for i in range(len(cores)):
+                for j in range(i + 1, len(cores)):
+                    d_km = math.hypot(cores[i]["cy"] - cores[j]["cy"],
+                                      cores[i]["cx"] - cores[j]["cx"]) * km_per_px
+                    if d_km > FR_CELLS_SPLIT_KM:
+                        do_split = True
+                        break
+                if do_split:
+                    break
+        if not do_split:
+            cells.append(_fr_cells_stats(band, env_m))
+            continue
+        ys, xs = np.where(env_m)
+        ccy = np.array([c["cy"] for c in cores], np.float32)
+        ccx = np.array([c["cx"] for c in cores], np.float32)
+        owner = ((ys[:, None] - ccy[None, :]) ** 2 + (xs[:, None] - ccx[None, :]) ** 2).argmin(1)
+        for ci in range(len(cores)):
+            sel = owner == ci
+            if not sel.any():
+                continue
+            sub = np.zeros((H, W), bool)
+            sub[ys[sel], xs[sel]] = True
+            cells.append(_fr_cells_stats(band, sub))
     return cells
 
 
 def _fr_cells_track(frames_cells: list[list[dict]]) -> list[list[tuple]]:
-    """Appariement glouton frame à frame (distance < 35 px DS, ratio d'aire 0,4-2,6) → pistes."""
+    """Appariement glouton frame à frame (distance < 35 px DS, ratio d'aire 0,3-3,3 —
+    élargi pour tolérer les scissions/fusions de la détection hiérarchique) → pistes."""
     tracks: list[list[tuple]] = []
     active: list[int] = []
     for fi, cells in enumerate(frames_cells):
@@ -15595,7 +15649,7 @@ def _fr_cells_track(frames_cells: list[list[dict]]) -> list[list[tuple]]:
                 if d > 35:
                     continue
                 r = c["area"] / max(1, pc["area"])
-                if r < 0.4 or r > 2.6:
+                if r < 0.3 or r > 3.3:
                     continue
                 cand.append((d, pi, ci))
         cand.sort()
@@ -15673,8 +15727,8 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         if tr[-1][0] != tlast or len(tr) < 3:
             continue
         last = tr[-1][1]
-        if last["area"] < FR_CELLS_SIG_AREA:
-            continue
+        # (l'exposition — aire OU pic fort OU foudre — est décidée APRÈS le rattachement
+        # foudre, plus bas ; ici on ne garde que le filtre de suivi.)
         fis = np.array([p[0] for p in tr], np.float32)
         cy = np.array([p[1]["cy"] for p in tr], np.float32)
         cx = np.array([p[1]["cx"] for p in tr], np.float32)
@@ -15706,6 +15760,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         lon_max, lat_min = _fr_cells_px_to_lonlat(last["ymax"], last["xmax"], fh, fw)
         out.append({
             "lon": lon, "lat": lat, "epoch": last_epoch,
+            "_area_px": last["area"],   # interne : filtre d'exposition (retiré avant publication)
             "bbox": [lon_min, lat_min, lon_max, lat_max],
             "speed_kmh": round(speed), "bearing": round(bearing),
             "trend": trend, "d_mass": round(d_mass, 1),
@@ -15742,6 +15797,16 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
+    # EXPOSITION COMBINÉE (v1.2.293) : une cellule est publiée si elle est étendue, OU
+    # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
+    # une cellule naissante qui foudroie compte, quelle que soit sa taille).
+    out = [c for c in out if (
+        c["_area_px"] >= FR_CELLS_EXPO_AREA
+        or (c["_area_px"] >= FR_CELLS_MIN_AREA and c["peak_band"] >= FR_CELLS_CORE_BAND)
+        or c["flashes_10min"] > 0
+    )]
+    for c in out:
+        c.pop("_area_px", None)
     out.sort(key=lambda c: -c["area_km2"])
     with _fr_cells_lock:
         _fr_cells.update(time=times[-1], cells=out[:40], updated_at=time.time(), li_at=li_at)
