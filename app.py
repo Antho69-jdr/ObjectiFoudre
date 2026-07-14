@@ -9,6 +9,7 @@ import copy
 import gzip
 import multiprocessing
 import hashlib
+import hmac
 import http.client
 import importlib
 import importlib.util
@@ -40,7 +41,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
@@ -64,7 +65,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.300"
+APP_VERSION = "1.2.301"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -10576,8 +10577,14 @@ def _validate_server_admin_secret(secret: str) -> None:
             status_code=403,
             detail='Commande serveur desactivee : definis OBJECTIFOUDRE_PRELOAD_SECRET pour activer ce pilotage.',
         )
-    if secret != expected:
+    if not hmac.compare_digest(str(secret or ""), expected):
         raise HTTPException(status_code=403, detail='Secret de prechargement serveur invalide.')
+
+
+async def _admin_secret_dep(secret: str | None = Query(None)) -> None:
+    """Dépendance FastAPI : verrouille une route derrière OBJECTIFOUDRE_PRELOAD_SECRET
+    (?secret=…). Utilisée sur tout l'outillage admin/diagnostic avant la bêta publique."""
+    _validate_server_admin_secret(secret or "")
 
 
 def _server_arome_preload_dates(reference_date: Date | None = None, raw_value: str | None = None) -> list[Date]:
@@ -13218,7 +13225,7 @@ def meteofrance_grib_decoder_status() -> dict[str, Any]:
     return _detect_grib_decoder_status()
 
 
-@app.post("/api/meteofrance/test-key")
+@app.post("/api/meteofrance/test-key", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_test_key(payload: MeteoFranceKeyTestRequest) -> dict[str, Any]:
     _ensure_meteofrance_diagnostics_enabled("/api/meteofrance/test-key")
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13226,7 +13233,7 @@ async def meteofrance_test_key(payload: MeteoFranceKeyTestRequest) -> dict[str, 
     return result
 
 
-@app.post("/api/meteofrance/sample-coverage")
+@app.post("/api/meteofrance/sample-coverage", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_sample_coverage(payload: MeteoFranceCoverageSampleRequest) -> dict[str, Any]:
     _ensure_meteofrance_diagnostics_enabled("/api/meteofrance/sample-coverage")
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13240,7 +13247,7 @@ async def meteofrance_sample_coverage(payload: MeteoFranceCoverageSampleRequest)
     return result
 
 
-@app.post("/api/meteofrance/probe-multitime-coverage")
+@app.post("/api/meteofrance/probe-multitime-coverage", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_probe_multitime_coverage(payload: MeteoFranceMultiTimeCoverageProbeRequest) -> dict[str, Any]:
     _ensure_meteofrance_diagnostics_enabled("/api/meteofrance/probe-multitime-coverage")
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13257,7 +13264,7 @@ async def meteofrance_probe_multitime_coverage(payload: MeteoFranceMultiTimeCove
     return result
 
 
-@app.post("/api/meteofrance/probe-model-packages")
+@app.post("/api/meteofrance/probe-model-packages", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_probe_model_packages(payload: MeteoFranceModelPackageProbeRequest) -> dict[str, Any]:
     _ensure_meteofrance_diagnostics_enabled("/api/meteofrance/probe-model-packages")
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13271,7 +13278,7 @@ async def meteofrance_probe_model_packages(payload: MeteoFranceModelPackageProbe
     return result
 
 
-@app.post("/api/meteofrance/probe-grib-package")
+@app.post("/api/meteofrance/probe-grib-package", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_probe_grib_package(payload: MeteoFranceGribPackageProbeRequest) -> dict[str, Any]:
     _ensure_meteofrance_diagnostics_enabled("/api/meteofrance/probe-grib-package")
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13286,7 +13293,7 @@ async def meteofrance_probe_grib_package(payload: MeteoFranceGribPackageProbeReq
     return result
 
 
-@app.post("/api/meteofrance/probe-grib-full-package")
+@app.post("/api/meteofrance/probe-grib-full-package", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_probe_grib_full_package(payload: MeteoFranceGribFullPackageProbeRequest) -> dict[str, Any]:
     api_key = _clean_meteofrance_api_key(payload.token)
     result = await asyncio.to_thread(
@@ -13301,7 +13308,7 @@ async def meteofrance_probe_grib_full_package(payload: MeteoFranceGribFullPackag
     return result
 
 
-@app.post("/api/meteofrance/probe-grib-index")
+@app.post("/api/meteofrance/probe-grib-index", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_probe_grib_index(payload: MeteoFranceGribIndexProbeRequest) -> dict[str, Any]:
     _ensure_meteofrance_diagnostics_enabled("/api/meteofrance/probe-grib-index")
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13316,7 +13323,7 @@ async def meteofrance_probe_grib_index(payload: MeteoFranceGribIndexProbeRequest
     return result
 
 
-@app.post("/api/meteofrance/probe-grib-profile")
+@app.post("/api/meteofrance/probe-grib-profile", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_probe_grib_profile(payload: MeteoFranceGribProfileProbeRequest) -> dict[str, Any]:
     _ensure_meteofrance_diagnostics_enabled("/api/meteofrance/probe-grib-profile")
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13331,7 +13338,7 @@ async def meteofrance_probe_grib_profile(payload: MeteoFranceGribProfileProbeReq
     return result
 
 
-@app.post("/api/meteofrance/probe-grib-target-message")
+@app.post("/api/meteofrance/probe-grib-target-message", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_probe_grib_target_message(payload: MeteoFranceGribTargetMessageRequest) -> dict[str, Any]:
     _ensure_meteofrance_diagnostics_enabled("/api/meteofrance/probe-grib-target-message")
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13353,7 +13360,7 @@ async def meteofrance_probe_grib_target_message(payload: MeteoFranceGribTargetMe
     return result
 
 
-@app.post("/api/meteofrance/slot-grid")
+@app.post("/api/meteofrance/slot-grid", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_slot_grid(payload: MeteoFranceSlotGridRequest) -> dict[str, Any]:
     _ensure_legacy_local_arome_enabled('/api/meteofrance/slot-grid')
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13370,7 +13377,7 @@ async def meteofrance_slot_grid(payload: MeteoFranceSlotGridRequest) -> dict[str
     return result
 
 
-@app.post("/api/meteofrance/grib-slot-grid")
+@app.post("/api/meteofrance/grib-slot-grid", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_grib_slot_grid(payload: MeteoFranceGribSlotGridRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
     _ensure_legacy_local_arome_enabled('/api/meteofrance/grib-slot-grid')
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13760,10 +13767,21 @@ def _run_lightning_collect_job(date_str: str) -> None:
 async def history_collect_lightning(date: str = Query(..., min_length=10, max_length=10)) -> dict[str, Any]:
     if not _is_iso_date(date):
         raise HTTPException(status_code=400, detail="Date attendue au format AAAA-MM-JJ.")
+    # garde-fous d'endpoint PUBLIC : pas de date sans prévision archivée (le job échouerait
+    # après avoir téléchargé toute la journée), pas de futur, max 2 jobs simultanés (anti-abus
+    # — la collecte AUTOMATIQUE couvre de toute façon tout, ce bouton ne fait qu'anticiper).
+    today_iso = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date().isoformat()
+    if date > today_iso:
+        return {"ok": False, "date": date, "reason": "future_date"}
+    if not await asyncio.to_thread(_forecast_day_cells, date):
+        return {"ok": False, "date": date, "reason": "no_forecast_archived"}
     with _li_collect_jobs_lock:
         job = _li_collect_jobs.get(date)
         if job and job.get("state") == "running":
             return {"ok": True, "date": date, "started": True, "already_running": True}
+        running = sum(1 for j in _li_collect_jobs.values() if j.get("state") == "running")
+        if running >= 2:
+            return {"ok": False, "date": date, "reason": "busy"}
         _li_collect_jobs[date] = {"state": "running", "at": time.time()}
     threading.Thread(target=_run_lightning_collect_job, args=(date,), daemon=True,
                      name=f"li-collect-{date}").start()
@@ -13862,7 +13880,7 @@ async def learning_status() -> dict[str, Any]:
     return await asyncio.to_thread(_learning_status)
 
 
-@app.post("/api/learning/retrain")
+@app.post("/api/learning/retrain", dependencies=[Depends(_admin_secret_dep)])
 async def learning_retrain() -> dict[str, Any]:
     """Réentraîne maintenant : construit le jeu, évalue, et applique si meilleur (auto)."""
     res = await asyncio.to_thread(_run_learning_evaluation, source="manual")
@@ -13870,7 +13888,7 @@ async def learning_retrain() -> dict[str, Any]:
     return {"ok": True, "result": res, "status": status}
 
 
-@app.post("/api/learning/revert")
+@app.post("/api/learning/revert", dependencies=[Depends(_admin_secret_dep)])
 async def learning_revert() -> dict[str, Any]:
     """Revient au modèle de base (supprime active.json, réinitialise poids + seuil)."""
     cleared = await asyncio.to_thread(learning.clear_active, OBJECTIFOUDRE_HISTORY_DIR)
@@ -13883,7 +13901,7 @@ async def learning_revert() -> dict[str, Any]:
     return {"ok": True, "reverted": cleared, "status": status}
 
 
-@app.post("/api/meteofrance/grib-slot-grid-cache")
+@app.post("/api/meteofrance/grib-slot-grid-cache", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_grib_slot_grid_cache(payload: MeteoFranceGribSlotGridRequest) -> dict[str, Any]:
     _ensure_legacy_local_arome_enabled('/api/meteofrance/grib-slot-grid-cache')
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13901,7 +13919,7 @@ async def meteofrance_grib_slot_grid_cache(payload: MeteoFranceGribSlotGridReque
     return result
 
 
-@app.post("/api/meteofrance/grib-cache-status")
+@app.post("/api/meteofrance/grib-cache-status", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_grib_cache_status(payload: MeteoFranceGribCacheStatusRequest) -> dict[str, Any]:
     _ensure_legacy_local_arome_enabled('/api/meteofrance/grib-cache-status')
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13967,7 +13985,7 @@ async def meteofrance_grib_france_cache_status(payload: MeteoFranceGribCacheStat
     )
 
 
-@app.post("/api/meteofrance/grib-preload")
+@app.post("/api/meteofrance/grib-preload", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_grib_preload(payload: MeteoFranceGribPreloadRequest) -> dict[str, Any]:
     _ensure_legacy_local_arome_enabled('/api/meteofrance/grib-preload')
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -13987,7 +14005,7 @@ async def meteofrance_grib_preload(payload: MeteoFranceGribPreloadRequest) -> di
     return result
 
 
-@app.post("/api/meteofrance/grib-preload-national-day")
+@app.post("/api/meteofrance/grib-preload-national-day", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_grib_preload_national_day(payload: MeteoFranceGribPreloadRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
     api_key = _clean_meteofrance_api_key(payload.token)
     run_schedule = _server_arome_run_schedule()
@@ -14005,7 +14023,7 @@ async def meteofrance_grib_preload_national_day(payload: MeteoFranceGribPreloadR
     )
 
 
-@app.post("/api/meteofrance/grib-preload-day")
+@app.post("/api/meteofrance/grib-preload-day", dependencies=[Depends(_admin_secret_dep)])
 async def meteofrance_grib_preload_day(payload: MeteoFranceGribPreloadRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
     _ensure_legacy_local_arome_enabled('/api/meteofrance/grib-preload-day')
     api_key = _clean_meteofrance_api_key(payload.token)
@@ -15732,7 +15750,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.2.300) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.2.301) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -15962,7 +15980,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.2.300) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.2.301) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (

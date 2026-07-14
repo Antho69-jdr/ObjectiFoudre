@@ -664,13 +664,19 @@
     }
   }
 
+  // Secret admin (mode admin : /?admin=<secret> une fois) — les commandes learning
+  // sont refusées côté serveur sans lui ; les boutons sont masqués pour le public.
+  function adminSecretQS() {
+    try { const s = localStorage.getItem('objfAdminSecret'); return s ? `?secret=${encodeURIComponent(s)}` : ''; } catch (_) { return ''; }
+  }
+
   async function retrainLearning() {
     if (!learningEl) return;
     const token = ++learningToken;
     if (learningRetrainBtn) learningRetrainBtn.disabled = true;
     learningEl.innerHTML = progressHtml('Réentraînement en cours… (lecture des archives)');
     try {
-      const response = await fetch('/api/learning/retrain', { method: 'POST' });
+      const response = await fetch(`/api/learning/retrain${adminSecretQS()}`, { method: 'POST' });
       const data = await response.json().catch(() => ({}));
       if (token === learningToken) renderLearningStatus(data.status || null);
     } catch (_) {
@@ -685,7 +691,7 @@
     const token = ++learningToken;
     if (learningRevertBtn) learningRevertBtn.disabled = true;
     try {
-      const response = await fetch('/api/learning/revert', { method: 'POST' });
+      const response = await fetch(`/api/learning/revert${adminSecretQS()}`, { method: 'POST' });
       const data = await response.json().catch(() => ({}));
       if (token === learningToken) renderLearningStatus(data.status || null);
     } catch (_) {
@@ -921,8 +927,11 @@
     frameEl.addEventListener('touchend', (event) => { if (event.touches.length === 0) mode = null; });
   }
 
-  if (learningRetrainBtn) learningRetrainBtn.addEventListener('click', retrainLearning);
-  if (learningRevertBtn) learningRevertBtn.addEventListener('click', revertLearning);
+  // Boutons de pilotage du modèle : ADMIN uniquement (masqués pour le public,
+  // et refusés côté serveur sans le secret de toute façon).
+  const isAdminUI = document.documentElement.classList.contains('objf-admin');
+  if (learningRetrainBtn) { learningRetrainBtn.hidden = !isAdminUI; learningRetrainBtn.addEventListener('click', retrainLearning); }
+  if (learningRevertBtn) { learningRevertBtn.hidden = !isAdminUI; learningRevertBtn.addEventListener('click', revertLearning); }
 
   const calToggleBtn = document.getElementById('historyCalToggle');
   if (calToggleBtn) {
