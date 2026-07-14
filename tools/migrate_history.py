@@ -19,6 +19,14 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
 HISTORY = HERE / "history"
+# User-Agent explicite : l'empreinte par défaut de python-urllib est bloquée par le
+# Bot Fight Mode de Cloudflare (error 1010) quand le domaine passe par son proxy.
+UA = {"User-Agent": "ObjectiFoudre-Migration/1.0 (Mozilla/5.0 compatible)"}
+
+
+def get_json(url: str, timeout: int = 60):
+    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout) as r:
+        return json.load(r)
 
 
 def main() -> None:
@@ -33,21 +41,22 @@ def main() -> None:
     print(f"local : {len(local)} fichiers, {sum(local.values()) / 1e6:.0f} Mo")
 
     q = urllib.parse.urlencode({"secret": secret})
-    with urllib.request.urlopen(f"{base}/api/history/inventory?{q}", timeout=60) as r:
-        remote = json.load(r)["files"]
+    remote = get_json(f"{base}/api/history/inventory?{q}")["files"]
     print(f"distant : {len(remote)} fichiers")
 
-    todo = [rel for rel, size in sorted(local.items())
-            if remote.get(rel) != size]
+    # n'envoie que les fichiers ABSENTS du distant : un fichier présent là-bas peut être
+    # PLUS FRAIS (l'instance distante archive en continu ses propres journées) — l'écraser
+    # serait une régression ; le serveur skippe de toute façon sans overwrite.
+    todo = [rel for rel in sorted(local) if rel not in remote]
     print(f"à envoyer : {len(todo)} fichiers")
 
     sent = errors = 0
     t0 = time.time()
     for i, rel in enumerate(todo, 1):
         data = (HISTORY / rel).read_bytes()
-        qq = urllib.parse.urlencode({"secret": secret, "path": rel, "overwrite": "true"})
+        qq = urllib.parse.urlencode({"secret": secret, "path": rel})
         req = urllib.request.Request(f"{base}/api/history/import?{qq}", data=data, method="POST",
-                                     headers={"Content-Type": "application/octet-stream"})
+                                     headers={"Content-Type": "application/octet-stream", **UA})
         for attempt in (1, 2, 3):
             try:
                 with urllib.request.urlopen(req, timeout=120) as r:
@@ -65,11 +74,10 @@ def main() -> None:
             print(f"  {i}/{len(todo)} envoyés ({rate:.1f} fichiers/s)")
 
     print(f"\nterminé : {sent} envoyés, {errors} échecs")
-    with urllib.request.urlopen(f"{base}/api/history/inventory?{q}", timeout=60) as r:
-        after = json.load(r)
+    after = get_json(f"{base}/api/history/inventory?{q}")
     print(f"distant après : {after['count']} fichiers, {after['total_bytes'] / 1e6:.0f} Mo")
-    missing = [rel for rel, size in local.items() if after["files"].get(rel) != size]
-    print("✅ MIGRATION COMPLÈTE" if not missing else f"⚠ encore manquants : {len(missing)}")
+    missing = [rel for rel in local if rel not in after["files"]]
+    print("✅ MIGRATION COMPLÈTE" if not missing else f"⚠ encore absents du distant : {len(missing)}")
 
 
 if __name__ == "__main__":
