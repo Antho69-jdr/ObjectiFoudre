@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.297"
+APP_VERSION = "1.2.298"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15524,6 +15524,15 @@ def _fr_bridge_compute(api_key: str) -> None:
         w_t = w0 - (w0 - w1) * lead_frac
         fr = _fr_radar_field_from_rgba(radar_on_aro, ds_eff)
         fa = _fr_radar_field_from_rgba(arome_rgba, ds_eff)
+        # CONFIANCE AROME GLOBALE (mesuré nuit du 13-14/07 : AROME quasi vide face à un orage
+        # réel → le pont, CSI 0,40, faisait PIRE que le blend 0,70 en diluant l'écho radar
+        # dans un champ vide). Si AROME voit beaucoup moins d'écho que le radar, sa part
+        # s'effondre et le pont ≈ radar advecté ; quand AROME voit l'orage, comportement
+        # inchangé (conf_a = 1).
+        ea = float((fa > 0).sum())
+        er = float((fr > 0).sum())
+        conf_a = min(1.0, ea / max(1.0, 0.3 * er))
+        w_t = 1.0 - (1.0 - w_t) * conf_a
         if q in morph_cache:
             fy, fx = morph_cache[q]
         else:
@@ -15619,7 +15628,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.2.297) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.2.298) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -15849,7 +15858,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.2.297) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.2.298) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
