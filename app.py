@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.298"
+APP_VERSION = "1.2.299"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -13752,6 +13752,59 @@ async def history_collect_pending_lightning() -> dict[str, Any]:
     return await asyncio.to_thread(_collect_pending_lightning)
 
 
+# ── Migration de l'historique (changement d'hébergeur) : inventaire + import ────
+# Protégés par OBJECTIFOUDRE_PRELOAD_SECRET (refus si non défini). Import fichier
+# par fichier, idempotent (skip si présent) → reprise possible après coupure.
+def _history_safe_rel(path: str) -> Path:
+    rel = Path(path.strip().lstrip("/"))
+    if not rel.parts or any(p in ("..", "") for p in rel.parts):
+        raise HTTPException(status_code=400, detail="Chemin relatif invalide.")
+    target = (OBJECTIFOUDRE_HISTORY_DIR / rel).resolve()
+    if not str(target).startswith(str(OBJECTIFOUDRE_HISTORY_DIR.resolve())):
+        raise HTTPException(status_code=400, detail="Chemin hors de l'historique.")
+    return target
+
+
+@app.get("/api/history/inventory")
+async def history_inventory(secret: str = Query(...)) -> dict[str, Any]:
+    """Liste {chemin relatif: taille} de l'historique — sert au diff de migration."""
+    _validate_server_admin_secret(secret)
+
+    def scan() -> dict[str, int]:
+        out: dict[str, int] = {}
+        base = OBJECTIFOUDRE_HISTORY_DIR
+        if base.exists():
+            for p in base.rglob("*"):
+                if p.is_file():
+                    out[str(p.relative_to(base))] = p.stat().st_size
+        return out
+
+    files = await asyncio.to_thread(scan)
+    return {"ok": True, "count": len(files), "total_bytes": sum(files.values()), "files": files}
+
+
+@app.post("/api/history/import")
+async def history_import(request: Request, path: str = Query(..., min_length=1, max_length=300),
+                         secret: str = Query(...), overwrite: bool = Query(False)) -> dict[str, Any]:
+    """Dépose UN fichier d'historique (corps binaire brut). Idempotent sans overwrite."""
+    _validate_server_admin_secret(secret)
+    target = _history_safe_rel(path)
+    if target.exists() and not overwrite:
+        return {"ok": True, "path": path, "skipped": True}
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="Corps vide.")
+
+    def write() -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        tmp.write_bytes(body)
+        tmp.replace(target)
+
+    await asyncio.to_thread(write)
+    return {"ok": True, "path": path, "bytes": len(body), "skipped": False}
+
+
 @app.get("/api/learning/status")
 async def learning_status() -> dict[str, Any]:
     """État de l'auto-calibration : volumes, garde-fous, seuil/poids actifs, skill, journal."""
@@ -15628,7 +15681,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.2.298) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.2.299) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -15858,7 +15911,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.2.298) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.2.299) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
