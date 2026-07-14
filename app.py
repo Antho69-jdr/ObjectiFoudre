@@ -65,7 +65,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.301"
+APP_VERSION = "1.3.0"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15750,7 +15750,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.2.301) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.3.0) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -15980,7 +15980,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.2.301) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.3.0) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
