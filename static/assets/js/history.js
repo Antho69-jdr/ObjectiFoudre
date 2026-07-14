@@ -695,10 +695,15 @@
     }
   }
 
+  // Collecte ASYNCHRONE : le POST lance un job serveur (le téléchargement MTG-LI prend
+  // plusieurs minutes — un appel synchrone mourait en timeout derrière le proxy), puis
+  // on suit /api/history/collect-status jusqu'au verdict. La collecte est de toute façon
+  // AUTOMATIQUE côté serveur (jour courant ~2 h, journées écoulées ~6 h) — ce bouton ne
+  // sert qu'à rafraîchir tout de suite.
   async function collectLightning(date) {
     if (!verifEl) return;
     const token = ++verifToken;
-    verifEl.innerHTML = '<div class="history-verif-empty">Collecte de la foudre observée… (téléchargement satellite MTG-LI, ≈ 1 min)</div>';
+    verifEl.innerHTML = '<div class="history-verif-empty">Collecte de la foudre observée lancée… (satellite MTG-LI, ≈ 1-3 min)</div>';
     try {
       const response = await fetch(`/api/history/collect-lightning?date=${encodeURIComponent(date)}`, { method: 'POST' });
       const data = await response.json().catch(() => ({}));
@@ -707,9 +712,24 @@
         verifEl.innerHTML = `<div class="history-verif-empty">Collecte impossible : ${(data && data.reason) || 'erreur'}.</div>`;
         return;
       }
-      flashPointsDate = null; // forcer le rechargement des points
-      ensureFlashPoints(date);
-      loadVerification(date);
+      for (let i = 0; i < 40; i += 1) {
+        await new Promise((r) => window.setTimeout(r, 8000));
+        if (token !== verifToken || date !== historyDate) return;
+        let st = null;
+        try { st = await (await fetch(`/api/history/collect-status?date=${encodeURIComponent(date)}`)).json(); } catch (_) {}
+        if (!st || st.state === 'running') continue;
+        if (st.state === 'done') {
+          flashPointsDate = null; // forcer le rechargement des points
+          ensureFlashPoints(date);
+          loadVerification(date);
+        } else {
+          verifEl.innerHTML = `<div class="history-verif-empty">Collecte impossible : ${st.reason || 'erreur'}.</div>`;
+        }
+        return;
+      }
+      if (token === verifToken && date === historyDate) {
+        verifEl.innerHTML = '<div class="history-verif-empty">Collecte toujours en cours côté serveur — revenez dans quelques minutes.</div>';
+      }
     } catch (_) {
       if (token === verifToken) verifEl.innerHTML = '<div class="history-verif-empty">Collecte impossible.</div>';
     }

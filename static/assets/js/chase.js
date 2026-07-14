@@ -1500,5 +1500,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '299';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '300';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

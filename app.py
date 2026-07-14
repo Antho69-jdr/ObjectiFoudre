@@ -64,7 +64,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.2.299"
+APP_VERSION = "1.2.300"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -207,6 +207,10 @@ EUMETSAT_CONSUMER_SECRET = os.environ.get("EUMETSAT_CONSUMER_SECRET") or os.envi
 FRANCE_LIGHTNING_BBOX = (-5.55, 41.05, 9.75, 51.45)  # west, south, east, north
 # Automatisation : collecte quotidienne de la foudre des journées écoulées.
 OBJECTIFOUDRE_LIGHTNING_AUTOMATION = _env_flag("OBJECTIFOUDRE_LIGHTNING_AUTOMATION", True)
+# cadence de la passe « jour courant » (archive partielle rafraîchie au fil de l'eau)
+OBJECTIFOUDRE_LIGHTNING_TODAY_INTERVAL_SECONDS = _env_int(
+    "OBJECTIFOUDRE_LIGHTNING_TODAY_INTERVAL_SECONDS", 2 * 3600, min_value=900
+)
 OBJECTIFOUDRE_LIGHTNING_AUTOMATION_INTERVAL_SECONDS = _env_int(
     "OBJECTIFOUDRE_LIGHTNING_AUTOMATION_INTERVAL_SECONDS", 6 * 3600, min_value=900
 )
@@ -3330,17 +3334,31 @@ def _collect_pending_lightning() -> dict[str, Any]:
 def _lightning_automation_loop() -> None:
     # délai initial : on laisse le démarrage + le préchargement AROME respirer.
     _lightning_automation_stop.wait(180)
+    last_pending = 0.0
     while not _lightning_automation_stop.is_set():
+        # Journées ÉCOULÉES non finalisées (rare en régime établi) + réévaluation du
+        # modèle — cadence longue (6 h par défaut).
+        if time.time() - last_pending >= OBJECTIFOUDRE_LIGHTNING_AUTOMATION_INTERVAL_SECONDS:
+            last_pending = time.time()
+            try:
+                _collect_pending_lightning()
+            except Exception:
+                pass
+            # Boucle fermée : après chaque collecte de foudre, on réévalue le modèle.
+            try:
+                _run_learning_evaluation(source="automation")
+            except Exception:
+                pass
+        # JOUR COURANT : archive PARTIELLE (final=False) rafraîchie au fil de l'eau —
+        # la vérification « prévu vs observé » du jour se remplit toute seule, sans
+        # clic utilisateur (le clic synchrone mourait en timeout derrière le proxy).
         try:
-            _collect_pending_lightning()
+            today_iso = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date().isoformat()
+            if _forecast_day_cells(today_iso):
+                _build_lightning_archive_for_date(today_iso)
         except Exception:
             pass
-        # Boucle fermée : après chaque collecte de foudre, on réévalue le modèle.
-        try:
-            _run_learning_evaluation(source="automation")
-        except Exception:
-            pass
-        _lightning_automation_stop.wait(OBJECTIFOUDRE_LIGHTNING_AUTOMATION_INTERVAL_SECONDS)
+        _lightning_automation_stop.wait(OBJECTIFOUDRE_LIGHTNING_TODAY_INTERVAL_SECONDS)
 
 
 def _start_lightning_automation_thread() -> None:
@@ -13719,11 +13737,44 @@ async def history_verification(date: str = Query(..., min_length=10, max_length=
     return await asyncio.to_thread(_compute_day_verification, date)
 
 
+# Collecte manuelle ASYNCHRONE : le téléchargement d'une journée MTG-LI prend plusieurs
+# minutes — un POST synchrone meurt en timeout derrière un proxy (Cloudflare/Railway
+# coupent à ~100 s, vécu). Le POST lance un job en thread et répond tout de suite ;
+# le front suit via /api/history/collect-status puis recharge l'archive.
+_li_collect_jobs: dict[str, dict[str, Any]] = {}
+_li_collect_jobs_lock = threading.Lock()
+
+
+def _run_lightning_collect_job(date_str: str) -> None:
+    try:
+        result = _build_lightning_archive_for_date(date_str)
+        state = {"state": "done" if result.get("ok") else "failed",
+                 "reason": result.get("reason"), "flash_total": result.get("flash_total")}
+    except Exception as exc:
+        state = {"state": "failed", "reason": type(exc).__name__}
+    with _li_collect_jobs_lock:
+        _li_collect_jobs[date_str] = {**state, "at": time.time()}
+
+
 @app.post("/api/history/collect-lightning")
 async def history_collect_lightning(date: str = Query(..., min_length=10, max_length=10)) -> dict[str, Any]:
     if not _is_iso_date(date):
         raise HTTPException(status_code=400, detail="Date attendue au format AAAA-MM-JJ.")
-    return await asyncio.to_thread(_build_lightning_archive_for_date, date)
+    with _li_collect_jobs_lock:
+        job = _li_collect_jobs.get(date)
+        if job and job.get("state") == "running":
+            return {"ok": True, "date": date, "started": True, "already_running": True}
+        _li_collect_jobs[date] = {"state": "running", "at": time.time()}
+    threading.Thread(target=_run_lightning_collect_job, args=(date,), daemon=True,
+                     name=f"li-collect-{date}").start()
+    return {"ok": True, "date": date, "started": True}
+
+
+@app.get("/api/history/collect-status")
+async def history_collect_status(date: str = Query(..., min_length=10, max_length=10)) -> dict[str, Any]:
+    with _li_collect_jobs_lock:
+        job = _li_collect_jobs.get(date)
+    return {"ok": True, "date": date, **(job or {"state": "none"})}
 
 
 @app.get("/api/history/lightning")
@@ -15681,7 +15732,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.2.299) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.2.300) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -15911,7 +15962,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.2.299) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.2.300) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
