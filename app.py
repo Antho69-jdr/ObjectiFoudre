@@ -6,6 +6,8 @@ import concurrent.futures
 import contextlib
 import contextvars
 import copy
+import ctypes
+import gc
 import gzip
 import multiprocessing
 import hashlib
@@ -65,7 +67,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -123,7 +125,7 @@ STALE_TTL_SECONDS = 2 * 60 * 60
 METEOFRANCE_AROME_WMS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wms/"
     "MF-NWP-HIGHRES-AROME-001-FRANCE-WMS/GetCapabilities"
-    "?service=WMS&version=1.3.0&language=fre"
+    "?service=WMS&version=1.3.1&language=fre"
 )
 METEOFRANCE_AROME_WCS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wcs/"
@@ -2457,14 +2459,123 @@ def _analysis_rows(lat: float, lon: float, label: str, target_date: Date | None,
 def _get_cached_value(key: str, ttl: int = CACHE_TTL_SECONDS) -> dict[str, Any] | None:
     entry = _cache.get(key)
     if _cache_fresh(entry, ttl=ttl):
+        entry["at"] = time.time()   # dernier accès (sert à la purge LRU)
         return entry
+    if entry is not None:
+        _cache.pop(key, None)       # éviction PARESSEUSE : une entrée expirée ne pourrit plus en RAM
     return None
 
 
 def _set_cached_value(key: str, payload: Any) -> dict[str, Any]:
-    entry = {"ts": time.time(), "payload": payload}
+    entry = {"ts": time.time(), "at": time.time(), "payload": payload}
     _cache[key] = entry
     return entry
+
+
+def _cache_entry_size(payload: Any) -> int:
+    """Estimation en octets, VOLONTAIREMENT grossière mais rapide (diag + tri de purge) :
+    exacte pour bytes/str/array, superficielle (structure ignorée) pour dict/list JSON."""
+    try:
+        if isinstance(payload, (bytes, bytearray)):
+            return len(payload)
+        if isinstance(payload, str):
+            return len(payload)
+        if isinstance(payload, array):
+            return payload.buffer_info()[1] * payload.itemsize
+        if isinstance(payload, (dict, list, tuple)):
+            total = sys.getsizeof(payload)
+            items = payload.values() if isinstance(payload, dict) else payload
+            for v in items:
+                if isinstance(v, (bytes, bytearray, str)):
+                    total += len(v)
+                elif isinstance(v, array):
+                    total += v.buffer_info()[1] * v.itemsize
+                elif isinstance(v, (dict, list, tuple)):
+                    total += 64 * (len(v) + 1)   # approximation plate des conteneurs imbriqués
+                else:
+                    total += 48
+            return total
+        return sys.getsizeof(payload)
+    except Exception:
+        return 0
+
+
+# ── Purge du cache RAM (leçon Railway : OOM > 8 Go) ──────────────────────────────
+# `_cache` accumulait sans AUCUNE éviction : champs GRIB nationaux (~8 Mo/champ/échéance),
+# images AROME-PI, grilles slot… de chaque run, À VIE. Trois défenses :
+# 1) éviction paresseuse à la lecture (ci-dessus) ;
+# 2) purge périodique : âge max absolu + inactivité ;
+# 3) borne de taille estimée : éviction des moins récemment accédés au-delà du budget.
+OBJECTIFOUDRE_RAM_CACHE_MAX_AGE_SECONDS = _env_int("OBJECTIFOUDRE_RAM_CACHE_MAX_AGE_SECONDS", 24 * 3600, min_value=3600)
+OBJECTIFOUDRE_RAM_CACHE_IDLE_SECONDS = _env_int("OBJECTIFOUDRE_RAM_CACHE_IDLE_SECONDS", 3 * 3600, min_value=600)
+OBJECTIFOUDRE_RAM_CACHE_BUDGET_MB = _env_int("OBJECTIFOUDRE_RAM_CACHE_BUDGET_MB", 600, min_value=64)
+_ram_cache_purge_stop = threading.Event()
+_ram_cache_purge_thread: threading.Thread | None = None
+_ram_cache_last_purge: dict[str, Any] = {}
+
+
+def _purge_ram_caches() -> dict[str, Any]:
+    now = time.time()
+    removed_age = removed_idle = removed_budget = 0
+    sized: list[tuple[float, int, str]] = []   # (dernier accès, taille, clé)
+    for key, entry in list(_cache.items()):
+        ts = float(entry.get("ts") or 0)
+        at = float(entry.get("at") or ts)
+        if now - ts > OBJECTIFOUDRE_RAM_CACHE_MAX_AGE_SECONDS:
+            _cache.pop(key, None); removed_age += 1
+        elif now - at > OBJECTIFOUDRE_RAM_CACHE_IDLE_SECONDS:
+            _cache.pop(key, None); removed_idle += 1
+        else:
+            sized.append((at, _cache_entry_size(entry.get("payload")), key))
+    total = sum(s for _, s, _ in sized)
+    budget = OBJECTIFOUDRE_RAM_CACHE_BUDGET_MB * 1024 * 1024
+    if total > budget:
+        sized.sort()   # les moins récemment accédés d'abord
+        for at, size, key in sized:
+            if total <= budget:
+                break
+            _cache.pop(key, None)
+            total -= size
+            removed_budget += 1
+    # caches annexes non bornés : coupe simple aux N plus récents
+    for store, keep in ((_history_day_bytes_cache, 16), (_forecast_cells_cache, 16), (_verification_cache, 64)):
+        while len(store) > keep:
+            try:
+                store.pop(next(iter(store)))
+            except (StopIteration, KeyError):
+                break
+    stats = {
+        "at": now, "kept": len(_cache), "kept_mb": round(total / 1e6, 1),
+        "removed_age": removed_age, "removed_idle": removed_idle, "removed_budget": removed_budget,
+    }
+    _ram_cache_last_purge.clear()
+    _ram_cache_last_purge.update(stats)
+    # rendre la mémoire libérée AU NOYAU (c'est le RSS que Railway facture) : sans
+    # malloc_trim, glibc garde les arènes → le RSS ne redescend presque jamais.
+    if removed_age or removed_idle or removed_budget:
+        gc.collect()
+        try:
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except Exception:
+            pass
+    return stats
+
+
+def _ram_cache_purge_loop() -> None:
+    while not _ram_cache_purge_stop.wait(15 * 60):
+        try:
+            _purge_ram_caches()
+        except Exception:
+            pass
+
+
+def _start_ram_cache_purge_thread() -> None:
+    global _ram_cache_purge_thread
+    if _ram_cache_purge_thread is not None and _ram_cache_purge_thread.is_alive():
+        return
+    _ram_cache_purge_stop.clear()
+    _ram_cache_purge_thread = threading.Thread(target=_ram_cache_purge_loop, daemon=True, name="ram-cache-purge")
+    _ram_cache_purge_thread.start()
 
 
 def _cache_status(hit: bool, backend: str, created_at: float | None, ttl: int) -> dict[str, Any]:
@@ -13834,6 +13945,44 @@ def _history_safe_rel(path: str) -> Path:
     return target
 
 
+@app.get("/api/server/memory-status", dependencies=[Depends(_admin_secret_dep)])
+async def server_memory_status() -> dict[str, Any]:
+    """Diagnostic mémoire (admin) : RSS du process + poids des caches RAM + top entrées.
+    Ajouté après l'OOM Railway (> 8 Go) pour suivre l'effet des purges en prod."""
+    def scan() -> dict[str, Any]:
+        rss_mb = None
+        try:
+            with open("/proc/self/statm") as fh:
+                rss_mb = round(int(fh.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 1e6)
+        except Exception:
+            pass
+        sized = sorted(((_cache_entry_size(e.get("payload")), k) for k, e in list(_cache.items())), reverse=True)
+        return {
+            "ok": True,
+            "rss_mb": rss_mb,
+            "cache_entries": len(sized),
+            "cache_mb": round(sum(s for s, _ in sized) / 1e6, 1),
+            "top": [{"key": k[:120], "mb": round(s / 1e6, 2)} for s, k in sized[:20]],
+            "annex": {
+                "history_day_bytes": len(_history_day_bytes_cache),
+                "forecast_cells": len(_forecast_cells_cache),
+                "verification": len(_verification_cache),
+                "cells_frames": len(_fr_cells_frame_cache),
+                "radar_frames": len(_fr_radar_frames),
+            },
+            "last_purge": dict(_ram_cache_last_purge),
+            "budget_mb": OBJECTIFOUDRE_RAM_CACHE_BUDGET_MB,
+        }
+    return await asyncio.to_thread(scan)
+
+
+@app.post("/api/server/memory-purge", dependencies=[Depends(_admin_secret_dep)])
+async def server_memory_purge() -> dict[str, Any]:
+    """Force une purge du cache RAM maintenant (admin)."""
+    stats = await asyncio.to_thread(_purge_ram_caches)
+    return {"ok": True, **stats}
+
+
 @app.get("/api/history/inventory")
 async def history_inventory(secret: str = Query(...)) -> dict[str, Any]:
     """Liste {chemin relatif: taille} de l'historique — sert au diff de migration."""
@@ -14233,7 +14382,7 @@ def _aromepi_capabilities_sync(api_key: str) -> dict[str, Any]:
     cached = _get_cached_value(cache_key, ttl=AROMEPI_CAPABILITIES_TTL_SECONDS)
     if cached is not None:
         return dict(cached["payload"])
-    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.0&language=eng"
+    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.1&language=eng"
     status, _ct, raw = _aromepi_http_get(url, api_key)
     if status != 200 or not raw:
         return {"ok": False, "status": status}
@@ -14309,10 +14458,10 @@ def _aromepi_wms_tile_sync(api_key: str, layer_key: str, time_iso: str, run_iso:
         return 400, b""
     min_lon, min_lat = _aromepi_mercator_to_lonlat(minx, miny)
     max_lon, max_lat = _aromepi_mercator_to_lonlat(maxx, maxy)
-    # WMS 1.3.0 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
+    # WMS 1.3.1 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
     # Web Mercator → on reprojette la tuile rendue (plate carrée) en sortie.
     params = [
-        ("service", "WMS"), ("version", "1.3.0"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.1"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f"{min_lat:.6f},{min_lon:.6f},{max_lat:.6f},{max_lon:.6f}"),
         ("width", str(int(width))), ("height", str(int(height))),
@@ -14437,7 +14586,7 @@ def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_
     # largeur:hauteur = ratio des degrés → le WMS rend une plate-carrée fidèle.
     src_height = max(1, round(out_width * (d["max_lat"] - d["min_lat"]) / (d["max_lon"] - d["min_lon"])))
     params = [
-        ("service", "WMS"), ("version", "1.3.0"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.1"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f'{d["min_lat"]},{d["min_lon"]},{d["max_lat"]},{d["max_lon"]}'),
         ("width", str(out_width)), ("height", str(src_height)),
@@ -14579,7 +14728,7 @@ def _aromepi_activity_sync(layer_key: str, time_iso: str, run_iso: str | None) -
     if spec.get("analysis_only") and run_iso:
         time_iso = run_iso  # analyse-seule (MOCON) : cf. _aromepi_domain_image_sync
     params = [
-        ("service", "WMS"), ("version", "1.3.0"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.1"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", "37.5,-12,55.4,16"), ("width", "300"), ("height", "300"),
         ("format", "image/png"), ("transparent", "true"), ("time", time_iso),
@@ -15750,7 +15899,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.3.0) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.3.1) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -15980,7 +16129,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.3.0) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.3.1) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
@@ -16293,6 +16442,7 @@ def _start_fr_radar_thread() -> None:
 def _startup_fr_radar() -> None:
     _start_fr_radar_thread()
     _start_li_live_thread()   # foudre live MTG-LI (no-op si identifiants EUMETSAT absents)
+    _start_ram_cache_purge_thread()   # anti-OOM : purge périodique du cache RAM
 
 
 @app.on_event("shutdown")
