@@ -67,7 +67,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.2"
+APP_VERSION = "1.3.3"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -125,7 +125,7 @@ STALE_TTL_SECONDS = 2 * 60 * 60
 METEOFRANCE_AROME_WMS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wms/"
     "MF-NWP-HIGHRES-AROME-001-FRANCE-WMS/GetCapabilities"
-    "?service=WMS&version=1.3.2&language=fre"
+    "?service=WMS&version=1.3.3&language=fre"
 )
 METEOFRANCE_AROME_WCS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wcs/"
@@ -2483,7 +2483,7 @@ def _set_cached_value(key: str, payload: Any) -> dict[str, Any]:
     # pas — un run AROME charge plusieurs Go d'un coup). Purge inline si dépassement franc,
     # throttlée pour ne pas purger à chaque écriture pendant le préchargement massif.
     budget = OBJECTIFOUDRE_RAM_CACHE_BUDGET_MB * 1024 * 1024
-    if _cache_bytes > budget * 1.4 and time.time() - _ram_cache_inline_last[0] > 20:
+    if _cache_bytes > budget * 1.4 and time.time() - _ram_cache_inline_last[0] > 8:
         _ram_cache_inline_last[0] = time.time()
         try:
             _purge_ram_caches()
@@ -14422,7 +14422,7 @@ def _aromepi_capabilities_sync(api_key: str) -> dict[str, Any]:
     cached = _get_cached_value(cache_key, ttl=AROMEPI_CAPABILITIES_TTL_SECONDS)
     if cached is not None:
         return dict(cached["payload"])
-    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.2&language=eng"
+    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.3&language=eng"
     status, _ct, raw = _aromepi_http_get(url, api_key)
     if status != 200 or not raw:
         return {"ok": False, "status": status}
@@ -14498,10 +14498,10 @@ def _aromepi_wms_tile_sync(api_key: str, layer_key: str, time_iso: str, run_iso:
         return 400, b""
     min_lon, min_lat = _aromepi_mercator_to_lonlat(minx, miny)
     max_lon, max_lat = _aromepi_mercator_to_lonlat(maxx, maxy)
-    # WMS 1.3.2 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
+    # WMS 1.3.3 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
     # Web Mercator → on reprojette la tuile rendue (plate carrée) en sortie.
     params = [
-        ("service", "WMS"), ("version", "1.3.2"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.3"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f"{min_lat:.6f},{min_lon:.6f},{max_lat:.6f},{max_lon:.6f}"),
         ("width", str(int(width))), ("height", str(int(height))),
@@ -14626,7 +14626,7 @@ def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_
     # largeur:hauteur = ratio des degrés → le WMS rend une plate-carrée fidèle.
     src_height = max(1, round(out_width * (d["max_lat"] - d["min_lat"]) / (d["max_lon"] - d["min_lon"])))
     params = [
-        ("service", "WMS"), ("version", "1.3.2"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.3"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f'{d["min_lat"]},{d["min_lon"]},{d["max_lat"]},{d["max_lon"]}'),
         ("width", str(out_width)), ("height", str(src_height)),
@@ -14768,7 +14768,7 @@ def _aromepi_activity_sync(layer_key: str, time_iso: str, run_iso: str | None) -
     if spec.get("analysis_only") and run_iso:
         time_iso = run_iso  # analyse-seule (MOCON) : cf. _aromepi_domain_image_sync
     params = [
-        ("service", "WMS"), ("version", "1.3.2"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.3"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", "37.5,-12,55.4,16"), ("width", "300"), ("height", "300"),
         ("format", "image/png"), ("transparent", "true"), ("time", time_iso),
@@ -15518,6 +15518,33 @@ _fr_blend: dict[str, Any] = {"base_time": None, "speed_kmh": 0.0, "frames": {}, 
 _fr_bridge_lock = threading.Lock()
 _fr_bridge: dict[str, Any] = {"base_time": None, "run": None, "frames": {}, "times": [], "morph_blocks": 0}
 
+# ── Garde d'ACTIVITÉ (économie CPU/API Railway) ──────────────────────────────────
+# Le PONT (télécharge 4 images AROME-PI + morph, ~4 s) et les CELLULES (flood-fill) ne
+# sont recalculés QUE s'il y a de l'écho convectif sur la France. Sur ciel calme (la
+# plupart du temps hors épisode orageux), on skip → CPU de fond et appels API épargnés.
+# Hystérésis : reste actif FR_RADAR_CHASE_HOLD_SECONDS après le dernier écho (couvre la
+# dissipation d'une cellule + évite le clignotement au seuil).
+FR_RADAR_ACTIVITY_BAND = _env_int("OBJECTIFOUDRE_CHASE_ACTIVITY_BAND", 3, min_value=1)   # ~32 dBZ
+FR_RADAR_ACTIVITY_MIN_PX = _env_int("OBJECTIFOUDRE_CHASE_ACTIVITY_MIN_PX", 30, min_value=1)  # champ DS=8
+FR_RADAR_CHASE_HOLD_SECONDS = _env_int("OBJECTIFOUDRE_CHASE_HOLD_SECONDS", 1800, min_value=300)
+_fr_radar_chase_active_until = [0.0]
+
+
+def _fr_radar_convective_px() -> int:
+    """Nombre de pixels d'écho convectif (≥ FR_RADAR_ACTIVITY_BAND) dans la DERNIÈRE mosaïque,
+    champ fortement décimé (DS=8, rapide). -1 si erreur (→ traité comme actif, prudent)."""
+    with _fr_radar_lock:
+        times = sorted(_fr_radar_frames)
+        png = _fr_radar_frames.get(times[-1]) if times else None
+    if not png:
+        return 0
+    try:
+        import numpy as np
+        field = _fr_radar_png_to_field(png, 8)
+        return int((field >= FR_RADAR_ACTIVITY_BAND).sum())
+    except Exception:
+        return -1
+
 
 def _fr_radar_png_to_field(png: bytes, ds: int):
     """PNG (notre palette) → champ d'intensité (index de bande 0-8) sous-échantillonné ×ds
@@ -15939,7 +15966,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.3.2) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.3.3) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -16169,7 +16196,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.3.2) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.3.3) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
@@ -16425,18 +16452,34 @@ def _fr_radar_loop() -> None:
                 _fr_radar_blend_compute()
             except Exception as exc:
                 _fr_radar_state.update(blend_error=str(exc))
-            # PONT : morph gaté + fondu pondéré blend→AROME-PI sur le recouvrement (réflectivité).
-            try:
-                ap_key = _aromepi_api_key()
-                if ap_key:
-                    _fr_bridge_compute(ap_key)
-            except Exception as exc:
-                _fr_radar_state.update(bridge_error=str(exc))
-            # CELLULES : suivi d'objets convectifs (trajectoires + tendances, overlay chasse).
-            try:
-                _fr_cells_compute()
-            except Exception as exc:
-                _fr_radar_state.update(cells_error=str(exc))
+            # GARDE D'ACTIVITÉ (économie CPU/API Railway) : le PONT (télécharge 4 images
+            # AROME-PI + morph, ~4 s/cycle) et les CELLULES ne sont recalculés que s'il y a
+            # de l'écho convectif sur la France, avec hystérésis (couvre la dissipation).
+            active_px = _fr_radar_convective_px()
+            if active_px < 0 or active_px >= FR_RADAR_ACTIVITY_MIN_PX:
+                _fr_radar_chase_active_until[0] = time.time() + FR_RADAR_CHASE_HOLD_SECONDS
+            chase_active = time.time() < _fr_radar_chase_active_until[0]
+            _fr_radar_state.update(chase_active=chase_active, active_px=active_px)
+            if chase_active:
+                # PONT : morph gaté + fondu pondéré blend→AROME-PI sur le recouvrement.
+                try:
+                    ap_key = _aromepi_api_key()
+                    if ap_key:
+                        _fr_bridge_compute(ap_key)
+                except Exception as exc:
+                    _fr_radar_state.update(bridge_error=str(exc))
+                # CELLULES : suivi d'objets convectifs (trajectoires + tendances, overlay chasse).
+                try:
+                    _fr_cells_compute()
+                except Exception as exc:
+                    _fr_radar_state.update(cells_error=str(exc))
+            else:
+                # ciel calme : vider pont + cellules (ne pas servir un état figé d'un orage
+                # passé) et laisser le CPU/l'API tranquilles jusqu'au prochain écho.
+                with _fr_bridge_lock:
+                    _fr_bridge.update(times=[], frames={})
+                with _fr_cells_lock:
+                    _fr_cells.update(time=None, cells=[])
             # ── POLL SYNCHRONISÉ sur le cycle de publication (mesuré 2026-07-13) ──────────
             # CIBLÉE : produit T publié à ~T+4,6 min → après ingestion de T, dormir jusqu'à
             # ~T+5min+3min50 (marge) puis sonder toutes les 15 s (≈2-3 requêtes/cycle).
