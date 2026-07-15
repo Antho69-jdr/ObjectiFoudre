@@ -67,7 +67,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -125,7 +125,7 @@ STALE_TTL_SECONDS = 2 * 60 * 60
 METEOFRANCE_AROME_WMS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wms/"
     "MF-NWP-HIGHRES-AROME-001-FRANCE-WMS/GetCapabilities"
-    "?service=WMS&version=1.3.1&language=fre"
+    "?service=WMS&version=1.3.2&language=fre"
 )
 METEOFRANCE_AROME_WCS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wcs/"
@@ -1844,6 +1844,8 @@ async def _gate_debug_endpoints(request, call_next):
     return await call_next(request)
 
 _cache: dict[str, dict[str, Any]] = {}
+_cache_bytes: int = 0                       # taille estimée cumulée du cache RAM (borne budget)
+_ram_cache_inline_last: list[float] = [0.0]  # throttle de la purge inline (borne à l'écriture)
 _inflight: dict[str, asyncio.Task] = {}
 _lock = asyncio.Lock()
 _grib_auto_preload_jobs: dict[str, dict[str, Any]] = {}
@@ -2462,40 +2464,73 @@ def _get_cached_value(key: str, ttl: int = CACHE_TTL_SECONDS) -> dict[str, Any] 
         entry["at"] = time.time()   # dernier accès (sert à la purge LRU)
         return entry
     if entry is not None:
+        global _cache_bytes
         _cache.pop(key, None)       # éviction PARESSEUSE : une entrée expirée ne pourrit plus en RAM
+        _cache_bytes -= int(entry.get("_sz") or 0)
     return None
 
 
 def _set_cached_value(key: str, payload: Any) -> dict[str, Any]:
-    entry = {"ts": time.time(), "at": time.time(), "payload": payload}
+    global _cache_bytes
+    size = _cache_entry_size(payload)
+    old = _cache.get(key)
+    if old is not None:
+        _cache_bytes -= int(old.get("_sz") or 0)
+    entry = {"ts": time.time(), "at": time.time(), "payload": payload, "_sz": size}
     _cache[key] = entry
+    _cache_bytes += size
+    # BORNE À L'ÉCRITURE (filet contre le pic de préchargement : le timer de purge ne suffit
+    # pas — un run AROME charge plusieurs Go d'un coup). Purge inline si dépassement franc,
+    # throttlée pour ne pas purger à chaque écriture pendant le préchargement massif.
+    budget = OBJECTIFOUDRE_RAM_CACHE_BUDGET_MB * 1024 * 1024
+    if _cache_bytes > budget * 1.4 and time.time() - _ram_cache_inline_last[0] > 20:
+        _ram_cache_inline_last[0] = time.time()
+        try:
+            _purge_ram_caches()
+        except Exception:
+            pass
     return entry
 
 
 def _cache_entry_size(payload: Any) -> int:
-    """Estimation en octets, VOLONTAIREMENT grossière mais rapide (diag + tri de purge) :
-    exacte pour bytes/str/array, superficielle (structure ignorée) pour dict/list JSON."""
-    try:
-        if isinstance(payload, (bytes, bytearray)):
-            return len(payload)
-        if isinstance(payload, str):
-            return len(payload)
-        if isinstance(payload, array):
-            return payload.buffer_info()[1] * payload.itemsize
-        if isinstance(payload, (dict, list, tuple)):
-            total = sys.getsizeof(payload)
-            items = payload.values() if isinstance(payload, dict) else payload
-            for v in items:
-                if isinstance(v, (bytes, bytearray, str)):
-                    total += len(v)
-                elif isinstance(v, array):
-                    total += v.buffer_info()[1] * v.itemsize
-                elif isinstance(v, (dict, list, tuple)):
-                    total += 64 * (len(v) + 1)   # approximation plate des conteneurs imbriqués
-                else:
-                    total += 48
+    """Estimation en octets pour le budget/diag du cache RAM. Récursion BORNÉE (profondeur +
+    nb de nœuds) qui plonge dans les structures imbriquées — le gros du poids (arrays de
+    valeurs GRIB, PNG bytes) est souvent sous plusieurs niveaux de dict, l'ancienne version
+    à plat le ratait (RSS mesuré 3× le total « compté »). Grandes listes homogènes
+    échantillonnées. Jamais exact, mais du bon ordre de grandeur."""
+    budget = [12000]   # nb max de nœuds visités (anti-explosion sur le hot path)
+
+    def rec(obj: Any, depth: int) -> int:
+        if depth < 0 or budget[0] <= 0:
+            return 0
+        budget[0] -= 1
+        if isinstance(obj, (bytes, bytearray)):
+            return len(obj) + 33
+        if isinstance(obj, str):
+            return len(obj) + 49
+        if isinstance(obj, array):
+            return obj.buffer_info()[1] * obj.itemsize + 64
+        if isinstance(obj, dict):
+            total = 64 + 100 * len(obj)
+            for k, v in obj.items():
+                total += rec(k, depth - 1) + rec(v, depth - 1)
             return total
-        return sys.getsizeof(payload)
+        if isinstance(obj, (list, tuple)):
+            n = len(obj)
+            total = 56 + 8 * n
+            if n > 200:   # grande liste homogène : mesurer un échantillon, extrapoler
+                sample = sum(rec(obj[i], depth - 1) for i in range(0, n, max(1, n // 100)))
+                total += int(sample * n / max(1, len(range(0, n, max(1, n // 100)))))
+            else:
+                for v in obj:
+                    total += rec(v, depth - 1)
+            return total
+        if isinstance(obj, (int, float, bool, type(None))):
+            return 28
+        return sys.getsizeof(obj) if hasattr(obj, "__sizeof__") else 48
+
+    try:
+        return rec(payload, 8)
     except Exception:
         return 0
 
@@ -2515,6 +2550,7 @@ _ram_cache_last_purge: dict[str, Any] = {}
 
 
 def _purge_ram_caches() -> dict[str, Any]:
+    global _cache_bytes
     now = time.time()
     removed_age = removed_idle = removed_budget = 0
     sized: list[tuple[float, int, str]] = []   # (dernier accès, taille, clé)
@@ -2526,7 +2562,7 @@ def _purge_ram_caches() -> dict[str, Any]:
         elif now - at > OBJECTIFOUDRE_RAM_CACHE_IDLE_SECONDS:
             _cache.pop(key, None); removed_idle += 1
         else:
-            sized.append((at, _cache_entry_size(entry.get("payload")), key))
+            sized.append((at, int(entry.get("_sz") or _cache_entry_size(entry.get("payload"))), key))
     total = sum(s for _, s, _ in sized)
     budget = OBJECTIFOUDRE_RAM_CACHE_BUDGET_MB * 1024 * 1024
     if total > budget:
@@ -2537,6 +2573,7 @@ def _purge_ram_caches() -> dict[str, Any]:
             _cache.pop(key, None)
             total -= size
             removed_budget += 1
+    _cache_bytes = total   # resynchronise le compteur incrémental (source de vérité = la purge)
     # caches annexes non bornés : coupe simple aux N plus récents
     for store, keep in ((_history_day_bytes_cache, 16), (_forecast_cells_cache, 16), (_verification_cache, 64)):
         while len(store) > keep:
@@ -2561,8 +2598,11 @@ def _purge_ram_caches() -> dict[str, Any]:
     return stats
 
 
+OBJECTIFOUDRE_RAM_CACHE_PURGE_INTERVAL_SECONDS = _env_int("OBJECTIFOUDRE_RAM_CACHE_PURGE_INTERVAL_SECONDS", 180, min_value=30)
+
+
 def _ram_cache_purge_loop() -> None:
-    while not _ram_cache_purge_stop.wait(15 * 60):
+    while not _ram_cache_purge_stop.wait(OBJECTIFOUDRE_RAM_CACHE_PURGE_INTERVAL_SECONDS):
         try:
             _purge_ram_caches()
         except Exception:
@@ -14382,7 +14422,7 @@ def _aromepi_capabilities_sync(api_key: str) -> dict[str, Any]:
     cached = _get_cached_value(cache_key, ttl=AROMEPI_CAPABILITIES_TTL_SECONDS)
     if cached is not None:
         return dict(cached["payload"])
-    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.1&language=eng"
+    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.2&language=eng"
     status, _ct, raw = _aromepi_http_get(url, api_key)
     if status != 200 or not raw:
         return {"ok": False, "status": status}
@@ -14458,10 +14498,10 @@ def _aromepi_wms_tile_sync(api_key: str, layer_key: str, time_iso: str, run_iso:
         return 400, b""
     min_lon, min_lat = _aromepi_mercator_to_lonlat(minx, miny)
     max_lon, max_lat = _aromepi_mercator_to_lonlat(maxx, maxy)
-    # WMS 1.3.1 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
+    # WMS 1.3.2 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
     # Web Mercator → on reprojette la tuile rendue (plate carrée) en sortie.
     params = [
-        ("service", "WMS"), ("version", "1.3.1"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.2"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f"{min_lat:.6f},{min_lon:.6f},{max_lat:.6f},{max_lon:.6f}"),
         ("width", str(int(width))), ("height", str(int(height))),
@@ -14586,7 +14626,7 @@ def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_
     # largeur:hauteur = ratio des degrés → le WMS rend une plate-carrée fidèle.
     src_height = max(1, round(out_width * (d["max_lat"] - d["min_lat"]) / (d["max_lon"] - d["min_lon"])))
     params = [
-        ("service", "WMS"), ("version", "1.3.1"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.2"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f'{d["min_lat"]},{d["min_lon"]},{d["max_lat"]},{d["max_lon"]}'),
         ("width", str(out_width)), ("height", str(src_height)),
@@ -14728,7 +14768,7 @@ def _aromepi_activity_sync(layer_key: str, time_iso: str, run_iso: str | None) -
     if spec.get("analysis_only") and run_iso:
         time_iso = run_iso  # analyse-seule (MOCON) : cf. _aromepi_domain_image_sync
     params = [
-        ("service", "WMS"), ("version", "1.3.1"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.2"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", "37.5,-12,55.4,16"), ("width", "300"), ("height", "300"),
         ("format", "image/png"), ("transparent", "true"), ("time", time_iso),
@@ -15899,7 +15939,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.3.1) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.3.2) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -16129,7 +16169,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.3.1) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.3.2) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
