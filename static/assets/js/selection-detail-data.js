@@ -22,9 +22,23 @@
       if (Number.isFinite(cape) && cape < 150) return 'Instabilité très marginale';
       if (Number.isFinite(td) && td < 8) return 'Humidité trop faible en basse couche';
       if (Number.isFinite(vpd) && vpd > 2.5) return 'Air trop sec en basse couche';
-      if (Number.isFinite(cape) && cape >= 600 && Number.isFinite(td) && td >= 14) return 'Instabilité et humidité bien alignées';
-      if (Number.isFinite(prob) && prob >= 70) return 'Potentiel orageux bien établi';
-      return `${scoreBand(prob)} · équilibre instabilité / humidité`;
+      let base;
+      if (Number.isFinite(cape) && cape >= 600 && Number.isFinite(td) && td >= 14) base = 'Instabilité et humidité bien alignées';
+      else if (Number.isFinite(prob) && prob >= 70) base = 'Potentiel orageux bien établi';
+      else base = `${scoreBand(prob)} · équilibre instabilité / humidité`;
+      // Dimension ORGANISATION (distincte de l'initiation) : mentionnée dans le verdict
+      // dès qu'elle est notable — c'est l'info « ça vaut le déplacement ? » du chasseur.
+      const org = organisationVerdict(p);
+      return org && org.strong ? `${base} · ${org.label.toLowerCase()}` : base;
+    }
+
+    // Verdict d'organisation/sévérité (structure_score backend + label). `strong` =
+    // suffisamment organisé pour mériter d'être signalé (multicellulaire organisé et +).
+    function organisationVerdict(p) {
+      const s = detailNumeric(p && p.structure_score);
+      if (s === null) return null;
+      const label = (p && p.structure_label) || null;
+      return { score: s, label: label || 'Peu organisé', strong: s >= 58 };
     }
 
     const SELECTION_CITY_REFERENCES = [
@@ -229,7 +243,18 @@
       const probability = parseDetailObject(breakdown.probability);
       const scores = parseDetailObject(p.metric_scores);
       const hasSurface = detailNumeric(probability.surface_trigger ?? scores.surface_trigger_score) !== null;
+      // ORGANISATION : dimension SÉPARÉE de la probabilité d'initiation (ne modifie pas le
+      // score) — potentiel de structure/sévérité = cisaillement 0-6 km × instabilité.
+      const org = organisationVerdict(p);
+      const shear = detailNumeric(p.shear_ms);
+      const orgChip = (org === null) ? '' : detailChip(
+        'Organisation',
+        org.label,
+        shear !== null ? `cisaillement ${shear.toFixed(0)} m/s` : 'sévérité potentielle',
+        { key: 'structure_organisation', tone: org.score >= 58 ? 'positive' : 'neutral' },
+      );
       return [
+        orgChip,
         detailChip('Score retenu', formatDetailScore(probability.raw_initiation ?? p.trigger_score), 'contexte inclus', { key: 'probability_raw' }),
         detailChip('Environnement', formatDetailScore(probability.environment ?? scores.environment_score), 'ingrédients seuls', { key: 'probability_environment' }),
         detailChip('Activité AROME', formatDetailScore(probability.convective_activity ?? scores.convective_activity_score), 'pluie/nuages/rafales', { key: 'probability_activity' }),

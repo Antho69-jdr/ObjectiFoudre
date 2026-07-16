@@ -214,7 +214,7 @@ class OutputRow:
     cell_height_deg: float
     cell_width_deg: float
     trigger_score: int
-    structure_score: int
+    structure_score: int | None
     chase_quality_score: int
     stability_score: int
     confidence_score: int
@@ -711,6 +711,40 @@ def score_shear(shear_ms: float | None) -> int | None:
     return piecewise_score(float(shear_ms), [
         (0.0, 0), (8.0, 12), (12.0, 35), (15.0, 60), (18.0, 80), (22.0, 100),
     ])
+
+
+def score_structure(cape_s: int | None, shear_s: int | None) -> int | None:
+    """Score d'ORGANISATION / sévérité potentielle (0-100), DISTINCT de la probabilité
+    d'initiation. Un orage peut être probable mais désorganisé (pulse, cisaillement
+    faible), ou moins probable mais violent (supercellule, fort cisaillement) — c'est
+    l'info de décision du chasseur (« ça vaut le déplacement ? »). Le cisaillement 0-6 km
+    est le DISCRIMINANT ; la CAPE est le prérequis (sans instabilité, rien à organiser)
+    et un amplificateur. Retourne None si le cisaillement est indisponible (organisation
+    indéterminable) — l'UI n'affiche alors pas de verdict d'organisation."""
+    if shear_s is None or cape_s is None:
+        return None
+    if cape_s < 20:                      # instabilité insuffisante : pas d'orage à organiser
+        return 0
+    cape_factor = 0.7 + 0.3 * min(1.0, max(0.0, (cape_s - 20) / 55.0))
+    return clamp(shear_s * cape_factor)
+
+
+# Paliers du score de structure → étiquette d'organisation (UI + résumé).
+STRUCTURE_LABELS = [
+    (78, "Supercellulaire possible"),
+    (58, "Bien organisé"),
+    (38, "Multicellulaire"),
+    (0, "Peu organisé"),
+]
+
+
+def structure_label(structure_s: int | None) -> str | None:
+    if structure_s is None:
+        return None
+    for threshold, label in STRUCTURE_LABELS:
+        if structure_s >= threshold:
+            return label
+    return "Peu organisé"
 
 
 def _apply_environment_modifiers(
@@ -1541,7 +1575,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     cell_height_deg=point.cell_height_deg,
                     cell_width_deg=point.cell_width_deg,
                     trigger_score=storm_probability,
-                    structure_score=0,
+                    structure_score=score_structure(metric.get("cape_component"), metric.get("shear_component")),
                     chase_quality_score=0,
                     stability_score=confidence_score,
                     confidence_score=confidence_score,
@@ -1742,8 +1776,10 @@ def build_historical_analysis_payload(rows: list[OutputRow], center_lat: float, 
 
 def cell_payload_for_output(row: OutputRow) -> dict:
     cell = asdict(row)
+    # structure_score RÉACTIVÉ (v1.3.6) : dimension « organisation/sévérité » distincte de
+    # la probabilité d'initiation. Étiquette dérivée pour l'UI.
+    cell["structure_label"] = structure_label(row.structure_score)
     for obsolete_key in (
-        "structure_score",
         "chase_quality_score",
         "stability_score",
         "score_global",
