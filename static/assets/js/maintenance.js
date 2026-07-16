@@ -15,15 +15,20 @@
   function secret() { try { return localStorage.getItem('objfAdminSecret') || ''; } catch (_) { return ''; } }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
+  let logTimer = null;
   function openPage() {
     page.setAttribute('aria-hidden', 'false');
     load();
+    loadLogs();
     if (timer) clearInterval(timer);
     timer = window.setInterval(load, 15000);
+    if (logTimer) clearInterval(logTimer);
+    logTimer = window.setInterval(loadLogs, 8000);
   }
   function closePage() {
     page.setAttribute('aria-hidden', 'true');
     if (timer) { clearInterval(timer); timer = null; }
+    if (logTimer) { clearInterval(logTimer); logTimer = null; }
   }
   openBtn?.addEventListener('click', openPage);
   closeBtn?.addEventListener('click', closePage);
@@ -172,4 +177,74 @@
 
     grid.innerHTML = cards.join('');
   }
+
+  // ── Console : actions + terminal + logs ─────────────────────────────────────
+  const termOut = document.getElementById('maintenanceTermOut');
+  const termForm = document.getElementById('maintenanceTermForm');
+  const termInput = document.getElementById('maintenanceTermInput');
+  const logsBody = document.getElementById('maintenanceLogsBody');
+  const logsErrors = document.getElementById('maintenanceLogsErrors');
+  const history = [];
+  let histPos = -1;
+
+  function termPrint(lines, cls) {
+    if (!termOut) return;
+    const div = document.createElement('div');
+    if (cls) div.className = cls;
+    div.textContent = Array.isArray(lines) ? lines.join('\n') : String(lines);
+    termOut.appendChild(div);
+    termOut.scrollTop = termOut.scrollHeight;
+  }
+
+  async function runCommand(cmd, echo) {
+    if (echo !== false) termPrint('› ' + cmd, 'mnt-term-cmd');
+    try {
+      const r = await fetch(`/api/server/command?secret=${encodeURIComponent(secret())}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cmd }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { termPrint(`(HTTP ${r.status}) accès refusé — mode admin requis.`, 'mnt-term-err'); return; }
+      termPrint(d.lines || (d.ok ? ['ok'] : ['(pas de sortie)']), d.ok ? '' : 'mnt-term-err');
+      load();       // rafraîchir la télémétrie après une action (cache/mémoire…)
+      loadLogs();
+    } catch (_) {
+      termPrint('erreur réseau.', 'mnt-term-err');
+    }
+  }
+
+  document.getElementById('maintenanceActions')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-cmd]');
+    if (btn) runCommand(btn.dataset.cmd);
+  });
+
+  termForm?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const cmd = (termInput.value || '').trim();
+    if (!cmd) return;
+    history.push(cmd); histPos = history.length;
+    termInput.value = '';
+    runCommand(cmd);
+  });
+  termInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowUp' && histPos > 0) { histPos -= 1; termInput.value = history[histPos]; e.preventDefault(); }
+    else if (e.key === 'ArrowDown') { histPos = Math.min(history.length, histPos + 1); termInput.value = history[histPos] || ''; e.preventDefault(); }
+  });
+
+  const LOG_CLS = { ERROR: 'mnt-log-err', CRITICAL: 'mnt-log-err', WARNING: 'mnt-log-warn' };
+  async function loadLogs() {
+    if (!logsBody) return;
+    const lvl = logsErrors && logsErrors.checked ? 'errors' : 'all';
+    try {
+      const r = await fetch(`/api/server/logs?limit=200&level=${lvl}&secret=${encodeURIComponent(secret())}`);
+      if (!r.ok) { logsBody.innerHTML = `<div class="mnt-err">Logs inaccessibles (HTTP ${r.status}).</div>`; return; }
+      const d = await r.json();
+      const stick = logsBody.scrollTop + logsBody.clientHeight >= logsBody.scrollHeight - 20;
+      logsBody.innerHTML = (d.logs || []).map((e) => {
+        const t = new Date(e.t * 1000).toLocaleTimeString('fr-FR');
+        return `<div class="mnt-log ${LOG_CLS[e.level] || ''}"><span class="mnt-log-t">${t}</span>${esc(e.msg)}</div>`;
+      }).join('') || '<div class="mnt-muted">Aucune ligne.</div>';
+      if (stick) logsBody.scrollTop = logsBody.scrollHeight;
+    } catch (_) { /* garder l'affichage précédent */ }
+  }
+  logsErrors?.addEventListener('change', loadLogs);
 })();

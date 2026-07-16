@@ -16,6 +16,7 @@ import http.client
 import importlib
 import importlib.util
 import json
+import logging
 import math
 import mimetypes
 import os
@@ -36,6 +37,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 import zlib
 from array import array
+from collections import deque
 from datetime import date as Date
 from datetime import datetime, time as Time, timezone
 from datetime import timedelta
@@ -67,7 +69,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.9"
+APP_VERSION = "1.3.10"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -125,7 +127,7 @@ STALE_TTL_SECONDS = 2 * 60 * 60
 METEOFRANCE_AROME_WMS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wms/"
     "MF-NWP-HIGHRES-AROME-001-FRANCE-WMS/GetCapabilities"
-    "?service=WMS&version=1.3.9&language=fre"
+    "?service=WMS&version=1.3.10&language=fre"
 )
 METEOFRANCE_AROME_WCS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wcs/"
@@ -14195,6 +14197,180 @@ async def server_telemetry() -> dict[str, Any]:
     return await asyncio.to_thread(_server_telemetry_sync)
 
 
+# ── LOGS serveur (ring buffer RAM) : dernières lignes pour la page maintenance ────
+_LOG_RING: deque = deque(maxlen=800)
+_log_ring_lock = threading.Lock()
+
+
+class _RingLogHandler(logging.Handler):
+    """Capture les logs (uvicorn + applicatifs) dans un ring buffer RAM borné, lisible
+    par la page maintenance admin. Aucune écriture disque, aucun coût réseau."""
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            with _log_ring_lock:
+                _LOG_RING.append({
+                    "t": record.created,
+                    "level": record.levelname,
+                    "name": record.name,
+                    "msg": self.format(record)[:600],
+                })
+        except Exception:
+            pass
+
+
+def _install_log_ring() -> None:
+    handler = _RingLogHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    handler.setLevel(logging.INFO)
+    for name in ("", "uvicorn", "uvicorn.error", "uvicorn.access"):
+        lg = logging.getLogger(name)
+        if not any(isinstance(h, _RingLogHandler) for h in lg.handlers):
+            lg.addHandler(handler)
+        if lg.level == logging.NOTSET or lg.level > logging.INFO:
+            lg.setLevel(logging.INFO)
+
+
+@app.get("/api/server/logs", dependencies=[Depends(_admin_secret_dep)])
+async def server_logs(limit: int = Query(200, ge=1, le=800),
+                      level: str = Query("all")) -> dict[str, Any]:
+    """Dernières lignes de log du serveur (admin). `level=errors` filtre WARNING+."""
+    with _log_ring_lock:
+        items = list(_LOG_RING)
+    if level == "errors":
+        items = [e for e in items if e["level"] in ("WARNING", "ERROR", "CRITICAL")]
+    items = items[-limit:]
+    return {"ok": True, "count": len(items), "logs": items}
+
+
+# ── MINI-TERMINAL en LISTE BLANCHE (admin) : aucune exécution shell arbitraire ────
+# Chaque commande mappe à une FONCTION Python prédéfinie. Rien n'est jamais passé à
+# eval/exec/subprocess : la seule surface est cette table. C'est le choix « actions +
+# commandes en liste blanche » validé pour la bêta.
+def _cmd_help(_args: list[str]) -> dict[str, Any]:
+    return {"lines": [
+        "Commandes disponibles :",
+        "  help                     — cette aide",
+        "  status                   — résumé santé (radar / AROME-PI / foudre / mémoire)",
+        "  radar                    — état détaillé du radar",
+        "  learning                 — état de l'auto-calibration",
+        "  memory                   — mémoire + top entrées du cache",
+        "  purge-cache              — purge le cache RAM maintenant",
+        "  collect-lightning [date] — collecte foudre observée (défaut : aujourd'hui)",
+        "  preload [today|tomorrow] — force le préchargement d'un jour",
+        "  retrain                  — réentraîne le modèle (auto-calibration)",
+        "  logs [n]                 — n dernières lignes de log (défaut 40)",
+    ]}
+
+
+def _cmd_status(_args: list[str]) -> dict[str, Any]:
+    t = _server_telemetry_sync()
+    r, ap, li, mem = t.get("radar", {}), t.get("aromepi", {}), t.get("lightning", {}), t.get("memory", {})
+    return {"lines": [
+        f"radar   : {r.get('source')} · {r.get('frames')} frames · {r.get('freshness_min')} min · chasse={r.get('chase_active')}",
+        f"aromepi : ok={ap.get('ok')} run={ap.get('run')} leads={ap.get('leads')}",
+        f"foudre  : ok={li.get('ok')} {li.get('count_30min')}/30min",
+        f"mémoire : RSS {mem.get('rss_mb')} Mo · cache {mem.get('cache_mb')} Mo",
+        f"version : {t.get('version')}",
+    ]}
+
+
+def _cmd_radar(_args: list[str]) -> dict[str, Any]:
+    with _fr_radar_lock:
+        times = sorted(_fr_radar_frames)
+        st = dict(_fr_radar_state)
+    return {"lines": [f"{k}: {v}" for k, v in st.items() if k != "message"] + [f"frames: {len(times)}", f"latest: {times[-1] if times else '—'}"]}
+
+
+def _cmd_learning(_args: list[str]) -> dict[str, Any]:
+    ls = _learning_status()
+    return {"lines": [
+        f"état: {ls.get('state')}", f"données: {ls.get('data')}",
+        f"gates: {ls.get('gates')}", f"skill: {ls.get('skill')}", f"calibré: {ls.get('fitted_at')}",
+    ]}
+
+
+def _cmd_memory(_args: list[str]) -> dict[str, Any]:
+    sized = sorted(((_cache_entry_size(e.get("payload")), k) for k, e in list(_cache.items())), reverse=True)
+    lines = [f"RSS/cache : voir bloc mémoire · {len(sized)} entrées · {round(sum(s for s, _ in sized)/1e6,1)} Mo"]
+    lines += [f"  {round(s/1e6,2)} Mo  {k[:70]}" for s, k in sized[:8]]
+    return {"lines": lines}
+
+
+def _cmd_purge_cache(_args: list[str]) -> dict[str, Any]:
+    stats = _purge_ram_caches()
+    _malloc_trim()
+    return {"lines": [f"purge OK : gardé {stats.get('kept')} entrées ({stats.get('kept_mb')} Mo), évincé {stats.get('removed_budget',0)+stats.get('removed_age',0)+stats.get('removed_idle',0)}"]}
+
+
+def _cmd_collect_lightning(args: list[str]) -> dict[str, Any]:
+    date_str = args[0] if args and _is_iso_date(args[0]) else datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date().isoformat()
+    with _li_collect_jobs_lock:
+        _li_collect_jobs[date_str] = {"state": "running", "at": time.time()}
+    threading.Thread(target=_run_lightning_collect_job, args=(date_str,), daemon=True, name=f"li-collect-{date_str}").start()
+    return {"lines": [f"collecte foudre lancée pour {date_str} (asynchrone — voir logs)"]}
+
+
+def _cmd_preload(args: list[str]) -> dict[str, Any]:
+    token = args[0] if args else "today"
+    try:
+        dates = _server_arome_preload_dates(raw_value=token)
+    except Exception:
+        return {"lines": [f"jour inconnu : {token} (essaie today / tomorrow / day_after_tomorrow)"]}
+    api_key = _server_meteofrance_api_key()
+    if not api_key:
+        return {"lines": ["clé AROME serveur absente : préchargement impossible."]}
+    launched = []
+    for d in dates:
+        job_key = f"cmd-preload-{d.isoformat()}-{int(time.time())}"
+        threading.Thread(target=_run_meteofrance_grib_national_day_preload_job,
+                         args=(job_key, api_key, d, OBJECTIFOUDRE_AUTO_PRELOAD_GRID), daemon=True,
+                         name=f"preload-{d.isoformat()}").start()
+        launched.append(d.isoformat())
+    return {"lines": [f"préchargement lancé (asynchrone) : {', '.join(launched)}"]}
+
+
+def _cmd_retrain(_args: list[str]) -> dict[str, Any]:
+    res = _run_learning_evaluation(source="manual")
+    return {"lines": [f"réentraînement : {res}"]}
+
+
+def _cmd_logs(args: list[str]) -> dict[str, Any]:
+    n = 40
+    if args and args[0].isdigit():
+        n = max(1, min(200, int(args[0])))
+    with _log_ring_lock:
+        items = list(_LOG_RING)[-n:]
+    return {"lines": [f"{e['level'][:4]} {e['msg']}" for e in items]}
+
+
+_SERVER_COMMANDS = {
+    "help": _cmd_help, "status": _cmd_status, "radar": _cmd_radar, "learning": _cmd_learning,
+    "memory": _cmd_memory, "purge-cache": _cmd_purge_cache, "collect-lightning": _cmd_collect_lightning,
+    "preload": _cmd_preload, "retrain": _cmd_retrain, "logs": _cmd_logs,
+}
+
+
+class ServerCommandRequest(BaseModel):
+    cmd: str = Field(..., min_length=1, max_length=200)
+
+
+@app.post("/api/server/command", dependencies=[Depends(_admin_secret_dep)])
+async def server_command(payload: ServerCommandRequest) -> dict[str, Any]:
+    """Exécute UNE commande de la LISTE BLANCHE (aucun shell). Terminal admin."""
+    parts = payload.cmd.strip().split()
+    if not parts:
+        return {"ok": False, "lines": ["commande vide."]}
+    name, args = parts[0].lower(), parts[1:]
+    fn = _SERVER_COMMANDS.get(name)
+    if fn is None:
+        return {"ok": False, "lines": [f"commande inconnue : {name}. Tape « help »."]}
+    try:
+        result = await asyncio.to_thread(fn, args)
+        return {"ok": True, "cmd": name, **result}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "lines": [f"erreur : {type(exc).__name__}: {str(exc)[:200]}"]}
+
+
 @app.get("/api/history/inventory")
 async def history_inventory(secret: str = Query(...)) -> dict[str, Any]:
     """Liste {chemin relatif: taille} de l'historique — sert au diff de migration."""
@@ -14594,7 +14770,7 @@ def _aromepi_capabilities_sync(api_key: str) -> dict[str, Any]:
     cached = _get_cached_value(cache_key, ttl=AROMEPI_CAPABILITIES_TTL_SECONDS)
     if cached is not None:
         return dict(cached["payload"])
-    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.9&language=eng"
+    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.10&language=eng"
     status, _ct, raw = _aromepi_http_get(url, api_key)
     if status != 200 or not raw:
         return {"ok": False, "status": status}
@@ -14670,10 +14846,10 @@ def _aromepi_wms_tile_sync(api_key: str, layer_key: str, time_iso: str, run_iso:
         return 400, b""
     min_lon, min_lat = _aromepi_mercator_to_lonlat(minx, miny)
     max_lon, max_lat = _aromepi_mercator_to_lonlat(maxx, maxy)
-    # WMS 1.3.9 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
+    # WMS 1.3.10 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
     # Web Mercator → on reprojette la tuile rendue (plate carrée) en sortie.
     params = [
-        ("service", "WMS"), ("version", "1.3.9"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.10"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f"{min_lat:.6f},{min_lon:.6f},{max_lat:.6f},{max_lon:.6f}"),
         ("width", str(int(width))), ("height", str(int(height))),
@@ -14798,7 +14974,7 @@ def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_
     # largeur:hauteur = ratio des degrés → le WMS rend une plate-carrée fidèle.
     src_height = max(1, round(out_width * (d["max_lat"] - d["min_lat"]) / (d["max_lon"] - d["min_lon"])))
     params = [
-        ("service", "WMS"), ("version", "1.3.9"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.10"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f'{d["min_lat"]},{d["min_lon"]},{d["max_lat"]},{d["max_lon"]}'),
         ("width", str(out_width)), ("height", str(src_height)),
@@ -14940,7 +15116,7 @@ def _aromepi_activity_sync(layer_key: str, time_iso: str, run_iso: str | None) -
     if spec.get("analysis_only") and run_iso:
         time_iso = run_iso  # analyse-seule (MOCON) : cf. _aromepi_domain_image_sync
     params = [
-        ("service", "WMS"), ("version", "1.3.9"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.10"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", "37.5,-12,55.4,16"), ("width", "300"), ("height", "300"),
         ("format", "image/png"), ("transparent", "true"), ("time", time_iso),
@@ -16138,7 +16314,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.3.9) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.3.10) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -16368,7 +16544,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.3.9) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.3.10) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
@@ -16695,6 +16871,7 @@ def _start_fr_radar_thread() -> None:
 
 @app.on_event("startup")
 def _startup_fr_radar() -> None:
+    _install_log_ring()   # capture des logs pour la page maintenance (admin)
     _start_fr_radar_thread()
     _start_li_live_thread()   # foudre live MTG-LI (no-op si identifiants EUMETSAT absents)
     _start_ram_cache_purge_thread()   # anti-OOM : purge périodique du cache RAM
