@@ -357,7 +357,19 @@
 
       // Structure identique (même jour, mêmes créneaux) → MISE À JOUR EN PLACE.
       // C'est le chemin de ~tous les appels : rien n'est détruit, rien ne saute.
-      const structSig = (day?.day_key || '') + '|' + slots.map((s) => s.slot_key).join(',');
+      // La POSITION de référence entre dans la signature : changer de ville (recherche/
+      // géoloc) recalcule le lever/coucher (les icônes de phase sont posées au build) —
+      // sinon les heures solaires restaient figées sur le centre par défaut (bug Trello).
+      // Arrondi ~0,1° (≈ 11 km / 24 s de temps solaire) : un vrai changement de zone
+      // rebuild, un micro-déplacement non.
+      let solarSig = '';
+      if (typeof timelineSolarReferenceLocation === 'function') {
+        const loc = timelineSolarReferenceLocation();
+        if (loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lon)) {
+          solarSig = `${loc.lat.toFixed(1)},${loc.lon.toFixed(1)}`;
+        }
+      }
+      const structSig = (day?.day_key || '') + '|' + slots.map((s) => s.slot_key).join(',') + '|' + solarSig;
       if (structSig === timelineStructureSig && slotButtons.querySelector('.timeline-wheel-scroller')) {
         updateTimelineInPlace(slots, day);
         syncTimelinePlaybackUi();
