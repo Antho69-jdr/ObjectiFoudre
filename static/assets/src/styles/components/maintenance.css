@@ -1,0 +1,80 @@
+/* maintenance.css — Page « Télémétrie & maintenance » (admin). Mosaïque de blocs. */
+
+/* Bouton d'accès : visible UNIQUEMENT en mode admin (classe posée sur <html>). */
+.objf-admin-only { display: none !important; }
+.objf-admin .objf-admin-only { display: inline-flex !important; }
+
+.maintenance-page .prediction-page-shell { max-width: 1180px; }
+.maintenance-body { overflow: auto; }
+.maintenance-refresh {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-right: 10px;
+  white-space: nowrap;
+}
+.maintenance-loading { color: var(--text-muted); padding: 40px; text-align: center; }
+
+.maintenance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  padding: 4px 2px 24px;
+}
+
+.mnt-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 14px 16px 16px;
+  box-shadow: var(--shadow-inset);
+}
+.mnt-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+/* Liseré de statut sur le bord gauche selon la santé du bloc. */
+.mnt-card-ok { border-left: 3px solid var(--success); }
+.mnt-card-warn { border-left: 3px solid var(--warning); }
+.mnt-card-bad { border-left: 3px solid var(--danger); }
+.mnt-card-idle { border-left: 3px solid var(--text-dim); }
+
+.mnt-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; box-shadow: 0 0 0 3px rgba(255,255,255,0.04); }
+.mnt-dot-ok { background: var(--success); }
+.mnt-dot-warn { background: var(--warning); }
+.mnt-dot-bad { background: var(--danger); }
+.mnt-dot-idle { background: var(--text-dim); }
+
+.mnt-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mnt-rows li { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12.5px; }
+.mnt-rows li span { color: var(--text-muted); }
+.mnt-rows li strong { color: var(--text); font-weight: 700; text-align: right; }
+.mnt-rows li strong.mnt-ok { color: var(--success); }
+.mnt-rows li strong.mnt-bad { color: var(--danger); }
+.mnt-rows li strong.mnt-strong { color: var(--accent); font-weight: 800; }
+
+.mnt-bar { margin-top: 10px; height: 5px; border-radius: var(--r-pill); background: rgba(255,255,255,0.08); overflow: hidden; }
+.mnt-bar i { display: block; height: 100%; border-radius: var(--r-pill); transition: width 0.4s ease; }
+.mnt-bar-ok i { background: linear-gradient(90deg, rgba(52,211,153,0.7), rgba(52,211,153,0.95)); }
+.mnt-bar-warn i { background: linear-gradient(90deg, rgba(251,191,36,0.7), rgba(251,146,60,0.95)); }
+.mnt-bar-idle i { background: rgba(255,255,255,0.14); }
+
+.mnt-preload { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.mnt-preload li { display: grid; grid-template-columns: 96px 1fr auto; align-items: center; gap: 10px; }
+.mnt-pl-date { font-size: 11.5px; color: var(--text); font-weight: 700; display: flex; flex-direction: column; }
+.mnt-pl-date em { font-style: normal; font-size: 9px; color: var(--text-dim); letter-spacing: 0.04em; }
+.mnt-preload .mnt-bar { margin: 0; }
+.mnt-pl-count { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+.mnt-err { color: var(--danger); font-size: 12.5px; line-height: 1.4; }
+.mnt-err code { background: rgba(255,255,255,0.06); padding: 1px 4px; border-radius: 4px; }
+.mnt-muted { color: var(--text-dim); font-size: 11.5px; margin-top: 8px; }
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="light"] .mnt-card { background: rgba(255,255,255,0.7); }
+}

@@ -147,6 +147,7 @@
    + dock de recherche (interleaves). Migre VERBATIM (parite par construction,
    !important porteurs preserves). Tier 3. Tokens conserves (definitions legacy). */
 @import "./components/rail-search-layout.css";
+@import "./components/maintenance.css";
 
 :root {
   /* Fond & surfaces */

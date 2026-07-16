@@ -67,7 +67,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.8"
+APP_VERSION = "1.3.9"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -125,7 +125,7 @@ STALE_TTL_SECONDS = 2 * 60 * 60
 METEOFRANCE_AROME_WMS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wms/"
     "MF-NWP-HIGHRES-AROME-001-FRANCE-WMS/GetCapabilities"
-    "?service=WMS&version=1.3.8&language=fre"
+    "?service=WMS&version=1.3.9&language=fre"
 )
 METEOFRANCE_AROME_WCS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wcs/"
@@ -14052,6 +14052,149 @@ async def server_memory_purge() -> dict[str, Any]:
     return {"ok": True, **stats}
 
 
+# ── TÉLÉMÉTRIE (page maintenance admin) : agrégateur de l'état du serveur ─────────
+_telemetry_preload_cache: dict[str, Any] = {"at": 0.0, "data": None}
+
+
+def _server_telemetry_sync() -> dict[str, Any]:
+    """État consolidé pour la page maintenance : santé des sources temps réel, auto-
+    calibration, mémoire, historique, préchargement AROME/ARPEGE par jour. Chaque bloc est
+    protégé (un échec local n'abat pas le reste). Le préchargement (appels réseau) est caché."""
+    now = time.time()
+
+    def fresh_iso(iso: str | None) -> float | None:
+        dt = _parse_meteofrance_datetime(iso) if iso else None
+        return round((now - dt.timestamp()) / 60.0, 1) if dt else None
+
+    def fresh_epoch(ts: Any) -> float | None:
+        return round((now - float(ts)) / 60.0, 1) if ts else None
+
+    out: dict[str, Any] = {"ok": True, "at": now, "version": APP_VERSION}
+
+    # SANTÉ RADAR (canal ciblé / paquet)
+    try:
+        with _fr_radar_lock:
+            rtimes = sorted(_fr_radar_frames)
+            rstate = dict(_fr_radar_state)
+        out["radar"] = {
+            "source": rstate.get("source"), "frames": len(rtimes),
+            "latest": rtimes[-1] if rtimes else None,
+            "freshness_min": fresh_iso(rtimes[-1]) if rtimes else None,
+            "chase_active": rstate.get("chase_active"),
+            "error": (rstate.get("cible_error") or (rstate.get("last_error") or "").splitlines()[0] or None) if rstate.get("last_error") or rstate.get("cible_error") else None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["radar"] = {"error": str(exc)[:150]}
+
+    # NOWCAST (blend / pont / cellules)
+    try:
+        with _fr_blend_lock:
+            blend = {"frames": len(_fr_blend.get("times") or []), "advected": _fr_blend.get("advected"), "speed_kmh": _fr_blend.get("speed_kmh")}
+        with _fr_bridge_lock:
+            bridge = {"frames": len(_fr_bridge.get("times") or []), "morph_blocks": _fr_bridge.get("morph_blocks"), "compute_s": _fr_bridge.get("compute_s")}
+        with _fr_cells_lock:
+            cells = {"count": len(_fr_cells.get("cells") or []), "freshness_min": fresh_epoch(_fr_cells.get("updated_at"))}
+        out["nowcast"] = {"blend": blend, "bridge": bridge, "cells": cells}
+    except Exception as exc:  # noqa: BLE001
+        out["nowcast"] = {"error": str(exc)[:150]}
+
+    # FOUDRE LIVE (MTG-LI)
+    try:
+        with _li_live_lock:
+            flashes = _li_live.get("flashes") or []
+            li_updated = _li_live.get("updated_at")
+            li_end = _li_live.get("latest_end")
+        c30 = sum(1 for f in flashes if f[2] >= now - 30 * 60)
+        out["lightning"] = {
+            "ok": bool(li_updated), "count_30min": c30, "buffer": len(flashes),
+            "freshness_min": fresh_epoch(li_updated), "latest_product_end": li_end,
+            "configured": bool(EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET),
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["lightning"] = {"error": str(exc)[:150]}
+
+    # AROME-PI (nowcast MF) — capabilities cachées (TTL 300 s), pas de coût par refresh
+    try:
+        apk = _aromepi_api_key()
+        caps = _aromepi_capabilities_sync(apk) if apk else {"ok": False}
+        out["aromepi"] = {
+            "ok": bool(caps.get("ok")), "run": caps.get("run"),
+            "leads": len(caps.get("forecast_times") or []), "configured": bool(apk),
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["aromepi"] = {"error": str(exc)[:150]}
+
+    # AUTO-CALIBRATION
+    try:
+        ls = _learning_status()
+        out["learning"] = {
+            "state": ls.get("state"), "data": ls.get("data"), "gates": ls.get("gates"),
+            "skill": ls.get("skill"), "fitted_at": ls.get("fitted_at"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["learning"] = {"error": str(exc)[:150]}
+
+    # MÉMOIRE (RSS process + cache RAM)
+    try:
+        rss_mb = None
+        try:
+            with open("/proc/self/statm") as fh:
+                rss_mb = round(int(fh.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 1e6)
+        except Exception:
+            pass
+        out["memory"] = {
+            "rss_mb": rss_mb, "cache_mb": round(_cache_bytes / 1e6, 1),
+            "cache_entries": len(_cache), "budget_mb": OBJECTIFOUDRE_RAM_CACHE_BUDGET_MB,
+            "last_purge": dict(_ram_cache_last_purge),
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["memory"] = {"error": str(exc)[:150]}
+
+    # HISTORIQUE (archive de grilles + foudre observée)
+    try:
+        dates = _list_history_dates()
+        today_iso = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date().isoformat()
+        past = [d for d in dates if d.get("date") and d["date"] < today_iso]
+        with_light = 0
+        for d in past[:60]:
+            rec = _read_lightning_archive(d["date"])
+            if rec and rec.get("final"):
+                with_light += 1
+        out["history"] = {
+            "date_count": len(dates),
+            "latest": dates[0]["date"] if dates else None,
+            "oldest": dates[-1]["date"] if dates else None,
+            "lightning_final_recent": with_light, "past_considered": min(len(past), 60),
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["history"] = {"error": str(exc)[:150]}
+
+    # PRÉCHARGEMENT AROME/ARPEGE par jour (coûteux : réseau) → caché 90 s
+    try:
+        if _telemetry_preload_cache["data"] is not None and now - _telemetry_preload_cache["at"] < 90:
+            out["preload"] = _telemetry_preload_cache["data"]
+        else:
+            auto = _server_arome_automation_status()
+            coverage = [
+                {"date": c["date"], "model": c.get("nwp_model"), "ok": c["ok_count"],
+                 "total": c["hour_count"], "complete": c["complete"]}
+                for c in (auto.get("coverage") or [])
+            ]
+            data = {"coverage": coverage, "quota_cooldown_s": auto.get("quota_cooldown_seconds")}
+            _telemetry_preload_cache.update(at=now, data=data)
+            out["preload"] = data
+    except Exception as exc:  # noqa: BLE001
+        out["preload"] = {"error": str(exc)[:150]}
+
+    return out
+
+
+@app.get("/api/server/telemetry", dependencies=[Depends(_admin_secret_dep)])
+async def server_telemetry() -> dict[str, Any]:
+    """État consolidé du serveur pour la page maintenance (admin)."""
+    return await asyncio.to_thread(_server_telemetry_sync)
+
+
 @app.get("/api/history/inventory")
 async def history_inventory(secret: str = Query(...)) -> dict[str, Any]:
     """Liste {chemin relatif: taille} de l'historique — sert au diff de migration."""
@@ -14451,7 +14594,7 @@ def _aromepi_capabilities_sync(api_key: str) -> dict[str, Any]:
     cached = _get_cached_value(cache_key, ttl=AROMEPI_CAPABILITIES_TTL_SECONDS)
     if cached is not None:
         return dict(cached["payload"])
-    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.8&language=eng"
+    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.9&language=eng"
     status, _ct, raw = _aromepi_http_get(url, api_key)
     if status != 200 or not raw:
         return {"ok": False, "status": status}
@@ -14527,10 +14670,10 @@ def _aromepi_wms_tile_sync(api_key: str, layer_key: str, time_iso: str, run_iso:
         return 400, b""
     min_lon, min_lat = _aromepi_mercator_to_lonlat(minx, miny)
     max_lon, max_lat = _aromepi_mercator_to_lonlat(maxx, maxy)
-    # WMS 1.3.8 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
+    # WMS 1.3.9 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
     # Web Mercator → on reprojette la tuile rendue (plate carrée) en sortie.
     params = [
-        ("service", "WMS"), ("version", "1.3.8"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.9"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f"{min_lat:.6f},{min_lon:.6f},{max_lat:.6f},{max_lon:.6f}"),
         ("width", str(int(width))), ("height", str(int(height))),
@@ -14655,7 +14798,7 @@ def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_
     # largeur:hauteur = ratio des degrés → le WMS rend une plate-carrée fidèle.
     src_height = max(1, round(out_width * (d["max_lat"] - d["min_lat"]) / (d["max_lon"] - d["min_lon"])))
     params = [
-        ("service", "WMS"), ("version", "1.3.8"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.9"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f'{d["min_lat"]},{d["min_lon"]},{d["max_lat"]},{d["max_lon"]}'),
         ("width", str(out_width)), ("height", str(src_height)),
@@ -14797,7 +14940,7 @@ def _aromepi_activity_sync(layer_key: str, time_iso: str, run_iso: str | None) -
     if spec.get("analysis_only") and run_iso:
         time_iso = run_iso  # analyse-seule (MOCON) : cf. _aromepi_domain_image_sync
     params = [
-        ("service", "WMS"), ("version", "1.3.8"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.9"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", "37.5,-12,55.4,16"), ("width", "300"), ("height", "300"),
         ("format", "image/png"), ("transparent", "true"), ("time", time_iso),
@@ -15995,7 +16138,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.3.8) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.3.9) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -16225,7 +16368,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.3.8) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.3.9) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
