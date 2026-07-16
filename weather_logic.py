@@ -1283,8 +1283,35 @@ def _hourly_bool(values: list | None, idx: int, default: bool) -> bool:
     return default
 
 
+def _nearest_cell_by_lon(row_lons: list[float], row_cells: list[dict], lon: float, max_gap_deg: float) -> dict | None:
+    """Dans une bande de latitude triée par longitude, la cellule de longitude la plus
+    proche de `lon` — ou None si le trou dépasse max_gap_deg (bord/côte/discontinuité)."""
+    import bisect
+    if not row_lons:
+        return None
+    i = bisect.bisect_left(row_lons, lon)
+    best = None
+    best_gap = float("inf")
+    for j in (i - 1, i):
+        if 0 <= j < len(row_lons):
+            gap = abs(row_lons[j] - lon)
+            if gap < best_gap:
+                best_gap = gap
+                best = row_cells[j]
+    return best if best is not None and best_gap <= max_gap_deg else None
+
+
 def _surface_convergence_by_point_time(points: list[Point], locations: list[dict]) -> dict[tuple[str, str], float]:
-    by_time: dict[str, dict[tuple[float, float], dict[str, float | str]]] = {}
+    """Convergence de surface -(∂u/∂x + ∂v/∂y) par cellule et par échéance, à partir du
+    vent 10 m (direction + vitesse). ⚠ La grille France n'est PAS un produit cartésien
+    régulier : les latitudes sont discrètes (bandes), mais chaque bande a SES longitudes
+    (cellules ~équi-surface) → les longitudes ne s'alignent pas d'une bande à l'autre.
+    On trouve donc les voisins Est/Ouest dans la MÊME bande (cellules adjacentes en lon)
+    et les voisins Nord/Sud par PROXIMITÉ de longitude dans les bandes encadrantes.
+    (L'ancienne version cherchait un voisin (lat_i, lon_j) exact → 0 voisin trouvé sur la
+    vraie grille → convergence toujours nulle. Bug corrigé.)"""
+    # 1) accumuler les vecteurs de vent par échéance
+    by_time: dict[str, list[dict]] = {}
     for point, loc in zip(points, locations):
         hourly = loc.get("hourly", {}) if isinstance(loc, dict) else {}
         times = hourly.get("time", [])
@@ -1298,41 +1325,53 @@ def _surface_convergence_by_point_time(points: list[Point], locations: list[dict
             if speed is None or direction is None or not direction_available:
                 continue
             u, v = wind_components_ms(speed, direction)
-            by_time.setdefault(str(time_value), {})[(round(point.lat, 5), round(point.lon, 5))] = {
-                "zone": point.zone,
-                "lat": point.lat,
-                "lon": point.lon,
-                "u": u,
-                "v": v,
-            }
+            by_time.setdefault(str(time_value), []).append({
+                "zone": point.zone, "lat": float(point.lat), "lon": float(point.lon), "u": u, "v": v,
+            })
 
     convergence: dict[tuple[str, str], float] = {}
-    for time_value, vectors in by_time.items():
-        if len(vectors) < 9:
+    for time_value, cells in by_time.items():
+        if len(cells) < 9:
             continue
-        lats = sorted({key[0] for key in vectors})
-        lons = sorted({key[1] for key in vectors})
-        if len(lats) < 3 or len(lons) < 3:
+        # 2) regrouper en bandes de latitude (lat discrètes), chaque bande triée par lon
+        bands: dict[float, list[dict]] = {}
+        for c in cells:
+            bands.setdefault(round(c["lat"], 4), []).append(c)
+        if len(bands) < 3:
             continue
-        for lat_idx in range(1, len(lats) - 1):
-            for lon_idx in range(1, len(lons) - 1):
-                key = (lats[lat_idx], lons[lon_idx])
-                west_key = (lats[lat_idx], lons[lon_idx - 1])
-                east_key = (lats[lat_idx], lons[lon_idx + 1])
-                south_key = (lats[lat_idx - 1], lons[lon_idx])
-                north_key = (lats[lat_idx + 1], lons[lon_idx])
-                if not all(item in vectors for item in (key, west_key, east_key, south_key, north_key)):
+        band_lats = sorted(bands)
+        for band in bands.values():
+            band.sort(key=lambda c: c["lon"])
+        # tolérance d'appariement Nord/Sud : ~1,5× le pas médian de longitude d'une bande
+        gaps = []
+        for band in bands.values():
+            for k in range(1, len(band)):
+                gaps.append(band[k]["lon"] - band[k - 1]["lon"])
+        gaps.sort()
+        med_gap = gaps[len(gaps) // 2] if gaps else 0.2
+        max_gap = max(0.05, min(0.6, med_gap * 1.5))
+        # 3) pour chaque cellule intérieure : E/O dans la bande, N/S par proximité de lon
+        for bi in range(1, len(band_lats) - 1):
+            row = bands[band_lats[bi]]
+            if len(row) < 3:
+                continue
+            south = bands[band_lats[bi - 1]]
+            north = bands[band_lats[bi + 1]]
+            south_lons = [c["lon"] for c in south]
+            north_lons = [c["lon"] for c in north]
+            for k in range(1, len(row) - 1):
+                cell = row[k]
+                west = row[k - 1]
+                east = row[k + 1]
+                s_cell = _nearest_cell_by_lon(south_lons, south, cell["lon"], max_gap)
+                n_cell = _nearest_cell_by_lon(north_lons, north, cell["lon"], max_gap)
+                if s_cell is None or n_cell is None:
                     continue
-                cell = vectors[key]
-                west = vectors[west_key]
-                east = vectors[east_key]
-                south = vectors[south_key]
-                north = vectors[north_key]
-                mean_lat_rad = math.radians(float(cell["lat"]))
-                dx_m = max(1.0, abs(float(east["lon"]) - float(west["lon"])) * 111_320.0 * max(0.15, math.cos(mean_lat_rad)))
-                dy_m = max(1.0, abs(float(north["lat"]) - float(south["lat"])) * 111_320.0)
-                du_dx = (float(east["u"]) - float(west["u"])) / dx_m
-                dv_dy = (float(north["v"]) - float(south["v"])) / dy_m
+                mean_lat_rad = math.radians(cell["lat"])
+                dx_m = max(1.0, abs(east["lon"] - west["lon"]) * 111_320.0 * max(0.15, math.cos(mean_lat_rad)))
+                dy_m = max(1.0, abs(n_cell["lat"] - s_cell["lat"]) * 111_320.0)
+                du_dx = (east["u"] - west["u"]) / dx_m
+                dv_dy = (n_cell["v"] - s_cell["v"]) / dy_m
                 convergence[(str(cell["zone"]), time_value)] = -(du_dx + dv_dy)
     return convergence
 
