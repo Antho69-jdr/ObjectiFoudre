@@ -754,7 +754,6 @@ def _apply_environment_modifiers(
     dt: datetime,
     cape_s: int,
     dew_s: int,
-    cin_support_s: int | None,
     cin_actual_s: int | None,
     surface_trigger_s: int | None,
     precipitable_water_s: int | None,
@@ -765,20 +764,33 @@ def _apply_environment_modifiers(
 ) -> tuple[float, float]:
     """Modificateurs secondaires : CIN, convergence de surface, eau précipitable,
     rayonnement court, couche limite et activité convective observée. Ordre conservé."""
-    if cin_support_s is not None:
-        if cin_support_s < 25:
-            score *= 0.55
-            penalty += 16
-        elif cin_support_s < 40:
-            score *= 0.75
-            penalty += 8
+    # CIN = « cap » (couvercle), pas un « stop ». Un CIN fort n'interdit l'orage que s'il
+    # ne peut PAS être cassé. Il est CASSABLE si le forçage est présent : chauffage diurne
+    # (thermiques qui percent), instabilité (CAPE), convergence ou cisaillement (soulèvement
+    # dynamique au-dessus du LFC). breakability ∈ [0,1] atténue la pénalité — les meilleures
+    # journées de chasse sont « capées le matin, cassage l'après-midi », il ne faut pas les
+    # écraser. Sans forçage (nuit, ciel stable), le cap tient → pénalité pleine (comportement
+    # d'origine préservé).
+    if cin_actual_s is not None and cin_actual_s < 40:
+        forcing = (cape_s - 45) / 55.0
+        if shortwave_s is not None:
+            forcing = max(forcing, (shortwave_s - 45) / 55.0)
+        if surface_trigger_s is not None:
+            forcing = max(forcing, (surface_trigger_s - 55) / 45.0)
+        if shear_s is not None:
+            forcing = max(forcing, (shear_s - 55) / 45.0)
+        breakability = min(1.0, max(0.0, forcing))
+        atten = breakability * 0.65                       # au plus 65 % de la pénalité levée
+        base_mult, base_pen = (0.55, 16) if cin_actual_s < 25 else (0.75, 8)
+        score *= base_mult + (1.0 - base_mult) * atten
+        penalty += base_pen * (1.0 - atten)
     if cin_actual_s is not None and cin_actual_s >= 70:
         score += 5
     if surface_trigger_s is not None:
         if surface_trigger_s < 25 and cape_s < 65:
             score *= 0.88
             penalty += 5
-        elif surface_trigger_s >= 75 and cape_s >= 35 and dew_s >= 40 and (cin_support_s is None or cin_support_s >= 35):
+        elif surface_trigger_s >= 75 and cape_s >= 35 and dew_s >= 40 and (cin_actual_s is None or cin_actual_s >= 35):
             score += 6
     if precipitable_water_s is not None:
         if precipitable_water_s < 25 and cape_s >= 45:
@@ -856,10 +868,9 @@ def compute_initiation(
         if shortwave_radiation_w_m2 is not None and math.isfinite(float(shortwave_radiation_w_m2))
         else None
     )
+    # CIN = vrai champ AROME d'inhibition convective (CONVECTIVE_INHIBITION, via WCS ou
+    # paquet), pas un proxy 2 m (ancien commentaire périmé retiré). Score bas = cap fort.
     cin_actual_s = score_cin_actual(cin_jkg)
-    # Without a real vertical CIN field, the 2 m proxy remains diagnostic only.
-    # It must not double-count the dry-air penalties already captured by Td/VPD.
-    cin_support_s = cin_actual_s
     precipitation_available = precipitation_rate_mm_h is not None and math.isfinite(float(precipitation_rate_mm_h))
     precipitation_s = score_precipitation_rate(precipitation_rate_mm_h) if precipitation_available else None
     precipitation_rate = max(0.0, float(precipitation_rate_mm_h)) if precipitation_available else None
@@ -963,7 +974,6 @@ def compute_initiation(
         dt=dt,
         cape_s=cape_s,
         dew_s=dew_s,
-        cin_support_s=cin_support_s,
         cin_actual_s=cin_actual_s,
         surface_trigger_s=surface_trigger_s,
         precipitable_water_s=precipitable_water_s,
@@ -1023,8 +1033,9 @@ def compute_signal_confidence(reference: dict, neighbours: list[dict]) -> tuple[
         int(reference.get('vpd_component') or 0),
         int(reference.get('wetbulb_component') or 0),
     ]
-    if reference.get('cin_actual_component') is not None:
-        support_values.append(int(reference.get('cin_actual_component') or 0))
+    # CIN VOLONTAIREMENT EXCLU du plancher de confiance : il pénalise déjà le score via le
+    # modificateur multiplicatif (cap), puis via l'exposant conf^0,45. L'ajouter ici en
+    # ferait un TRIPLE comptage (audit) — une journée capée était punie trois fois.
     if reference.get('precipitable_water_component') is not None:
         support_values.append(int(reference.get('precipitable_water_component') or 0))
     if reference.get('surface_heating_component') is not None:

@@ -67,7 +67,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.7"
+APP_VERSION = "1.3.8"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -125,7 +125,7 @@ STALE_TTL_SECONDS = 2 * 60 * 60
 METEOFRANCE_AROME_WMS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wms/"
     "MF-NWP-HIGHRES-AROME-001-FRANCE-WMS/GetCapabilities"
-    "?service=WMS&version=1.3.7&language=fre"
+    "?service=WMS&version=1.3.8&language=fre"
 )
 METEOFRANCE_AROME_WCS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wcs/"
@@ -8229,26 +8229,34 @@ def _build_meteofrance_grib_slot_grid_sync(
             wind_speed_10m = field_values.get("wind_speed_10m", {}).get(zone)
             wind_direction_10m = field_values.get("wind_direction_10m", {}).get(zone)
             wind_direction_10m_available = wind_speed_10m is not None and wind_direction_10m is not None
+            # ⚠ « mucape » = en réalité MLCAPE (wcs_client MLCAPE__GROUND), pas du vrai MUCAPE.
+            # `_first_present` (première valeur NON-None, pas falsy) : un MLCAPE VALIDE de 0.0
+            # ne doit pas être traité comme absent et remplacé par le CAPE paquet (bug audit).
+            cape_val = _first_present(field_values.get("mucape", {}).get(zone),
+                                      field_values.get("cape", {}).get(zone))
+            has_td = temp_c is not None and dewpoint_c is not None
             hourly = {
                 "time": [slot_dt.isoformat()],
-                "cape": [field_values.get("mucape", {}).get(zone) or field_values.get("cape", {}).get(zone) or 0.0],
+                "cape": [cape_val if cape_val is not None else 0.0],
                 "precipitable_water": [field_values.get("precipitable_water", {}).get(zone)],
                 "shortwave_radiation": [field_values.get("shortwave_radiation", {}).get(zone)],
                 "precipitation_rate": [field_values.get("precipitation_rate", {}).get(zone)],
-                "temperature_2m": [temp_c or 0.0],
-                "dew_point_2m": [dewpoint_c or 0.0],
+                # temp/rosée : None si absent (PAS 0.0 = faux -0 °C sec) → rows_for_location
+                # SAUTE l'heure plutôt que de fabriquer un faux signal (bug audit).
+                "temperature_2m": [temp_c],
+                "dew_point_2m": [dewpoint_c],
                 "convective_inhibition": [field_values.get("convective_inhibition", {}).get(zone)],
                 "shear_ms": [field_values.get("shear_ms", {}).get(zone)],
-                "relative_humidity_2m": [rh2m or 0.0],
-                "vapour_pressure_deficit": [_vapour_pressure_deficit_kpa(float(temp_c or 0.0), float(dewpoint_c or 0.0))],
-                "wet_bulb_temperature_2m": [_wet_bulb_stull_c(float(temp_c or 0.0), float(rh2m or 0.0))],
+                "relative_humidity_2m": [rh2m],
+                "vapour_pressure_deficit": [_vapour_pressure_deficit_kpa(float(temp_c), float(dewpoint_c)) if has_td else None],
+                "wet_bulb_temperature_2m": [_wet_bulb_stull_c(float(temp_c), float(rh2m)) if (has_td and rh2m is not None) else None],
                 "cloud_cover_low": [field_values.get("cloud_cover_low", {}).get(zone)],
                 "cloud_cover_mid": [field_values.get("cloud_cover_mid", {}).get(zone)],
                 "cloud_cover_high": [field_values.get("cloud_cover_high", {}).get(zone)],
                 "boundary_layer_height": [field_values.get("boundary_layer_height", {}).get(zone)],
                 "wind_gusts_10m": [field_values.get("wind_gusts_10m", {}).get(zone) or 0.0],
-                "wind_speed_10m": [wind_speed_10m or 0.0],
-                "wind_direction_10m": [wind_direction_10m or 0.0],
+                "wind_speed_10m": [wind_speed_10m if wind_speed_10m is not None else 0.0],
+                "wind_direction_10m": [wind_direction_10m],
                 "wind_direction_10m_available": [wind_direction_10m_available],
             }
             grid_locations.append({"hourly": hourly, "models": METEOFRANCE_GRIB_SLOT_MODEL_NAME})
@@ -12773,6 +12781,15 @@ def _saturation_vapour_pressure_kpa(temp_c: float) -> float:
     return 0.6108 * math.exp((17.27 * temp_c) / (temp_c + 237.3))
 
 
+def _first_present(*values: Any) -> Any:
+    """Première valeur NON-None (contrairement à `a or b`, ne rejette pas les 0.0 valides —
+    ex. un MLCAPE de 0 J/kg est une vraie mesure, pas une absence)."""
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 def _relative_humidity_from_dewpoint_c(temp_c: float | None, dewpoint_c: float | None) -> float | None:
     if temp_c is None or dewpoint_c is None:
         return None
@@ -14434,7 +14451,7 @@ def _aromepi_capabilities_sync(api_key: str) -> dict[str, Any]:
     cached = _get_cached_value(cache_key, ttl=AROMEPI_CAPABILITIES_TTL_SECONDS)
     if cached is not None:
         return dict(cached["payload"])
-    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.7&language=eng"
+    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.8&language=eng"
     status, _ct, raw = _aromepi_http_get(url, api_key)
     if status != 200 or not raw:
         return {"ok": False, "status": status}
@@ -14510,10 +14527,10 @@ def _aromepi_wms_tile_sync(api_key: str, layer_key: str, time_iso: str, run_iso:
         return 400, b""
     min_lon, min_lat = _aromepi_mercator_to_lonlat(minx, miny)
     max_lon, max_lat = _aromepi_mercator_to_lonlat(maxx, maxy)
-    # WMS 1.3.7 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
+    # WMS 1.3.8 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
     # Web Mercator → on reprojette la tuile rendue (plate carrée) en sortie.
     params = [
-        ("service", "WMS"), ("version", "1.3.7"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.8"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f"{min_lat:.6f},{min_lon:.6f},{max_lat:.6f},{max_lon:.6f}"),
         ("width", str(int(width))), ("height", str(int(height))),
@@ -14638,7 +14655,7 @@ def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_
     # largeur:hauteur = ratio des degrés → le WMS rend une plate-carrée fidèle.
     src_height = max(1, round(out_width * (d["max_lat"] - d["min_lat"]) / (d["max_lon"] - d["min_lon"])))
     params = [
-        ("service", "WMS"), ("version", "1.3.7"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.8"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f'{d["min_lat"]},{d["min_lon"]},{d["max_lat"]},{d["max_lon"]}'),
         ("width", str(out_width)), ("height", str(src_height)),
@@ -14780,7 +14797,7 @@ def _aromepi_activity_sync(layer_key: str, time_iso: str, run_iso: str | None) -
     if spec.get("analysis_only") and run_iso:
         time_iso = run_iso  # analyse-seule (MOCON) : cf. _aromepi_domain_image_sync
     params = [
-        ("service", "WMS"), ("version", "1.3.7"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.8"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", "37.5,-12,55.4,16"), ("width", "300"), ("height", "300"),
         ("format", "image/png"), ("transparent", "true"), ("time", time_iso),
@@ -15978,7 +15995,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.3.7) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.3.8) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -16208,7 +16225,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.3.7) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.3.8) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
