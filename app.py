@@ -78,7 +78,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.19"
+APP_VERSION = "1.3.20"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16582,9 +16582,18 @@ def _fr_bridge_compute(api_key: str) -> None:
 # (calibré : jamais pire que la persistance à court terme, plein gain à +30 min).
 FR_CELLS_HISTORY = 12       # mosaïques analysées (~1 h)
 FR_CELLS_MIN_AREA = 6       # px DS : seuil enveloppe (détection/suivi)
+# ── Détection par PALIERS DE COULEUR (v1.3.20, demande user). Trois niveaux calés sur les
+# bandes dBZ de la palette radar (_FR_RADAR_BANDS/_COLORS) :
+#   • ENVELOPPE (bleu/vert/jaune, ≥ bande 2 ~16 dBZ) = empreinte large, PEUT contenir
+#     plusieurs cellules distinctes → à segmenter.
+#   • GRAINE (jaune/orange, ≥ bande 4 ~32 dBZ) = structure qui INDIVIDUALISE une cellule.
+#   • CŒUR (orange/rouge/blanc, ≥ bande 5 ~40 dBZ) = intensité (exposition/tendance).
+FR_CELLS_ENV_BAND = 2       # plancher enveloppe (~16 dBZ)
+FR_CELLS_MARKER_BAND = 4    # graine « cellule distincte » (~32 dBZ, jaune)
+FR_CELLS_MARKER_MIN = 3     # px DS : aire min d'une graine (sinon speck ignoré)
 FR_CELLS_CORE_BAND = 5      # bande cœur convectif (~40-48 dBZ)
 FR_CELLS_CORE_MIN = 3       # px DS : aire min d'un cœur
-FR_CELLS_SPLIT_KM = 25.0    # ≥2 cœurs distants de plus → scission de l'enveloppe
+FR_CELLS_SPLIT_KM = 22.0    # graines plus proches que ça → fusionnées (même cellule)
 FR_CELLS_EXPO_AREA = 25     # px DS : exposition par l'aire seule (~535 km²)
 FR_CELLS_MAX_SPEED = 120.0  # km/h : au-delà = appariement douteux (mini-cellules bruitées)
 _fr_cells_lock = threading.Lock()
@@ -16616,16 +16625,93 @@ def _fr_cells_label_cc(mask) -> tuple[Any, int]:
     return labels, nlab
 
 
-def _fr_cells_outline(m, max_pts: int = 64) -> list[tuple[int, int]]:
-    """Contour extérieur d'un masque booléen (Moore neighbor tracing, sans scipy/cv2),
-    décimé à ≤ max_pts points [(y, x)…]. Sert au SURLIGNAGE de la cellule sur la carte."""
+def _dp_simplify(pts: list[tuple[int, int]], eps: float) -> list[tuple[int, int]]:
+    """Douglas-Peucker (itératif) sur une polyligne OUVERTE : garde les points qui
+    définissent la forme, écarte les quasi-colinéaires. Préserve mieux la géométrie que
+    la décimation régulière (qui créait des auto-intersections sur les formes concaves)."""
+    n = len(pts)
+    if n < 3:
+        return list(pts)
+    keep = [False] * n
+    keep[0] = keep[-1] = True
+    stack = [(0, n - 1)]
+    eps2 = eps * eps
+    while stack:
+        a, b = stack.pop()
+        ay, ax = pts[a]; by, bx = pts[b]
+        dy = by - ay; dx = bx - ax
+        seg2 = dy * dy + dx * dx
+        maxd = -1.0; maxi = -1
+        for i in range(a + 1, b):
+            py, px = pts[i]
+            if seg2 == 0:
+                d = (py - ay) ** 2 + (px - ax) ** 2
+            else:
+                t = ((py - ay) * dy + (px - ax) * dx) / seg2
+                t = 0.0 if t < 0 else (1.0 if t > 1 else t)
+                d = (py - ay - t * dy) ** 2 + (px - ax - t * dx) ** 2
+            if d > maxd:
+                maxd = d; maxi = i
+        if maxd > eps2 and maxi > a:
+            keep[maxi] = True
+            stack.append((a, maxi)); stack.append((maxi, b))
+    return [pts[i] for i in range(n) if keep[i]]
+
+
+def _segs_cross(a, b, c, d) -> bool:
+    """Deux segments [a,b] et [c,d] se CROISENT-ils proprement (hors partage d'extrémité) ?"""
+    def orient(p, q, r):
+        v = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        return 0 if v == 0 else (1 if v > 0 else -1)
+    if a == c or a == d or b == c or b == d:
+        return False
+    return orient(a, b, c) != orient(a, b, d) and orient(c, d, a) != orient(c, d, b)
+
+
+def _ring_is_simple(ring: list[tuple[int, int]]) -> bool:
+    """Un anneau fermé est SIMPLE si aucune paire de côtés non adjacents ne se croise
+    (k ≤ ~64 → O(k²) trivial)."""
+    n = len(ring)
+    if n < 4:
+        return True
+    for i in range(n):
+        a, b = ring[i], ring[(i + 1) % n]
+        for j in range(i + 1, n):
+            if j == i or (j + 1) % n == i or j == (i + 1) % n:
+                continue
+            c, d = ring[j], ring[(j + 1) % n]
+            if _segs_cross(a, b, c, d):
+                return False
+    return True
+
+
+def _convex_hull(pts: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Enveloppe convexe (monotone chain) — filet de sécurité : une forme convexe ne
+    peut PAS s'auto-intersecter. N'est utilisée que si la simplification échoue."""
+    pts = sorted(set(pts))
+    if len(pts) < 3:
+        return pts
+    def half(seq):
+        h = []
+        for p in seq:
+            while len(h) >= 2 and (h[-1][0] - h[-2][0]) * (p[1] - h[-2][1]) - (h[-1][1] - h[-2][1]) * (p[0] - h[-2][0]) <= 0:
+                h.pop()
+            h.append(p)
+        return h[:-1]
+    return half(pts) + half(pts[::-1])
+
+
+def _fr_cells_outline(m, max_pts: int = 56) -> list[tuple[int, int]]:
+    """Contour extérieur d'un masque booléen → polygone SIMPLE (sans auto-intersection),
+    ≤ max_pts points [(y, x)…]. Moore neighbor tracing (sans scipy/cv2), simplifié par
+    Douglas-Peucker à epsilon croissant jusqu'à obtenir un anneau simple sous le budget de
+    points ; en dernier recours, enveloppe convexe (jamais de « nœud »)."""
     import numpy as np
     ys, xs = np.where(m)
     if ys.size == 0:
         return []
-    # les sous-cellules issues d'une SCISSION (partition « au cœur le plus proche »)
-    # peuvent être non connexes → on trace la plus grosse composante, sinon le suivi
-    # de bord s'arrête sur le premier fragment (vécu : contour de 3 px pour aire 50).
+    # sécurité : si le masque a plusieurs composantes, tracer la plus grosse (avec la
+    # segmentation géodésique les sous-cellules sont connexes, ce cas est devenu rare).
     labels, n_comp = _fr_cells_label_cc(m)
     if n_comp > 1:
         sizes = np.bincount(labels.ravel())
@@ -16637,7 +16723,7 @@ def _fr_cells_outline(m, max_pts: int = 64) -> list[tuple[int, int]]:
     # voisins en ordre HORAIRE en repère image (y vers le bas), départ à l'ouest
     NB = ((0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1))
     cur = (y0, x0)
-    back = 0   # direction du voisin d'où l'on est « entré » (init : ouest, vide par balayage)
+    back = 0
     pts = [cur]
     budget = 8 * int(ys.size) + 64
     while budget > 0:
@@ -16646,7 +16732,7 @@ def _fr_cells_outline(m, max_pts: int = 64) -> list[tuple[int, int]]:
             d = (back + k) % 8
             ny, nx = cur[0] + NB[d][0], cur[1] + NB[d][1]
             if 0 <= ny < H and 0 <= nx < W and m[ny, nx]:
-                back = (d + 4) % 8   # prochain balayage horaire depuis le pixel quitté
+                back = (d + 4) % 8
                 cur = (ny, nx)
                 break
         else:
@@ -16654,10 +16740,18 @@ def _fr_cells_outline(m, max_pts: int = 64) -> list[tuple[int, int]]:
         if cur == (y0, x0):
             break
         pts.append(cur)
-    if len(pts) > max_pts:
-        step = len(pts) / float(max_pts)
-        pts = [pts[int(i * step)] for i in range(max_pts)]
-    return pts
+    if len(pts) < 3:
+        return pts
+    # simplification à epsilon croissant : plus on simplifie, moins il y a de risque de
+    # croisement ET moins de points. On s'arrête au premier anneau simple ≤ budget.
+    for eps in (0.8, 1.2, 1.8, 2.6, 3.6, 5.0):
+        ring = _dp_simplify(pts + [pts[0]], eps)
+        if ring and ring[-1] == ring[0]:
+            ring = ring[:-1]
+        if 3 <= len(ring) <= max_pts and _ring_is_simple(ring):
+            return ring
+    hull = _convex_hull(pts)          # dernier recours : convexe = simple par nature
+    return hull if len(hull) >= 3 else pts[:max_pts]
 
 
 def _fr_cells_stats(band, m, with_outline: bool = False) -> dict:
@@ -16675,55 +16769,98 @@ def _fr_cells_stats(band, m, with_outline: bool = False) -> dict:
     return out
 
 
-def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.3.12) : enveloppes 4-connexes ≥ bande 2
-    (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
-    (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
-    FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
-    proche). Corrige la fusion des MCS/lignes de grains (vécu : une « cellule » de
-    12 000 km² sur 300 km) tout en gardant l'enveloppe entière quand elle est monocœur."""
+def _fr_cells_group_seeds(seeds: list[dict], km_per_px: float, split_km: float) -> list[list[int]]:
+    """Regroupe les graines (jaune/orange) dont les centroïdes sont à moins de `split_km`
+    : deux bosses jaunes d'une MÊME cellule ne doivent pas la scinder (union-find)."""
+    n = len(seeds)
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            d_km = math.hypot(seeds[i]["cy"] - seeds[j]["cy"],
+                              seeds[i]["cx"] - seeds[j]["cx"]) * km_per_px
+            if d_km <= split_km:
+                parent[find(i)] = find(j)
+    buckets: dict[int, list[int]] = {}
+    for i in range(n):
+        buckets.setdefault(find(i), []).append(i)
+    return list(buckets.values())
+
+
+def _fr_cells_geodesic_partition(env_m, seed_masks: list, groups: list[list[int]]):
+    """Partition de l'enveloppe par graine la plus proche EN DISTANCE GÉODÉSIQUE (BFS
+    multi-source à l'intérieur de l'enveloppe), pas en distance euclidienne : un pixel est
+    rattaché à la graine atteinte en premier par un chemin RESTANT dans l'écho. Respecte
+    la forme (pas de partage à travers un pont fin ou le vide) et donne des régions
+    connexes (→ contours simples). Renvoie `owner` (int, -1 hors enveloppe)."""
     import numpy as np
-    H, W = band.shape
+    from collections import deque
+    H, W = env_m.shape
+    owner = np.full((H, W), -1, np.int32)
+    dq: deque = deque()
+    for gi, grp in enumerate(groups):
+        for si in grp:
+            ys, xs = np.where(seed_masks[si])
+            for y, x in zip(ys.tolist(), xs.tolist()):
+                if owner[y, x] == -1:
+                    owner[y, x] = gi
+                    dq.append((y, x))
+    while dq:
+        y, x = dq.popleft()
+        g = owner[y, x]
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < H and 0 <= nx < W and env_m[ny, nx] and owner[ny, nx] == -1:
+                owner[ny, nx] = g
+                dq.append((ny, nx))
+    return owner
+
+
+def _fr_cells_extract(band) -> list[dict]:
+    """Détection par PALIERS DE COULEUR (v1.3.20, demande user) : enveloppe faible
+    (bleu/vert/jaune, ≥ FR_CELLS_ENV_BAND) = empreinte qui peut réunir plusieurs cellules ;
+    GRAINES jaune/orange (≥ FR_CELLS_MARKER_BAND) = structures qui individualisent chaque
+    cellule (graines proches fusionnées) ; si ≥ 2 groupes de graines, l'enveloppe est
+    segmentée par WATERSHED GÉODÉSIQUE (BFS multi-source dans l'écho, pas Voronoï euclidien).
+    Le cœur orange/rouge/blanc (≥ FR_CELLS_CORE_BAND) sert à l'intensité (exposition/tendance).
+    Résout la fusion des MCS/lignes de grains ET les contours à nœuds (régions connexes)."""
+    import numpy as np
     km_per_px = (FR_RADAR_DOMAIN["max_lon"] - FR_RADAR_DOMAIN["min_lon"]) * 111.0 \
         * math.cos(math.radians(46.0)) / FR_RADAR_OUT_WIDTH * FR_BLEND_DS
-    env_labels, n_env = _fr_cells_label_cc(band >= 2)
+    env_labels, n_env = _fr_cells_label_cc(band >= FR_CELLS_ENV_BAND)
     cells: list[dict] = []
     for lab in range(1, n_env + 1):
         env_m = env_labels == lab
         if int(env_m.sum()) < FR_CELLS_MIN_AREA:
             continue
-        cores: list[dict] = []
-        core_mask = env_m & (band >= FR_CELLS_CORE_BAND)
-        if core_mask.any():
-            c_labels, n_c = _fr_cells_label_cc(core_mask)
-            for cl in range(1, n_c + 1):
-                cm = c_labels == cl
-                if int(cm.sum()) >= FR_CELLS_CORE_MIN:
-                    cores.append(_fr_cells_stats(band, cm))
-        do_split = False
-        if len(cores) >= 2:
-            for i in range(len(cores)):
-                for j in range(i + 1, len(cores)):
-                    d_km = math.hypot(cores[i]["cy"] - cores[j]["cy"],
-                                      cores[i]["cx"] - cores[j]["cx"]) * km_per_px
-                    if d_km > FR_CELLS_SPLIT_KM:
-                        do_split = True
-                        break
-                if do_split:
-                    break
-        if not do_split:
+        # graines = composantes du niveau jaune/orange DANS l'enveloppe
+        seed_masks: list = []
+        seeds: list[dict] = []
+        marker_mask = env_m & (band >= FR_CELLS_MARKER_BAND)
+        if marker_mask.any():
+            m_labels, n_m = _fr_cells_label_cc(marker_mask)
+            for ml in range(1, n_m + 1):
+                mm = m_labels == ml
+                if int(mm.sum()) >= FR_CELLS_MARKER_MIN:
+                    st = _fr_cells_stats(band, mm)
+                    seed_masks.append(mm)
+                    seeds.append({"cy": st["cy"], "cx": st["cx"]})
+        groups = _fr_cells_group_seeds(seeds, km_per_px, FR_CELLS_SPLIT_KM) if len(seeds) >= 2 else \
+            ([[0]] if seeds else [])
+        if len(groups) <= 1:
             cells.append(_fr_cells_stats(band, env_m, with_outline=True))
             continue
-        ys, xs = np.where(env_m)
-        ccy = np.array([c["cy"] for c in cores], np.float32)
-        ccx = np.array([c["cx"] for c in cores], np.float32)
-        owner = ((ys[:, None] - ccy[None, :]) ** 2 + (xs[:, None] - ccx[None, :]) ** 2).argmin(1)
-        for ci in range(len(cores)):
-            sel = owner == ci
-            if not sel.any():
+        owner = _fr_cells_geodesic_partition(env_m, seed_masks, groups)
+        for gi in range(len(groups)):
+            sub = owner == gi
+            if int(sub.sum()) < FR_CELLS_MIN_AREA:
                 continue
-            sub = np.zeros((H, W), bool)
-            sub[ys[sel], xs[sel]] = True
             cells.append(_fr_cells_stats(band, sub, with_outline=True))
     return cells
 
