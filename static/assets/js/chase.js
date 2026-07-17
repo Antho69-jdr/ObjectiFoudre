@@ -329,6 +329,9 @@
       const pos = cellPosAt(c, t);
       if (!pos) continue;                                    // pas née / au-delà de l'horizon
       const past = Array.isArray(c.past) ? c.past : [];
+      // au-delà de la dernière OBSERVATION radar → position extrapolée (dead reckoning) :
+      // marquée « estimé » + point atténué, pour ne pas la vendre comme une détection.
+      const est = past.length ? (t > past[past.length - 1][2] + 60) : false;
       // trace passée : les points de piste antérieurs à t, raccordés à la position affichée.
       const trail = past.filter((p) => p[2] <= t).map((p) => [p[0], p[1]]);
       trail.push(pos);
@@ -344,8 +347,8 @@
       }
       const arrow = c.trend === 'grow' ? ' ▲' : (c.trend === 'decay' ? ' ▼' : '');
       const zap = (c.flashes_10min > 0) ? '⚡ ' : '';   // électriquement active (foudre live)
-      const label = zap + (c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}${arrow}` : `statique${arrow}`);
-      feats.push({ type: 'Feature', properties: { kind: 'pt', color, label, cellIdx: ci }, geometry: { type: 'Point', coordinates: pos } });
+      const label = zap + (c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}${arrow}` : `statique${arrow}`) + (est ? ' · estimé' : '');
+      feats.push({ type: 'Feature', properties: { kind: 'pt', color, label, cellIdx: ci, est: est ? 1 : 0 }, geometry: { type: 'Point', coordinates: pos } });
     }
     return { type: 'FeatureCollection', features: feats };
   }
@@ -369,7 +372,8 @@
         map.addLayer({ id: CELLS_SRC + '-pt', type: 'circle', source: CELLS_SRC,
           filter: ['==', ['get', 'kind'], 'pt'],
           paint: { 'circle-radius': 5, 'circle-color': ['get', 'color'],
-                   'circle-stroke-color': '#0b0f14', 'circle-stroke-width': 1.5, 'circle-opacity': 0.95 } });
+                   'circle-stroke-color': '#0b0f14', 'circle-stroke-width': 1.5,
+                   'circle-opacity': ['case', ['==', ['get', 'est'], 1], 0.5, 0.95] } });
         map.addLayer({ id: CELLS_SRC + '-lbl', type: 'symbol', source: CELLS_SRC,
           filter: ['==', ['get', 'kind'], 'pt'],
           layout: { 'text-field': ['get', 'label'], 'text-font': ['Montserrat Medium', 'Open Sans Bold'],
@@ -1500,5 +1504,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.13';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.14';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

@@ -78,7 +78,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.13"
+APP_VERSION = "1.3.14"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16488,38 +16488,65 @@ def _fr_cells_extract(band) -> list[dict]:
     return cells
 
 
-def _fr_cells_track(frames_cells: list[list[dict]]) -> list[list[tuple]]:
-    """Appariement glouton frame à frame (distance < 35 px DS, ratio d'aire 0,3-3,3 —
-    élargi pour tolérer les scissions/fusions de la détection hiérarchique) → pistes."""
+def _fr_cells_track(frames_cells: list[list[dict]], minutes: list[float] | None = None) -> list[list[tuple]]:
+    """Appariement glouton frame à frame sur POSITION PRÉDITE (vitesse récente de la piste),
+    gate physique (~19 km de résidu + jitter de centroïde ∝ √aire pour les grosses enveloppes
+    qui respirent/scissionnent), coût mixte distance+aire, et TOLÉRANCE AUX TROUS : une piste
+    non appariée survit 2 frames (clignotement de détection, mosaïque manquée) au lieu de
+    mourir → renaître anonyme. `minutes` = horodatage réel des frames (les trous comptent).
+
+    v1.3.14 — l'ancien gate distance-brute de 35 px DS (~110 km en 5 min !) échangeait les
+    identités en amas multicellulaire : backtest orage 13-14/07 = 5 % des pas >15 km (max
+    86 km), 74 segments de piste >90° (zigzags visibles), 34 pistes mortes par clignotement."""
+    if minutes is None:
+        minutes = [float(i * FR_BLEND_STEP_MIN) for i in range(len(frames_cells))]
     tracks: list[list[tuple]] = []
-    active: list[int] = []
+    active: list[list[int]] = []   # [index de piste, frames manquées consécutives]
     for fi, cells in enumerate(frames_cells):
-        if fi == 0:
+        if not active:
             for c in cells:
-                tracks.append([(0, c)]); active.append(len(tracks) - 1)
+                tracks.append([(fi, c)]); active.append([len(tracks) - 1, 0])
             continue
-        prev_ends = [(ti, tracks[ti][-1][1]) for ti in active]
+        # position prédite de chaque piste active à CETTE frame (px/min sur les 2 derniers points)
+        preds = []
+        for ti, _miss in active:
+            tr = tracks[ti]
+            f1, c1 = tr[-1]
+            dt_min = minutes[fi] - minutes[f1]
+            vy = vx = 0.0
+            if len(tr) >= 2:
+                f0, c0 = tr[-2]
+                span = max(1e-6, minutes[f1] - minutes[f0])
+                vy = (c1["cy"] - c0["cy"]) / span
+                vx = (c1["cx"] - c0["cx"]) / span
+            preds.append((c1["cy"] + vy * dt_min, c1["cx"] + vx * dt_min, c1))
         cand = []
-        for pi, (_ti, pc) in enumerate(prev_ends):
+        for pi, (py, px_, pc) in enumerate(preds):
             for ci, c in enumerate(cells):
-                d = math.hypot(c["cy"] - pc["cy"], c["cx"] - pc["cx"])
-                if d > 35:
+                d = math.hypot(c["cy"] - py, c["cx"] - px_)
+                gate = 6.0 + 0.5 * math.sqrt(max(pc["area"], c["area"]))
+                if d > gate:
                     continue
                 r = c["area"] / max(1, pc["area"])
-                if r < 0.3 or r > 3.3:
+                if r < 0.25 or r > 4.0:
                     continue
-                cand.append((d, pi, ci))
+                cand.append((d + 3.0 * abs(math.log(r)), pi, ci))
         cand.sort()
         used_p: set = set(); used_c: set = set()
-        for d, pi, ci in cand:
+        for _cost, pi, ci in cand:
             if pi in used_p or ci in used_c:
                 continue
             used_p.add(pi); used_c.add(ci)
-            tracks[prev_ends[pi][0]].append((fi, cells[ci]))
-        new_active = [prev_ends[pi][0] for pi in used_p]
+            tracks[active[pi][0]].append((fi, cells[ci]))
+        new_active = []
+        for pi, (ti, miss) in enumerate(active):
+            if pi in used_p:
+                new_active.append([ti, 0])
+            elif miss < 2:
+                new_active.append([ti, miss + 1])
         for ci, c in enumerate(cells):
             if ci not in used_c:
-                tracks.append([(fi, c)]); new_active.append(len(tracks) - 1)
+                tracks.append([(fi, c)]); new_active.append([len(tracks) - 1, 0])
         active = new_active
     return tracks
 
@@ -16575,7 +16602,17 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
             _fr_cells_frame_cache[iso] = [_fr_cells_extract(band), band.shape]
         frames_cells.append(_fr_cells_frame_cache[iso][0])
         fh, fw = _fr_cells_frame_cache[iso][1]
-    tracks = _fr_cells_track(frames_cells)
+    # horodatage RÉEL des frames : vitesses/pentes en px/min, robustes aux mosaïques
+    # manquées (l'ancien ajustement sur les INDICES comptait un trou de 15 min comme 5).
+    frame_epochs: list[int] = []
+    for iso in times:
+        dtp = _parse_meteofrance_datetime(iso)
+        frame_epochs.append(int(dtp.timestamp()) if dtp else 0)
+    if frame_epochs and frame_epochs[0]:
+        frame_minutes = [(e - frame_epochs[0]) / 60.0 for e in frame_epochs]
+    else:
+        frame_minutes = [float(i * FR_BLEND_STEP_MIN) for i in range(len(times))]
+    tracks = _fr_cells_track(frames_cells, frame_minutes)
     km_per_px = (FR_RADAR_DOMAIN["max_lon"] - FR_RADAR_DOMAIN["min_lon"]) * 111.0 \
         * math.cos(math.radians(46.0)) / FR_RADAR_OUT_WIDTH * FR_BLEND_DS
     tlast = len(times) - 1
@@ -16586,31 +16623,32 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         last = tr[-1][1]
         # (l'exposition — aire OU pic fort OU foudre — est décidée APRÈS le rattachement
         # foudre, plus bas ; ici on ne garde que le filtre de suivi.)
-        fis = np.array([p[0] for p in tr], np.float32)
+        mins = np.array([frame_minutes[p[0]] for p in tr], np.float32)
         cy = np.array([p[1]["cy"] for p in tr], np.float32)
         cx = np.array([p[1]["cx"] for p in tr], np.float32)
         mass = np.array([p[1]["mass"] for p in tr], np.float32)
-        vy = float(np.polyfit(fis, cy, 1)[0]); vx = float(np.polyfit(fis, cx, 1)[0])
-        d_mass = float(np.polyfit(fis, mass, 1)[0])
-        speed = math.hypot(vy, vx) * km_per_px * (60.0 / FR_BLEND_STEP_MIN)
+        # vitesse en px/min sur TOUTE la piste (mesuré au backtest : cap le plus stable
+        # entre deux refresh — p90 15,5° vs 21,7° sur 6 points — pour la même innovation).
+        vy = float(np.polyfit(mins, cy, 1)[0])
+        vx = float(np.polyfit(mins, cx, 1)[0])
+        kk = min(len(tr), 6)
+        d_mass = float(np.polyfit(mins, mass, 1)[0]) * FR_BLEND_STEP_MIN  # par ~5 min (seuils historiques)
+        speed = math.hypot(vy, vx) * km_per_px * 60.0
         if speed > FR_CELLS_MAX_SPEED:
             continue
         bearing = (math.degrees(math.atan2(vx, -vy)) + 360.0) % 360.0
-        # tendance : seuils sur la pente de masse (unités bande·px/frame, calées sur le backtest)
+        # tendance : seuils sur la pente de masse (unités bande·px/5 min, calées sur le backtest)
         trend = "grow" if d_mass > 15 else ("decay" if d_mass < -15 else "steady")
         lon, lat = _fr_cells_px_to_lonlat(last["cy"], last["cx"], fh, fw)
         # trajectoires HORODATÉES ([lon, lat, epoch]) : le front positionne la cellule à l'heure
         # sélectionnée sur la frise (interpolation sur la piste passée, extrapolation au futur).
-        epochs = []
-        for p in tr:
-            dtp = _parse_meteofrance_datetime(times[p[0]])
-            epochs.append(int(dtp.timestamp()) if dtp else 0)
+        epochs = [frame_epochs[p[0]] for p in tr]
         past = [list(_fr_cells_px_to_lonlat(p[1]["cy"], p[1]["cx"], fh, fw)) + [epochs[i]]
                 for i, p in enumerate(tr)]
         last_epoch = epochs[-1]
-        future = [list(_fr_cells_px_to_lonlat(last["cy"] + vy * k, last["cx"] + vx * k, fh, fw))
-                  + [last_epoch + int(k * FR_BLEND_STEP_MIN * 60)]
-                  for k in (2, 4, 6)]   # +10/+20/+30 min
+        future = [list(_fr_cells_px_to_lonlat(last["cy"] + vy * m, last["cx"] + vx * m, fh, fw))
+                  + [last_epoch + int(m * 60)]
+                  for m in (10, 20, 30)]   # +10/+20/+30 min
         growth_pct = round(d_mass * 2.0 / last["mass"] * 100.0) if last["mass"] > 0 else 0
         # durée de vie : âge de la piste (borné par la fenêtre du ring → age_open) +
         # dissipation estimée par la pente de masse RÉCENTE (~30 min) — publiée seulement
@@ -16618,8 +16656,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         # masse→0 bornée à 120 min. Pas de pronostic pour une cellule stable/croissante.
         age_min = int(round((epochs[-1] - epochs[0]) / 60)) if epochs[0] else 0
         age_open = tr[0][0] == 0   # née avant le début de la fenêtre observée
-        kk = min(len(mass), 6)
-        slope_rec = float(np.polyfit(fis[-kk:], mass[-kk:], 1)[0]) if kk >= 3 else d_mass
+        slope_rec = (float(np.polyfit(mins[-kk:], mass[-kk:], 1)[0]) * FR_BLEND_STEP_MIN) if kk >= 3 else d_mass
         life_min = None
         if slope_rec < -1.0 and last["mass"] > 0:
             life_min = int(min(last["mass"] / (-slope_rec) * FR_BLEND_STEP_MIN, 120.0))
