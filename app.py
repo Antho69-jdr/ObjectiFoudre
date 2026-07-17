@@ -69,7 +69,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.10"
+APP_VERSION = "1.3.11"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -127,7 +127,7 @@ STALE_TTL_SECONDS = 2 * 60 * 60
 METEOFRANCE_AROME_WMS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wms/"
     "MF-NWP-HIGHRES-AROME-001-FRANCE-WMS/GetCapabilities"
-    "?service=WMS&version=1.3.10&language=fre"
+    "?service=WMS&version=1.3.11&language=fre"
 )
 METEOFRANCE_AROME_WCS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wcs/"
@@ -14028,9 +14028,66 @@ async def server_memory_status() -> dict[str, Any]:
         except Exception:
             pass
         sized = sorted(((_cache_entry_size(e.get("payload")), k) for k, e in list(_cache.items())), reverse=True)
+        # ── VUE CONTENEUR (ce que Railway mesure ≠ le RSS de CE process) ────────
+        # cgroup v2 : memory.current inclut le PAGE CACHE des fichiers (réclamable) ;
+        # memory.stat ventile anon (vraie RAM des process) / file (page cache) / slab.
+        cgroup: dict[str, Any] = {}
+        try:
+            with open("/sys/fs/cgroup/memory.current") as fh:
+                cgroup["current_mb"] = round(int(fh.read()) / 1e6)
+            try:
+                with open("/sys/fs/cgroup/memory.max") as fh:
+                    raw = fh.read().strip()
+                    cgroup["max_mb"] = None if raw == "max" else round(int(raw) / 1e6)
+            except Exception:
+                pass
+            with open("/sys/fs/cgroup/memory.stat") as fh:
+                stat = dict(line.split() for line in fh.read().splitlines() if " " in line)
+            for key in ("anon", "file", "slab", "inactive_file", "active_file", "shmem", "kernel"):
+                if key in stat:
+                    cgroup[key + "_mb"] = round(int(stat[key]) / 1e6)
+        except Exception as exc:  # noqa: BLE001
+            cgroup["error"] = str(exc)[:100]
+        # ── TOUS les process du conteneur (préchargement multiprocess ? zombies ?) ─
+        procs: list[dict[str, Any]] = []
+        try:
+            page = os.sysconf("SC_PAGE_SIZE")
+            for pid in os.listdir("/proc"):
+                if not pid.isdigit():
+                    continue
+                try:
+                    with open(f"/proc/{pid}/statm") as fh:
+                        rss = int(fh.read().split()[1]) * page
+                    with open(f"/proc/{pid}/comm") as fh:
+                        comm = fh.read().strip()
+                    procs.append({"pid": int(pid), "comm": comm[:40], "rss_mb": round(rss / 1e6)})
+                except Exception:
+                    continue
+            procs.sort(key=lambda p: -p["rss_mb"])
+        except Exception:
+            pass
+        # ── DISQUE (cache persistant + historique) : le page cache vient de là ─────
+        disk: dict[str, Any] = {}
+        for label, root in (("cache_disk", METEOFRANCE_PERSISTENT_CACHE_DIR), ("history", OBJECTIFOUDRE_HISTORY_DIR)):
+            try:
+                total = 0
+                nfiles = 0
+                for p in Path(root).rglob("*"):
+                    if p.is_file():
+                        total += p.stat().st_size
+                        nfiles += 1
+                disk[label] = {"mb": round(total / 1e6), "files": nfiles}
+            except Exception as exc:  # noqa: BLE001
+                disk[label] = {"error": str(exc)[:80]}
         return {
             "ok": True,
             "rss_mb": rss_mb,
+            "cgroup": cgroup,
+            "container_procs": procs[:10],
+            "container_procs_total_mb": sum(p["rss_mb"] for p in procs),
+            "disk": disk,
+            "threads": threading.active_count(),
+            "malloc_arena_max": os.environ.get("MALLOC_ARENA_MAX"),
             "cache_entries": len(sized),
             "cache_mb": round(sum(s for s, _ in sized) / 1e6, 1),
             "top": [{"key": k[:120], "mb": round(s / 1e6, 2)} for s, k in sized[:20]],
@@ -14770,7 +14827,7 @@ def _aromepi_capabilities_sync(api_key: str) -> dict[str, Any]:
     cached = _get_cached_value(cache_key, ttl=AROMEPI_CAPABILITIES_TTL_SECONDS)
     if cached is not None:
         return dict(cached["payload"])
-    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.10&language=eng"
+    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.11&language=eng"
     status, _ct, raw = _aromepi_http_get(url, api_key)
     if status != 200 or not raw:
         return {"ok": False, "status": status}
@@ -14846,10 +14903,10 @@ def _aromepi_wms_tile_sync(api_key: str, layer_key: str, time_iso: str, run_iso:
         return 400, b""
     min_lon, min_lat = _aromepi_mercator_to_lonlat(minx, miny)
     max_lon, max_lat = _aromepi_mercator_to_lonlat(maxx, maxy)
-    # WMS 1.3.10 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
+    # WMS 1.3.11 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
     # Web Mercator → on reprojette la tuile rendue (plate carrée) en sortie.
     params = [
-        ("service", "WMS"), ("version", "1.3.10"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.11"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f"{min_lat:.6f},{min_lon:.6f},{max_lat:.6f},{max_lon:.6f}"),
         ("width", str(int(width))), ("height", str(int(height))),
@@ -14974,7 +15031,7 @@ def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_
     # largeur:hauteur = ratio des degrés → le WMS rend une plate-carrée fidèle.
     src_height = max(1, round(out_width * (d["max_lat"] - d["min_lat"]) / (d["max_lon"] - d["min_lon"])))
     params = [
-        ("service", "WMS"), ("version", "1.3.10"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.11"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f'{d["min_lat"]},{d["min_lon"]},{d["max_lat"]},{d["max_lon"]}'),
         ("width", str(out_width)), ("height", str(src_height)),
@@ -15116,7 +15173,7 @@ def _aromepi_activity_sync(layer_key: str, time_iso: str, run_iso: str | None) -
     if spec.get("analysis_only") and run_iso:
         time_iso = run_iso  # analyse-seule (MOCON) : cf. _aromepi_domain_image_sync
     params = [
-        ("service", "WMS"), ("version", "1.3.10"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.11"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", "37.5,-12,55.4,16"), ("width", "300"), ("height", "300"),
         ("format", "image/png"), ("transparent", "true"), ("time", time_iso),
@@ -16314,7 +16371,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.3.10) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.3.11) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -16544,7 +16601,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.3.10) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.3.11) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
