@@ -78,7 +78,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.15"
+APP_VERSION = "1.3.16"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16423,16 +16423,63 @@ def _fr_cells_label_cc(mask) -> tuple[Any, int]:
     return labels, nlab
 
 
-def _fr_cells_stats(band, m) -> dict:
+def _fr_cells_outline(m, max_pts: int = 64) -> list[tuple[int, int]]:
+    """Contour extérieur d'un masque booléen (Moore neighbor tracing, sans scipy/cv2),
+    décimé à ≤ max_pts points [(y, x)…]. Sert au SURLIGNAGE de la cellule sur la carte."""
+    import numpy as np
+    ys, xs = np.where(m)
+    if ys.size == 0:
+        return []
+    # les sous-cellules issues d'une SCISSION (partition « au cœur le plus proche »)
+    # peuvent être non connexes → on trace la plus grosse composante, sinon le suivi
+    # de bord s'arrête sur le premier fragment (vécu : contour de 3 px pour aire 50).
+    labels, n_comp = _fr_cells_label_cc(m)
+    if n_comp > 1:
+        sizes = np.bincount(labels.ravel())
+        sizes[0] = 0
+        m = labels == int(sizes.argmax())
+        ys, xs = np.where(m)
+    y0 = int(ys.min()); x0 = int(xs[ys == y0].min())
+    H, W = m.shape
+    # voisins en ordre HORAIRE en repère image (y vers le bas), départ à l'ouest
+    NB = ((0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1))
+    cur = (y0, x0)
+    back = 0   # direction du voisin d'où l'on est « entré » (init : ouest, vide par balayage)
+    pts = [cur]
+    budget = 8 * int(ys.size) + 64
+    while budget > 0:
+        budget -= 1
+        for k in range(1, 9):
+            d = (back + k) % 8
+            ny, nx = cur[0] + NB[d][0], cur[1] + NB[d][1]
+            if 0 <= ny < H and 0 <= nx < W and m[ny, nx]:
+                back = (d + 4) % 8   # prochain balayage horaire depuis le pixel quitté
+                cur = (ny, nx)
+                break
+        else:
+            break   # pixel isolé
+        if cur == (y0, x0):
+            break
+        pts.append(cur)
+    if len(pts) > max_pts:
+        step = len(pts) / float(max_pts)
+        pts = [pts[int(i * step)] for i in range(max_pts)]
+    return pts
+
+
+def _fr_cells_stats(band, m, with_outline: bool = False) -> dict:
     import numpy as np
     ys, xs = np.where(m)
     w = band[m].astype(np.float32)
-    return {
+    out = {
         "cy": float((ys * w).sum() / w.sum()), "cx": float((xs * w).sum() / w.sum()),
         "area": int(m.sum()), "peak": int(band[m].max()), "mass": float(band[m].sum()),
         "ymin": int(ys.min()), "ymax": int(ys.max()),
         "xmin": int(xs.min()), "xmax": int(xs.max()),
     }
+    if with_outline:
+        out["outline"] = _fr_cells_outline(m)
+    return out
 
 
 def _fr_cells_extract(band) -> list[dict]:
@@ -16472,7 +16519,7 @@ def _fr_cells_extract(band) -> list[dict]:
                 if do_split:
                     break
         if not do_split:
-            cells.append(_fr_cells_stats(band, env_m))
+            cells.append(_fr_cells_stats(band, env_m, with_outline=True))
             continue
         ys, xs = np.where(env_m)
         ccy = np.array([c["cy"] for c in cores], np.float32)
@@ -16484,7 +16531,7 @@ def _fr_cells_extract(band) -> list[dict]:
                 continue
             sub = np.zeros((H, W), bool)
             sub[ys[sel], xs[sel]] = True
-            cells.append(_fr_cells_stats(band, sub))
+            cells.append(_fr_cells_stats(band, sub, with_outline=True))
     return cells
 
 
@@ -16667,6 +16714,9 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
             "lon": lon, "lat": lat, "epoch": last_epoch,
             "_area_px": last["area"],   # interne : filtre d'exposition (retiré avant publication)
             "bbox": [lon_min, lat_min, lon_max, lat_max],
+            # contour RÉEL de l'écho (masque de la dernière mosaïque) : surlignage sur la carte
+            "outline": [list(_fr_cells_px_to_lonlat(oy, ox, fh, fw))
+                        for oy, ox in (last.get("outline") or [])],
             "speed_kmh": round(speed), "bearing": round(bearing),
             "trend": trend, "d_mass": round(d_mass, 1),
             "growth_pct_10min": growth_pct,   # variation de masse ~%/10 min (2 frames)

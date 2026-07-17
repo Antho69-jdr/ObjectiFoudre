@@ -345,6 +345,14 @@
           feats.push({ type: 'Feature', properties: { kind: 'future', color }, geometry: { type: 'LineString', coordinates: [pos, p30] } });
         }
       }
+      // SURLIGNAGE de l'écho détecté : contour réel du masque radar (serveur), affiché
+      // seulement à ±5 min de la dernière observation — pas de forme « figée » quand on
+      // scrute le passé ou le prévu (le point/trajet suffisent alors).
+      if (Array.isArray(c.outline) && c.outline.length >= 3 && Math.abs(t - (c.epoch || 0)) <= 300) {
+        const ring = c.outline.map((p) => [p[0], p[1]]);
+        ring.push(ring[0]);
+        feats.push({ type: 'Feature', properties: { kind: 'cell', color }, geometry: { type: 'Polygon', coordinates: [ring] } });
+      }
       const arrow = c.trend === 'grow' ? ' ▲' : (c.trend === 'decay' ? ' ▼' : '');
       const zap = (c.flashes_10min > 0) ? '⚡ ' : '';   // électriquement active (foudre live)
       const label = zap + (c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}${arrow}` : `statique${arrow}`) + (est ? ' · estimé' : '');
@@ -363,6 +371,13 @@
       try {
         map.addSource(CELLS_SRC, { type: 'geojson', data: gj });
         // au-dessus de tout (labels villes inclus) : c'est l'info de décision, elle prime.
+        // Surlignage de l'écho (fond + liseré) SOUS les trajectoires/points.
+        map.addLayer({ id: CELLS_SRC + '-shape', type: 'fill', source: CELLS_SRC,
+          filter: ['==', ['get', 'kind'], 'cell'],
+          paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.08 } });
+        map.addLayer({ id: CELLS_SRC + '-shape-line', type: 'line', source: CELLS_SRC,
+          filter: ['==', ['get', 'kind'], 'cell'],
+          paint: { 'line-color': ['get', 'color'], 'line-width': 1.4, 'line-opacity': 0.85 } });
         map.addLayer({ id: CELLS_SRC + '-past', type: 'line', source: CELLS_SRC,
           filter: ['==', ['get', 'kind'], 'past'],
           paint: { 'line-color': ['get', 'color'], 'line-width': 1.5, 'line-opacity': 0.55 } });
@@ -389,7 +404,7 @@
 
   function applyCellsVisibility() {
     const vis = (active && cellsVisible) ? 'visible' : 'none';
-    for (const suf of ['-past', '-traj', '-pt', '-lbl']) {
+    for (const suf of ['-shape', '-shape-line', '-past', '-traj', '-pt', '-lbl']) {
       try { if (map.getLayer(CELLS_SRC + suf)) map.setLayoutProperty(CELLS_SRC + suf, 'visibility', vis); } catch (_) {}
     }
   }
@@ -443,7 +458,7 @@
             'circle-stroke-width': ['match', ['get', 'a'], 0, 1, 0.5],
           } });
         // les cellules restent AU-DESSUS de la foudre : re-hisser leurs couches si présentes.
-        for (const suf of ['-past', '-traj', '-pt', '-lbl']) {
+        for (const suf of ['-shape', '-shape-line', '-past', '-traj', '-pt', '-lbl']) {
           try { if (map.getLayer(CELLS_SRC + suf)) map.moveLayer(CELLS_SRC + suf); } catch (_) {}
         }
       } catch (_) {}
@@ -1504,5 +1519,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.15';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.16';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
