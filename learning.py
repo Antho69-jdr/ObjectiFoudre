@@ -44,7 +44,7 @@ TEST_FRACTION = 0.30             # part des jours (les plus récents) réservée
 MIN_TEST_DAYS = 3
 FLASH_THRESHOLD = 1              # >= 1 flash dans la cellule = orage observé
 
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 
 
 # --- Petits utilitaires (répliques fidèles de weather_logic) -------------------
@@ -216,6 +216,44 @@ def calibrated_probability(curve: list[list[float]], score: float) -> float:
     return curve[-1][1]
 
 
+def calibrated_brier(scores: list[float], labels: list[int]) -> float:
+    """Brier APRÈS calibration isotone : mesure la discrimination, pas l'échelle.
+
+    Le Brier brut de score/100 est dominé par l'échelle quand les positifs sont
+    rares (~10 %) : il récompense « qui prédit le plus bas » — c'est ce qui faisait
+    converger le fit des poids sur 100 % CAPE (bloc au score moyen le plus proche du
+    taux de base), pas sur le meilleur mélange. Comme la calibration isotone absorbe
+    l'échelle en aval de toute façon, on compare les candidats sur le Brier de leurs
+    probabilités CALIBRÉES (terme de raffinement) : seul le classement compte.
+
+    Scores bornés 0-100 binnés à l'entier -> PAVA sur <=101 bins, O(n)."""
+    if not scores:
+        return 0.0
+    n_bin = [0] * 101
+    pos_bin = [0] * 101
+    for s, y in zip(scores, labels):
+        b = int(min(100.0, max(0.0, round(s))))
+        n_bin[b] += 1
+        pos_bin[b] += 1 if y >= 1 else 0
+    # PAVA sur les bins non vides : blocs [somme_pos, effectif, bins couverts]
+    blocks: list[list[Any]] = []
+    for b in range(101):
+        if n_bin[b] == 0:
+            continue
+        blocks.append([float(pos_bin[b]), float(n_bin[b]), [b]])
+        while len(blocks) >= 2 and blocks[-2][0] / blocks[-2][1] > blocks[-1][0] / blocks[-1][1]:
+            sy2, n2, b2 = blocks.pop()
+            sy1, n1, b1 = blocks.pop()
+            blocks.append([sy1 + sy2, n1 + n2, b1 + b2])
+    total = 0.0
+    for sy, cnt, bins in blocks:
+        p = sy / cnt
+        for b in bins:
+            # somme de (p - y)^2 sur le bin b (y binaire) : n·p² − 2·p·pos + pos
+            total += n_bin[b] * p * p - 2.0 * p * pos_bin[b] + pos_bin[b]
+    return total / len(scores)
+
+
 # --- Skill (CSI / HSS) sur (scores, labels, seuil) -----------------------------
 
 def skill_at_threshold(scores: list[float], labels: list[int], threshold: float) -> dict[str, float]:
@@ -341,9 +379,10 @@ def _simplex_grid(step: float, with_conv: bool = True) -> list[dict[str, float]]
 
 
 def fit_blend_weights(examples: list[dict[str, Any]]) -> dict[str, float]:
-    """Poids minimisant le Brier de (blend_score/100) vs label. Grille grossière (0.1)
-    puis raffinement local. Robuste et interprétable (≤4 paramètres). La convergence
-    n'est apprise que si elle est présente dans assez d'exemples (sinon conv=0)."""
+    """Poids minimisant le Brier CALIBRÉ (discrimination) du blend vs label. Grille
+    grossière (0.1) puis raffinement local. Robuste et interprétable (≤4 paramètres).
+    La convergence n'est apprise que si elle est présente dans assez d'exemples
+    (sinon conv=0). Les ex æquo reviennent aux poids par défaut (init du best)."""
     if not examples:
         return dict(DEFAULT_BLEND_WEIGHTS)
     blocks = [e["blocks"] for e in examples]
@@ -352,11 +391,7 @@ def fit_blend_weights(examples: list[dict[str, Any]]) -> dict[str, float]:
     use_conv = conv_present >= max(1, int(0.20 * len(blocks)))
 
     def brier(weights: dict[str, float]) -> float:
-        tot = 0.0
-        for blk, y in zip(blocks, labels):
-            p = blend_score(blk, weights) / 100.0
-            tot += (p - y) ** 2
-        return tot / len(labels)
+        return calibrated_brier([blend_score(blk, weights) for blk in blocks], labels)
 
     best_w = dict(DEFAULT_BLEND_WEIGHTS) if use_conv else {"cape": 0.5, "humid": 0.4, "heat": 0.1, "conv": 0.0}
     best_b = brier(best_w)
@@ -388,7 +423,7 @@ def fit_blend_weights(examples: list[dict[str, Any]]) -> dict[str, float]:
                         best_b, best_w, improved = b, {k: round(cand[k], 4) for k in keys}, True
         if not improved:
             break
-    return {k: round(best_w[k], 4) for k in keys}
+    return {k: round(best_w[k], 4) + 0.0 for k in keys}  # +0.0 : évite -0.0
 
 
 # --- Évaluation + sélection (validation croisée temporelle) --------------------
@@ -460,15 +495,26 @@ def evaluate_and_select(
     baseline_skill = skill_neighborhood(test, base_scores_test, BASELINE_THRESHOLD, neighborhood_km=neighborhood_km)
 
     # --- candidat : fit sur le train uniquement ---
+    train_labels = [e["label"] for e in train]
     if use_weights:
         weights = fit_blend_weights(train)
-        train_scores = [blend_score(e["blocks"], weights) for e in train]
-        cand_scores_test = [blend_score(e["blocks"], weights) for e in test]
+        blend_train = [blend_score(e["blocks"], weights) for e in train]
+        # Garde-fou : le blend linéaire ré-appris ne remplace le score actuel (formule
+        # complète : gates CAPE/humidité, modificateurs, cap CIN…) que s'il DISCRIMINE
+        # strictement mieux sur le train. Sinon le candidat reste le score actuel avec
+        # seuil + calibration réappris (weights désactivés) — jamais un blend dégradé.
+        trigger_train = [e["trigger"] for e in train]
+        if calibrated_brier(blend_train, train_labels) < calibrated_brier(trigger_train, train_labels) - 1e-9:
+            train_scores = blend_train
+            cand_scores_test = [blend_score(e["blocks"], weights) for e in test]
+        else:
+            weights = None
+            train_scores = trigger_train
+            cand_scores_test = list(base_scores_test)
     else:
         weights = None
         train_scores = [e["trigger"] for e in train]
         cand_scores_test = list(base_scores_test)
-    train_labels = [e["label"] for e in train]
     curve = isotonic_pav(train_scores, train_labels)
     thr, _ = best_threshold_neighborhood(train, train_scores, neighborhood_km=neighborhood_km)
     candidate_skill = skill_neighborhood(test, cand_scores_test, thr, neighborhood_km=neighborhood_km)
@@ -600,6 +646,32 @@ if __name__ == "__main__":
     assert all(probs[i] <= probs[i + 1] + 1e-9 for i in range(len(probs) - 1)), curve
     assert calibrated_probability(curve, 90) >= calibrated_probability(curve, 10) - 1e-9
 
+    # 2b) Brier calibré : insensible à l'échelle (même classement, échelle écrasée),
+    #     sensible au classement (scores mélangés -> discrimination nulle).
+    cb_full = calibrated_brier(sc, lab)
+    cb_small = calibrated_brier([s * 0.2 for s in sc], lab)
+    assert abs(cb_full - cb_small) < 5e-3, (cb_full, cb_small)  # binning entier -> petite tolérance
+    sc_shuffled = list(sc)
+    random.shuffle(sc_shuffled)
+    assert calibrated_brier(sc_shuffled, lab) > cb_full + 1e-3
+
+    # 2c) RÉGRESSION « 100 % CAPE » : positifs rares + bloc bruit à PETITE échelle.
+    #     Au Brier brut, le bruit gagnait (score moyen ≈ taux de base) ; au Brier
+    #     calibré, le bloc informatif (échelle haute) doit dominer.
+    rng3 = random.Random(23)
+    reg = []
+    for d in range(30):
+        for k in range(80):
+            humid = rng3.uniform(50, 100)   # informatif, échelle HAUTE
+            cape = rng3.uniform(0, 25)      # bruit pur, échelle basse (piège du Brier brut)
+            heat = rng3.uniform(0, 100)     # bruit
+            p = 1.0 / (1.0 + math.exp(-(humid - 90.0) / 4.0))
+            reg.append({"date": f"2026-06-{d + 1:02d}", "label": 1 if rng3.random() < p else 0,
+                        "blocks": {"cape": cape, "humid": humid, "heat": heat, "conv": None}})
+    w3 = fit_blend_weights(reg)
+    print("poids anti-échelle:", w3, "| positifs:", sum(e["label"] for e in reg))
+    assert w3["humid"] > w3["cape"] and w3["humid"] > w3["heat"], w3
+
     # 3) jeu synthétique : la foudre est pilotée par l'humidité -> le fit doit lui
     #    donner le poids dominant, et le candidat doit battre la baseline en CV.
     rng = random.Random(11)
@@ -637,6 +709,30 @@ if __name__ == "__main__":
     assert res["config"]["weights"]["enabled"] is True
     assert res["decision"] == "activate"  # humidité mal pondérée par la baseline -> battue
     assert res["skill"]["candidate"]["csi"] >= res["skill"]["baseline"]["csi"], res["skill"]
+
+    # 3b-pré) Garde-fou : si le score actuel (trigger) classe MIEUX que tout blend
+    #     linéaire (ici : interaction cape×humidité qu'aucun mélange ne reproduit),
+    #     les poids restent désactivés — on ne remplace pas la formule par pire qu'elle.
+    rng4 = random.Random(31)
+    guard = []
+    for d in range(40):
+        date = f"2026-03-{d + 1:02d}" if d < 30 else f"2026-04-{d - 29:02d}"
+        for k in range(60):
+            cape = rng4.uniform(0, 100)
+            humid = rng4.uniform(0, 100)
+            heat = rng4.uniform(0, 100)
+            inter = cape * humid / 100.0
+            guard.append({
+                "date": date, "cell_key": f"g{d}_{k}",
+                "lat": 43.0 + (k // 8) * 1.0, "lon": 0.0 + (k % 8) * 1.0,
+                "blocks": {"cape": cape, "humid": humid, "heat": heat, "conv": None},
+                "trigger": clamp(inter),
+                "label": 1 if rng4.random() < 1.0 / (1.0 + math.exp(-(inter - 55.0) / 6.0)) else 0,
+            })
+    res_guard = evaluate_and_select(guard)
+    assert res_guard["config"] is not None, res_guard
+    assert res_guard["config"]["weights"]["enabled"] is False, res_guard["config"]["weights"]
+    print("garde-fou trigger>blend : weights désactivés OK")
 
     # 3b) gate poids NON atteint (assez de jours, trop peu de positifs) -> calibration seule
     sparse = []

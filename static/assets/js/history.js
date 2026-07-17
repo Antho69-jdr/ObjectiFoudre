@@ -578,7 +578,7 @@
 
   // Histogramme « proportion de chaque bloc dans le calcul du score ».
   // Toujours affiché : poids appris si calibré, sinon poids d'origine.
-  function renderWeightHistogram(active, def) {
+  function renderWeightHistogram(active, def, calibrated) {
     const learned = !!(active && active.enabled);
     const cur = weightShares(learned ? active : def);
     const orig = weightShares(def);
@@ -607,7 +607,9 @@
     }).join('');
     const hint = learned
       ? '<div class="hl-w-hint">Le repère clair marque la valeur d\'origine.</div>'
-      : '<div class="hl-w-hint">Proportions d\'origine — affinées dès que la calibration s\'active.</div>';
+      : (calibrated
+        ? '<div class="hl-w-hint">Poids d\'origine conservés — aucun mélange appris ne fait mieux pour l\'instant (seuil et calibration, eux, sont appris).</div>'
+        : '<div class="hl-w-hint">Proportions d\'origine — affinées dès que la calibration s\'active.</div>');
     return `<div class="history-learning-hist">
       <div class="hl-w-head"><span>Poids dans le calcul du score</span>${badge}</div>
       <div class="hl-w-stack">${stacked}</div>
@@ -641,7 +643,7 @@
     html += `<div class="history-learning-row"><span>Seuil « zones prévues »</span><b>${asNum(thr.active)}${thrExtra}</b></div>`;
     const wActive = (st.weights && st.weights.active) || null;
     const wDef = (st.weights && st.weights.default) || {};
-    html += renderWeightHistogram(wActive, wDef);
+    html += renderWeightHistogram(wActive, wDef, st.state === 'active');
     const sk = st.skill || null;
     if (sk && sk.baseline && sk.candidate) {
       html += `<div class="history-learning-skill"><span>Score CSI (test)</span><b>${Number(sk.baseline.csi).toFixed(2)} → ${Number(sk.candidate.csi).toFixed(2)}</b></div>`;
