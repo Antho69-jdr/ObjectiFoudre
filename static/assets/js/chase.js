@@ -347,16 +347,18 @@
       }
       // SURLIGNAGE de l'écho détecté : contour réel du masque radar (serveur), affiché
       // seulement à ±5 min de la dernière observation — pas de forme « figée » quand on
-      // scrute le passé ou le prévu (le point/trajet suffisent alors).
+      // scrute le passé ou le prévu (le label/trajet suffisent alors). `id` séquentiel +
+      // stable = clé de feature-state pour le survol (remplissage plus dense).
       if (Array.isArray(c.outline) && c.outline.length >= 3 && Math.abs(t - (c.epoch || 0)) <= 300) {
         const ring = c.outline.map((p) => [p[0], p[1]]);
         ring.push(ring[0]);
-        feats.push({ type: 'Feature', properties: { kind: 'cell', color }, geometry: { type: 'Polygon', coordinates: [ring] } });
+        feats.push({ type: 'Feature', id: ci, properties: { kind: 'cell', color, cellIdx: ci }, geometry: { type: 'Polygon', coordinates: [ring] } });
       }
       const arrow = c.trend === 'grow' ? ' ▲' : (c.trend === 'decay' ? ' ▼' : '');
       const zap = (c.flashes_10min > 0) ? '⚡ ' : '';   // électriquement active (foudre live)
       const label = zap + (c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}${arrow}` : `statique${arrow}`) + (est ? ' · estimé' : '');
-      feats.push({ type: 'Feature', properties: { kind: 'pt', color, label, cellIdx: ci, est: est ? 1 : 0 }, geometry: { type: 'Point', coordinates: pos } });
+      // libellé texte SEUL (le point central rouge/jaune/bleu est retiré) au centre de la cellule.
+      feats.push({ type: 'Feature', properties: { kind: 'lbl', color, label, cellIdx: ci, est: est ? 1 : 0 }, geometry: { type: 'Point', coordinates: pos } });
     }
     return { type: 'FeatureCollection', features: feats };
   }
@@ -371,40 +373,66 @@
       try {
         map.addSource(CELLS_SRC, { type: 'geojson', data: gj });
         // au-dessus de tout (labels villes inclus) : c'est l'info de décision, elle prime.
-        // Surlignage de l'écho (fond + liseré) SOUS les trajectoires/points.
+        // ZONE de l'écho (remplissage + liseré) : le remplissage se DENSIFIE au survol
+        // (feature-state hover), même teinte. SOUS les trajectoires/labels.
         map.addLayer({ id: CELLS_SRC + '-shape', type: 'fill', source: CELLS_SRC,
           filter: ['==', ['get', 'kind'], 'cell'],
-          paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.08 } });
+          paint: { 'fill-color': ['get', 'color'],
+                   'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.30, 0.10] } });
         map.addLayer({ id: CELLS_SRC + '-shape-line', type: 'line', source: CELLS_SRC,
           filter: ['==', ['get', 'kind'], 'cell'],
-          paint: { 'line-color': ['get', 'color'], 'line-width': 1.4, 'line-opacity': 0.85 } });
+          paint: { 'line-color': ['get', 'color'],
+                   'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2.2, 1.4],
+                   'line-opacity': 0.9 } });
         map.addLayer({ id: CELLS_SRC + '-past', type: 'line', source: CELLS_SRC,
           filter: ['==', ['get', 'kind'], 'past'],
           paint: { 'line-color': ['get', 'color'], 'line-width': 1.5, 'line-opacity': 0.55 } });
         map.addLayer({ id: CELLS_SRC + '-traj', type: 'line', source: CELLS_SRC,
           filter: ['==', ['get', 'kind'], 'future'],
           paint: { 'line-color': ['get', 'color'], 'line-width': 2, 'line-opacity': 0.9, 'line-dasharray': [2, 2] } });
-        map.addLayer({ id: CELLS_SRC + '-pt', type: 'circle', source: CELLS_SRC,
-          filter: ['==', ['get', 'kind'], 'pt'],
-          paint: { 'circle-radius': 5, 'circle-color': ['get', 'color'],
-                   'circle-stroke-color': '#0b0f14', 'circle-stroke-width': 1.5,
-                   'circle-opacity': ['case', ['==', ['get', 'est'], 1], 0.5, 0.95] } });
+        // libellé vitesse/cap SEUL (plus de point central), centré sur la cellule.
         map.addLayer({ id: CELLS_SRC + '-lbl', type: 'symbol', source: CELLS_SRC,
-          filter: ['==', ['get', 'kind'], 'pt'],
+          filter: ['==', ['get', 'kind'], 'lbl'],
           layout: { 'text-field': ['get', 'label'], 'text-font': ['Montserrat Medium', 'Open Sans Bold'],
-                    'text-size': 11, 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-allow-overlap': false },
-          paint: { 'text-color': ['get', 'color'], 'text-halo-color': '#0b0f14', 'text-halo-width': 1.3 } });
-        // les points sont CLIQUABLES (fiche cellule) → curseur pointer au survol.
-        map.on('mouseenter', CELLS_SRC + '-pt', () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', CELLS_SRC + '-pt', () => { map.getCanvas().style.cursor = ''; });
+                    'text-size': 10.5, 'text-anchor': 'center', 'text-allow-overlap': false },
+          paint: { 'text-color': ['get', 'color'], 'text-halo-color': '#0b0f14', 'text-halo-width': 1.4,
+                   'text-opacity': ['case', ['==', ['get', 'est'], 1], 0.6, 0.95] } });
+        bindCellHover();
       } catch (_) {}
     }
     applyCellsVisibility();
   }
 
+  // Survol/tap d'une ZONE de cellule → remplissage plus dense (feature-state) + tooltip
+  // (fiche cellule). Tablette : pas de survol → le tap ouvre le tooltip (épinglé).
+  let hoverCellId = null;
+  function setCellHover(id) {
+    if (hoverCellId === id) return;
+    if (hoverCellId != null) { try { map.setFeatureState({ source: CELLS_SRC, id: hoverCellId }, { hover: false }); } catch (_) {} }
+    hoverCellId = id;
+    if (id != null) { try { map.setFeatureState({ source: CELLS_SRC, id }, { hover: true }); } catch (_) {} }
+  }
+  function bindCellHover() {
+    const SHAPE = CELLS_SRC + '-shape';
+    map.on('mousemove', SHAPE, (e) => {
+      const f = e.features && e.features[0];
+      if (!f) return;
+      map.getCanvas().style.cursor = 'pointer';
+      setCellHover(f.id);
+      const idx = f.properties && f.properties.cellIdx;
+      const c = (frCells.cells || [])[idx];
+      if (c && !cellPopupPinned) showCellPopup(c);
+    });
+    map.on('mouseleave', SHAPE, () => {
+      map.getCanvas().style.cursor = '';
+      setCellHover(null);
+      if (!cellPopupPinned) closeCellPopup();
+    });
+  }
+
   function applyCellsVisibility() {
     const vis = (active && cellsVisible) ? 'visible' : 'none';
-    for (const suf of ['-shape', '-shape-line', '-past', '-traj', '-pt', '-lbl']) {
+    for (const suf of ['-shape', '-shape-line', '-past', '-traj', '-lbl']) {
       try { if (map.getLayer(CELLS_SRC + suf)) map.setLayoutProperty(CELLS_SRC + suf, 'visibility', vis); } catch (_) {}
     }
   }
@@ -458,7 +486,7 @@
             'circle-stroke-width': ['match', ['get', 'a'], 0, 1, 0.5],
           } });
         // les cellules restent AU-DESSUS de la foudre : re-hisser leurs couches si présentes.
-        for (const suf of ['-shape', '-shape-line', '-past', '-traj', '-pt', '-lbl']) {
+        for (const suf of ['-shape', '-shape-line', '-past', '-traj', '-lbl']) {
           try { if (map.getLayer(CELLS_SRC + suf)) map.moveLayer(CELLS_SRC + suf); } catch (_) {}
         }
       } catch (_) {}
@@ -1164,6 +1192,31 @@
     popup.setLngLat([lon, lat]).setHTML(html).addTo(map);
   }
 
+  // ── Tooltip CELLULE (survol desktop / tap tablette) ─────────────────────────
+  // Popup dédié, distinct du popup « conditions au point » : le survol l'ouvre au
+  // centroïde de la cellule (stable, ne suit pas la souris) ; le tap l'ÉPINGLE
+  // (closeButton, reste jusqu'au prochain tap ailleurs) pour la tablette.
+  let cellPopup = null;
+  let cellPopupIdx = -1;
+  let cellPopupPinned = false;
+  function showCellPopup(c, pinned) {
+    if (!cellPopup) cellPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, className: 'chase-popup chase-cell-popup', maxWidth: '250px', offset: 14 });
+    const idx = (frCells.cells || []).indexOf(c);
+    // même cellule déjà affichée : ne pas reconstruire (évite le clignotement au mousemove)
+    if (cellPopup.isOpen() && cellPopupIdx === idx && !pinned) return;
+    cellPopupIdx = idx;
+    if (pinned) cellPopupPinned = true;
+    const t = frames[cursor] ? frames[cursor].epoch : (Date.now() / 1000);
+    const pos = cellPosAt(c, t) || [c.lon, c.lat];
+    cellPopup.setLngLat(pos).setHTML(renderCellHTML(c)).addTo(map);
+    cellPopup.once('close', () => { cellPopupPinned = false; cellPopupIdx = -1; });
+  }
+  function closeCellPopup() {
+    cellPopupPinned = false;
+    cellPopupIdx = -1;
+    if (cellPopup && cellPopup.isOpen()) cellPopup.remove();
+  }
+
   async function queryPoint(lat, lon, fromTap) {
     const t = currentNowcastTime();
     if (!t) return;
@@ -1315,23 +1368,20 @@
   }
 
   function onChaseClick(e) {
-    // PRIORITÉ à une cellule suivie sous le clic (tolérance 8 px) : fiche cellule au lieu
-    // du popup position. La couche peut ne pas exister (overlay off / pas de données).
+    // PRIORITÉ à une ZONE de cellule sous le clic : tap tablette → tooltip cellule ÉPINGLÉ
+    // (le survol n'existe pas au tactile). La couche peut être absente (overlay off / pas
+    // de données). Un clic AILLEURS ferme le tooltip épinglé et fait le popup position.
     try {
-      if (cellsVisible && map.getLayer(CELLS_SRC + '-pt')) {
-        const bb = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
-        const hits = map.queryRenderedFeatures(bb, { layers: [CELLS_SRC + '-pt'] });
+      if (cellsVisible && map.getLayer(CELLS_SRC + '-shape')) {
+        const hits = map.queryRenderedFeatures(e.point, { layers: [CELLS_SRC + '-shape'] });
         if (hits && hits.length) {
           const idx = hits[0].properties && hits[0].properties.cellIdx;
           const c = (frCells.cells || [])[idx];
-          if (c) {
-            const g = hits[0].geometry && hits[0].geometry.coordinates;
-            showPopup(g ? g[1] : c.lat, g ? g[0] : c.lon, renderCellHTML(c));
-            return;
-          }
+          if (c) { setCellHover(hits[0].id); showCellPopup(c, true); return; }
         }
       }
     } catch (_) {}
+    closeCellPopup();
     queryPoint(e.lngLat.lat, e.lngLat.lng, true);
   }
 
@@ -1519,5 +1569,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.18';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.19';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
