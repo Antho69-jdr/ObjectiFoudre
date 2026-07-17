@@ -169,6 +169,16 @@
     if (pl.quota_cooldown_s > 0) plBody += `<div class="mnt-muted">Quota AROME en pause : ${Math.ceil(pl.quota_cooldown_s)} s.</div>`;
     cards.push(card('Préchargement des grilles (par jour)', plBody, 'ok'));
 
+    // Rapports de bugs / plantages (incrément 3) — résumé + bouton d'ouverture
+    const rep = d.reports || {};
+    const repLvl = rep.error ? 'bad' : ((rep.last_24h || 0) > 0 ? 'warn' : 'ok');
+    cards.push(card('Rapports de bugs / plantages', rows([
+      ['Total reçus', rep.total ?? 0],
+      ['Dernières 24 h', rep.last_24h ?? 0, (rep.last_24h || 0) > 0 ? 'mnt-bad' : ''],
+      ['Dernier', rep.last_at ? new Date(rep.last_at * 1000).toLocaleString('fr-FR') : '—'],
+      rep.error ? ['Erreur', rep.error, 'mnt-bad'] : null,
+    ]) + `<div class="mnt-actions"><button type="button" class="mnt-action" id="maintenanceReportsOpen">Voir les rapports</button></div>`, repLvl));
+
     // Pied : version + horodatage serveur
     cards.push(card('Serveur', rows([
       ['Version', d.version],
@@ -176,6 +186,7 @@
     ])));
 
     grid.innerHTML = cards.join('');
+    document.getElementById('maintenanceReportsOpen')?.addEventListener('click', openReports);
   }
 
   // ── Console : actions + terminal + logs ─────────────────────────────────────
@@ -247,4 +258,52 @@
     } catch (_) { /* garder l'affichage précédent */ }
   }
   logsErrors?.addEventListener('change', loadLogs);
+
+  // ── Rapports de bugs / plantages (incrément 3) ──────────────────────────────
+  const reportsPanel = document.getElementById('maintenanceReports');
+  const reportsList = document.getElementById('maintenanceReportsList');
+  const reportsClose = document.getElementById('maintenanceReportsClose');
+  const reportsClear = document.getElementById('maintenanceReportsClear');
+  const REPORT_TYPE = { crash: '💥 plantage', error: '⚠️ erreur', manual: '📝 signalé' };
+
+  async function openReports() {
+    if (!reportsPanel) return;
+    reportsPanel.setAttribute('aria-hidden', 'false');
+    await loadReports();
+  }
+  function closeReports() { reportsPanel?.setAttribute('aria-hidden', 'true'); }
+
+  async function loadReports() {
+    if (!reportsList) return;
+    reportsList.innerHTML = '<div class="mnt-muted">Chargement…</div>';
+    try {
+      const r = await fetch(`/api/server/reports?limit=200&secret=${encodeURIComponent(secret())}`);
+      if (!r.ok) { reportsList.innerHTML = `<div class="mnt-err">Inaccessible (HTTP ${r.status}).</div>`; return; }
+      const d = await r.json();
+      const items = d.reports || [];
+      if (!items.length) { reportsList.innerHTML = '<div class="mnt-muted">Aucun rapport reçu. 🎉</div>'; return; }
+      reportsList.innerHTML = items.map((e) => {
+        const t = new Date((e.at || 0) * 1000).toLocaleString('fr-FR');
+        const cnt = (e.count || 1) > 1 ? `<span class="mnt-rep-count">×${e.count}</span>` : '';
+        const stack = e.stack ? `<pre class="mnt-rep-stack">${esc(e.stack)}</pre>` : '';
+        return `<div class="mnt-rep">
+          <div class="mnt-rep-head"><span class="mnt-rep-type">${REPORT_TYPE[e.type] || e.type}</span>${cnt}
+            <span class="mnt-rep-ver">v${esc(e.version || '?')}</span><span class="mnt-rep-t">${t}</span></div>
+          <div class="mnt-rep-msg">${esc(e.message)}</div>
+          <div class="mnt-rep-meta">${esc(e.page || '')} · ${esc((e.ua || '').slice(0, 90))}</div>
+          ${stack}</div>`;
+      }).join('');
+    } catch (_) { reportsList.innerHTML = '<div class="mnt-err">Erreur réseau.</div>'; }
+  }
+
+  reportsClose?.addEventListener('click', closeReports);
+  reportsClear?.addEventListener('click', async () => {
+    if (!window.confirm('Vider tous les rapports de bugs/plantages ?')) return;
+    try {
+      await fetch(`/api/server/reports/clear?secret=${encodeURIComponent(secret())}`, { method: 'POST' });
+      await loadReports();
+      load();
+    } catch (_) { /* ignore */ }
+  });
+  reportsPanel?.addEventListener('click', (e) => { if (e.target === reportsPanel) closeReports(); });
 })();

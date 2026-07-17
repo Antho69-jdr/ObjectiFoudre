@@ -78,7 +78,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.16"
+APP_VERSION = "1.3.17"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -14310,6 +14310,20 @@ def _server_telemetry_sync() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         out["preload"] = {"error": str(exc)[:150]}
 
+    # Rapports de bugs/plantages (incrément 3)
+    try:
+        _client_reports_ensure_loaded()
+        day_ago = now - 86400
+        with _client_reports_lock:
+            out["reports"] = {
+                "total": len(_client_reports),
+                "last_24h": sum(int(e.get("count") or 1) for e in _client_reports
+                                if float(e.get("at") or 0) >= day_ago),
+                "last_at": float(_client_reports[-1]["at"]) if _client_reports else None,
+            }
+    except Exception as exc:  # noqa: BLE001
+        out["reports"] = {"error": str(exc)[:150]}
+
     return out
 
 
@@ -14364,6 +14378,155 @@ async def server_logs(limit: int = Query(200, ge=1, le=800),
     return {"ok": True, "count": len(items), "logs": items}
 
 
+# ── RAPPORTS DE BUGS / PLANTAGES (page maintenance, incrément 3) ─────────────────
+# Le front (services.js) capture window.onerror / unhandledrejection et POSTe ici.
+# L'endpoint de dépôt est PUBLIC par nécessité (un plantage n'a pas de secret) →
+# défenses : champs en liste blanche TRONQUÉS, corps borné, quota par IP anonymisée,
+# dédup par signature, plafond global, persistance JSONL bornée sur le volume
+# d'historique (survit aux redéploiements). La CONSULTATION est admin-only.
+CLIENT_REPORTS_MAX = 400              # entrées gardées (RAM + relecture disque)
+CLIENT_REPORTS_IP_MAX_10MIN = 8       # anti-rafale par IP anonymisée
+_client_reports_lock = threading.Lock()
+_client_reports: list[dict[str, Any]] = []      # ancien → récent
+_client_reports_loaded = False
+_client_report_ip_hits: dict[str, list[float]] = {}
+
+
+def _client_reports_path() -> Path:
+    return OBJECTIFOUDRE_HISTORY_DIR / "reports" / "reports.jsonl"
+
+
+def _client_reports_ensure_loaded() -> None:
+    global _client_reports_loaded
+    with _client_reports_lock:
+        if _client_reports_loaded:
+            return
+        _client_reports_loaded = True
+        p = _client_reports_path()
+        if not p.exists():
+            return
+        try:
+            lines = p.read_text(encoding="utf-8").splitlines()[-CLIENT_REPORTS_MAX:]
+        except OSError:
+            return
+        for line in lines:
+            try:
+                e = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(e, dict) and e.get("message"):
+                _client_reports.append(e)
+
+
+def _client_report_anon_ip(request: Request) -> str:
+    """IP ANONYMISÉE (préfixe réseau seulement — pas de donnée personnelle stockée) :
+    en-têtes Cloudflare/Railway d'abord, socket sinon."""
+    raw = (request.headers.get("cf-connecting-ip")
+           or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+           or (request.client.host if request.client else "?"))
+    if ":" in raw:   # IPv6 → préfixe /48
+        return ":".join(raw.split(":")[:3]) + "::"
+    parts = raw.split(".")
+    return ".".join(parts[:3]) + ".x" if len(parts) == 4 else raw
+
+
+@app.post("/api/client-report")
+async def client_report(request: Request) -> dict[str, Any]:
+    """Dépôt d'un rapport de bug/plantage par le front. Corps JSON lu en BRUT :
+    navigator.sendBeacon n'envoie pas un Content-Type application/json fiable."""
+    body = await request.body()
+    if len(body) > 8000:
+        return {"ok": False, "message": "trop volumineux"}
+    try:
+        data = json.loads(body.decode("utf-8", "replace") or "{}")
+    except json.JSONDecodeError:
+        return {"ok": False, "message": "JSON invalide"}
+    if not isinstance(data, dict):
+        return {"ok": False, "message": "JSON invalide"}
+    _client_reports_ensure_loaded()
+    now = time.time()
+    ip = _client_report_anon_ip(request)
+    with _client_reports_lock:
+        hits = [t for t in _client_report_ip_hits.get(ip, []) if now - t < 600]
+        if len(hits) >= CLIENT_REPORTS_IP_MAX_10MIN:
+            _client_report_ip_hits[ip] = hits
+            return {"ok": False, "message": "quota atteint"}
+        hits.append(now)
+        _client_report_ip_hits[ip] = hits
+        if len(_client_report_ip_hits) > 500:   # borne mémoire du dictionnaire anti-rafale
+            for k in list(_client_report_ip_hits):
+                if all(now - t >= 600 for t in _client_report_ip_hits[k]):
+                    _client_report_ip_hits.pop(k, None)
+        rtype = str(data.get("type") or "error")
+        if rtype not in ("error", "crash", "manual"):
+            rtype = "error"
+        entry = {
+            "at": now,
+            "type": rtype,
+            "message": str(data.get("message") or "")[:1000] or "(sans message)",
+            "stack": str(data.get("stack") or "")[:4000],
+            "page": str(data.get("page") or "")[:300],
+            "version": str(data.get("version") or "")[:40],
+            "ua": str(data.get("ua") or request.headers.get("user-agent") or "")[:300],
+            "ip": ip,
+            "count": 1,
+        }
+        # dédup : même signature que le DERNIER rapport dans les 15 min → compteur
+        sig = (entry["type"], entry["message"][:200], entry["version"])
+        last = _client_reports[-1] if _client_reports else None
+        if last and (last.get("type"), str(last.get("message") or "")[:200],
+                     last.get("version")) == sig and now - float(last.get("at") or 0) < 900:
+            last["count"] = int(last.get("count") or 1) + 1
+            last["at"] = now
+            return {"ok": True, "deduplicated": True}
+        _client_reports.append(entry)
+        if len(_client_reports) > CLIENT_REPORTS_MAX:
+            del _client_reports[: len(_client_reports) - CLIENT_REPORTS_MAX]
+        to_persist = dict(entry)
+    try:
+        p = _client_reports_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(to_persist, ensure_ascii=False) + "\n")
+        if p.stat().st_size > 2_000_000:   # compaction : réécrit le ring courant
+            with _client_reports_lock:
+                snapshot = list(_client_reports)
+            tmp = p.with_suffix(".tmp")
+            tmp.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in snapshot),
+                           encoding="utf-8")
+            tmp.replace(p)
+    except OSError:
+        pass
+    return {"ok": True}
+
+
+@app.get("/api/server/reports", dependencies=[Depends(_admin_secret_dep)])
+async def server_reports(limit: int = Query(100, ge=1, le=400)) -> dict[str, Any]:
+    """Rapports de bugs/plantages reçus, récents d'abord (page maintenance, admin)."""
+    _client_reports_ensure_loaded()
+    day_ago = time.time() - 86400
+    with _client_reports_lock:
+        total = len(_client_reports)
+        last_24h = sum(int(e.get("count") or 1) for e in _client_reports
+                       if float(e.get("at") or 0) >= day_ago)
+        items = list(_client_reports)[-limit:][::-1]
+    return {"ok": True, "total": total, "last_24h": last_24h, "reports": items}
+
+
+@app.post("/api/server/reports/clear", dependencies=[Depends(_admin_secret_dep)])
+async def server_reports_clear() -> dict[str, Any]:
+    """Vide les rapports (RAM + fichier). Admin."""
+    _client_reports_ensure_loaded()
+    with _client_reports_lock:
+        n = len(_client_reports)
+        _client_reports.clear()
+    try:
+        _client_reports_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+    return {"ok": True, "cleared": n}
+
+
 # ── MINI-TERMINAL en LISTE BLANCHE (admin) : aucune exécution shell arbitraire ────
 # Chaque commande mappe à une FONCTION Python prédéfinie. Rien n'est jamais passé à
 # eval/exec/subprocess : la seule surface est cette table. C'est le choix « actions +
@@ -14381,6 +14544,7 @@ def _cmd_help(_args: list[str]) -> dict[str, Any]:
         "  preload [today|tomorrow] — force le préchargement d'un jour",
         "  retrain                  — réentraîne le modèle (auto-calibration)",
         "  logs [n]                 — n dernières lignes de log (défaut 40)",
+        "  reports [n|clear]        — rapports de bugs/plantages reçus (défaut 10)",
     ]}
 
 
@@ -14465,10 +14629,37 @@ def _cmd_logs(args: list[str]) -> dict[str, Any]:
     return {"lines": [f"{e['level'][:4]} {e['msg']}" for e in items]}
 
 
+def _cmd_reports(args: list[str]) -> dict[str, Any]:
+    _client_reports_ensure_loaded()
+    if args and args[0] == "clear":
+        with _client_reports_lock:
+            n = len(_client_reports)
+            _client_reports.clear()
+        try:
+            _client_reports_path().unlink(missing_ok=True)
+        except OSError:
+            pass
+        return {"lines": [f"{n} rapport(s) supprimé(s)."]}
+    n = 10
+    if args and args[0].isdigit():
+        n = max(1, min(100, int(args[0])))
+    with _client_reports_lock:
+        items = list(_client_reports)[-n:][::-1]
+    if not items:
+        return {"lines": ["Aucun rapport reçu."]}
+    lines = []
+    for e in items:
+        t = datetime.fromtimestamp(float(e.get("at") or 0), OBJECTIFOUDRE_SERVER_TIMEZONE).strftime("%d/%m %H:%M")
+        cnt = int(e.get("count") or 1)
+        lines.append(f"{t} [{e.get('type')}] v{e.get('version') or '?'}"
+                     f"{f' ×{cnt}' if cnt > 1 else ''} — {str(e.get('message'))[:110]}")
+    return {"lines": lines}
+
+
 _SERVER_COMMANDS = {
     "help": _cmd_help, "status": _cmd_status, "radar": _cmd_radar, "learning": _cmd_learning,
     "memory": _cmd_memory, "purge-cache": _cmd_purge_cache, "collect-lightning": _cmd_collect_lightning,
-    "preload": _cmd_preload, "retrain": _cmd_retrain, "logs": _cmd_logs,
+    "preload": _cmd_preload, "retrain": _cmd_retrain, "logs": _cmd_logs, "reports": _cmd_reports,
 }
 
 
@@ -14759,10 +14950,12 @@ def _server_nwp_models_overview_sync(probe: bool) -> dict[str, Any]:
     return {"ok": True, "default_model": DEFAULT_NWP_MODEL, "models": models}
 
 
-@app.get("/api/server/nwp-models")
+@app.get("/api/server/nwp-models", dependencies=[Depends(_admin_secret_dep)])
 async def server_nwp_models(probe: bool = False) -> dict[str, Any]:
     """Registre des modèles PNT + sonde optionnelle du catalogue paquets de chaque
-    modèle (grilles, paquets, runs, groupes d'échéances) avec sa clé serveur."""
+    modèle (grilles, paquets, runs, groupes d'échéances) avec sa clé serveur.
+    Admin-only (audit 2026-07-17) : inutilisé par le front public, expose la topologie
+    interne (fichiers/env de clés) et `probe=true` dépense le quota MF serveur."""
     return await asyncio.to_thread(_server_nwp_models_overview_sync, probe)
 
 
