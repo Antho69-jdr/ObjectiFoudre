@@ -61,6 +61,15 @@ try:
 except Exception:  # pragma: no cover - eccodes/deps absents -> enrichissement simplement désactivé
     wcs_client = None
 
+# Limiter les ARÈNES glibc à 2 (défaut : 8 × nb cœurs → des dizaines sur les hôtes
+# Railway). Chaque thread alloue dans « son » arène ; avec ~40 threads (asyncio.to_thread
+# + threads métier), la fragmentation multi-arènes gonfle le RSS de centaines de Mo que
+# malloc_trim ne récupère pas. mallopt(M_ARENA_MAX=-8, 2) AVANT la création des threads.
+try:
+    ctypes.CDLL("libc.so.6").mallopt(-8, 2)   # M_ARENA_MAX = -8
+except Exception:  # pragma: no cover - libc non-glibc (musl…) : sans effet, sans danger
+    pass
+
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 ASSETS_DIR = STATIC_DIR / "assets"
@@ -69,7 +78,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.11"
+APP_VERSION = "1.3.12"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -127,7 +136,7 @@ STALE_TTL_SECONDS = 2 * 60 * 60
 METEOFRANCE_AROME_WMS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wms/"
     "MF-NWP-HIGHRES-AROME-001-FRANCE-WMS/GetCapabilities"
-    "?service=WMS&version=1.3.11&language=fre"
+    "?service=WMS&version=1.3.12&language=fre"
 )
 METEOFRANCE_AROME_WCS_CAPABILITIES_URL = (
     "https://public-api.meteofrance.fr/public/arome/1.0/wcs/"
@@ -243,6 +252,9 @@ OBJECTIFOUDRE_CACHE_RETENTION_HOURS = _env_int("OBJECTIFOUDRE_CACHE_RETENTION_HO
 # le paquet complet est redondant → on le purge bien avant les caches encore utiles.
 OBJECTIFOUDRE_FULL_PACKAGE_RETENTION_HOURS = _env_int("OBJECTIFOUDRE_FULL_PACKAGE_RETENTION_HOURS", 12, min_value=1)
 OBJECTIFOUDRE_CACHE_CLEANUP_INTERVAL_SECONDS = _env_int("OBJECTIFOUDRE_CACHE_CLEANUP_INTERVAL_SECONDS", 60 * 60, min_value=5 * 60)
+# Cap de TAILLE du cache disque (éviction LRU au-delà, en plus de la rétention 24 h) :
+# borne le disque éphémère du conteneur ET le page cache qu'il génère (métrique Railway).
+OBJECTIFOUDRE_DISK_CACHE_MAX_MB = _env_int("OBJECTIFOUDRE_DISK_CACHE_MAX_MB", 3072, min_value=256)
 # J-1 n'est PLUS préchargé : il est servi à la demande depuis l'archive (history/),
 # ce qui évite de recalculer/garder en RAM une grille déjà persistée durablement.
 OBJECTIFOUDRE_AUTO_PRELOAD_DAYS = os.environ.get("OBJECTIFOUDRE_AUTO_PRELOAD_DAYS", "today,tomorrow,day_after_tomorrow")
@@ -2621,6 +2633,12 @@ def _ram_cache_purge_loop() -> None:
             _malloc_trim()   # INCONDITIONNEL : rend aussi la fragmentation du décodage GRIB
         except Exception:
             pass
+        # cleanup disque de SECOURS (throttlé 1 h en interne) : garantit rétention + cap
+        # de taille même si la boucle d'automatisation AROME est en attente/coupée.
+        try:
+            _cleanup_server_arome_cache_dir()
+        except Exception:
+            pass
 
 
 def _start_ram_cache_purge_thread() -> None:
@@ -2676,6 +2694,23 @@ def _read_meteofrance_persistent_cache(namespace: str, key: str, ttl: int, sourc
     return {"ts": created_at, "payload": entry["payload"], "path": str(path)}
 
 
+def _drop_page_cache(path: Path) -> None:
+    """Évacue les pages de ce fichier du PAGE CACHE (fsync des pages sales puis
+    fadvise DONTNEED). Sans ça, chaque Go écrit dans le cache disque reste compté
+    dans la mémoire du CONTENEUR (cgroup memory.current = la métrique que Railway
+    affiche et facture) : mesuré ~11,5 Go/jour d'écritures → « 7 Go de RAM »
+    constants qui n'étaient en réalité que du cache de fichiers réclamable."""
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+        try:
+            os.fsync(fd)
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+        finally:
+            os.close(fd)
+    except Exception:
+        pass
+
+
 def _write_meteofrance_persistent_cache(namespace: str, key: str, payload: Any, source_url: str | None = None) -> None:
     if not _meteofrance_persistent_cache_enabled(source_url):
         return
@@ -2688,6 +2723,7 @@ def _write_meteofrance_persistent_cache(namespace: str, key: str, payload: Any, 
             encoding="utf-8",
         )
         tmp_path.replace(path)
+        _drop_page_cache(path)
     except Exception:
         return
 
@@ -2714,6 +2750,7 @@ def _write_meteofrance_local_persistent_cache(namespace: str, key: str, payload:
             encoding="utf-8",
         )
         tmp_path.replace(path)
+        _drop_page_cache(path)
     except Exception:
         return
 
@@ -3564,6 +3601,7 @@ def _read_meteofrance_grib_full_package_cache(key: str, ttl: int) -> dict[str, A
         return None
     try:
         raw = grib_path.read_bytes()
+        _drop_page_cache(grib_path)   # lecture ~46 Mo : ne pas repeupler le page cache
     except Exception:
         return None
     expected_byte_count = int(payload.get("byte_count") or 0)
@@ -3590,6 +3628,8 @@ def _write_meteofrance_grib_full_package_cache(key: str, payload: dict[str, Any]
         )
         tmp_grib_path.replace(grib_path)
         tmp_meta_path.replace(meta_path)
+        _drop_page_cache(grib_path)   # ~46 Mo/paquet : ne pas les laisser au page cache
+        _drop_page_cache(meta_path)
     except Exception:
         return
 
@@ -3717,6 +3757,8 @@ def _write_meteofrance_grib_national_field_cache(key: str, payload: dict[str, An
         )
         tmp_bin_path.replace(bin_path)
         tmp_meta_path.replace(meta_path)
+        _drop_page_cache(bin_path)
+        _drop_page_cache(meta_path)
     except Exception:
         return
 
@@ -11181,6 +11223,7 @@ def _cleanup_server_arome_cache_dir(*, force: bool = False) -> dict[str, Any]:
     full_pkg_dir = path / "grib-full-package"
     result["full_package_retention_hours"] = OBJECTIFOUDRE_FULL_PACKAGE_RETENTION_HOURS
     try:
+        survivors: list[tuple[float, int, Path]] = []   # (mtime, taille, chemin)
         files = [item for item in path.rglob("*") if item.is_file()]
         for item in files:
             try:
@@ -11190,6 +11233,7 @@ def _cleanup_server_arome_cache_dir(*, force: bool = False) -> dict[str, Any]:
             # Les paquets GRIB bruts complets ont une rétention dédiée plus courte.
             item_cutoff = full_pkg_cutoff if full_pkg_dir in item.parents else cutoff
             if stat.st_mtime >= item_cutoff:
+                survivors.append((stat.st_mtime, int(stat.st_size), item))
                 continue
             try:
                 item.unlink()
@@ -11197,6 +11241,27 @@ def _cleanup_server_arome_cache_dir(*, force: bool = False) -> dict[str, Any]:
                 result["deleted_byte_count"] += int(stat.st_size)
             except OSError:
                 continue
+        # CAP DE TAILLE (en plus de la rétention TEMPORELLE) : mesuré ~11,5 Go/jour
+        # d'écritures — même avec 24 h de rétention, le disque éphémère et le page
+        # cache du conteneur enflent. Éviction LRU (plus vieux mtime d'abord) au-delà
+        # du budget. Le cache disque est un CONFORT (relecture sans re-télécharger) :
+        # en manger une partie ne casse rien, ça re-télécharge au pire.
+        total_size = sum(s for _, s, _ in survivors)
+        budget = OBJECTIFOUDRE_DISK_CACHE_MAX_MB * 1024 * 1024
+        result["size_budget_mb"] = OBJECTIFOUDRE_DISK_CACHE_MAX_MB
+        result["size_before_cap_mb"] = round(total_size / 1e6)
+        if total_size > budget:
+            survivors.sort()   # plus vieux d'abord
+            for _mtime, size, item in survivors:
+                if total_size <= budget:
+                    break
+                try:
+                    item.unlink()
+                    total_size -= size
+                    result["deleted_file_count"] += 1
+                    result["deleted_byte_count"] += size
+                except OSError:
+                    continue
         dirs = sorted((item for item in path.rglob("*") if item.is_dir()), key=lambda item: len(item.parts), reverse=True)
         for item in dirs:
             try:
@@ -14827,7 +14892,7 @@ def _aromepi_capabilities_sync(api_key: str) -> dict[str, Any]:
     cached = _get_cached_value(cache_key, ttl=AROMEPI_CAPABILITIES_TTL_SECONDS)
     if cached is not None:
         return dict(cached["payload"])
-    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.11&language=eng"
+    url = METEOFRANCE_AROMEPI_WMS_URL + "/GetCapabilities?service=WMS&version=1.3.12&language=eng"
     status, _ct, raw = _aromepi_http_get(url, api_key)
     if status != 200 or not raw:
         return {"ok": False, "status": status}
@@ -14903,10 +14968,10 @@ def _aromepi_wms_tile_sync(api_key: str, layer_key: str, time_iso: str, run_iso:
         return 400, b""
     min_lon, min_lat = _aromepi_mercator_to_lonlat(minx, miny)
     max_lon, max_lat = _aromepi_mercator_to_lonlat(maxx, maxy)
-    # WMS 1.3.11 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
+    # WMS 1.3.12 EPSG:4326 → ordre bbox = minlat,minlon,maxlat,maxlon. La carte est en
     # Web Mercator → on reprojette la tuile rendue (plate carrée) en sortie.
     params = [
-        ("service", "WMS"), ("version", "1.3.11"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.12"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f"{min_lat:.6f},{min_lon:.6f},{max_lat:.6f},{max_lon:.6f}"),
         ("width", str(int(width))), ("height", str(int(height))),
@@ -15031,7 +15096,7 @@ def _aromepi_domain_image_sync(api_key: str, layer_key: str, time_iso: str, run_
     # largeur:hauteur = ratio des degrés → le WMS rend une plate-carrée fidèle.
     src_height = max(1, round(out_width * (d["max_lat"] - d["min_lat"]) / (d["max_lon"] - d["min_lon"])))
     params = [
-        ("service", "WMS"), ("version", "1.3.11"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.12"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", f'{d["min_lat"]},{d["min_lon"]},{d["max_lat"]},{d["max_lon"]}'),
         ("width", str(out_width)), ("height", str(src_height)),
@@ -15173,7 +15238,7 @@ def _aromepi_activity_sync(layer_key: str, time_iso: str, run_iso: str | None) -
     if spec.get("analysis_only") and run_iso:
         time_iso = run_iso  # analyse-seule (MOCON) : cf. _aromepi_domain_image_sync
     params = [
-        ("service", "WMS"), ("version", "1.3.11"), ("request", "GetMap"),
+        ("service", "WMS"), ("version", "1.3.12"), ("request", "GetMap"),
         ("layers", spec["layer"]), ("styles", ""), ("crs", "EPSG:4326"),
         ("bbox", "37.5,-12,55.4,16"), ("width", "300"), ("height", "300"),
         ("format", "image/png"), ("transparent", "true"), ("time", time_iso),
@@ -16371,7 +16436,7 @@ def _fr_cells_stats(band, m) -> dict:
 
 
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection HIÉRARCHIQUE des cellules (v1.3.11) : enveloppes 4-connexes ≥ bande 2
+    """Détection HIÉRARCHIQUE des cellules (v1.3.12) : enveloppes 4-connexes ≥ bande 2
     (~24 dBZ, aire ≥ FR_CELLS_MIN_AREA), puis CŒURS convectifs ≥ FR_CELLS_CORE_BAND
     (~40-48 dBZ) à l'intérieur ; si ≥ 2 cœurs dont une paire distante de plus de
     FR_CELLS_SPLIT_KM → SCISSION de l'enveloppe (chaque pixel rattaché au cœur le plus
@@ -16601,7 +16666,7 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
-    # EXPOSITION COMBINÉE (v1.3.11) : une cellule est publiée si elle est étendue, OU
+    # EXPOSITION COMBINÉE (v1.3.12) : une cellule est publiée si elle est étendue, OU
     # petite mais avec un cœur convectif fort, OU ÉLECTRIQUEMENT ACTIVE (rattrapage foudre :
     # une cellule naissante qui foudroie compte, quelle que soit sa taille).
     out = [c for c in out if (
