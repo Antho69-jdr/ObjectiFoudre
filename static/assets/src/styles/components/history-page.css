@@ -564,7 +564,6 @@
 .history-cal-month { flex: 1 1 auto; text-align: center; font-weight: 700; font-size: 12.5px; white-space: nowrap; }
 .history-cal-nav {
   flex: 0 0 auto;
-  width: 28px; height: 28px;
   border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   background: rgba(255, 255, 255, 0.05);
@@ -572,6 +571,14 @@
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
+}
+/* Nav de mois ‹ › : carrée, min/max VERROUILLÉS partout — la règle tactile
+   body.mobile-ui button{min-width:88;min-height:46} (0,1,1) gonflait les chevrons
+   en 88×46 → le › débordait du panneau (bug « bouton d'agenda mal calibré »).
+   #historyPage (1,1,0) la bat sans !important. */
+#historyPage .history-cal-nav {
+  width: 34px; min-width: 34px; max-width: 34px;
+  height: 34px; min-height: 34px; max-height: 34px;
 }
 .history-cal-nav:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
 .history-cal-nav:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -727,12 +734,8 @@
     overflow-y: auto;
     overflow-x: hidden;
   }
-  /* Nav de mois ‹ › : carrée (min+max verrouillés pour battre body.mobile-ui
-     button{min-width:88;min-height:46} qui l'étirait en 88×46). */
-  #historyPage .history-cal-nav {
-    width: 34px; min-width: 34px; max-width: 34px;
-    height: 34px; min-height: 34px; max-height: 34px;
-  }
+  /* (Nav de mois ‹ › : taille verrouillée par la règle GLOBALE #historyPage
+     .history-cal-nav — plus de doublon ici.) */
   /* Analyse VISIBLE (avant écrasée) + catégories CÔTE À CÔTE.
      Placement en ZONES pour équilibrer des hauteurs très inégales : la Synthèse
      (+ sa liste « zones à surveiller ») est ~3× plus haute que la Vérification.
