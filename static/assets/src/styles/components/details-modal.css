@@ -238,11 +238,12 @@
   color: var(--label-section-color);
 }
 
-/* Bloc score : carte « score final » + grille de calc-chips côte à côte. */
+/* Bloc score : « Score final » = EN-TÊTE du tableau (ligne collée au-dessus des
+   sous-scores), plus une carte latérale — gain de place (ajustement user v1.3.23). */
 #detailsModal .details-score-layout {
   display: grid;
-  grid-template-columns: minmax(104px, 0.28fr) minmax(0, 1fr);
-  gap: 7px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   align-self: start;
   align-content: start;
   align-items: start;
@@ -298,19 +299,40 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Carte de score (Probabilité / Confiance) : carte-HÉROS élevée + liseré.
-   Ressort des sous-métriques par profondeur (verre + ombre + inset) et par
-   un chiffre nettement plus grand. Liseré fin = accent métier (couleur de la
-   rampe de probabilité pour la proba, cyan pour la confiance). */
+/* Score final (Probabilité / Confiance) : LIGNE D'EN-TÊTE du tableau — libellé
+   (+verdict en dessous) à gauche, valeur en évidence à droite ; fond teinté +
+   liseré = accent métier (couleur de la rampe de probabilité pour la proba,
+   cyan pour la confiance). Radius haut seulement : collée au tableau dessous. */
 #detailsModal .details-score-category .metric-card-score {
   position: relative;
   overflow: hidden;
-  min-height: 96px;
-  padding-left: 15px;
+  min-height: 44px;
+  display: grid;
+  grid-template-areas: "label value" "hint value";
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+  align-content: center;
+  padding: 6px 12px 6px 15px;
+  border-radius: 10px 10px 0 0;
   background: linear-gradient(180deg, rgba(56, 189, 248, 0.11), rgba(56, 189, 248, 0.035));
   border-color: rgba(125, 211, 252, 0.30);
-  box-shadow: var(--shadow-1), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  border-bottom: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --score-accent: var(--accent);
+}
+#detailsModal .details-score-category .metric-card-score .label { grid-area: label; }
+#detailsModal .details-score-category .metric-card-score .hint {
+  grid-area: hint;
+  display: block;
+  margin-top: 1px;
+  font-size: 9px;
+  line-height: 1.12;
+}
+/* Le tableau sous l'en-tête : raccord (radius bas seulement, pas de double bord). */
+#detailsModal .details-score-category .details-calculation-grid {
+  border-radius: 0 0 10px 10px;
+  border-top: none;
 }
 /* La proba porte la couleur de la rampe carte (var posée par selection-card.js) ;
    la confiance garde le cyan. */
@@ -329,7 +351,10 @@
 }
 /* (1,3,0) pour battre `#detailsModal .metric-btn .value` (la carte score est aussi .metric-btn) */
 #detailsModal .details-score-category .metric-card-score .value {
-  font-size: 30px;
+  grid-area: value;
+  margin-top: 0;
+  font-size: 21px;
+  text-align: right;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
@@ -623,14 +648,8 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.06); /* plus une fin de colonne en 1-col */
   }
 
-  /* Carte SCORE (héros) : régime confortable — les lignes de tableau, elles, gardent
-     leur layout grid à toutes largeurs (cibles tactiles élargies ci-dessous). */
-  #detailsModal .metric-card-score {
-    display: block;
-    min-height: 72px;
-    padding: 10px;
-    border-radius: 12px;
-  }
+  /* En-tête de score : même ligne compacte qu'en desktop (cible tactile élargie). */
+  #detailsModal .metric-card-score { min-height: 50px; }
   #detailsModal .details-value-category .metric-card {
     cursor: default;
     min-height: 46px;
@@ -638,7 +657,7 @@
 
   #detailsModal .metric-btn .label { font-size: 10px; }
   #detailsModal .metric-btn .value { font-size: 13px; }
-  #detailsModal .details-score-category .metric-card-score .value { font-size: 22px; }
+  #detailsModal .details-score-category .metric-card-score .value { font-size: 20px; }
   #detailsModal .metric-btn .hint { display: block; font-size: 10px; }
   #detailsModal .details-value-category .metric-card .value { font-size: 14px; }
 
