@@ -437,7 +437,7 @@
   min-height: 38px;
   display: grid;
   grid-template-areas: "label bar value" "hint bar value";
-  grid-template-columns: minmax(104px, 150px) minmax(24px, 1fr) minmax(42px, auto);
+  grid-template-columns: minmax(112px, 185px) minmax(24px, 1fr) minmax(42px, auto);
   column-gap: 12px;
   align-items: center;
   align-content: center;
@@ -477,7 +477,7 @@
 #detailsModal .details-calc-chip .calc-label {
   grid-area: label;
   display: block;
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 800;
   line-height: 1.15;
   color: #b7c8e0;
@@ -498,7 +498,7 @@
   grid-area: hint;
   display: block;
   margin-top: 1px;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.15;
   color: rgba(200, 213, 234, 0.66);
 }
@@ -577,7 +577,7 @@
    ========================================================================= */
 @media (max-width: 1180px) {
   #detailsModal .details-calc-chip {
-    grid-template-columns: minmax(92px, 132px) minmax(20px, 1fr) minmax(40px, auto);
+    grid-template-columns: minmax(100px, 165px) minmax(20px, 1fr) minmax(40px, auto);
   }
 }
 
@@ -665,7 +665,7 @@
     min-height: 46px;
     grid-template-columns: minmax(88px, 1fr) minmax(20px, 0.8fr) minmax(42px, auto);
   }
-  #detailsModal .details-calc-chip .calc-label { font-size: 11.5px; }
+  #detailsModal .details-calc-chip .calc-label { font-size: 13px; }
   #detailsModal .details-calc-chip .calc-value { font-size: 15px; }
-  #detailsModal .details-calc-chip .calc-hint { font-size: 10.5px; }
+  #detailsModal .details-calc-chip .calc-hint { font-size: 11.5px; }
 }
