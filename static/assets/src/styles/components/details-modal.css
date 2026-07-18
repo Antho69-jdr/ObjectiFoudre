@@ -531,19 +531,21 @@
 }
 
 /* ----------------------------------------------------- Profil de vent --- */
+/* Profil de vent : TITRE DE SECTION comme les autres tableaux (demande user
+   v1.3.27) — le conteneur est transparent, le cadre de tableau porte sur les lignes. */
 #detailsModal .details-wind-profile {
-  margin-top: 10px;
-  padding: 8px 10px;
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+#detailsModal .details-wind-profile-rows {
+  padding: 4px 10px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.09); /* même cadre que les tableaux */
-}
-#detailsModal .details-wind-profile-title {
-  margin-bottom: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #cbd5e1;
 }
 #detailsModal .details-wind-profile-rows {
   display: flex;
@@ -557,7 +559,7 @@
   gap: 10px;
   padding: 3px 0;
   font-size: 13px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 #detailsModal .wp-row:last-child { border-bottom: 0; }
 #detailsModal .wp-level { color: #94a3b8; font-variant-numeric: tabular-nums; }
