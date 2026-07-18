@@ -78,7 +78,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.20"
+APP_VERSION = "1.3.21"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16591,9 +16591,9 @@ FR_CELLS_MIN_AREA = 6       # px DS : seuil enveloppe (détection/suivi)
 FR_CELLS_ENV_BAND = 2       # plancher enveloppe (~16 dBZ)
 FR_CELLS_MARKER_BAND = 4    # graine « cellule distincte » (~32 dBZ, jaune)
 FR_CELLS_MARKER_MIN = 3     # px DS : aire min d'une graine (sinon speck ignoré)
-FR_CELLS_CORE_BAND = 5      # bande cœur convectif (~40-48 dBZ)
+FR_CELLS_CORE_BAND = 5      # bande cœur convectif (~40-48 dBZ) — graine primaire d'individualisation
 FR_CELLS_CORE_MIN = 3       # px DS : aire min d'un cœur
-FR_CELLS_SPLIT_KM = 22.0    # graines plus proches que ça → fusionnées (même cellule)
+FR_CELLS_SPLIT_KM = 12.0    # graines plus proches que ça → fusionnées (même cellule)
 FR_CELLS_EXPO_AREA = 25     # px DS : exposition par l'aire seule (~535 km²)
 FR_CELLS_MAX_SPEED = 120.0  # km/h : au-delà = appariement douteux (mini-cellules bruitées)
 _fr_cells_lock = threading.Lock()
@@ -16822,14 +16822,33 @@ def _fr_cells_geodesic_partition(env_m, seed_masks: list, groups: list[list[int]
     return owner
 
 
+def _fr_cells_seeds_in(band, env_m, seed_band: int, min_area: int) -> tuple[list, list[dict]]:
+    """Graines = composantes 4-connexes de (band ≥ seed_band) DANS l'enveloppe, aire ≥ min_area.
+    Renvoie (masques, centroïdes)."""
+    seed_masks: list = []
+    seeds: list[dict] = []
+    mk = env_m & (band >= seed_band)
+    if mk.any():
+        m_labels, n_m = _fr_cells_label_cc(mk)
+        for ml in range(1, n_m + 1):
+            mm = m_labels == ml
+            if int(mm.sum()) >= min_area:
+                st = _fr_cells_stats(band, mm)
+                seed_masks.append(mm)
+                seeds.append({"cy": st["cy"], "cx": st["cx"]})
+    return seed_masks, seeds
+
+
 def _fr_cells_extract(band) -> list[dict]:
-    """Détection par PALIERS DE COULEUR (v1.3.20, demande user) : enveloppe faible
-    (bleu/vert/jaune, ≥ FR_CELLS_ENV_BAND) = empreinte qui peut réunir plusieurs cellules ;
-    GRAINES jaune/orange (≥ FR_CELLS_MARKER_BAND) = structures qui individualisent chaque
-    cellule (graines proches fusionnées) ; si ≥ 2 groupes de graines, l'enveloppe est
-    segmentée par WATERSHED GÉODÉSIQUE (BFS multi-source dans l'écho, pas Voronoï euclidien).
-    Le cœur orange/rouge/blanc (≥ FR_CELLS_CORE_BAND) sert à l'intensité (exposition/tendance).
-    Résout la fusion des MCS/lignes de grains ET les contours à nœuds (régions connexes)."""
+    """Détection par PALIERS DE COULEUR (v1.3.20, affiné v1.3.21). Enveloppe faible
+    (bleu/vert/jaune, ≥ FR_CELLS_ENV_BAND) = empreinte qui peut réunir plusieurs cellules.
+    GRAINES d'individualisation = les CŒURS orange/rouge/blanc (≥ FR_CELLS_CORE_BAND) : ce
+    sont eux qui distinguent des cellules — pas le jaune, qui reste CONTINU le long d'une ligne
+    de grains et fusionnait tout (audit 17/07 : jusqu'à 12 cœurs orange dans une cellule de
+    ~10 000 km²). Repli sur le jaune (≥ FR_CELLS_MARKER_BAND) pour une enveloppe SANS cœur
+    (cellule faible naissante). Graines à moins de FR_CELLS_SPLIT_KM fusionnées (même cellule).
+    ≥ 2 groupes → segmentation par WATERSHED GÉODÉSIQUE (BFS multi-source dans l'écho, pas
+    Voronoï euclidien) → frontières qui suivent la morpho + régions connexes (contours simples)."""
     import numpy as np
     km_per_px = (FR_RADAR_DOMAIN["max_lon"] - FR_RADAR_DOMAIN["min_lon"]) * 111.0 \
         * math.cos(math.radians(46.0)) / FR_RADAR_OUT_WIDTH * FR_BLEND_DS
@@ -16839,18 +16858,10 @@ def _fr_cells_extract(band) -> list[dict]:
         env_m = env_labels == lab
         if int(env_m.sum()) < FR_CELLS_MIN_AREA:
             continue
-        # graines = composantes du niveau jaune/orange DANS l'enveloppe
-        seed_masks: list = []
-        seeds: list[dict] = []
-        marker_mask = env_m & (band >= FR_CELLS_MARKER_BAND)
-        if marker_mask.any():
-            m_labels, n_m = _fr_cells_label_cc(marker_mask)
-            for ml in range(1, n_m + 1):
-                mm = m_labels == ml
-                if int(mm.sum()) >= FR_CELLS_MARKER_MIN:
-                    st = _fr_cells_stats(band, mm)
-                    seed_masks.append(mm)
-                    seeds.append({"cy": st["cy"], "cx": st["cx"]})
+        # graines PRIMAIRES = cœurs orange ; repli sur le jaune si l'enveloppe n'a pas de cœur.
+        seed_masks, seeds = _fr_cells_seeds_in(band, env_m, FR_CELLS_CORE_BAND, FR_CELLS_CORE_MIN)
+        if not seeds:
+            seed_masks, seeds = _fr_cells_seeds_in(band, env_m, FR_CELLS_MARKER_BAND, FR_CELLS_MARKER_MIN)
         groups = _fr_cells_group_seeds(seeds, km_per_px, FR_CELLS_SPLIT_KM) if len(seeds) >= 2 else \
             ([[0]] if seeds else [])
         if len(groups) <= 1:
