@@ -385,44 +385,80 @@ body.chase-mode .meta-stack .meta-version {
 .chase-pos-head span { font-variant-numeric: tabular-nums; font-weight: 700; color: rgba(190, 205, 226, 0.6); letter-spacing: 0; }
 .chase-pos-head:first-child { margin-top: 0; }
 
+/* ===== ≤1024 (tablette + téléphone paysage) : MÊME POSITION que le dock de base
+   (carte flottante COLLÉE au bas d'écran) — la meta-stack est masquée ≤1024, or
+   l'ancien calc meta-height laissait la frise chasse suspendue ~30px au-dessus
+   du bord. Fini aussi le stroke du conteneur : le dock normal n'a pas de bordure
+   (la teinte rouge du fond suffit à l'identité). Ombre = celle du dock (+ le
+   halo rouge, qui est de la couleur, pas de la forme). ===== */
+@media (max-width: 1024px) {
+  .chase-overlay {
+    bottom: max(var(--sp-3), env(safe-area-inset-bottom));
+    border: 0;
+    box-shadow: var(--shadow-2), 0 0 26px rgba(239, 68, 68, 0.08);
+  }
+  /* La légende suit la frise descendue : 12 (bas) + 63 (carte) + 8 (respiration)
+     — son calc de base visait la barre posée sur la meta-stack. */
+  .chase-legend { bottom: 83px; }
+}
+
 /* ===== Mobile (<768) : la frise de base bascule du rail vers la MOLETTE tactile
-   (le rail est masque par body.mobile-ui) → idem en chasse. L'overlay est deja
-   pleine largeur ; ici on ne fait que la geometrie mobile. ===== */
+   (le rail est masque par body.mobile-ui) → idem en chasse. MÊME FORME que le
+   dock de base mobile (demande Anthony 2026-07-19) : carte FLOTTANTE arrondie
+   left/right 8, radius 24, sans bordure, padding 5/8/6, boutons 38×40, molette
+   aux hauteurs du dock (scroller 52, crans 46) — seules les COULEURS chasse
+   restent. ===== */
 @media (max-width: 767px) {
   .chase-overlay {
-    /* En tactile : BARRE pleine largeur bord a bord (comme avant), on annule la
-       carte flottante desktop. HAUTEUR identique au dock de base. */
-    left: 0; right: auto; transform: none;
-    width: 100vw; max-width: none;
-    bottom: calc(var(--meta-height-px, 48px) - 1px);
-    border-radius: 0;
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    transform: none;
+    width: auto; max-width: none;
+    bottom: max(var(--sp-3), env(safe-area-inset-bottom));
+    border-radius: var(--r-xl);
     border: 0;
-    height: var(--touch-timeline-h, 92px);
-    min-height: var(--touch-timeline-h, 92px);
-    max-height: var(--touch-timeline-h, 92px);
-    padding: 0 max(12px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(12px, env(safe-area-inset-left));
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    padding: 5px 8px 6px;
     gap: 4px;
     justify-content: center;
     background: rgba(20, 8, 10, 0.86);
-    border-top: 1px solid rgba(248, 113, 113, 0.30);
-    box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.30), 0 0 26px rgba(239, 68, 68, 0.08);
   }
   /* 5 pistes = play | direct | rail/molette | export | géo (comme le desktop).
      ⚠ garder ce template synchronisé avec le NOMBRE d'enfants de #chaseFrise :
      une piste manquante écrase la molette et éjecte le dernier bouton. */
   body.chase-mode .chase-frise { grid-template-columns: 38px 38px minmax(0, 1fr) 38px 38px; gap: 6px; }
+  /* 38×40 = ratio EXACT des .timeline-icon-btn du dock normal mobile. */
   body.chase-mode .chase-frise-btn {
-    width: 38px !important; height: 34px !important;
-    min-width: 38px !important; min-height: 34px !important; max-width: 38px !important; max-height: 34px !important;
+    width: 38px !important; height: 40px !important;
+    min-width: 38px !important; min-height: 40px !important; max-width: 38px !important; max-height: 40px !important;
     border-radius: var(--r-chip);
   }
-  #chaseSlots .timeline-wheel,
-  #chaseSlots .timeline-wheel-scroller {
-    height: var(--touch-timeline-h, 92px) !important;
-    min-height: var(--touch-timeline-h, 92px) !important;
-    max-height: var(--touch-timeline-h, 92px) !important;
+  /* Molette : hauteurs du dock normal (#slotButtons : wheel 76 / scroller 52
+     pad 3 / crans 46 en rangées 11-11-20). (1,1,0) bat les bases (0,x,0)
+     sans !important. Le WRAP est contraint à 52 (comme #slotButtons) et la
+     molette 76 DÉBORDE (overflow visible) → carte totale 63px comme le dock ;
+     sans cette contrainte la rangée gonfle à 76 → carte 87px. */
+  #chaseSlots.chase-rail-wrap { height: 52px; overflow: visible; }
+  #chaseSlots .timeline-wheel {
+    height: 76px;
+    min-height: 76px;
+    max-height: 76px;
   }
-  #chaseSlots .timeline-wheel-scroller { padding-top: 4px !important; padding-bottom: 4px !important; }
+  #chaseSlots .timeline-wheel-scroller {
+    height: 52px;
+    min-height: 52px;
+    max-height: 52px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+  #chaseSlots .timeline-wheel-item {
+    height: 46px;
+    min-height: 46px;
+    grid-template-rows: 11px 11px 20px;
+  }
+  #chaseSlots .timeline-wheel-line { height: 11px; }
   #chaseSlots .timeline-wheel { --timeline-wheel-visible-hours: 5; }
   /* Largeur d'item VERROUILLÉE min+max (1,1,0) : sans ça body.mobile-ui button
      {min-width:88} (0,1,1) gonfle chaque cran à 88px → ~2 visibles au lieu de 5
