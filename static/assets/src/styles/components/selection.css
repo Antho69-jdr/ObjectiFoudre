@@ -11,7 +11,7 @@
 #selectionCard.selection-card {
   width: min(322px, calc(100vw - 28px));
   padding: 12px 13px;
-  border-radius: 16px;
+  border-radius: var(--r-panel);
   background: rgba(8, 17, 30, 0.8);
   border: 1px solid var(--border);
   box-shadow: 0 20px 44px rgba(0, 0, 0, 0.28);
@@ -22,7 +22,7 @@
 #selectionCard .selection-top {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   margin-bottom: 9px;
 }
 #selectionCard .selection-title {
@@ -47,9 +47,9 @@
   flex: 0 0 auto;
   display: flex;
   align-items: baseline;
-  gap: 5px;
+  gap: 4px;
   padding: 4px 9px;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--divider);
   white-space: nowrap;
@@ -138,7 +138,7 @@
   min-height: 34px;
   height: 34px;
   padding: 0 12px;
-  border-radius: 11px;
+  border-radius: var(--r-chip);
   font-size: var(--fs-13);
   font-weight: var(--fw-bold);
   background: var(--accent-soft);
@@ -168,7 +168,7 @@
   }
   #selectionCard .selection-score {
     padding: 3px 8px;
-    border-radius: 9px;
+    border-radius: var(--r-sm);
   }
   #selectionCard .selection-score strong {
     font-size: var(--fs-16);
@@ -186,7 +186,7 @@
   #selectionCard #openDetailsBtn {
     min-height: 34px;
     height: 34px;
-    border-radius: 11px;
+    border-radius: var(--r-chip);
     font-size: var(--fs-13);
   }
 }

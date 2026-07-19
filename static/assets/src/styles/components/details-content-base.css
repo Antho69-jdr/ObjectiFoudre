@@ -23,7 +23,7 @@
       text-align: left;
       background: var(--fill-soft);
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: var(--r-card);
       padding: 12px;
       min-height: 0;
     }
@@ -69,11 +69,11 @@
 .details-calculation-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-  gap: 7px;
+  gap: 8px;
 }
 .details-calc-chip {
   min-width: 0;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   border: 1px solid var(--divider);
   background: rgba(255,255,255,0.035);
   padding: 7px 8px;
@@ -136,7 +136,7 @@
   top: 86px;
   width: min(410px, calc(100% - 32px));
   border: 1px solid rgba(125,211,252,0.28);
-  border-radius: 14px;
+  border-radius: var(--r-card);
   background: rgba(6, 16, 30, 0.96);
   box-shadow: 0 18px 42px rgba(0,0,0,0.32);
   padding: 13px 42px 13px 14px;
@@ -156,7 +156,7 @@
   width: 28px;
   height: 28px;
   min-width: 28px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   padding: 0;
   display: grid;
   place-items: center;
@@ -189,7 +189,7 @@
 }
 .details-calc-inspector-formula {
   margin-top: 9px;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   background: rgba(255,255,255,0.055);
   border: 1px solid var(--divider);
   padding: 8px 9px;
@@ -220,7 +220,7 @@ body.mobile-ui .details-grid {
     }
 body.mobile-ui .metric-btn {
       padding: 10px;
-      border-radius: 12px;
+      border-radius: var(--r-md);
     }
 body.mobile-ui .metric-btn .label {
       font-size: var(--fs-10);

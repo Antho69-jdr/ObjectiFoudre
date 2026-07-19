@@ -76,7 +76,7 @@
 
 .legend-gradient {
   height: 18px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--border);
   background: linear-gradient(
     90deg,

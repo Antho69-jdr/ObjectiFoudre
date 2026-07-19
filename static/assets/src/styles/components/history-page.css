@@ -20,7 +20,7 @@
   min-height: 0;
   background: rgba(10, 18, 32, 0.5);
   border: 1px solid var(--ghost-border-faint);
-  border-radius: 14px;
+  border-radius: var(--r-card);
   padding: 12px;
   overflow: hidden;
 }
@@ -67,7 +67,7 @@
   max-width: 100%;
   max-height: calc(100% - 56px);
   display: block;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   background: #070f1c;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   touch-action: none; /* on gère le pinch/pan nous-mêmes */
@@ -82,7 +82,7 @@
   width: 100%;
   max-width: 640px;
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   background: rgba(10, 18, 32, 0.6);
   border: 1px solid var(--ghost-border-faint);
 }
@@ -92,7 +92,7 @@
   flex: 0 0 auto;
   width: 38px;
   height: 38px;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   border: 1px solid var(--ghost-border);
   background: var(--fill-soft);
   color: inherit;
@@ -157,7 +157,7 @@
   margin-top: 10px;
   width: 100%;
   padding: 9px 12px;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   border: 1px solid rgba(125, 211, 252, 0.55);
   background: rgba(56, 189, 248, 0.14);
   color: #eafaff;
@@ -176,7 +176,7 @@
   align-items: center;
   text-align: center;
   padding: 12px;
-  border-radius: 14px;
+  border-radius: var(--r-card);
   background: var(--fill-soft);
   border: 1px solid var(--verif-tone, var(--ghost-border));
 }
@@ -220,7 +220,7 @@
   flex: 1 1 0;
   text-align: center;
   background: var(--fill-soft);
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   padding: 7px 4px;
 }
 .history-verif-counts b {
@@ -306,7 +306,7 @@
   font-size: var(--fs-11);
   font-weight: 700;
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--hl-tone, var(--ghost-border));
   color: var(--hl-tone, var(--text-soft));
 }
@@ -322,7 +322,7 @@
   flex: 1 1 0;
   text-align: center;
   background: var(--fill-soft);
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   padding: 7px 4px;
 }
 .history-learning-data b {
@@ -342,7 +342,7 @@
 .history-learning-gauge > span { opacity: 0.75; }
 .history-learning-gauge .hl-bar {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--divider);
   overflow: hidden;
   margin: 5px 0 4px;
@@ -373,7 +373,7 @@
 .history-learning-progress { margin-top: 8px; }
 .history-learning-progress .hl-progress {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--divider);
   overflow: hidden;
 }
@@ -415,7 +415,7 @@
   font-weight: 700;
   letter-spacing: 0.02em;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--ghost-border);
   color: #94a3b8;
   opacity: 1;
@@ -427,7 +427,7 @@
 .history-learning-hist .hl-w-stack {
   display: flex;
   height: 12px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   overflow: hidden;
   background: rgba(255, 255, 255, 0.05);
   margin-bottom: 10px;
@@ -468,13 +468,13 @@
 .history-learning-hist .hl-w-track {
   position: relative;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--border-faint);
 }
 .history-learning-hist .hl-w-track > i {
   display: block;
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   transition: width 0.4s ease;
 }
 .history-learning-hist .hl-w-ghost {
@@ -515,7 +515,7 @@
 }
 .history-learning-btn {
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   border: 1px solid rgba(125, 211, 252, 0.45);
   background: rgba(56, 189, 248, 0.14);
   color: #e2eefc;
@@ -537,7 +537,7 @@
   gap: 8px;
   width: 100%;
   padding: 9px 11px;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   background: var(--fill-soft);
   border: 1px solid var(--ghost-border-faint);
   color: inherit;
@@ -578,7 +578,7 @@
 .history-cal-month { flex: 1 1 auto; text-align: center; font-weight: 700; font-size: var(--fs-12); white-space: nowrap; }
 .history-cal-nav {
   flex: 0 0 auto;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--ghost-border-soft);
   background: rgba(255, 255, 255, 0.05);
   color: inherit;
@@ -596,7 +596,7 @@
 }
 .history-cal-nav:hover:not(:disabled) { background: var(--border-mid); }
 .history-cal-nav:disabled { opacity: 0.45; cursor: not-allowed; }
-.history-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.history-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .history-cal-wd { text-align: center; font-size: var(--fs-10); font-weight: 700; opacity: 0.5; padding-bottom: 2px; }
 /* Jours du calendrier = même langage chip que les dates (référence
    learningRetrainBtn) : radius 10 ; jour disponible = ghost neutre ; jour
@@ -606,7 +606,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   font-size: var(--fs-12);
   font-variant-numeric: tabular-nums;
 }
@@ -691,7 +691,7 @@
     max-width: 100%;
   }
   #historyPage .history-player-controls {
-    gap: 7px;
+    gap: 8px;
     padding: 7px 9px;
   }
   #historyPage .history-play-btn,
@@ -788,7 +788,7 @@
      12,5px des métriques → rendu « inégal »). */
   #historyPage .history-verif-fidelity { font-size: var(--fs-26); }
   #historyPage .history-verif-fidelity span { font-size: var(--fs-13); }
-  #historyPage .history-verif-score { padding: 10px; border-radius: 12px; }
+  #historyPage .history-verif-score { padding: 10px; border-radius: var(--r-md); }
   #historyPage .prediction-summary-date { font-size: var(--fs-16); margin-bottom: 6px; }
   #historyPage .history-player {
     grid-area: player;
@@ -814,7 +814,7 @@
     flex-direction: row;
     flex-wrap: nowrap;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     padding: 5px 9px;
   }
   /* Player : boutons CARRÉS (min+max verrouillés — sinon min-height:46 du bloc
@@ -826,7 +826,7 @@
     width: 36px; min-width: 36px; max-width: 36px;
     height: 36px; min-height: 36px; max-height: 36px;
     font-size: var(--fs-14);
-    border-radius: 9px;
+    border-radius: var(--r-sm);
   }
   #historyPage .history-hour-label { order: 0; min-width: 36px; font-size: var(--fs-11); }
   #historyPage .history-scrubber {
@@ -849,7 +849,7 @@
     overflow: hidden;
     background: rgba(10, 18, 32, 0.6);
     border: 1px solid var(--ghost-border-faint);
-    border-radius: 12px;
+    border-radius: var(--r-md);
   }
   #historyPage .history-calendar {
     display: block;      /* toujours visible (override .cal-collapsed) */

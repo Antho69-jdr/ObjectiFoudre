@@ -12,7 +12,7 @@
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: rgba(9, 18, 31, 0.6);
   border: 1px solid var(--border);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);

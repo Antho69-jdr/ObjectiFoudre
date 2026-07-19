@@ -66,7 +66,7 @@
 .mnt-bar-warn i { background: linear-gradient(90deg, rgba(251,191,36,0.7), rgba(251,146,60,0.95)); }
 .mnt-bar-idle i { background: var(--border-mid); }
 
-.mnt-preload { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.mnt-preload { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .mnt-preload li { display: grid; grid-template-columns: 96px 1fr auto; align-items: center; gap: 10px; }
 .mnt-pl-date { font-size: var(--fs-11); color: var(--text); font-weight: 700; display: flex; flex-direction: column; }
 .mnt-pl-date em { font-style: normal; font-size: var(--fs-10); color: var(--text-muted); letter-spacing: 0.04em; }
@@ -102,7 +102,7 @@
 .mnt-action:active { transform: translateY(1px); }
 
 .mnt-term-hint, .mnt-logs-filter { font-size: var(--fs-10); font-weight: 600; color: var(--text-muted); margin-left: auto; }
-.mnt-logs-filter { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.mnt-logs-filter { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 .mnt-term-out, .mnt-logs-body {
   font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
   font-size: var(--fs-11);

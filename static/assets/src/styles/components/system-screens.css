@@ -30,7 +30,7 @@
   justify-items: center;
   gap: 14px;
   padding: 24px 28px;
-  border-radius: 24px;
+  border-radius: var(--r-xl);
   background: rgba(8, 17, 30, 0.34);
   border: 1px solid var(--border-mid);
   box-shadow: var(--shadow);
@@ -108,7 +108,7 @@
   align-items: center;
   gap: 14px;
   padding: 24px 20px;
-  border-radius: 24px;
+  border-radius: var(--r-xl);
   border: 1px solid var(--border-mid);
   background: rgba(9, 20, 35, 0.94);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);

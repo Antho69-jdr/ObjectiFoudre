@@ -36,7 +36,7 @@
   width: 42px;
   height: 42px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   font-size: var(--fs-18);
   line-height: 1;
 }
@@ -90,7 +90,7 @@ body .arome-retired-ui[hidden] {
 }
 
 /* Profil vertical de vent dans le modal de détails (10 m + niveaux isobares, WCS). */
-.details-wind-profile { margin-top: 10px; padding: 10px 12px; background: rgba(10,18,32,0.5); border: 1px solid var(--ghost-border-faint); border-radius: 12px; }
+.details-wind-profile { margin-top: 10px; padding: 10px 12px; background: rgba(10,18,32,0.5); border: 1px solid var(--ghost-border-faint); border-radius: var(--r-md); }
 .details-wind-profile-title { font-size: var(--fs-12); font-weight: 600; color: var(--text-soft); margin-bottom: 6px; letter-spacing: 0.02em; }
 .details-wind-profile-rows { display: flex; flex-direction: column; gap: 2px; }
 

@@ -91,7 +91,7 @@
   height: auto;
   margin: 0 0 10px;
   padding: 9px 38px 9px 12px;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   background: rgba(10, 24, 43, 0.88);
   border: 1px solid rgba(125, 211, 252, 0.18);
   box-shadow: none;
@@ -139,7 +139,7 @@
   display: grid;
   place-items: center;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--border-faint);
   border: 1px solid var(--border);
   color: #e5edf8;
@@ -227,7 +227,7 @@
 #detailsModal .details-value-category {
   display: grid;
   grid-template-rows: auto min-content;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
   align-self: start;
   align-content: start;
@@ -266,7 +266,7 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
   border: 1px solid var(--divider);
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   background: rgba(255, 255, 255, 0.02);
   overflow: hidden;
   align-self: start;
@@ -284,7 +284,7 @@
   row-gap: 0;
   margin: 0; /* neutralise la base legacy `.details-grid { margin-top: 14px }` */
   border: 1px solid var(--divider);
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   background: rgba(255, 255, 255, 0.02);
   overflow: hidden;
   align-items: stretch;
@@ -303,7 +303,7 @@
   gap: 0;
   min-height: 44px;
   padding: 7px 8px;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   background: var(--fill-soft);
   border: 1px solid var(--border);
 }
@@ -323,7 +323,7 @@
   align-items: center;
   align-content: center;
   padding: 6px 12px 6px 15px;
-  border-radius: 10px 10px 0 0;
+  border-radius: var(--r-chip) var(--r-chip) 0 0;
   background: linear-gradient(180deg, rgba(56, 189, 248, 0.11), rgba(56, 189, 248, 0.035));
   border-color: rgba(125, 211, 252, 0.30);
   border-bottom: none;
@@ -338,7 +338,7 @@
 }
 /* Le tableau sous l'en-tête : raccord (radius bas seulement, pas de double bord). */
 #detailsModal .details-score-category .details-calculation-grid {
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 var(--r-chip) var(--r-chip);
   border-top: none;
 }
 /* La proba porte la couleur de la rampe carte (var posée par selection-card.js) ;
@@ -535,7 +535,7 @@
    v1.3.27) — le conteneur est transparent, le cadre de tableau porte sur les lignes. */
 #detailsModal .details-wind-profile {
   display: grid;
-  gap: 7px;
+  gap: 8px;
   margin-top: 14px;
   padding: 0;
   border: none;
@@ -543,7 +543,7 @@
 }
 #detailsModal .details-wind-profile-rows {
   padding: 4px 10px;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--divider); /* même cadre que les tableaux */
 }

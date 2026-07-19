@@ -36,7 +36,7 @@ body.chase-mode #chaseLegend { display: flex; }
   flex-direction: column;
   gap: 4px;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   background: rgba(8, 17, 30, 0.82);
   border: 1px solid rgba(248, 113, 113, 0.26);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
@@ -156,7 +156,7 @@ body.chase-mode .meta-stack .meta-version {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 7px;
+  gap: 8px;
   padding: 7px var(--sp-4);
   border-radius: var(--r-xl);
   background: rgba(20, 8, 10, 0.86);
@@ -217,7 +217,7 @@ body.chase-mode .meta-stack .meta-version {
   display: grid; place-items: center; padding: 0 !important;
   /* Forme CHIP rouge (identité chasse) : radius 10, ghost à filet rouge au repos,
      rouge plat à l'état actif. */
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   border: 1px solid rgba(248, 113, 113, 0.32);
   background: var(--fill-ghost);
   color: #f2d6d6; cursor: pointer;
@@ -262,7 +262,7 @@ body.chase-mode .meta-stack .meta-version {
   z-index: 18;
   align-items: center; gap: 8px;
   padding: 7px 14px 7px 12px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: rgba(8, 17, 30, 0.84);
   border: 1px solid rgba(248, 113, 113, 0.3);
   color: #fde8e8;
@@ -312,7 +312,7 @@ body.chase-mode .meta-stack .meta-version {
   font-size: var(--fs-12);
   font-weight: var(--fw-extrabold);
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   white-space: nowrap;
 }
 .chase-activity.lvl-none { background: rgba(100,116,139,0.25); color: var(--text-soft); }
@@ -326,7 +326,7 @@ body.chase-mode .meta-stack .meta-version {
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   padding: 10px 16px;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   background: rgba(7, 15, 28, 0.82);
   color: var(--text-soft);
   font-size: var(--fs-14);
@@ -347,7 +347,7 @@ body.chase-mode .meta-stack .meta-version {
   background: rgba(10, 18, 32, 0.96);
   color: #e2e8f0;
   border: 1px solid var(--ghost-border-soft);
-  border-radius: 12px;
+  border-radius: var(--r-md);
   padding: 10px 12px 11px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
 }
@@ -361,7 +361,7 @@ body.chase-mode .meta-stack .meta-version {
   font-size: var(--fs-15);
   font-weight: var(--fw-extrabold);
   padding: 9px 28px 9px 12px;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   margin-bottom: 10px;
   border: 1px solid var(--border-mid);
 }
@@ -370,12 +370,12 @@ body.chase-mode .meta-stack .meta-version {
 .chase-verdict.sev-mid { background: rgba(8,145,178,0.3); border-color: rgba(103,232,249,0.6); color: #ecfeff; }
 .chase-verdict.sev-watch { background: rgba(180,120,8,0.3); border-color: rgba(251,191,36,0.6); color: #fde68a; }
 .chase-verdict.sev-low { background: rgba(30,41,59,0.6); color: var(--text-soft); }
-.chase-pos-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.chase-pos-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .chase-pos-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; font-size: var(--fs-13); color: rgba(190, 205, 226, 0.82); }
 .chase-pos-list strong { color: #ecfeff; font-weight: 700; font-variant-numeric: tabular-nums; }
 .chase-pos-list .chase-unit { margin-left: 1px; font-weight: 500; color: rgba(190, 205, 226, 0.6); }
 /* Alerte d'approche (moteur cellules) : bandeau ambre sous le verdict du popup position. */
-.chase-pos-eta { margin: 6px 0 2px; padding: 5px 8px; border-radius: 8px; font-size: var(--fs-12); font-weight: 600; color: #ffd28a; background: rgba(240, 160, 40, 0.14); border: 1px solid rgba(240, 160, 40, 0.35); }
+.chase-pos-eta { margin: 6px 0 2px; padding: 5px 8px; border-radius: var(--r-sm); font-size: var(--fs-12); font-weight: 600; color: #ffd28a; background: rgba(240, 160, 40, 0.14); border: 1px solid rgba(240, 160, 40, 0.35); }
 /* Sous-titre de section dans le popup (Observé radar MF / Prévu AROME-PI). */
 .chase-pos-head { margin: 9px 0 5px; font-size: var(--fs-11); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(148, 173, 204, 0.72); display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .chase-pos-head span { font-variant-numeric: tabular-nums; font-weight: 700; color: rgba(190, 205, 226, 0.6); letter-spacing: 0; }
@@ -410,7 +410,7 @@ body.chase-mode .meta-stack .meta-version {
   body.chase-mode .chase-frise-btn {
     width: 38px !important; height: 34px !important;
     min-width: 38px !important; min-height: 34px !important; max-width: 38px !important; max-height: 34px !important;
-    border-radius: 11px;
+    border-radius: var(--r-chip);
   }
   #chaseSlots .timeline-wheel,
   #chaseSlots .timeline-wheel-scroller {
@@ -429,7 +429,7 @@ body.chase-mode .meta-stack .meta-version {
     max-width: var(--timeline-wheel-item-width);
   }
   #chaseSlots .timeline-wheel-item.active .timeline-wheel-label {
-    width: auto; min-width: 46px; padding: 0 9px; border-radius: 999px;
+    width: auto; min-width: 46px; padding: 0 9px; border-radius: var(--r-pill);
   }
   #chaseSlots .timeline-wheel-label { min-width: 30px; }
   .chase-layer-rail { left: 8px; gap: 8px; }

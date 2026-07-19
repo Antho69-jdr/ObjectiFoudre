@@ -162,7 +162,7 @@ body.chase-mode #chaseSlots {
   min-height: 40px;
   padding: 0;
   /* Forme CHIP (langage learningRetrainBtn) : radius 10, ghost neutre au repos. */
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   background: var(--fill-ghost);
   border: 1px solid var(--ghost-border);
   color: var(--text-soft);
@@ -218,7 +218,7 @@ body.chase-mode #chaseSlots {
   position: absolute;
   left: 0; right: 0; top: 0;
   height: 44px;
-  border-radius: 14px;
+  border-radius: var(--r-card);
   background:
     linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(15, 23, 42, 0.80)),
     linear-gradient(90deg, rgba(var(--tl-accent),0.05), rgba(var(--tl-accent),0.09));
@@ -229,7 +229,7 @@ body.chase-mode #chaseSlots {
   position: absolute;
   left: 0; top: 0; bottom: 0;
   width: var(--timeline-active-pct);
-  border-radius: 14px 0 0 14px;
+  border-radius: var(--r-card) 0 0 var(--r-card);
   background: linear-gradient(90deg, rgba(var(--tl-accent),0.14), rgba(var(--tl-accent),0.34));
   pointer-events: none;
 }

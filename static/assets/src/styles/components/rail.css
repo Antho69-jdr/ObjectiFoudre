@@ -23,7 +23,7 @@
   line-height: 1;
   /* Forme CHIP (langage learningRetrainBtn) : radius 10, ghost neutre au repos.
      backdrop-filter conservé pour la lisibilité au-dessus de la carte. */
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   border: 1px solid var(--ghost-border);
   background: var(--fill-ghost);
   color: var(--text-soft);

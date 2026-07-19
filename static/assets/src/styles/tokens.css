@@ -91,11 +91,17 @@
   --sp-16: 64px;
 
   /* --- Rayons ------------------------------------------------------------ */
+  /* RECALIBRÉS sur l'usage réel (lot rayons 2026-07-19) : l'échelle historique
+     6/9/13/18/24 ne décrivait pas le produit (les composants vivent en
+     10/12/14/16). --r-chip = LE rayon du langage chip (phase POLISH). */
   --r-xs: 6px;
-  --r-sm: 9px;
-  --r-md: 13px;
-  --r-lg: 18px;
-  --r-xl: 24px;
+  --r-sm: 8px;      /* était 9 — petits contrôles, inputs admin */
+  --r-chip: 10px;   /* chips, boutons de carte, lignes de tableau */
+  --r-md: 12px;     /* était 13 — cartes standard, docks */
+  --r-card: 14px;   /* cartes metric, panneaux compacts */
+  --r-panel: 16px;  /* cartes de page, tiroir, sélection */
+  --r-lg: 18px;     /* coquilles de page, dock frise */
+  --r-xl: 24px;     /* modales plein écran, splash */
   --r-pill: 999px;
 
   /* --- Ombres / élévation (3 tiers) ------------------------------------- */

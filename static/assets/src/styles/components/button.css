@@ -102,7 +102,7 @@ button {
   background: var(--fill-soft);
   color: var(--text);
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   font-size: var(--fs-13);
   font-weight: 700;
   cursor: pointer;
@@ -166,7 +166,7 @@ body.mobile-ui .action-row { flex-direction: column; }
   min-height: var(--rail-btn-size);
   background: rgba(10, 18, 32, 0.92);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--r-card);
   box-shadow: var(--shadow);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);

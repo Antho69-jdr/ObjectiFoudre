@@ -35,7 +35,7 @@
   grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   padding: 14px;
-  border-radius: 18px;
+  border-radius: var(--r-lg);
   background: #08111f;
   border: 1px solid var(--ghost-border-faint);
   box-shadow: 0 28px 90px rgba(0, 0, 0, 0.56);
@@ -73,13 +73,13 @@
 .prediction-page-actions {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   flex: 0 0 auto;
 }
 .prediction-download-btn {
   min-height: 36px;
   padding: 0 13px;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   border: 1px solid rgba(125, 211, 252, 0.55);
   background: rgba(56, 189, 248, 0.14);
   color: #eafaff;
@@ -125,7 +125,7 @@
   min-height: 30px;
   padding: 0 12px;
   border: 1px solid var(--ghost-border);
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   background: var(--fill-ghost);
   color: var(--text-soft);
   font-size: var(--fs-12);
@@ -177,7 +177,7 @@
   gap: 1px;
   min-width: 52px;
   padding: 4px 9px;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   border: 1px solid var(--ghost-border);
   background: var(--fill-ghost);
   color: var(--text-soft);
@@ -239,7 +239,7 @@
   min-height: 0;
   padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   background: transparent;
 }
 /* Chargement : le balayage radar (.of-radar) est superposé à #predictionImage
@@ -348,7 +348,7 @@
   max-height: min(700px, calc(100vh - 164px));
   object-fit: contain;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   background: transparent;
   box-shadow: none;
 }
@@ -359,7 +359,7 @@
   position: absolute;
   z-index: 4;
   pointer-events: none;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   overflow: hidden;
   mix-blend-mode: screen;
 }
@@ -379,7 +379,7 @@
   min-width: 190px;
   max-width: 260px;
   padding: 10px 11px;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   border: 1px solid var(--ghost-border-soft);
   background: rgba(7, 17, 31, 0.92);
   color: #e5eefb;
@@ -408,7 +408,7 @@
 }
 .prediction-hover-meta {
   display: grid;
-  gap: 3px;
+  gap: 4px;
   color: rgba(226, 232, 240, 0.86);
   font-size: var(--fs-12);
   line-height: 1.32;
@@ -433,7 +433,7 @@
   gap: 12px;
   align-items: center;
   padding: 13px;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--risk-color) 18%, rgba(15, 23, 42, 0.86));
   border: 1px solid color-mix(in srgb, var(--risk-stroke) 46%, var(--border-strong));
 }
@@ -475,7 +475,7 @@
   display: grid;
   gap: 8px;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   background: rgba(15, 23, 42, 0.62);
   border: 1px solid rgba(148, 163, 184, 0.12);
 }
@@ -500,7 +500,7 @@
 }
 .prediction-sector-list {
   display: grid;
-  gap: 7px;
+  gap: 8px;
   color: rgba(226, 232, 240, 0.76);
   font-size: var(--fs-13);
 }
@@ -511,7 +511,7 @@
   gap: 10px;
   min-height: 52px;
   padding: 9px 10px;
-  border-radius: 10px;
+  border-radius: var(--r-chip);
   background: color-mix(in srgb, var(--risk-color) 14%, rgba(2, 6, 14, 0.5));
   border: 1px solid color-mix(in srgb, var(--risk-stroke) 48%, var(--border-mid));
 }

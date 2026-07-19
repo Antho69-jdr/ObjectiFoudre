@@ -9,10 +9,10 @@
   pointer-events: none;
   display: none;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   min-width: 172px;
   padding: 9px 11px;
-  border-radius: 11px;
+  border-radius: var(--r-chip);
   background: rgba(8, 17, 30, 0.92);
   border: 1px solid rgba(125, 211, 252, 0.2);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.44);

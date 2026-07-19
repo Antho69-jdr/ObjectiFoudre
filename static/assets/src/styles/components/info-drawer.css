@@ -95,7 +95,7 @@
 .drawer-formula-card,
 .drawer-category-card {
   position: relative;
-  border-radius: 16px;
+  border-radius: var(--r-panel);
   border: 1px solid var(--divider);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.022));
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.20), inset 0 1px 0 var(--fill-soft);
@@ -155,7 +155,7 @@
    plus lumineux. */
 .drawer-bullet-list {
   display: grid;
-  gap: 7px;
+  gap: 8px;
 }
 .drawer-bullet-list li::marker { color: var(--accent, #38bdf8); }
 .drawer-bullet-list strong { color: #eef4ff; }
