@@ -29,8 +29,8 @@
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  font-size: 15px;
-  font-weight: 800;
+  font-size: var(--fs-15);
+  font-weight: var(--fw-extrabold);
   line-height: 1.15;
   white-space: nowrap;
   overflow: hidden;
@@ -55,15 +55,15 @@
   white-space: nowrap;
 }
 #selectionCard .selection-score span {
-  font-size: 9px;
-  font-weight: 800;
+  font-size: var(--fs-10);
+  font-weight: var(--fw-extrabold);
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 #selectionCard .selection-score strong {
-  font-size: 17px;
-  font-weight: 800;
+  font-size: var(--fs-16);
+  font-weight: var(--fw-extrabold);
   line-height: 1;
 }
 /* Pastille PROBA : liseré fin à la couleur de la rampe carte (--score-band posée
@@ -100,7 +100,7 @@
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-muted);
-  font-size: 18px;
+  font-size: var(--fs-18);
   line-height: 1;
 }
 #selectionCard .icon-btn:hover,
@@ -113,7 +113,7 @@
 #selectionCard .selection-meta {
   margin: 0 0 9px;
   color: #c2d2ea;
-  font-size: 11px;
+  font-size: var(--fs-11);
   line-height: 1.4;
 }
 #selectionCard .selection-conf {
@@ -121,7 +121,7 @@
   color: #dbe6f7;
 }
 #selectionCard .selection-conf strong {
-  font-weight: 800;
+  font-weight: var(--fw-extrabold);
 }
 #selectionCard .selection-context:not(:empty)::before {
   content: "·";
@@ -139,7 +139,7 @@
   height: 34px;
   padding: 0 12px;
   border-radius: 11px;
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: var(--fw-bold);
   background: var(--accent-soft);
   border: 1px solid var(--accent-ring);
@@ -161,7 +161,7 @@
     margin-bottom: 8px;
   }
   #selectionCard .selection-title {
-    font-size: 14px;
+    font-size: var(--fs-14);
   }
   #selectionCard .selection-scores {
     gap: 6px;
@@ -171,22 +171,22 @@
     border-radius: 9px;
   }
   #selectionCard .selection-score strong {
-    font-size: 16px;
+    font-size: var(--fs-16);
   }
   #selectionCard .selection-meta {
     margin: 0 0 8px;
-    font-size: 10.5px;
+    font-size: var(--fs-10);
     line-height: 1.32;
   }
   #selectionCard .selection-context {
     display: inline;
     margin: 0;
-    font-size: 10.5px;
+    font-size: var(--fs-10);
   }
   #selectionCard #openDetailsBtn {
     min-height: 34px;
     height: 34px;
     border-radius: 11px;
-    font-size: 13px;
+    font-size: var(--fs-13);
   }
 }

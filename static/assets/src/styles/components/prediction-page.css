@@ -59,14 +59,14 @@
 }
 .prediction-page-header h2 {
   margin: 4px 0 3px;
-  font-size: 1.18rem;
+  font-size: var(--fs-18);
   line-height: 1.15;
   letter-spacing: 0;
 }
 .prediction-page-header p {
   margin: 0;
   color: rgba(203, 213, 225, 0.72);
-  font-size: 0.86rem;
+  font-size: var(--fs-14);
 }
 
 /* ---- actions (télécharger + fermer) ---- */
@@ -83,8 +83,8 @@
   border: 1px solid rgba(125, 211, 252, 0.55);
   background: rgba(56, 189, 248, 0.14);
   color: #eafaff;
-  font-size: 0.78rem;
-  font-weight: 800;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-extrabold);
   cursor: pointer;
 }
 .prediction-download-btn:hover:not(:disabled) {
@@ -128,8 +128,8 @@
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
   color: #cbd5e1;
-  font-size: 0.76rem;
-  font-weight: 800;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-extrabold);
   line-height: 1;
   cursor: pointer;
   box-shadow: none;
@@ -215,11 +215,11 @@
   box-shadow: none;
 }
 .prediction-chip-jx {
-  font-weight: 800;
-  font-size: 0.78rem;
+  font-weight: var(--fw-extrabold);
+  font-size: var(--fs-12);
 }
 .prediction-chip-date {
-  font-size: 0.62rem;
+  font-size: var(--fs-10);
   opacity: 0.72;
   text-transform: capitalize;
 }
@@ -270,16 +270,16 @@
   background: transparent;
 }
 .prediction-analysis-title {
-  font-size: 0.78rem;
+  font-size: var(--fs-12);
   text-transform: uppercase;
-  font-weight: 800;
+  font-weight: var(--fw-extrabold);
   color: #a7f3d0;
 }
 .prediction-analysis-text {
   display: grid;
   gap: 10px;
   color: rgba(226, 232, 240, 0.86);
-  font-size: 0.91rem;
+  font-size: var(--fs-15);
   line-height: 1.44;
 }
 .prediction-analysis-text p {
@@ -398,8 +398,8 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 5px;
-  font-size: 0.82rem;
-  font-weight: 800;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-extrabold);
   color: #ecfeff;
 }
 .prediction-hover-score {
@@ -410,19 +410,19 @@
   display: grid;
   gap: 3px;
   color: rgba(226, 232, 240, 0.86);
-  font-size: 0.75rem;
+  font-size: var(--fs-12);
   line-height: 1.32;
 }
 .prediction-hover-meta strong {
   color: #ffffff;
-  font-weight: 800;
+  font-weight: var(--fw-extrabold);
 }
 
 /* ---- synthèse de la journée (panneau analyse) ---- */
 .prediction-summary-date {
   margin: 0 0 10px;
-  font-size: 1.45rem;
-  font-weight: 900;
+  font-size: var(--fs-24);
+  font-weight: var(--fw-black);
   letter-spacing: 0.01em;
   line-height: 1.05;
   color: #f1f5f9;
@@ -444,13 +444,13 @@
 .prediction-summary-hero strong {
   display: block;
   margin: 3px 0 2px;
-  font-size: 1.1rem;
+  font-size: var(--fs-18);
   line-height: 1.05;
 }
 .prediction-summary-hero em {
   display: block;
   color: rgba(226, 232, 240, 0.74);
-  font-size: 0.78rem;
+  font-size: var(--fs-12);
   font-style: normal;
 }
 .prediction-summary-kicker {
@@ -461,13 +461,13 @@
   text-transform: uppercase;
 }
 .prediction-summary-hero b {
-  font-size: 2.15rem;
+  font-size: var(--fs-34);
   font-variant-numeric: tabular-nums;
   line-height: 0.95;
 }
 .prediction-summary-hero small {
   color: rgba(226, 232, 240, 0.62);
-  font-size: 0.8rem;
+  font-size: var(--fs-13);
 }
 
 /* ---- bloc "Zones à surveiller" + chips secteur ---- */
@@ -489,20 +489,20 @@
 .prediction-analysis-block p {
   margin: 0;
   color: rgba(226, 232, 240, 0.78);
-  font-size: 0.84rem;
+  font-size: var(--fs-13);
   line-height: 1.4;
 }
 .prediction-analysis-disclaimer {
   margin: 0;
   color: rgba(148, 163, 184, 0.72);
-  font-size: 0.76rem;
+  font-size: var(--fs-12);
   line-height: 1.4;
 }
 .prediction-sector-list {
   display: grid;
   gap: 7px;
   color: rgba(226, 232, 240, 0.76);
-  font-size: 0.82rem;
+  font-size: var(--fs-13);
 }
 .prediction-sector-chip {
   display: grid;
@@ -521,23 +521,23 @@
 }
 .prediction-sector-chip strong {
   color: #f8fafc;
-  font-size: 0.82rem;
+  font-size: var(--fs-13);
 }
 .prediction-sector-chip span {
   color: rgba(203, 213, 225, 0.68);
-  font-size: 0.72rem;
+  font-size: var(--fs-12);
 }
 .prediction-sector-chip em {
   display: block;
   margin-top: 3px;
   color: rgba(226, 232, 240, 0.62);
-  font-size: 0.7rem;
+  font-size: var(--fs-11);
   font-style: normal;
   line-height: 1.25;
 }
 .prediction-sector-chip b {
   color: var(--risk-color);
-  font-size: 1.05rem;
+  font-size: var(--fs-16);
   font-variant-numeric: tabular-nums;
 }
 

@@ -45,14 +45,14 @@
   animation: of-loader-glow 2.6s ease-in-out infinite;
 }
 .app-loader-title {
-  font-size: 14px;
-  font-weight: 800;
+  font-size: var(--fs-14);
+  font-weight: var(--fw-extrabold);
   letter-spacing: 0.04em;
   color: #eaf2ff;
   text-transform: uppercase;
 }
 .app-loader-subtitle {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--muted);
 }
 /* Barre de progression indéterminée : segment cyan qui balaye une piste faible.
@@ -120,20 +120,20 @@
   object-fit: contain;
 }
 .mobile-block-title {
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-size: var(--fs-24);
+  font-weight: var(--fw-extrabold);
   letter-spacing: 0.02em;
   color: #f5f7fb;
 }
 .mobile-block-text {
   margin: 0;
   color: #f5f7fb;
-  font-size: 1rem;
+  font-size: var(--fs-16);
   line-height: 1.45;
 }
 .mobile-block-text-secondary {
   color: rgba(230, 236, 245, 0.78);
-  font-size: 0.95rem;
+  font-size: var(--fs-15);
 }
 
 /* ------------------------------------------ Comportement « bloque » --- */

@@ -47,7 +47,7 @@
   background: transparent;
   box-shadow: none;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -63,7 +63,7 @@
   justify-self: start;
   max-width: min(34vw, 280px);
   color: #dbe9ff;
-  font-weight: 800;
+  font-weight: var(--fw-extrabold);
   letter-spacing: 0.02em;
   overflow: hidden;
   text-overflow: ellipsis;

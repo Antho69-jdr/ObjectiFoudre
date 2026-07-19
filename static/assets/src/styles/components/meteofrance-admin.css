@@ -18,8 +18,8 @@
   list-style: none;
   padding: 11px 13px;
   color: #cffafe;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-extrabold);
   transition: background var(--dur-base) var(--ease);
 }
 .mf-admin-panel summary:hover { background: rgba(125, 211, 252, 0.06); }
@@ -89,7 +89,7 @@
   background: rgba(255,255,255,0.035);
   color: #c8d5ea;
   padding: 9px 10px;
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 1.45;
 }
 .mf-test-status.is-ok {
@@ -124,8 +124,8 @@
   justify-content: space-between;
   gap: 12px;
   color: #cffafe;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-extrabold);
 }
 .mf-preload-progress-track {
   overflow: hidden;
@@ -148,7 +148,7 @@
 }
 .mf-preload-progress-detail {
   color: #9fb3cc;
-  font-size: 11px;
+  font-size: var(--fs-11);
   line-height: 1.35;
 }
 @media (max-width: 900px) {

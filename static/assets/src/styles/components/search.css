@@ -118,5 +118,5 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.search-autocomplete-primary { font-size: 0.95rem; font-weight: var(--fw-semibold); line-height: 1.2; }
-.search-autocomplete-secondary { font-size: 0.78rem; color: var(--text-muted); line-height: 1.2; }
+.search-autocomplete-primary { font-size: var(--fs-15); font-weight: var(--fw-semibold); line-height: 1.2; }
+.search-autocomplete-secondary { font-size: var(--fs-12); color: var(--text-muted); line-height: 1.2; }

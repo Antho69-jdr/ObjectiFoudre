@@ -36,10 +36,10 @@
     align-items: start;
   }
   body.mobile-ui .prediction-eyebrow {
-    font-size: 0.58rem;
+    font-size: var(--fs-10);
   }
   body.mobile-ui .prediction-page-header h2 {
-    font-size: 1.02rem;
+    font-size: var(--fs-16);
     line-height: 1.05;
     margin: 2px 0;
   }
@@ -47,7 +47,7 @@
      téléphone pour rendre la hauteur à la carte. La date utile est déjà portée
      par le chip actif du carrousel. */
   body.mobile-ui .prediction-page-header p {
-    font-size: 0.72rem;
+    font-size: var(--fs-12);
     line-height: 1.2;
     white-space: nowrap;
     overflow: hidden;
@@ -137,7 +137,7 @@
     min-width: 0;
     min-height: 42px;
     padding: 0 4px;
-    font-size: 0.66rem;
+    font-size: var(--fs-11);
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
@@ -183,12 +183,12 @@
     padding: 10px 0 0;
   }
   body.mobile-ui .prediction-analysis-title {
-    font-size: 0.68rem;
+    font-size: var(--fs-11);
   }
   body.mobile-ui .prediction-analysis-text,
   body.mobile-ui .prediction-analysis-block p,
   body.mobile-ui .prediction-analysis-disclaimer {
-    font-size: 0.75rem;
+    font-size: var(--fs-12);
     line-height: 1.28;
   }
   body.mobile-ui .prediction-summary-hero,
@@ -201,17 +201,17 @@
     gap: 8px;
   }
   body.mobile-ui .prediction-summary-hero b {
-    font-size: 1.55rem;
+    font-size: var(--fs-24);
   }
   body.mobile-ui .prediction-summary-hero strong {
-    font-size: 0.88rem;
+    font-size: var(--fs-14);
     margin: 2px 0 1px;
   }
   body.mobile-ui .prediction-summary-hero em {
-    font-size: 0.70rem;
+    font-size: var(--fs-11);
   }
   body.mobile-ui .prediction-summary-hero small {
-    font-size: 0.68rem;
+    font-size: var(--fs-11);
   }
   body.mobile-ui .prediction-sector-chip {
     min-height: 42px;
@@ -219,20 +219,20 @@
     gap: 7px;
   }
   body.mobile-ui .prediction-sector-chip strong {
-    font-size: 0.76rem;
+    font-size: var(--fs-12);
   }
   body.mobile-ui .prediction-sector-chip span {
-    font-size: 0.66rem;
+    font-size: var(--fs-11);
   }
   body.mobile-ui .prediction-sector-chip b {
-    font-size: 0.92rem;
+    font-size: var(--fs-15);
   }
   body.mobile-ui .prediction-sector-chip em {
-    font-size: 0.64rem;
+    font-size: var(--fs-10);
   }
   body.mobile-ui .prediction-legend-bands span,
   body.mobile-ui .prediction-legend-bands-compact span {
-    font-size: 0.82rem;
+    font-size: var(--fs-13);
     gap: 9px;
     min-height: 30px;
   }
@@ -242,11 +242,11 @@
     border-radius: 5px;
   }
   body.mobile-ui .prediction-legend-note {
-    font-size: 0.76rem;
+    font-size: var(--fs-12);
   }
   body.mobile-ui .prediction-legend-title,
   body.mobile-ui .prediction-analysis-block-title {
-    font-size: 0.78rem;
+    font-size: var(--fs-12);
   }
 }
 /* ── Tablette (768–1024), Prévision uniquement ─────────────────────────────

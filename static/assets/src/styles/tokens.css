@@ -101,18 +101,39 @@
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-md: 14px;
-  --fs-lg: 16px;
-  --fs-xl: 20px;
-  --fs-2xl: 26px;
-  --fs-3xl: 34px;
+  /* RAMPE CANONIQUE (lot typo 2026-07-19) : LA source des tailles de texte.
+     Recalibrée sur l'usage réel mesuré (64 valeurs historiques → 14 pas).
+     Toute nouvelle taille = un pas de la rampe, jamais un littéral. */
+  --fs-10: 10px;   /* micro-hint (ex 9/9.5/10.5) */
+  --fs-11: 11px;   /* hint, méta */
+  --fs-12: 12px;   /* libellé secondaire */
+  --fs-13: 13px;   /* corps de l'app (lignes de tableau, chips) */
+  --fs-14: 14px;   /* corps relevé */
+  --fs-15: 15px;   /* valeur, titre de carte */
+  --fs-16: 16px;   /* titre de section */
+  --fs-18: 18px;   /* titre de page compact */
+  --fs-20: 20px;   /* valeur héros compacte */
+  --fs-22: 22px;   /* valeur héros */
+  --fs-24: 24px;   /* titre écran système */
+  --fs-26: 26px;   /* héros paysage */
+  --fs-34: 34px;   /* splash */
+  --fs-38: 38px;   /* score de vérification (historique) */
+
+  /* Alias t-shirt (héritage) : pointent sur la rampe — ne plus les étendre. */
+  --fs-xs: var(--fs-11);
+  --fs-sm: var(--fs-12);
+  --fs-md: var(--fs-14);
+  --fs-lg: var(--fs-16);
+  --fs-xl: var(--fs-20);
+  --fs-2xl: var(--fs-26);
+  --fs-3xl: var(--fs-34);
 
   --fw-regular: 400;
   --fw-medium: 500;
   --fw-semibold: 600;
   --fw-bold: 700;
+  --fw-extrabold: 800;  /* ex-littéraux 800/850 */
+  --fw-black: 900;      /* ex-littéraux 900/950 */
 
   --lh-tight: 1.15;
   --lh-normal: 1.45;

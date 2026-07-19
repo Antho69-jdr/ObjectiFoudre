@@ -3,21 +3,21 @@
    Extrait VERBATIM du legacy. Le component details-modal.css les style en plus
    precis (#detailsModal .child, 1 ID) qui gagne -> parite. */
 
-.kpi .label { color: var(--muted); font-size: 11px; }
-.kpi .value { margin-top: 6px; font-size: 20px; font-weight: 800; }
-.hero-box .label { font-size: 11px; color: var(--muted); }
-.hero-box .value { margin-top: 6px; font-size: 22px; font-weight: 800; }
-.quick-item .label { font-size: 11px; color: var(--muted); }
-.quick-item .value { margin-top: 6px; font-size: 16px; font-weight: 800; }
+.kpi .label { color: var(--muted); font-size: var(--fs-11); }
+.kpi .value { margin-top: 6px; font-size: var(--fs-20); font-weight: var(--fw-extrabold); }
+.hero-box .label { font-size: var(--fs-11); color: var(--muted); }
+.hero-box .value { margin-top: 6px; font-size: var(--fs-22); font-weight: var(--fw-extrabold); }
+.quick-item .label { font-size: var(--fs-11); color: var(--muted); }
+.quick-item .value { margin-top: 6px; font-size: var(--fs-16); font-weight: var(--fw-extrabold); }
 .details-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
       margin-top: 14px;
     }
-.detail-item .label { font-size: 11px; color: var(--muted); }
-.detail-item .value { margin-top: 6px; font-size: 18px; font-weight: 800; }
-.detail-item .hint { margin-top: 4px; font-size: 12px; color: var(--muted); }
+.detail-item .label { font-size: var(--fs-11); color: var(--muted); }
+.detail-item .value { margin-top: 6px; font-size: var(--fs-18); font-weight: var(--fw-extrabold); }
+.detail-item .hint { margin-top: 4px; font-size: var(--fs-12); color: var(--muted); }
 .metric-btn {
       width: 100%;
       text-align: left;
@@ -27,12 +27,12 @@
       padding: 12px;
       min-height: 0;
     }
-.metric-btn .label { font-size: 11px; color: var(--muted); display: block; }
-.metric-btn .value { margin-top: 6px; font-size: 15px; font-weight: 800; display: block; }
+.metric-btn .label { font-size: var(--fs-11); color: var(--muted); display: block; }
+.metric-btn .value { margin-top: 6px; font-size: var(--fs-15); font-weight: var(--fw-extrabold); display: block; }
 .metric-value-positive { color: #4ade80; }
 .metric-value-negative { color: #f87171; }
 .metric-value-neutral { color: var(--text); }
-.metric-btn .hint { margin-top: 4px; font-size: 11px; color: var(--muted); display: block; }
+.metric-btn .hint { margin-top: 4px; font-size: var(--fs-11); color: var(--muted); display: block; }
 .metric-btn:hover, .metric-btn:focus-visible { background: rgba(56, 189, 248,0.10); border-color: rgba(56, 189, 248,0.45); }
 .details-group {
   width: 100%;
@@ -41,8 +41,8 @@
   justify-items: stretch;
 }
 .details-group-title {
-  font-size: 12px;
-  font-weight: 800;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-extrabold);
   letter-spacing: 0.02em;
   color: #eef4ff;
   text-transform: uppercase;
@@ -89,16 +89,16 @@
 }
 .details-calc-chip .calc-label {
   color: #8fa4bf;
-  font-size: 10px;
+  font-size: var(--fs-10);
   line-height: 1.18;
-  font-weight: 800;
+  font-weight: var(--fw-extrabold);
 }
 .details-calc-chip .calc-value {
   margin-top: 4px;
   color: #eef4ff;
-  font-size: 15px;
+  font-size: var(--fs-15);
   line-height: 1;
-  font-weight: 900;
+  font-weight: var(--fw-black);
 }
 .details-calc-chip-negative .calc-value {
   color: #fca5a5;
@@ -106,7 +106,7 @@
 .details-calc-chip .calc-hint {
   margin-top: 4px;
   color: rgba(200,213,234,0.76);
-  font-size: 9.5px;
+  font-size: var(--fs-10);
   line-height: 1.18;
 }
 .details-calc-chip {
@@ -163,28 +163,28 @@
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.10);
   color: #e5edf8;
-  font-size: 18px;
+  font-size: var(--fs-18);
   line-height: 1;
 }
 .details-calc-inspector-eyebrow {
   color: #67e8f9;
-  font-size: 10px;
-  font-weight: 900;
+  font-size: var(--fs-10);
+  font-weight: var(--fw-black);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .details-calc-inspector-title {
   margin-top: 3px;
   color: #f8fbff;
-  font-size: 15px;
-  font-weight: 900;
+  font-size: var(--fs-15);
+  font-weight: var(--fw-black);
   line-height: 1.2;
 }
 .details-calc-inspector-value {
   margin-top: 8px;
   color: #86efac;
-  font-size: 24px;
-  font-weight: 950;
+  font-size: var(--fs-24);
+  font-weight: var(--fw-black);
   line-height: 1;
 }
 .details-calc-inspector-formula {
@@ -194,13 +194,13 @@
   border: 1px solid rgba(255,255,255,0.08);
   padding: 8px 9px;
   color: #cffafe;
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 1.35;
 }
 .details-calc-inspector-text {
   margin-top: 8px;
   color: rgba(218,230,246,0.82);
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 1.38;
 }
 @media (max-width: 900px) {
@@ -212,7 +212,7 @@
     margin-bottom: 12px;
   }
 }
-.wp-row { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 10px; font-size: 13px; padding: 3px 0; border-bottom: 1px solid rgba(148,163,184,0.08); }
+.wp-row { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 10px; font-size: var(--fs-13); padding: 3px 0; border-bottom: 1px solid rgba(148,163,184,0.08); }
 .wp-row:last-child { border-bottom: 0; }
 body.mobile-ui .details-grid {
       grid-template-columns: 1fr 1fr;
@@ -223,13 +223,13 @@ body.mobile-ui .metric-btn {
       border-radius: 12px;
     }
 body.mobile-ui .metric-btn .label {
-      font-size: 10px;
+      font-size: var(--fs-10);
     }
 body.mobile-ui .metric-btn .value {
-      font-size: 13px;
+      font-size: var(--fs-13);
       margin-top: 4px;
     }
 body.mobile-ui .metric-btn .hint {
-      font-size: 10px;
+      font-size: var(--fs-10);
       margin-top: 3px;
     }

@@ -33,7 +33,7 @@
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.15;
@@ -134,13 +134,13 @@
     right: auto;
     min-width: 72px;
     padding: 8px 10px;
-    font-size: 11px;
+    font-size: var(--fs-11);
   }
   .timeline-date-label.timeline-map-date-badge,
   #timelineDateLabel.timeline-map-date-badge {
     top: 10px;
     max-width: min(300px, calc(100vw - 132px));
     padding: 8px 10px;
-    font-size: 11px;
+    font-size: var(--fs-11);
   }
 }

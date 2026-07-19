@@ -41,13 +41,13 @@
   filter: saturate(0.7);
 }
 .export-format-main {
-  font-size: 13px;
+  font-size: var(--fs-13);
   line-height: 1;
-  font-weight: 900;
+  font-weight: var(--fw-black);
   letter-spacing: 0;
 }
 .export-format-sub {
-  font-size: 11px;
+  font-size: var(--fs-11);
   line-height: 1.2;
   color: rgba(203, 213, 225, 0.76);
   letter-spacing: 0;

@@ -16,7 +16,7 @@
   background: rgba(9, 18, 31, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--muted);
   backdrop-filter: blur(12px);
 }

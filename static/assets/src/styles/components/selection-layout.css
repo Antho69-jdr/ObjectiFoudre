@@ -61,7 +61,7 @@
   width: 34px;
   min-width: 34px;
   height: 34px;
-  font-size: 16px;
+  font-size: var(--fs-16);
 }
 #selectionCard .action-row {
   margin-top: 9px;
@@ -70,7 +70,7 @@
   min-height: 36px;
   height: 36px;
   border-radius: 12px;
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 #selectionCard .selection-heading {
   min-width: 0;
@@ -96,7 +96,7 @@
   height: 30px; min-height: 30px; max-height: 30px;
   padding: 0;
   border-radius: 999px;
-  font-size: 16px;
+  font-size: var(--fs-16);
 }
 #selectionCard .action-row {
   margin: 0;
@@ -107,8 +107,8 @@
   height: 34px;
   padding: 0 12px;
   border-radius: 11px;
-  font-size: 13px;
-  font-weight: 800;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-extrabold);
   background: rgba(56, 189, 248, 0.14);
   border: 1px solid rgba(125, 211, 252, 0.55);
   color: #eafaff;
@@ -175,7 +175,7 @@ body.mobile-ui .selection-card {
       min-height: 40px !important;
       height: 40px !important;
       border-radius: 13px !important;
-      font-size: 15px !important;
+      font-size: var(--fs-15) !important;
     }
   body.mobile-ui .selection-card,
     #selectionCard.selection-card {
@@ -201,7 +201,7 @@ body.mobile-ui .selection-card {
       min-height: 34px !important;
       height: 34px !important;
       border-radius: 11px !important;
-      font-size: 13px !important;
+      font-size: var(--fs-13) !important;
     }
 }
 
@@ -291,6 +291,6 @@ body.mobile-ui .selection-card {
     min-height: 38px !important;
     max-height: 38px !important;
     border-radius: 999px !important;
-    font-size: 18px !important;
+    font-size: var(--fs-18) !important;
   }
 }

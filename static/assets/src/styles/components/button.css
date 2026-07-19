@@ -103,7 +103,7 @@ button {
   color: var(--text);
   padding: 10px 14px;
   border-radius: 12px;
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   cursor: pointer;
   min-height: 42px;
@@ -137,7 +137,7 @@ button.active {
   margin-top: 12px;
 }
 .action-row button { flex: 1; }
-.action-row-export button { font-size: 12px; }
+.action-row-export button { font-size: var(--fs-12); }
 
 /* Tactile : barre d'actions scrollable + cible élargie (body.mobile-ui toujours posé) */
 body.mobile-ui .button-row {

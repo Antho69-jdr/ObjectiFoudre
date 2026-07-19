@@ -45,7 +45,7 @@ body.chase-mode #chaseLegend { display: flex; }
   pointer-events: none;
 }
 .chase-legend-title {
-  font-size: 9.5px;
+  font-size: var(--fs-10);
   font-weight: var(--fw-bold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -63,14 +63,14 @@ body.chase-mode #chaseLegend { display: flex; }
 .chase-legend-scale {
   display: flex;
   justify-content: space-between;
-  font-size: 9.5px;
+  font-size: var(--fs-10);
   font-weight: 600;
   color: var(--text-dim);
 }
 /* Seuil chasse (info actionnable) : liseré ambre discret sous l'échelle. */
 .chase-legend-note {
   margin-top: 2px;
-  font-size: 9px;
+  font-size: var(--fs-10);
   font-weight: var(--fw-bold);
   letter-spacing: 0.02em;
   color: rgba(251, 191, 36, 0.92);
@@ -269,7 +269,7 @@ body.chase-mode .meta-stack .meta-version {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  font-size: 12px; font-weight: 700; letter-spacing: 0.02em;
+  font-size: var(--fs-12); font-weight: 700; letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
   pointer-events: none; white-space: nowrap;
 }
@@ -291,7 +291,7 @@ body.chase-mode .meta-stack .meta-version {
 @media (prefers-reduced-motion: reduce) {
   .chase-top-info::before { animation: none; }
 }
-.chase-top-info .chase-now { color: #fff; font-weight: 800; }
+.chase-top-info .chase-now { color: #fff; font-weight: var(--fw-extrabold); }
 .chase-top-info .chase-top-sep { opacity: 0.5; }
 .chase-top-info .chase-time-label.is-future { color: #fca5a5; }
 .chase-top-info .chase-empty-hint { color: #fca5a5; }
@@ -300,8 +300,8 @@ body.chase-mode .meta-stack .meta-version {
    du scrubber a la jonction radar↔AROME-PI) */
 .chase-time-label {
   flex: 0 0 auto;
-  font-size: 0.82rem;
-  font-weight: 800;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-extrabold);
   color: #cbd5e1;
   min-width: 96px;
   text-align: right;
@@ -309,8 +309,8 @@ body.chase-mode .meta-stack .meta-version {
 .chase-time-label.is-future { color: #fca5a5; }
 .chase-activity {
   flex: 0 0 auto;
-  font-size: 0.72rem;
-  font-weight: 800;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-extrabold);
   padding: 2px 8px;
   border-radius: 999px;
   white-space: nowrap;
@@ -329,7 +329,7 @@ body.chase-mode .meta-stack .meta-version {
   border-radius: 12px;
   background: rgba(7, 15, 28, 0.82);
   color: #cbd5e1;
-  font-size: 0.85rem;
+  font-size: var(--fs-14);
   pointer-events: none;
 }
 
@@ -352,32 +352,32 @@ body.chase-mode .meta-stack .meta-version {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
 }
 .chase-popup .maplibregl-popup-tip { border-top-color: rgba(10, 18, 32, 0.96); border-bottom-color: rgba(10, 18, 32, 0.96); }
-.chase-popup .maplibregl-popup-close-button { color: #cbd5e1; font-size: 18px; padding: 0 6px; }
-.chase-pop-loading, .chase-pop-empty { font-size: 0.8rem; color: rgba(226, 232, 240, 0.8); }
+.chase-popup .maplibregl-popup-close-button { color: #cbd5e1; font-size: var(--fs-18); padding: 0 6px; }
+.chase-pop-loading, .chase-pop-empty { font-size: var(--fs-13); color: rgba(226, 232, 240, 0.8); }
 .chase-verdict {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.92rem;
-  font-weight: 800;
+  font-size: var(--fs-15);
+  font-weight: var(--fw-extrabold);
   padding: 9px 28px 9px 12px;
   border-radius: 12px;
   margin-bottom: 10px;
   border: 1px solid rgba(255,255,255,0.12);
 }
-.chase-verdict-time { margin-left: auto; font-size: 0.72rem; opacity: 0.72; font-weight: 700; font-variant-numeric: tabular-nums; }
+.chase-verdict-time { margin-left: auto; font-size: var(--fs-12); opacity: 0.72; font-weight: 700; font-variant-numeric: tabular-nums; }
 .chase-verdict.sev-high { background: rgba(190,40,50,0.4); border-color: rgba(248,113,113,0.7); color: #fff; }
 .chase-verdict.sev-mid { background: rgba(8,145,178,0.3); border-color: rgba(103,232,249,0.6); color: #ecfeff; }
 .chase-verdict.sev-watch { background: rgba(180,120,8,0.3); border-color: rgba(251,191,36,0.6); color: #fde68a; }
 .chase-verdict.sev-low { background: rgba(30,41,59,0.6); color: #cbd5e1; }
 .chase-pos-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
-.chase-pos-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; font-size: 0.82rem; color: rgba(190, 205, 226, 0.82); }
+.chase-pos-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; font-size: var(--fs-13); color: rgba(190, 205, 226, 0.82); }
 .chase-pos-list strong { color: #ecfeff; font-weight: 700; font-variant-numeric: tabular-nums; }
 .chase-pos-list .chase-unit { margin-left: 1px; font-weight: 500; color: rgba(190, 205, 226, 0.6); }
 /* Alerte d'approche (moteur cellules) : bandeau ambre sous le verdict du popup position. */
-.chase-pos-eta { margin: 6px 0 2px; padding: 5px 8px; border-radius: 8px; font-size: 0.72rem; font-weight: 600; color: #ffd28a; background: rgba(240, 160, 40, 0.14); border: 1px solid rgba(240, 160, 40, 0.35); }
+.chase-pos-eta { margin: 6px 0 2px; padding: 5px 8px; border-radius: 8px; font-size: var(--fs-12); font-weight: 600; color: #ffd28a; background: rgba(240, 160, 40, 0.14); border: 1px solid rgba(240, 160, 40, 0.35); }
 /* Sous-titre de section dans le popup (Observé radar MF / Prévu AROME-PI). */
-.chase-pos-head { margin: 9px 0 5px; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(148, 173, 204, 0.72); display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.chase-pos-head { margin: 9px 0 5px; font-size: var(--fs-11); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(148, 173, 204, 0.72); display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .chase-pos-head span { font-variant-numeric: tabular-nums; font-weight: 700; color: rgba(190, 205, 226, 0.6); letter-spacing: 0; }
 .chase-pos-head:first-child { margin-top: 0; }
 
@@ -433,7 +433,7 @@ body.chase-mode .meta-stack .meta-version {
   }
   #chaseSlots .timeline-wheel-label { min-width: 30px; }
   .chase-layer-rail { left: 8px; gap: 8px; }
-  .chase-top-info { font-size: 11px; padding: 6px 11px; gap: 6px; max-width: calc(100vw - 24px); overflow: hidden; }
+  .chase-top-info { font-size: var(--fs-11); padding: 6px 11px; gap: 6px; max-width: calc(100vw - 24px); overflow: hidden; }
 }
 
 /* ===== Tablette (≥768, ≤920) : resserrer le rail de couches a gauche. ===== */

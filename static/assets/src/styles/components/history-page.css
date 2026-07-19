@@ -30,7 +30,7 @@
 }
 .history-dates-empty {
   opacity: 0.6;
-  font-size: 13px;
+  font-size: var(--fs-13);
   padding: 8px;
   line-height: 1.4;
 }
@@ -39,7 +39,7 @@
   align-self: center;
   text-align: center;
   opacity: 0.6;
-  font-size: 14px;
+  font-size: var(--fs-14);
   padding: 16px;
 }
 @media (max-width: 920px) {
@@ -96,7 +96,7 @@
   border: 1px solid rgba(148, 163, 184, 0.35);
   background: rgba(255, 255, 255, 0.04);
   color: inherit;
-  font-size: 15px;
+  font-size: var(--fs-15);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -138,7 +138,7 @@
   text-align: center;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--fs-14);
 }
 @media (max-width: 920px) {
   .history-frame {
@@ -150,7 +150,7 @@
 }
 .history-verif-empty {
   opacity: 0.7;
-  font-size: 13px;
+  font-size: var(--fs-13);
   line-height: 1.45;
 }
 .history-collect-btn {
@@ -162,7 +162,7 @@
   background: rgba(56, 189, 248, 0.14);
   color: #eafaff;
   font: inherit;
-  font-weight: 800;
+  font-weight: var(--fw-extrabold);
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
@@ -181,20 +181,20 @@
   border: 1px solid var(--verif-tone, rgba(148, 163, 184, 0.35));
 }
 .history-verif-fidelity {
-  font-size: 38px;
-  font-weight: 800;
+  font-size: var(--fs-38);
+  font-weight: var(--fw-extrabold);
   line-height: 1;
   color: var(--verif-tone, #cbd5e1);
 }
 .history-verif-fidelity span {
-  font-size: 15px;
+  font-size: var(--fs-15);
   font-weight: 600;
   opacity: 0.6;
   margin-left: 2px;
 }
 .history-verif-label {
   margin-top: 6px;
-  font-size: 12.5px;
+  font-size: var(--fs-12);
   opacity: 0.85;
 }
 .history-verif-metrics {
@@ -202,7 +202,7 @@
   flex-direction: column;
   gap: 4px;
   margin-top: 10px;
-  font-size: 12.5px;
+  font-size: var(--fs-12);
 }
 .history-verif-metrics div {
   display: flex;
@@ -225,17 +225,17 @@
 }
 .history-verif-counts b {
   display: block;
-  font-size: 17px;
+  font-size: var(--fs-16);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .history-verif-counts span {
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   opacity: 0.65;
 }
 .history-verif-cont {
   margin-top: 9px;
-  font-size: 12px;
+  font-size: var(--fs-12);
   opacity: 0.8;
   text-align: center;
 }
@@ -269,8 +269,8 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(10, 20, 35, 0.72);
   color: #e5edf9;
-  font-size: 14px;
-  font-weight: 800;
+  font-size: var(--fs-14);
+  font-weight: var(--fw-extrabold);
   line-height: 1;
   cursor: pointer;
   flex: 0 0 auto;
@@ -292,18 +292,18 @@
 }
 .history-learning {
   margin-top: 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-12);
 }
 .history-learning-loading,
 .history-learning-muted {
   opacity: 0.6;
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 1.4;
 }
 .history-learning-muted { margin-top: 8px; }
 .history-learning-state {
   display: inline-block;
-  font-size: 11.5px;
+  font-size: var(--fs-11);
   font-weight: 700;
   padding: 3px 10px;
   border-radius: 999px;
@@ -327,17 +327,17 @@
 }
 .history-learning-data b {
   display: block;
-  font-size: 17px;
+  font-size: var(--fs-16);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .history-learning-data span {
-  font-size: 10px;
+  font-size: var(--fs-10);
   opacity: 0.65;
 }
 .history-learning-gauge {
   margin-top: 10px;
-  font-size: 11.5px;
+  font-size: var(--fs-11);
 }
 .history-learning-gauge > span { opacity: 0.75; }
 .history-learning-gauge .hl-bar {
@@ -352,7 +352,7 @@
   height: 100%;
   background: linear-gradient(90deg, #38bdf8, #6fcf97);
 }
-.history-learning-gauge small { opacity: 0.6; font-size: 10.5px; }
+.history-learning-gauge small { opacity: 0.6; font-size: var(--fs-10); }
 .history-learning-row {
   display: flex;
   justify-content: space-between;
@@ -366,7 +366,7 @@
   display: flex;
   justify-content: space-between;
   margin-top: 10px;
-  font-size: 12.5px;
+  font-size: var(--fs-12);
 }
 .history-learning-skill span { opacity: 0.7; }
 .history-learning-skill b { color: #6fcf97; font-variant-numeric: tabular-nums; }
@@ -387,7 +387,7 @@
 }
 .history-learning-progress .hl-progress-label {
   margin-top: 7px;
-  font-size: 11.5px;
+  font-size: var(--fs-11);
   opacity: 0.65;
   line-height: 1.4;
 }
@@ -404,14 +404,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--fs-11);
   opacity: 0.75;
   margin-bottom: 7px;
 }
 .history-learning-hist .hl-w-badge {
   flex: none;
   font-style: normal;
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   letter-spacing: 0.02em;
   padding: 2px 8px;
@@ -449,7 +449,7 @@
   padding: 3px 0;
 }
 .history-learning-hist .hl-w-name {
-  font-size: 11.5px;
+  font-size: var(--fs-11);
   opacity: 0.82;
   position: relative;
   padding-left: 12px;
@@ -487,13 +487,13 @@
   transform: translateX(-1px);
 }
 .history-learning-hist .hl-w-val {
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 .history-learning-hist .hl-w-delta {
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -503,7 +503,7 @@
 .history-learning-hist .hl-w-delta.down { color: #e0a04d; }
 .history-learning-hist .hl-w-hint {
   margin-top: 8px;
-  font-size: 10.5px;
+  font-size: var(--fs-10);
   opacity: 0.55;
   line-height: 1.4;
 }
@@ -519,7 +519,7 @@
   border: 1px solid rgba(125, 211, 252, 0.45);
   background: rgba(56, 189, 248, 0.14);
   color: #e2eefc;
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-weight: 600;
   cursor: pointer;
 }
@@ -558,7 +558,7 @@
   flex: 1 1 auto;
   text-align: right;
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: #cfe0fb;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -575,14 +575,14 @@
   gap: 8px;
   margin-bottom: 8px;
 }
-.history-cal-month { flex: 1 1 auto; text-align: center; font-weight: 700; font-size: 12.5px; white-space: nowrap; }
+.history-cal-month { flex: 1 1 auto; text-align: center; font-weight: 700; font-size: var(--fs-12); white-space: nowrap; }
 .history-cal-nav {
   flex: 0 0 auto;
   border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   background: rgba(255, 255, 255, 0.05);
   color: inherit;
-  font-size: 16px;
+  font-size: var(--fs-16);
   line-height: 1;
   cursor: pointer;
 }
@@ -597,7 +597,7 @@
 .history-cal-nav:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
 .history-cal-nav:disabled { opacity: 0.45; cursor: not-allowed; }
 .history-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-.history-cal-wd { text-align: center; font-size: 10px; font-weight: 700; opacity: 0.5; padding-bottom: 2px; }
+.history-cal-wd { text-align: center; font-size: var(--fs-10); font-weight: 700; opacity: 0.5; padding-bottom: 2px; }
 /* Jours du calendrier = même langage chip que les dates (référence
    learningRetrainBtn) : radius 10 ; jour disponible = ghost neutre ; jour
    sélectionné = cyan plat. */
@@ -607,7 +607,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-variant-numeric: tabular-nums;
 }
 .history-cal-day.is-blank { visibility: hidden; }
@@ -649,7 +649,7 @@
   }
   #historyPage .prediction-page-header .prediction-eyebrow,
   #historyPage #historyPageSubtitle { display: none; }
-  #historyPage #historyPageTitle { font-size: 17px; }
+  #historyPage #historyPageTitle { font-size: var(--fs-16); }
   #historyPage .history-dates-panel {
     flex: 0 0 auto;
     max-height: none;
@@ -678,8 +678,8 @@
     padding: 6px 10px;
     scroll-snap-align: start;
   }
-  #historyPage .history-date-day { font-size: 13px; white-space: nowrap; }
-  #historyPage .history-date-count { font-size: 10px; }
+  #historyPage .history-date-day { font-size: var(--fs-13); white-space: nowrap; }
+  #historyPage .history-date-count { font-size: var(--fs-10); }
   #historyPage .history-player {
     flex: 0 0 auto;
     min-height: 0;
@@ -705,7 +705,7 @@
     height: 44px;
     min-height: 44px;
     max-height: 44px;
-    font-size: 15px;
+    font-size: var(--fs-15);
   }
   /* Player sur UNE ligne, scrubber MAXIMAL : play · scrubber(pleine largeur) ·
      flash · download. L'heure sort du flux (flotte en haut à droite) pour ne pas
@@ -727,7 +727,7 @@
     order: 0;
     min-width: 0;
     padding: 0;
-    font-size: 12px;
+    font-size: var(--fs-12);
     opacity: 0.9;
   }
 }
@@ -786,10 +786,10 @@
   #historyPage .history-learning-title { margin-top: 0; }
   /* Typo héros ramenée à l'échelle du paysage (38px/23px détonnaient face au
      12,5px des métriques → rendu « inégal »). */
-  #historyPage .history-verif-fidelity { font-size: 26px; }
-  #historyPage .history-verif-fidelity span { font-size: 13px; }
+  #historyPage .history-verif-fidelity { font-size: var(--fs-26); }
+  #historyPage .history-verif-fidelity span { font-size: var(--fs-13); }
   #historyPage .history-verif-score { padding: 10px; border-radius: 12px; }
-  #historyPage .prediction-summary-date { font-size: 16px; margin-bottom: 6px; }
+  #historyPage .prediction-summary-date { font-size: var(--fs-16); margin-bottom: 6px; }
   #historyPage .history-player {
     grid-area: player;
     height: auto;
@@ -825,10 +825,10 @@
     order: 0;
     width: 36px; min-width: 36px; max-width: 36px;
     height: 36px; min-height: 36px; max-height: 36px;
-    font-size: 14px;
+    font-size: var(--fs-14);
     border-radius: 9px;
   }
-  #historyPage .history-hour-label { order: 0; min-width: 36px; font-size: 11px; }
+  #historyPage .history-hour-label { order: 0; min-width: 36px; font-size: var(--fs-11); }
   #historyPage .history-scrubber {
     order: 0;
     flex: 1 1 auto;
