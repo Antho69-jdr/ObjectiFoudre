@@ -166,3 +166,9 @@
   55% { transform: translateX(95%); }
   100% { transform: translateX(240%); }
 }
+
+/* Accessibilité : barre indéterminée = animation infinie → figée en mouvement
+   réduit (l'état « en cours » reste signalé par la barre partiellement remplie). */
+@media (prefers-reduced-motion: reduce) {
+  .mf-preload-progress.is-indeterminate .mf-preload-progress-bar { animation: none; }
+}
