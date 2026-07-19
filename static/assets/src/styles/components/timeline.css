@@ -163,9 +163,9 @@ body.chase-mode #chaseSlots {
   padding: 0;
   /* Forme CHIP (langage learningRetrainBtn) : radius 10, ghost neutre au repos. */
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  color: #cbd5e1;
+  background: var(--fill-ghost);
+  border: 1px solid var(--ghost-border);
+  color: var(--text-soft);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(16px) saturate(1.15);
   -webkit-backdrop-filter: blur(16px) saturate(1.15);
@@ -173,7 +173,7 @@ body.chase-mode #chaseSlots {
               border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease);
 }
 .timeline-dock .timeline-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--border-faint);
   border-color: rgba(103, 232, 249, 0.4);
   color: #e6fbff;
   transform: translateY(-1px);
@@ -211,7 +211,7 @@ body.chase-mode #chaseSlots {
 .timeline-slot-strip.timeline-slider.dragging { cursor: grabbing; }
 
 .timeline-rail { position: relative; width: 100%; height: 44px; min-height: 44px; padding: 0; outline: none; }
-.timeline-rail:focus-visible .timeline-rail-track { box-shadow: 0 0 0 2px rgba(var(--tl-accent), 0.68), inset 0 0 0 1px rgba(255, 255, 255, 0.09); }
+.timeline-rail:focus-visible .timeline-rail-track { box-shadow: 0 0 0 2px rgba(var(--tl-accent), 0.68), inset 0 0 0 1px var(--divider); }
 
 .timeline-rail-track {
   --timeline-active-pct: 0%;
@@ -223,7 +223,7 @@ body.chase-mode #chaseSlots {
     linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(15, 23, 42, 0.80)),
     linear-gradient(90deg, rgba(var(--tl-accent),0.05), rgba(var(--tl-accent),0.09));
   border: 1px solid rgba(226, 232, 240, 0.16);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 10px 24px rgba(0, 0, 0, 0.24);
+  box-shadow: inset 0 0 0 1px var(--fill-soft), 0 10px 24px rgba(0, 0, 0, 0.24);
 }
 .timeline-rail-fill {
   position: absolute;
@@ -365,8 +365,8 @@ body.chase-mode #chaseSlots {
   cursor: not-allowed;
   filter: grayscale(1) drop-shadow(0 4px 10px rgba(0, 0, 0, 0.22));
 }
-.timeline-light-icon.is-arome-unavailable::after { background: rgba(148, 163, 184, 0.24); box-shadow: none; }
-.timeline-light-icon.is-arome-unavailable::before { border-color: rgba(148, 163, 184, 0.24); color: rgba(203, 213, 225, 0.82); }
+.timeline-light-icon.is-arome-unavailable::after { background: var(--ghost-border-soft); box-shadow: none; }
+.timeline-light-icon.is-arome-unavailable::before { border-color: var(--ghost-border-soft); color: rgba(203, 213, 225, 0.82); }
 
 /* Boutons désactivés (nav/play/export) */
 #prevDayBtn:disabled,

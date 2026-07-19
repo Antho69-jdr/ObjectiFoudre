@@ -28,7 +28,7 @@
   padding: 9px 12px;
   border-radius: 12px;
   background: rgba(8, 17, 30, 0.84);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--border-mid);
   color: #e5eefc;
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
   backdrop-filter: var(--glass-blur);
@@ -108,7 +108,7 @@
   width: auto;
   max-width: min(340px, calc(100vw - 168px));
   white-space: nowrap;
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: var(--border-mid);
   color: #e5eefc;
 }
 

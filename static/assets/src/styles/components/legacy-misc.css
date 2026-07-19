@@ -90,12 +90,12 @@ body .arome-retired-ui[hidden] {
 }
 
 /* Profil vertical de vent dans le modal de détails (10 m + niveaux isobares, WCS). */
-.details-wind-profile { margin-top: 10px; padding: 10px 12px; background: rgba(10,18,32,0.5); border: 1px solid rgba(148,163,184,0.18); border-radius: 12px; }
-.details-wind-profile-title { font-size: var(--fs-12); font-weight: 600; color: #cbd5e1; margin-bottom: 6px; letter-spacing: 0.02em; }
+.details-wind-profile { margin-top: 10px; padding: 10px 12px; background: rgba(10,18,32,0.5); border: 1px solid var(--ghost-border-faint); border-radius: 12px; }
+.details-wind-profile-title { font-size: var(--fs-12); font-weight: 600; color: var(--text-soft); margin-bottom: 6px; letter-spacing: 0.02em; }
 .details-wind-profile-rows { display: flex; flex-direction: column; gap: 2px; }
 
 .wp-level { color: #94a3b8; font-variant-numeric: tabular-nums; }
 .wp-speed { color: #e2e8f0; font-variant-numeric: tabular-nums; }
-.wp-dir { color: #cbd5e1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wp-dir { color: var(--text-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wp-arrow { color: #7dd3fc; font-weight: 700; }
 .wp-loading { font-size: var(--fs-12); color: #64748b; padding: 4px 0; }

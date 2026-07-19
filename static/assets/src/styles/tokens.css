@@ -28,12 +28,23 @@
   --text: #eaf1fc;
   --text-muted: #a3b5d0;
   --text-dim: #6f819d;
+  --text-soft: #cbd5e1;   /* texte des chips fantômes (lot couleurs 2026-07-19) */
   --text-inverse: #07111f;
 
   /* --- Bordures & filets ------------------------------------------------- */
   --border: rgba(255, 255, 255, 0.10);
   --border-strong: rgba(255, 255, 255, 0.18);
   --border-faint: rgba(255, 255, 255, 0.06);
+  /* Ajouts lot couleurs (2026-07-19) : les 4 rôles blanc-alpha qui manquaient —
+     l'audit comptait 26 variantes de rgba(255,255,255,α) au cas par cas. */
+  --divider: rgba(255, 255, 255, 0.08);      /* séparateur de lignes/tableaux */
+  --border-mid: rgba(255, 255, 255, 0.12);   /* filet appuyé (hover, cadres) */
+  --fill-ghost: rgba(255, 255, 255, 0.03);   /* fond chip fantôme (repos) */
+  --fill-soft: rgba(255, 255, 255, 0.04);    /* fond bouton/carte standard */
+  /* Bordures « ghost » gris-bleu (langage chip acté en phase POLISH). */
+  --ghost-border-faint: rgba(148, 163, 184, 0.18);
+  --ghost-border-soft: rgba(148, 163, 184, 0.22);
+  --ghost-border: rgba(148, 163, 184, 0.35);
 
   /* --- Accent primaire : cyan électrique --------------------------------- */
   --accent: #38bdf8;

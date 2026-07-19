@@ -51,7 +51,7 @@
      surface-2 foncée + text-muted) et historyPageCloseBtn (était 42px .icon-btn).
      Les IDs (1,0,0 ; #selectionCard #closeSelectionBtn 2,0,0) battent leurs
      contextes ; close-buttons importé après selection/details. */
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--fill-soft);
   border: 1px solid var(--border);
   color: var(--text);
   transition: background var(--dur-base) var(--ease),
@@ -65,7 +65,7 @@
 #maintenancePageCloseBtn:hover,
 #maintenanceReportsClose:hover,
 #selectionCard #closeSelectionBtn:hover {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--divider);
   border-color: var(--border-strong);
   color: #fff;
 }

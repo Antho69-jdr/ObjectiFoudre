@@ -27,7 +27,7 @@
   padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   background: rgba(7, 17, 31, 0.94);
   border: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--divider);
   border-radius: 0;
   backdrop-filter: blur(14px) saturate(1.05);
   -webkit-backdrop-filter: blur(14px) saturate(1.05);
@@ -42,7 +42,7 @@
   width: auto;
   padding: 8px 12px;
   border: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  border-right: 1px solid var(--border-faint);
   border-radius: 0;
   background: transparent;
   box-shadow: none;

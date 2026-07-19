@@ -160,7 +160,7 @@
   --muted: #a3b5d0;
 
   /* Filets & ombres */
-  --border: rgba(255, 255, 255, 0.10);
+  --border: var(--border);
   --shadow: 0 14px 34px rgba(0, 0, 0, 0.30);
 
   /* Accent (cyan électrique). --accent-2 garde son rôle de fond accent doux,

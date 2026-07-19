@@ -8,9 +8,9 @@
 .mf-admin-panel {
   margin-top: 10px;
   border-radius: var(--r-md);
-  border: 1px solid rgba(148, 163, 184, 0.20);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(15, 23, 42, 0.30));
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ghost-border-soft);
+  background: linear-gradient(180deg, var(--fill-ghost), rgba(15, 23, 42, 0.30));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18), inset 0 1px 0 var(--fill-ghost);
   overflow: hidden;
 }
 .mf-admin-panel summary {
@@ -35,7 +35,7 @@
   content: '-';
 }
 .mf-admin-panel .mf-token-form {
-  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  border-top: 1px solid var(--ghost-border-faint);
   padding: 10px;
 }
 .mf-token-form {
@@ -71,7 +71,7 @@
   min-width: 0;
   min-height: 40px;
   border-radius: var(--r-sm);
-  border: 1px solid rgba(255,255,255,0.10);
+  border: 1px solid var(--border);
   background: rgba(3, 8, 18, 0.58);
   color: #eef4ff;
   padding: 0 11px;
@@ -85,7 +85,7 @@
 .mf-test-status {
   min-height: 36px;
   border-radius: var(--r-md);
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--divider);
   background: rgba(255,255,255,0.035);
   color: #c8d5ea;
   padding: 9px 10px;

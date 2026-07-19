@@ -48,7 +48,7 @@
   background: linear-gradient(180deg, rgba(8, 17, 30, 0.96), rgba(8, 17, 30, 0.88));
   backdrop-filter: blur(18px) saturate(1.04);
   -webkit-backdrop-filter: blur(18px) saturate(1.04);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--divider);
 }
 .info-drawer .title { font-size: var(--fs-18); letter-spacing: -0.01em; }
 /* Sous-titre d'en-tete : legerement espace du titre, tracking calme. */
@@ -96,9 +96,9 @@
 .drawer-category-card {
   position: relative;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--divider);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.022));
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.20), inset 0 1px 0 var(--fill-soft);
   padding: 12px 13px;
 }
 

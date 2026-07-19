@@ -25,7 +25,7 @@
   min-height: 44px;
   border-radius: var(--r-md);
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--fill-soft);
   color: var(--text);
   padding: 0 14px;
   font-size: var(--fs-md);
@@ -35,7 +35,7 @@
   transition: border-color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease), background var(--dur-base) var(--ease);
 }
 .location-input::placeholder { color: var(--text-dim); }
-.location-input:hover { background: rgba(255, 255, 255, 0.06); }
+.location-input:hover { background: var(--border-faint); }
 .location-input:focus {
   border-color: var(--accent-ring);
   background: var(--surface-3);
@@ -84,7 +84,7 @@
   padding: var(--sp-2) var(--sp-3) var(--sp-2) 34px;
   border: 0;
   border-radius: var(--r-md);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--fill-soft);
   color: var(--text);
   text-align: left;
   cursor: pointer;

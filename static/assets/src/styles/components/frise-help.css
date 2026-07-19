@@ -31,7 +31,7 @@
     padding: 0;
     margin: 0;
     border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid var(--border-mid);
     background: rgba(10, 20, 35, 0.72);
     color: #e5edf9;
     font-size: var(--fs-15);
@@ -46,7 +46,7 @@
   }
   body.mobile-ui .frise-help-btn:hover {
     background: rgba(17, 31, 54, 0.9);
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: var(--border-strong);
   }
   body.mobile-ui .frise-help-btn[aria-pressed="true"] {
     background: rgba(14, 165, 233, 0.32);

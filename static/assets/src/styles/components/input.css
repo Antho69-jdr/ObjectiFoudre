@@ -8,7 +8,7 @@
   padding: 0 var(--sp-4);
   border-radius: var(--r-md);
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--fill-soft);
   color: var(--text);
   font-size: var(--fs-md);
   outline: none;
@@ -19,7 +19,7 @@
 }
 
 .of-input::placeholder { color: var(--text-dim); }
-.of-input:hover { background: rgba(255, 255, 255, 0.06); }
+.of-input:hover { background: var(--border-faint); }
 .of-input:focus {
   border-color: var(--accent-ring);
   background: var(--surface-3);

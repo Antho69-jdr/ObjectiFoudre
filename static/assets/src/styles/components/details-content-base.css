@@ -21,7 +21,7 @@
 .metric-btn {
       width: 100%;
       text-align: left;
-      background: rgba(255,255,255,0.04);
+      background: var(--fill-soft);
       border: 1px solid var(--border);
       border-radius: 14px;
       padding: 12px;
@@ -63,7 +63,7 @@
 }
 .metric-card:hover,
 .metric-card:focus-visible {
-  background: rgba(255,255,255,0.04);
+  background: var(--fill-soft);
   border-color: var(--border);
 }
 .details-calculation-grid {
@@ -74,7 +74,7 @@
 .details-calc-chip {
   min-width: 0;
   border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--divider);
   background: rgba(255,255,255,0.035);
   padding: 7px 8px;
 }
@@ -160,8 +160,8 @@
   padding: 0;
   display: grid;
   place-items: center;
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.10);
+  background: var(--border-faint);
+  border: 1px solid var(--border);
   color: #e5edf8;
   font-size: var(--fs-18);
   line-height: 1;
@@ -191,7 +191,7 @@
   margin-top: 9px;
   border-radius: 10px;
   background: rgba(255,255,255,0.055);
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--divider);
   padding: 8px 9px;
   color: #cffafe;
   font-size: var(--fs-12);

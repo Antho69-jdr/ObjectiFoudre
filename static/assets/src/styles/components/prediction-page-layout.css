@@ -163,7 +163,7 @@
     flex: 0 0 auto;
     min-height: 38svh;
     padding: 6px;
-    border: 1px solid rgba(148, 163, 184, 0.14);
+    border: 1px solid var(--ghost-border-faint);
     border-radius: 14px;
     background: rgba(255, 255, 255, 0.02);
   }
@@ -179,7 +179,7 @@
     min-height: 0;
     overflow: visible;
     border-left: 0;
-    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    border-top: 1px solid var(--ghost-border-faint);
     padding: 10px 0 0;
   }
   body.mobile-ui .prediction-analysis-title {
@@ -371,7 +371,7 @@
     min-height: 0;
     overflow-y: auto;                /* colonne de droite : scroll interne si l'analyse est longue */
     border-top: 0;
-    border-left: 1px solid rgba(148, 163, 184, 0.18);
+    border-left: 1px solid var(--ghost-border-faint);
     padding: 4px 4px 4px 14px;
   }
 }
