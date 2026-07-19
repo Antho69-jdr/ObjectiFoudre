@@ -22,6 +22,10 @@
 
 /* --- Bascule d'affichage : masque/montre l'UI chasse selon body.chase-mode --- */
 #chaseControls, #chaseLayerRail, #chaseTopInfo, #chaseLegend { display: none; }
+/* Pastille « App installable » masquée en chasse : elle flottait AU-DESSUS des
+   popups de cellule/conditions (z-index 17 > popup, dans la carte). (1,1,0) bat
+   .floating-chip.visible (0,2,0) sans !important ; revient à la sortie du mode. */
+body.chase-mode #installChip { display: none; }
 body.chase-mode #chaseControls { display: flex; }
 body.chase-mode #chaseLayerRail { display: flex; }
 body.chase-mode #chaseTopInfo { display: inline-flex; }
