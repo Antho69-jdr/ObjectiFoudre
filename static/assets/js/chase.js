@@ -253,19 +253,14 @@
           feats.push({ type: 'Feature', properties: { kind: 'future', color }, geometry: { type: 'LineString', coordinates: [pos, p30] } });
         }
       }
-      // SURLIGNAGE de l'écho détecté : contour réel du masque radar (serveur), affiché
-      // seulement à ±5 min de la dernière observation — pas de forme « figée » quand on
-      // scrute le passé ou le prévu (le label/trajet suffisent alors). `id` séquentiel +
-      // stable = clé de feature-state pour le survol (remplissage plus dense).
-      if (Array.isArray(c.outline) && c.outline.length >= 3 && Math.abs(t - (c.epoch || 0)) <= 300) {
-        const ring = c.outline.map((p) => [p[0], p[1]]);
-        ring.push(ring[0]);
-        feats.push({ type: 'Feature', id: ci, properties: { kind: 'cell', color, cellIdx: ci }, geometry: { type: 'Polygon', coordinates: [ring] } });
-      }
+      // POINT CENTRAL translucide posé sur le CŒUR (plus de polygone de zone, demande
+      // Anthony 2026-07-19) : anneau net + remplissage léger → la COULEUR RADAR du cœur
+      // reste lisible sous le point. `id` séquentiel stable = clé du feature-state hover.
+      feats.push({ type: 'Feature', id: ci, properties: { kind: 'core', color, cellIdx: ci, est: est ? 1 : 0 }, geometry: { type: 'Point', coordinates: pos } });
       const arrow = c.trend === 'grow' ? ' ▲' : (c.trend === 'decay' ? ' ▼' : '');
       const zap = (c.flashes_10min > 0) ? '⚡ ' : '';   // électriquement active (foudre live)
       const label = zap + (c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}${arrow}` : `statique${arrow}`) + (est ? ' · estimé' : '');
-      // libellé texte SEUL (le point central rouge/jaune/bleu est retiré) au centre de la cellule.
+      // libellé AU-DESSUS du point (offset) pour ne pas recouvrir la couleur du cœur.
       feats.push({ type: 'Feature', properties: { kind: 'lbl', color, label, cellIdx: ci, est: est ? 1 : 0 }, geometry: { type: 'Point', coordinates: pos } });
     }
     return { type: 'FeatureCollection', features: feats };
@@ -281,28 +276,30 @@
       try {
         map.addSource(CELLS_SRC, { type: 'geojson', data: gj });
         // au-dessus de tout (labels villes inclus) : c'est l'info de décision, elle prime.
-        // ZONE de l'écho (remplissage + liseré) : le remplissage se DENSIFIE au survol
-        // (feature-state hover), même teinte. SOUS les trajectoires/labels.
-        map.addLayer({ id: CELLS_SRC + '-shape', type: 'fill', source: CELLS_SRC,
-          filter: ['==', ['get', 'kind'], 'cell'],
-          paint: { 'fill-color': ['get', 'color'],
-                   'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.30, 0.10] } });
-        map.addLayer({ id: CELLS_SRC + '-shape-line', type: 'line', source: CELLS_SRC,
-          filter: ['==', ['get', 'kind'], 'cell'],
-          paint: { 'line-color': ['get', 'color'],
-                   'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2.2, 1.4],
-                   'line-opacity': 0.9 } });
+        // POINT CENTRAL translucide au cœur : anneau net (teinte tendance) + remplissage
+        // LÉGER → la couleur radar du cœur reste visible dessous ; densifié au survol.
+        map.addLayer({ id: CELLS_SRC + '-core', type: 'circle', source: CELLS_SRC,
+          filter: ['==', ['get', 'kind'], 'core'],
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 5.5, 5, 9, 10],
+            'circle-color': ['get', 'color'],
+            'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.32,
+              ['case', ['==', ['get', 'est'], 1], 0.08, 0.15]],
+            'circle-stroke-color': ['get', 'color'],
+            'circle-stroke-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2.4, 1.6],
+            'circle-stroke-opacity': ['case', ['==', ['get', 'est'], 1], 0.5, 0.9],
+          } });
         map.addLayer({ id: CELLS_SRC + '-past', type: 'line', source: CELLS_SRC,
           filter: ['==', ['get', 'kind'], 'past'],
           paint: { 'line-color': ['get', 'color'], 'line-width': 1.5, 'line-opacity': 0.55 } });
         map.addLayer({ id: CELLS_SRC + '-traj', type: 'line', source: CELLS_SRC,
           filter: ['==', ['get', 'kind'], 'future'],
           paint: { 'line-color': ['get', 'color'], 'line-width': 2, 'line-opacity': 0.9, 'line-dasharray': [2, 2] } });
-        // libellé vitesse/cap SEUL (plus de point central), centré sur la cellule.
+        // libellé vitesse/cap AU-DESSUS du point (le cœur reste dégagé).
         map.addLayer({ id: CELLS_SRC + '-lbl', type: 'symbol', source: CELLS_SRC,
           filter: ['==', ['get', 'kind'], 'lbl'],
           layout: { 'text-field': ['get', 'label'], 'text-font': ['Montserrat Medium', 'Open Sans Bold'],
-                    'text-size': 10.5, 'text-anchor': 'center', 'text-allow-overlap': false },
+                    'text-size': 10.5, 'text-anchor': 'bottom', 'text-offset': [0, -1.1], 'text-allow-overlap': false },
           paint: { 'text-color': ['get', 'color'], 'text-halo-color': '#0b0f14', 'text-halo-width': 1.4,
                    'text-opacity': ['case', ['==', ['get', 'est'], 1], 0.6, 0.95] } });
         bindCellHover();
@@ -321,7 +318,7 @@
     if (id != null) { try { map.setFeatureState({ source: CELLS_SRC, id }, { hover: true }); } catch (_) {} }
   }
   function bindCellHover() {
-    const SHAPE = CELLS_SRC + '-shape';
+    const SHAPE = CELLS_SRC + '-core';
     map.on('mousemove', SHAPE, (e) => {
       const f = e.features && e.features[0];
       if (!f) return;
@@ -340,7 +337,7 @@
 
   function applyCellsVisibility() {
     const vis = (active && cellsVisible) ? 'visible' : 'none';
-    for (const suf of ['-shape', '-shape-line', '-past', '-traj', '-lbl']) {
+    for (const suf of ['-core', '-past', '-traj', '-lbl']) {
       try { if (map.getLayer(CELLS_SRC + suf)) map.setLayoutProperty(CELLS_SRC + suf, 'visibility', vis); } catch (_) {}
     }
   }
@@ -394,7 +391,7 @@
             'circle-stroke-width': ['match', ['get', 'a'], 0, 1, 0.5],
           } });
         // les cellules restent AU-DESSUS de la foudre : re-hisser leurs couches si présentes.
-        for (const suf of ['-shape', '-shape-line', '-past', '-traj', '-lbl']) {
+        for (const suf of ['-core', '-past', '-traj', '-lbl']) {
           try { if (map.getLayer(CELLS_SRC + suf)) map.moveLayer(CELLS_SRC + suf); } catch (_) {}
         }
       } catch (_) {}
@@ -1124,8 +1121,10 @@
     // (le survol n'existe pas au tactile). La couche peut être absente (overlay off / pas
     // de données). Un clic AILLEURS ferme le tooltip épinglé et fait le popup position.
     try {
-      if (cellsVisible && map.getLayer(CELLS_SRC + '-shape')) {
-        const hits = map.queryRenderedFeatures(e.point, { layers: [CELLS_SRC + '-shape'] });
+      if (cellsVisible && map.getLayer(CELLS_SRC + '-core')) {
+        // boîte élargie autour du tap : le point est petit, la cible tactile ne l'est pas.
+        const bb = [[e.point.x - 14, e.point.y - 14], [e.point.x + 14, e.point.y + 14]];
+        const hits = map.queryRenderedFeatures(bb, { layers: [CELLS_SRC + '-core'] });
         if (hits && hits.length) {
           const idx = hits[0].properties && hits[0].properties.cellIdx;
           const c = (frCells.cells || [])[idx];
@@ -1312,5 +1311,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.37';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.38';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
