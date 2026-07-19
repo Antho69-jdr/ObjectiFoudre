@@ -371,20 +371,32 @@
       const regionRings = getGifRegionRings();
       const clipRings = getGifClipRings();
       ctx.save();
+      // Casing cartographique (choix V1, 2026-07-19) + traits CYAN alignés sur les
+      // cartes de l'app (les gris-blancs d'avant disparaissaient sous les cellules
+      // claires). Le path persiste après stroke() → double passage halo puis trait.
       // départements (discrets, dessous)
       if (departmentRings.length && addGifRingsPath(ctx, departmentRings, projection)) {
-        ctx.strokeStyle = 'rgba(200, 214, 232, 0.34)';
+        ctx.strokeStyle = 'rgba(2, 6, 23, 0.72)';
+        ctx.lineWidth = Math.max(1.65, ctx.canvas.width / 480);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.42)';
         ctx.lineWidth = Math.max(0.6, ctx.canvas.width / 1320);
         ctx.stroke();
       }
       // régions (nettes, dessus)
       if (regionRings.length && addGifRingsPath(ctx, regionRings, projection)) {
-        ctx.strokeStyle = 'rgba(214, 228, 246, 0.7)';
+        ctx.strokeStyle = 'rgba(2, 6, 23, 0.72)';
+        ctx.lineWidth = Math.max(2.2, ctx.canvas.width / 350);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.72)';
         ctx.lineWidth = Math.max(1.0, ctx.canvas.width / 760);
         ctx.stroke();
       }
       if (clipRings.length && addGifRingsPath(ctx, clipRings, projection)) {
-        ctx.strokeStyle = 'rgba(248, 250, 252, 0.82)';
+        ctx.strokeStyle = 'rgba(2, 6, 23, 0.72)';
+        ctx.lineWidth = Math.max(2.6, ctx.canvas.width / 300);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.82)';
         ctx.lineWidth = Math.max(1.4, ctx.canvas.width / 520);
         ctx.stroke();
       }

@@ -221,7 +221,7 @@ function predictionAdminLineMarkup(project) {
     }).filter(Boolean).join('');
     if (!paths) return '';
     return `<g class="prediction-admin-lines" fill="none" stroke-linejoin="round" stroke-linecap="round">
-      <g stroke="#020617" stroke-opacity="0.42" stroke-width="1.0">${paths}</g>
+      <g stroke="#020617" stroke-opacity="0.72" stroke-width="1.7">${paths}</g>
       <g stroke="#7dd3fc" stroke-opacity="0.42" stroke-width="0.62">${paths}</g>
     </g>`;
   }
@@ -250,7 +250,7 @@ function predictionAdminLineMarkup(project) {
   }).filter(Boolean).join('');
   if (!paths) return '';
   return `<g class="prediction-admin-lines" fill="none" stroke-linejoin="round" stroke-linecap="round">
-    <g stroke="#020617" stroke-opacity="0.72" stroke-width="0.92">${paths}</g>
+    <g stroke="#020617" stroke-opacity="0.72" stroke-width="1.7">${paths}</g>
     <g stroke="#7dd3fc" stroke-opacity="0.18" stroke-width="0.24">${paths}</g>
   </g>`;
 }
@@ -327,7 +327,7 @@ function predictionRegionBoundaryMarkup(project) {
     .join('');
   if (!paths) return '';
   return `<g class="prediction-region-lines" fill="none" stroke-linejoin="round" stroke-linecap="round">
-    <g stroke="#020617" stroke-opacity="0.5" stroke-width="2.0">${paths}</g>
+    <g stroke="#020617" stroke-opacity="0.72" stroke-width="2.8">${paths}</g>
     <g stroke="#7dd3fc" stroke-opacity="0.72" stroke-width="1.3">${paths}</g>
   </g>`;
 }

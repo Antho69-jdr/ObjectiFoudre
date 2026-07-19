@@ -358,7 +358,12 @@
       p.setAttribute('pointer-events', 'none');
       frameEl.appendChild(p);
     };
+    // Casing cartographique (choix V1, 2026-07-19) : halo sombre SOUS chaque trait
+    // cyan → frontières lisibles sur les cellules claires (jaune/orange), identité
+    // cyan intacte sur l'ink. Ordre : halo dépt < cyan dépt < halo région < cyan région.
+    addBorderPath(deptData, 'rgba(2,6,23,0.72)', 1.7);
     addBorderPath(deptData, 'rgba(125,211,252,0.42)', 0.62);  // départements (dessous, cyan discret)
+    addBorderPath(regionData, 'rgba(2,6,23,0.72)', 2.8);
     addBorderPath(regionData, 'rgba(125,211,252,0.72)', 1.3); // régions (dessus, cyan net = niveau pays)
 
     flashLayer = document.createElementNS(SVGNS, 'g');
@@ -384,7 +389,10 @@
     frameEl.appendChild(mk('rect', { x: 0, y: 0, width: VB, height: VB, fill: '#070f1c' }));
     frameEl.appendChild(mk('path', { d: regionData, fill: '#091321' }));
     const border = (d, stroke, w) => { if (!d) return; frameEl.appendChild(mk('path', { d, fill: 'none', stroke, 'stroke-width': String(w), 'vector-effect': 'non-scaling-stroke', 'stroke-linejoin': 'round' })); };
+    // Même casing que buildSvg → aucun saut de style de contours à l'hydratation.
+    border(deptData, 'rgba(2,6,23,0.72)', 1.7);
     border(deptData, 'rgba(125,211,252,0.42)', 0.62);
+    border(regionData, 'rgba(2,6,23,0.72)', 2.8);
     border(regionData, 'rgba(125,211,252,0.72)', 1.3);
     return true;
   }
