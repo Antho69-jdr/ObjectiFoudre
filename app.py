@@ -78,7 +78,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.39"
+APP_VERSION = "1.3.40"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16252,7 +16252,6 @@ def _fr_radar_png_to_field(png: bytes, ds: int):
 # lissage n'altère AUCUNE donnée. Rendu ~0,2 s/frame → cache par échéance (purgé avec le
 # ring). Le front passe en raster-resampling linear (chase.js) pour adoucir la dernière
 # marche de pixel.
-FR_RADAR_DISPLAY_BLUR = 2       # rayon du flou boîte (px source ≈ 1,15 km), ×3 passes ≈ gaussien σ≈2,4
 _fr_radar_display_cache: dict[str, bytes] = {}
 _fr_radar_display_lock = threading.Lock()
 
@@ -16277,23 +16276,165 @@ def _fr_radar_box_blur(x, r: int, passes: int = 3):
     return x
 
 
-def _fr_radar_display_render(rgba) -> bytes:
+def _fr_marching_rings(mask):
+    """Anneaux de contour d'un masque binaire par MARCHING SQUARES vectorisé (sans scipy) :
+    détection des segments par table de cases 2×2 (numpy), chaînage start→end en dict
+    (coût ∝ périmètre, pas à l'aire — l'étiquetage flood-fill python était rédhibitoire
+    sur 8 bandes pleine grille). Convention « intérieur à gauche » → aire de lacet (shoelace,
+    y vers le bas) NÉGATIVE = contour extérieur, POSITIVE = trou (vérifié sur un
+    pixel isolé : anneau L→T→B→R d'aire −0,5). Coords en px du masque
+    (milieux d'arêtes, demi-entiers). Le masque doit être bordé de False (pad amont)."""
     import numpy as np
-    from PIL import Image
-    band = _fr_radar_rgba_to_band(rgba).astype(np.float32)          # 0..8 (0 = vide)
+    m = mask.astype(np.uint8)
+    code = (m[:-1, :-1] | (m[:-1, 1:] << 1) | (m[1:, :-1] << 2) | (m[1:, 1:] << 3))
+    # points en coords ×2 (entiers exacts pour clés de dict) : T=(2x+1,2y) R=(2x+2,2y+1)
+    # B=(2x+1,2y+2) L=(2x,2y+1) — (x,y) = coin haut-gauche de la case.
+    SEGS = {1: (("L", "T"),), 2: (("T", "R"),), 3: (("L", "R"),), 4: (("B", "L"),),
+            5: (("B", "T"),), 6: (("T", "R"), ("B", "L")), 7: (("B", "R"),),
+            8: (("R", "B"),), 9: (("L", "T"), ("R", "B")), 10: (("T", "B"),),
+            11: (("L", "B"),), 12: (("R", "L"),), 13: (("R", "T"),), 14: (("T", "L"),)}
+    OFF = {"T": (1, 0), "R": (2, 1), "B": (1, 2), "L": (0, 1)}
+    nxt: dict = {}
+    for c, segs in SEGS.items():
+        ys, xs = np.nonzero(code == c)
+        if not ys.size:
+            continue
+        for (a, b) in segs:
+            oa, ob = OFF[a], OFF[b]
+            sx = xs * 2 + oa[0]; sy = ys * 2 + oa[1]
+            ex = xs * 2 + ob[0]; ey = ys * 2 + ob[1]
+            for k in range(len(ys)):
+                nxt[(int(sx[k]), int(sy[k]))] = (int(ex[k]), int(ey[k]))
+    rings = []
+    while nxt:
+        start_pt, cur = next(iter(nxt.items()))
+        ring = [start_pt[0] / 2.0], [start_pt[1] / 2.0]
+        del nxt[start_pt]
+        pt = cur
+        guard = len(nxt) + 2
+        while pt != start_pt and guard > 0:
+            guard -= 1
+            ring[0].append(pt[0] / 2.0); ring[1].append(pt[1] / 2.0)
+            pt2 = nxt.pop(pt, None)
+            if pt2 is None:
+                break
+            pt = pt2
+        if len(ring[0]) >= 3:
+            rings.append(list(zip(ring[0], ring[1])))
+    return rings
+
+
+def _fr_ring_area(ring) -> float:
+    s = 0.0
+    n = len(ring)
+    for i in range(n):
+        x0, y0 = ring[i]; x1, y1 = ring[(i + 1) % n]
+        s += x0 * y1 - x1 * y0
+    return s / 2.0
+
+
+def _fr_ring_chaikin(ring, iterations: int = 2):
+    """Lissage de Chaikin (coupe de coins 1/4-3/4) sur anneau fermé ≈ B-spline quadratique
+    (les « courbes de Bézier » du rendu). Préserve la simplicité de l'anneau."""
+    for _ in range(iterations):
+        n = len(ring)
+        if n < 3:
+            return ring
+        out = []
+        for i in range(n):
+            x0, y0 = ring[i]
+            x1, y1 = ring[(i + 1) % n]
+            out.append((0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1))
+            out.append((0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1))
+        ring = out
+    return ring
+
+
+def _fr_ring_dp(ring, eps: float):
+    """Douglas-Peucker sur anneau FERMÉ : coupé en 2 arcs aux points extrêmes, DP itératif
+    (pile) sur chaque arc — retire l'escalier de pixels avant le lissage."""
+    if len(ring) <= 4:
+        return ring
+    import math as _m
+    def dp(pts):
+        keep = [False] * len(pts)
+        keep[0] = keep[-1] = True
+        stack = [(0, len(pts) - 1)]
+        while stack:
+            i0, i1 = stack.pop()
+            if i1 <= i0 + 1:
+                continue
+            x0, y0 = pts[i0]; x1, y1 = pts[i1]
+            dx, dy = x1 - x0, y1 - y0
+            nrm = _m.hypot(dx, dy) or 1e-9
+            imax, dmax = -1, -1.0
+            for i in range(i0 + 1, i1):
+                d = abs(dy * (pts[i][0] - x0) - dx * (pts[i][1] - y0)) / nrm
+                if d > dmax:
+                    imax, dmax = i, d
+            if dmax > eps:
+                keep[imax] = True
+                stack.append((i0, imax)); stack.append((imax, i1))
+        return [p for p, k in zip(pts, keep) if k]
+    half = len(ring) // 2
+    a = dp(ring[:half + 1])
+    b = dp(ring[half:] + ring[:1])
+    return a[:-1] + b[:-1]
+
+
+def _fr_radar_display_render(rgba) -> bytes:
+    """Rendu d'AFFICHAGE en ZONES à COURBES (v1.3.40, demande Anthony : le style des zones
+    de la carte de prévision, pas un simple flou). Par bande (cumulée ≥k) : contours par
+    marching squares → Douglas-Peucker (retire l'escalier) → lissage de Chaikin ×2
+    (≈ B-spline quadratique = courbes de Bézier) → polygones REMPLIS dans l'ordre croissant
+    des bandes, TROUS respectés (aire de lacet négative → percés du masque de bande, la
+    valeur inférieure peinte dessous reste visible). Grille de travail = ½ résolution
+    (le lissage gomme la maille), rendu à la résolution native. Le PNG BRUT du ring reste
+    la source des moteurs — affichage seulement."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+    H, W = rgba.shape[:2]
+    empty = np.zeros((H, W, 4), np.uint8)
+    band = _fr_radar_rgba_to_band(rgba).astype(np.float32)[::2, ::2]
     valid = (band > 0).astype(np.float32)
     if not valid.any():
         buf = io.BytesIO()
-        Image.fromarray(np.zeros(rgba.shape[:2] + (4,), np.uint8), "RGBA").save(buf, format="PNG", compress_level=1)
+        Image.fromarray(empty, "RGBA").save(buf, format="PNG", compress_level=1)
         return buf.getvalue()
-    fb = _fr_radar_box_blur(band, FR_RADAR_DISPLAY_BLUR)
-    fv = _fr_radar_box_blur(valid, FR_RADAR_DISPLAY_BLUR)
-    # normalisation par la validité floutée : l'intensité ne se dilue pas au bord de l'écho
-    field = fb / np.maximum(fv, 1e-3)
-    q = np.clip(np.rint(field), 1, len(_FR_RADAR_COLORS)).astype(np.uint8)
-    # empreinte = isoligne 0,42 du masque flouté (≈ le bord d'origine, coins arrondis ;
-    # les poussières isolées d'1 px s'estompent — affichage seulement)
-    idx = np.where(fv >= 0.42, q, 0).astype(np.uint8)
+    # champ légèrement dé-bruité, normalisé par la validité (pas de dilution au bord)
+    fb = _fr_radar_box_blur(band, 1, passes=2)
+    fv = _fr_radar_box_blur(valid, 1, passes=2)
+    field = np.where(fv >= 0.38, fb / np.maximum(fv, 1e-3), 0.0)
+    # pad 1 px False → tous les contours se ferment, y compris au bord du domaine
+    fpad = np.zeros((field.shape[0] + 2, field.shape[1] + 2), np.float32)
+    fpad[1:-1, 1:-1] = field
+    hh, ww = field.shape
+    sx = W / float(ww); sy = H / float(hh)
+    idx = np.zeros((H, W), np.uint8)
+    for k in range(1, len(_FR_RADAR_COLORS) + 1):
+        mask = fpad >= (k - 0.5)
+        if not mask.any():
+            break
+        outers, holes = [], []
+        for ring in _fr_marching_rings(mask):
+            area = _fr_ring_area(ring)
+            if abs(area) < 2.0:
+                continue                      # poussière (< ~10 km²) — affichage seulement
+            pts = _fr_ring_dp(ring, 1.25)
+            if len(pts) < 3:
+                continue
+            pts = _fr_ring_chaikin(pts, 2)    # les COURBES (≈ B-spline quadratique)
+            poly = [((x - 1.0) * sx, (y - 1.0) * sy) for x, y in pts]   # dé-pad + échelle
+            (outers if area < 0 else holes).append(poly)
+        if not outers:
+            continue
+        mimg = Image.new("L", (W, H), 0)
+        drw = ImageDraw.Draw(mimg)
+        for poly in outers:
+            drw.polygon(poly, fill=255)
+        for poly in holes:
+            drw.polygon(poly, fill=0)
+        idx[np.asarray(mimg) > 0] = k
     pal = np.zeros((len(_FR_RADAR_COLORS) + 1, 4), np.uint8)
     for i, c in enumerate(_FR_RADAR_COLORS):
         pal[i + 1] = c
