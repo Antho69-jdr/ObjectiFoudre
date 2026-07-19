@@ -401,6 +401,12 @@ body.chase-mode .meta-stack .meta-version {
      — son calc de base visait la barre posée sur la meta-stack. */
   .chase-legend { bottom: 83px; }
 }
+/* Écran BAS (téléphone paysage) : le rail de couches (centré verticalement) et la
+   légende (ancrée bas-gauche) se chevauchent quelle que soit la longueur du rail →
+   la légende se décale À DROITE du rail (bord droit du rail 60px + 8 d'air). */
+@media (max-width: 1024px) and (max-height: 600px) {
+  .chase-legend { left: 68px; }
+}
 
 /* ===== Mobile (<768) : la frise de base bascule du rail vers la MOLETTE tactile
    (le rail est masque par body.mobile-ui) → idem en chasse. MÊME FORME que le

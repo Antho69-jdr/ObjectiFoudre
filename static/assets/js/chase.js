@@ -1,9 +1,10 @@
 // Mode « En chasse » — superposé À LA CARTE DE BASE (plus de fenêtre dédiée).
 // Un bouton bascule la vue : la grille de score est masquée et on affiche le RADAR OBSERVÉ
-// (mosaïque réflectivité Météo-France 1 km, ~2 h de passé, une image par échéance) et le
-// NOWCAST AROME-PI (réflectivité simulée, grêle, rafales, CAPE, MOCON ; 0–6 h, pas 15 min)
-// servi via le proxy serveur (clé Météo-France côté serveur). Barre de contrôle (frise +
+// (mosaïque réflectivité Météo-France 1 km, ~2 h de passé, une image par échéance) prolongé
+// par le BLEND (advection radar 0-30 min, calcul serveur). Barre de contrôle (frise +
 // bouton direct) et popup « conditions au point » au clic. Réutilise la carte `map` (state.js).
+// AROME-PI SUPPRIMÉ (décision Anthony 2026-07-19, « pas efficace ») : plus de nowcast
+// modèle, plus de pont, plus de couches grêle/graupel/rafales/CAPE/MOCON.
 (function () {
   if (typeof maplibregl === 'undefined' || typeof map === 'undefined' || !map) return;
   const controls = document.getElementById('chaseControls');
@@ -17,11 +18,9 @@
   const slotStrip = document.getElementById('chaseSlots');
   const timeLabel = document.getElementById('chaseTimeLabel');
   const emptyHint = document.getElementById('chaseEmptyHint');
-  const layerTabs = document.getElementById('chaseLayerRail');   // rail vertical (gauche)
   const activityEl = document.getElementById('chaseActivity');
   const nowEl = document.getElementById('chaseNow');             // horloge (badge haut-centre)
   const metaRunEl = document.getElementById('metaRun');          // ligne meta-stack (attribution)
-  let activityTimer = null;
   let recording = false;
   let nowTimer = null;
   let savedMetaRun = null;
@@ -36,41 +35,26 @@
   // couvre désormais TOUTE l'amplitude passée de la frise.)
   const RADAR_SRC_PREFIX = 'chase-radar-f';
   const RADAR_EAGER_NEIGHBORS = 3;   // frames radar préchargées de part et d'autre du curseur
-  // AROME-PI (nowcast) : MÊME modèle par-frame que le radar (source image par échéance,
-  // texture pré-décodée → scrub instantané), mais MATÉRIALISÉ dans une fenêtre bornée
-  // autour du curseur : une image AROME-PI ≈ 22 Mo décodée, ×22 frames = trop (surtout
-  // mobile). On ne garde que ±NOWCAST_RADIUS frames matérialisées (créées à l'approche,
-  // détruites en s'éloignant). L'id inclut la couche active → changer d'onglet reconstruit.
-  const NOWCAST_PREFIX = 'chase-nc-';
-  const NOWCAST_RADIUS = 3;          // frames nowcast matérialisées de part et d'autre du curseur
   const FRRADAR_CORNERS = [[-9.965, 53.67], [14.4, 53.67], [14.4, 39.4], [-9.965, 39.4]];
-  // Coins du domaine AROME-PI (lat 37.5–55.4, lon -12–16), ordre image source : HG, HD, BD, BG.
-  const AROMEPI_CORNERS = [[-12, 55.4], [16, 55.4], [16, 37.5], [-12, 37.5]];
 
   let active = false;
   let layersReady = false;
   let chaseClickBound = false;
-  let status = null;          // /api/aromepi/status
-  let frames = [];             // timeline unifiée : [{kind:'radar'|'nowcast', epoch, iso/t}]
+  let frames = [];             // timeline unifiée : [{kind:'radar'|'blend', epoch, iso}]
   let cursor = 0;
-  let activeLayer = 'reflectivity';
   let playing = false;
   let playTimer = null;
-  let radarVisible = true;
   let swapToken = 0;           // invalide les bascules différées (masquage après décodage/chargement)
   const radarLayerIds = new Set();   // couches radar (mosaïque MF) par frame sur la carte
-  const nowcastLayerIds = new Set(); // couches nowcast (AROME-PI) matérialisées (fenêtre)
   let symbolAnchorId = null;   // 1er calque symbol du style : les couches chasse s'insèrent dessous
   let frRadarTimes = [];       // échéances mosaïque France dispo (ISO, ~2 h)
   let frBlend = { times: [], speed_kmh: 0, advected: false };  // nowcast par advection radar (0-30 min)
-  let frBridge = { times: [] };  // PONT blend→AROME-PI (réflectivité) : morph gaté + fondu pondéré
   let frCells = { time: null, cells: [] };   // cellules suivies (moteur objets serveur)
   let cellsVisible = true;                    // toggle overlay cellules (bouton rail gauche)
   let liveLightning = { flashes: [] };        // foudre live MTG-LI ([lon,lat,epoch], ~30 min)
   let lightningVisible = true;                // toggle overlay foudre (bouton rail gauche)
   const prefetched = new Set(); // URLs déjà préchargées (cache navigateur/serveur chaud)
   let prefetchGen = 0;          // jeton pour annuler un préchargement en cours
-  let prefetchRun = null;       // run AROME-PI préchargé (réinit du set si le run change)
   let prefetchKick = null;      // timer de (re)lancement différé
   let loadToken = 0;
   let userPos = null;
@@ -88,30 +72,15 @@
     return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   }
 
-  function nowcastImageUrl(layerKey, timeIso, runIso) {
-    // Image plein-domaine reprojetée Mercator (source `image`) : la passerelle WMS MF
-    // préserve le ratio géographique, des tuiles carrées décaleraient la donnée au zoom.
-    const params = new URLSearchParams({ layer: layerKey, time: timeIso });
-    if (runIso) params.set('run', runIso);
-    return '/api/aromepi/image?' + params.toString();
-  }
-
   function frRadarImageUrl(iso) { return '/api/radar/fr/image?time=' + encodeURIComponent(iso); }
   // Génération du blend = epoch de l'obs source (base_time). Contrairement aux mosaïques
-  // observées (URL figée), une échéance blend/pont est RECALCULÉE toutes les 5 min avec un
+  // observées (URL figée), une échéance blend est RECALCULÉE toutes les 5 min avec un
   // contenu différent → la génération versionne l'id de couche ET l'URL (cache-buster),
   // sinon la texture d'origine reste affichée jusqu'au F5 (bug vécu).
   let blendGen = 0;
   function frBlendImageUrl(iso) { return '/api/radar/fr/blend/image?time=' + encodeURIComponent(iso) + '&v=' + blendGen; }
-  function frBridgeImageUrl(iso) { return '/api/radar/fr/bridge/image?time=' + encodeURIComponent(iso) + '&v=' + blendGen; }
-  // PONT : une frame nowcast (réflectivité) dont l'échéance est dans la fenêtre de recouvrement
-  // → image = morph gaté + fondu pondéré blend→AROME-PI (mêmes coins que le nowcast).
-  function isBridgeFrame(fr) {
-    return fr && fr.kind === 'nowcast' && activeLayer === 'reflectivity'
-      && Array.isArray(frBridge.times) && frBridge.times.indexOf(fr.t) !== -1;
-  }
   // « observé/extrapolé » = radar réel OU frame advectée (blend) : mêmes domaine, palette et
-  // rendu (par frame), mutuellement exclusifs avec le nowcast AROME-PI à l'affichage.
+  // rendu (par frame).
   function isRadarLike(fr) { return fr && (fr.kind === 'radar' || fr.kind === 'blend'); }
 
   // ── Préchargement (navigation fluide) ───────────────────────────────────────
@@ -121,15 +90,8 @@
   // préchargées par MapLibre lui-même : couches par frame visibles à opacité 0.)
   function buildPrefetchList() {
     const out = [];
-    const run = status && status.run;
     for (const iso of frRadarTimes) out.push(frRadarImageUrl(iso));   // mosaïques France (serveur local, léger)
     for (const iso of (frBlend.times || [])) out.push(frBlendImageUrl(iso));   // frames advectées (blend)
-    if (activeLayer === 'reflectivity') for (const iso of (frBridge.times || [])) out.push(frBridgeImageUrl(iso));   // pont (raccord)
-    const nowcast = frames.filter((f) => f.kind === 'nowcast');
-    if (run) for (const f of nowcast) out.push(nowcastImageUrl(activeLayer, f.t, run));
-    const keys = layerTabs ? Array.from(layerTabs.querySelectorAll('[data-chase-layer]')).map((b) => b.dataset.chaseLayer) : [];
-    const cur = frames[cursor];
-    if (run && cur && cur.kind === 'nowcast') for (const k of keys) if (k !== activeLayer) out.push(nowcastImageUrl(k, cur.t, run));
     return out;
   }
 
@@ -166,7 +128,6 @@
   }
 
   function radarLayerId(fr) { return RADAR_SRC_PREFIX + fr.epoch + (fr.kind === 'blend' ? '-g' + blendGen : ''); }
-  function nowcastLayerId(fr) { return NOWCAST_PREFIX + activeLayer + '-' + fr.epoch + (isBridgeFrame(fr) ? '-br-g' + blendGen : ''); }
 
   // Aligne les couches radar (mosaïque MF, une source `image` par frame) sur `frames` :
   // crée les nouvelles (masquées ; c'est updateRadarWindow qui rend éagère la fenêtre
@@ -230,59 +191,6 @@
     }
   }
 
-  // ── Nowcast AROME-PI : couches image par frame, fenêtre matérialisée bornée ──
-  // Crée les frames nowcast DANS ±NOWCAST_RADIUS du curseur (couche active), visibles à
-  // opacité 0 (texture décodée en avance → scrub instantané) ; retire celles hors fenêtre,
-  // d'une autre couche ou d'un autre run — SAUF la frame actuellement affichée (gardée
-  // jusqu'à la bascule pour ne pas laisser de trou). Idempotent.
-  function syncNowcastLayers() {
-    if (!layersReady) return;
-    const run = status && status.run;
-    // Fenêtre en INDEX GLOBAL (rien de matérialisé loin dans le radar ; près de la jonction,
-    // les 1res frames nowcast sont prêtes). HYSTÉRÉSIS : on MATÉRIALISE ±NOWCAST_RADIUS mais
-    // on ne RETIRE qu'au-delà de ±(NOWCAST_RADIUS+2) → moins de va-et-vient création/destruction
-    // sur les petits mouvements.
-    const want = new Map();   // à matérialiser (fenêtre serrée)
-    const keep = new Set();   // à garder si déjà présent (fenêtre large)
-    if (run) {
-      for (let i = Math.max(0, cursor - NOWCAST_RADIUS - 2); i <= Math.min(frames.length - 1, cursor + NOWCAST_RADIUS + 2); i += 1) {
-        const fr = frames[i];
-        if (fr.kind !== 'nowcast') continue;
-        const id = nowcastLayerId(fr);
-        keep.add(id);
-        if (Math.abs(i - cursor) <= NOWCAST_RADIUS) want.set(id, fr);
-      }
-    }
-    for (const id of Array.from(nowcastLayerIds)) {
-      if (keep.has(id)) continue;
-      let displayed = false, loaded = true;
-      try { displayed = (map.getPaintProperty(id, 'raster-opacity') || 0) > 0.05; } catch (_) {}
-      try { loaded = !map.getSource(id) || map.isSourceLoaded(id); } catch (_) { loaded = true; }
-      // ⚠ ne JAMAIS retirer une frame affichée (gardée jusqu'à la bascule) NI une source
-      // encore en chargement (removeSource interromprait le fetch → « no source » à la fin).
-      if (displayed || !loaded) continue;
-      try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {}
-      try { if (map.getSource(id)) map.removeSource(id); } catch (_) {}
-      nowcastLayerIds.delete(id);
-    }
-    const before = (symbolAnchorId && map.getLayer(symbolAnchorId)) ? symbolAnchorId : undefined;
-    for (const [id, fr] of want) {
-      if (nowcastLayerIds.has(id)) { setVis(id, true); continue; }
-      try {
-        const srcUrl = isBridgeFrame(fr) ? frBridgeImageUrl(fr.t) : nowcastImageUrl(activeLayer, fr.t, run);
-        map.addSource(id, { type: 'image', url: srcUrl, coordinates: AROMEPI_CORNERS });
-        // raster-resampling NEAREST : arêtes nettes (cf. radar).
-        map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 0, 'raster-opacity-transition': { duration: 150 }, 'raster-resampling': 'nearest' }, layout: { visibility: 'visible' } }, before);
-        nowcastLayerIds.add(id);
-      } catch (_) {}
-    }
-  }
-
-  function setNowcastFrameOpacity(activeId) {
-    for (const id of nowcastLayerIds) {
-      try { map.setPaintProperty(id, 'raster-opacity', id === activeId ? 0.82 : 0); } catch (_) {}
-    }
-  }
 
   // ── Overlay CELLULES SUIVIES (moteur objets serveur) ──────────────────────────
   // Donnée vectorielle /api/radar/fr/cells : le champ image reste au blend (mesuré meilleur),
@@ -575,41 +483,34 @@
   }
 
   async function fetchSources(token) {
-    let st = null;
-    try { st = await (await fetch('/api/aromepi/status')).json(); } catch (_) {}
     let fr = null;
     try { fr = await (await fetch('/api/radar/fr/status')).json(); } catch (_) {}
     let bl = null;
     try { bl = await (await fetch('/api/radar/fr/blend/status')).json(); } catch (_) {}
-    let br = null;
-    try { br = await (await fetch('/api/radar/fr/bridge/status')).json(); } catch (_) {}
     let ce = null;
     try { ce = await (await fetch('/api/radar/fr/cells')).json(); } catch (_) {}
     let li = null;
     try { li = await (await fetch('/api/lightning/live')).json(); } catch (_) {}
     if (token !== loadToken) return;
-    status = (st && st.ok) ? st : status;
     frRadarTimes = (fr && fr.ok && Array.isArray(fr.times)) ? fr.times : [];
     frBlend = (bl && bl.ok) ? bl : { times: [], speed_kmh: 0, advected: false };
     blendGen = frBlend.base_time ? Math.floor(new Date(frBlend.base_time).getTime() / 1000) : 0;
-    frBridge = (br && br.ok && Array.isArray(br.times)) ? br : { times: [] };
     frCells = (ce && ce.ok && Array.isArray(ce.cells)) ? ce : { time: null, cells: [] };
     liveLightning = (li && li.ok && Array.isArray(li.flashes)) ? li : { flashes: [] };
     syncCellsOverlay();
     syncLightningOverlay();
-    if (status && status.run !== prefetchRun) { prefetched.clear(); prefetchRun = status.run; }
     buildTimeline();
   }
 
   async function loadData() {
     const token = ++loadToken;
-    if (emptyHint) { emptyHint.hidden = false; emptyHint.textContent = 'Chargement du radar et du nowcast…'; }
+    if (emptyHint) { emptyHint.hidden = false; emptyHint.textContent = 'Chargement du radar…'; }
     await fetchSources(token);
     if (token !== loadToken) return;
     // attribution dans la meta-stack (ligne #metaRun, restaurée à la sortie)
-    if (metaRunEl) metaRunEl.textContent = 'Radar : Météo-France 1 km · Nowcast : ' + ((status && status.attribution) || 'Météo-France AROME-PI');
+    if (metaRunEl) metaRunEl.textContent = 'Radar : Météo-France 1 km · Extrapolation : advection radar';
     if (!frames.length) {
-      if (emptyHint) { emptyHint.hidden = false; emptyHint.textContent = 'Aucune donnée radar / nowcast disponible.'; }
+      if (emptyHint) { emptyHint.hidden = false; emptyHint.textContent = 'Aucune donnée radar disponible.'; }
       return;
     }
     if (emptyHint) emptyHint.hidden = true;
@@ -652,52 +553,17 @@
       const epoch = Math.floor(new Date(iso).getTime() / 1000);
       if (Number.isFinite(epoch)) out.push({ kind: 'radar', epoch, iso });
     }
-    // Échéances portées par le PONT (composite radar advecté + AROME-PI pondéré par skill) :
-    // elles PRIMENT sur la frame blend au même instant — c'est le meilleur des deux, et ça
-    // met l'info AROME-PI dès le premier quart d'heure après le direct (écart ≤ 15 min,
-    // demande user : pas un trou de 30-45 min avant la première échéance « prévu »).
-    const bridgeEpochs = new Set();
-    if (frBridge && Array.isArray(frBridge.times)) {
-      for (const t of frBridge.times) {
-        const e = Math.floor(new Date(t).getTime() / 1000);
-        if (Number.isFinite(e)) bridgeEpochs.add(e);
-      }
-    }
     // BLEND : frames advectées (radar extrapolé) qui comblent le trou de latence et le
-    // 0-30 min à venir, ancrées sur l'observation. Priment sur AROME-PI PUR dans leur plage
-    // (mesuré meilleur 0-30 min), mais s'effacent devant une frame PONT au même instant.
-    // Si le mouvement n'est PAS fiable (persistance), les frames FUTURES seraient identiques
-    // à la dernière mosaïque → on ne garde que le comblement du trou jusqu'à ~maintenant
-    // (AROME-PI, qui a de la physique, couvre le proche futur).
-    let lastBlendEpoch = 0;
+    // 0-30 min à venir, ancrées sur l'observation. Si le mouvement n'est PAS fiable
+    // (persistance), les frames FUTURES seraient identiques à la dernière mosaïque →
+    // on ne garde que le comblement du trou jusqu'à ~maintenant.
     const blendTimes = (frBlend && Array.isArray(frBlend.times)) ? frBlend.times : [];
     const blendAdvected = !!(frBlend && frBlend.advected);
     for (const iso of blendTimes) {
       const epoch = Math.floor(new Date(iso).getTime() / 1000);
       if (!Number.isFinite(epoch)) continue;
       if (!blendAdvected && epoch > nowSec + 60) continue;   // persistance : pas de futur identique
-      if (epoch > nowSec && bridgeEpochs.has(epoch)) continue;   // le pont porte cet instant
-      out.push({ kind: 'blend', epoch, iso }); lastBlendEpoch = Math.max(lastBlendEpoch, epoch);
-    }
-    const nowcastSeen = new Set();
-    if (status && Array.isArray(status.forecast_times)) {
-      for (const t of status.forecast_times) {
-        const epoch = Math.floor(new Date(t).getTime() / 1000);
-        // à venir ET (au-delà de la plage du blend OU portée par le pont — le pont, qui
-        // contient déjà le radar advecté, a le droit d'entrer DANS la plage du blend).
-        if (!Number.isFinite(epoch) || epoch <= nowSec) continue;
-        if (epoch > lastBlendEpoch || bridgeEpochs.has(epoch)) { out.push({ kind: 'nowcast', epoch, t }); nowcastSeen.add(epoch); }
-      }
-    }
-    // Échéances PONT absentes du run AROME (pas de 5 min entre les quarts d'heure) : frames
-    // nowcast à part entière → le futur proche est du pont CONTINU (fin de l'alternance
-    // extrapolé/prévu de v296).
-    if (frBridge && Array.isArray(frBridge.times)) {
-      for (const t of frBridge.times) {
-        const epoch = Math.floor(new Date(t).getTime() / 1000);
-        if (!Number.isFinite(epoch) || epoch <= nowSec || nowcastSeen.has(epoch)) continue;
-        out.push({ kind: 'nowcast', epoch, t });
-      }
+      out.push({ kind: 'blend', epoch, iso });
     }
     out.sort((a, b) => a.epoch - b.epoch);
     frames = out;
@@ -707,120 +573,50 @@
     if (!active || !layersReady || !frames.length) return;
     const fr = frames[cursor];
     if (!fr) return;
-    const isFuture = fr.kind === 'nowcast';
     const isBlend = fr.kind === 'blend';
     if (timeLabel) {
       const d = new Date(fr.epoch * 1000);
       const date = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
-      const suffix = isBlend ? ' · extrapolé' : (isFuture ? ' · prévu' : ' · observé');
-      timeLabel.textContent = date + ' ' + fmtClock(fr.epoch) + suffix;
-      timeLabel.classList.toggle('is-future', isFuture || isBlend);
+      timeLabel.textContent = date + ' ' + fmtClock(fr.epoch) + (isBlend ? ' · extrapolé' : ' · observé');
+      timeLabel.classList.toggle('is-future', isBlend);
     }
     updateActive();
     syncRadarLayers();
-    syncNowcastLayers();
     syncCellsOverlay();       // repositionne les cellules à l'heure de la frame (setData léger)
     syncLightningOverlay();   // refiltre les impacts sur [t−30 min, t] de la frame
-    if (isRadarLike(fr)) {
-      const tok = ++swapToken;   // invalide toute bascule différée précédente
-      const targetId = radarLayerId(fr);
-      // « prête » = déjà éagère (visible AVANT le déplacement de la fenêtre) ET chargée.
-      // ⚠️ isSourceLoaded seul ment pour une couche encore masquée → on capture la
-      // visibilité avant updateRadarWindow.
-      const ready = frameReady(targetId);
-      updateRadarWindow();
-      if (!radarVisible) {
-        setRadarFrameOpacity(null);
-        setNowcastFrameOpacity(null);
-        if (activityEl) { activityEl.textContent = ''; activityEl.className = 'chase-activity'; }
-      } else {
-        const reveal = () => {
-          if (tok !== swapToken || !active) return;
-          const cur = frames[cursor];
-          if (!isRadarLike(cur) || radarLayerId(cur) !== targetId) return;
-          setRadarFrameOpacity(targetId);
-          setNowcastFrameOpacity(null);   // masque le nowcast une fois le radar prêt
-          updateRadarWindow();            // évince l'ancienne frame radar hors fenêtre
-          syncNowcastLayers();            // libère les couches nowcast désormais masquées
-        };
-        // badge : « MF 1 km » (observé) / « extrapolé · N km/h » (advection réelle) /
-        // « obs. maintenue » (persistance, mouvement non fiable → comblement du trou).
-        if (activityEl) {
-          if (isBlend) { activityEl.textContent = frBlend.advected ? ('extrapolé · ' + frBlend.speed_kmh + ' km/h') : 'obs. maintenue'; activityEl.className = 'chase-activity lvl-low'; }
-          else { activityEl.textContent = 'MF 1 km'; activityEl.className = 'chase-activity lvl-low'; }
-        }
-        if (ready) {
-          reveal();   // texture déjà décodée (fenêtre éagère) → flip immédiat
-        } else {
-          // frame hors fenêtre (saut lointain) : l'ancienne couche reste affichée le
-          // temps que la texture de la cible se décode, puis on bascule. Pas de trou.
-          whenSourceLoaded(targetId, reveal, 5);
-        }
-      }
-      schedulePointForCurrent();
+    const tok = ++swapToken;   // invalide toute bascule différée précédente
+    const targetId = radarLayerId(fr);
+    // « prête » = déjà éagère (visible AVANT le déplacement de la fenêtre) ET chargée.
+    // ⚠️ isSourceLoaded seul ment pour une couche encore masquée → on capture la
+    // visibilité avant updateRadarWindow.
+    const ready = frameReady(targetId);
+    updateRadarWindow();
+    const reveal = () => {
+      if (tok !== swapToken || !active) return;
+      const cur = frames[cursor];
+      if (!isRadarLike(cur) || radarLayerId(cur) !== targetId) return;
+      setRadarFrameOpacity(targetId);
+      updateRadarWindow();            // évince l'ancienne frame radar hors fenêtre
+    };
+    // badge : « MF 1 km » (observé) / « extrapolé · N km/h » (advection réelle) /
+    // « obs. maintenue » (persistance, mouvement non fiable → comblement du trou).
+    if (activityEl) {
+      if (isBlend) { activityEl.textContent = frBlend.advected ? ('extrapolé · ' + frBlend.speed_kmh + ' km/h') : 'obs. maintenue'; activityEl.className = 'chase-activity lvl-low'; }
+      else { activityEl.textContent = 'MF 1 km'; activityEl.className = 'chase-activity lvl-low'; }
+    }
+    if (ready) {
+      reveal();   // texture déjà décodée (fenêtre éagère) → flip immédiat
     } else {
-      // NOWCAST (AROME-PI) : MÊME mécanique par-frame que le radar → scrub instantané
-      // (texture pré-décodée dans la fenêtre) au lieu de l'updateImage ~434 ms d'avant.
-      const tok = ++swapToken;
-      const targetId = nowcastLayerId(fr);
-      const ready = frameReady(targetId);
-      updateRadarWindow();   // garde la fenêtre radar éagère près de la jonction
-      if (status && status.run) {
-        const reveal = () => {
-          if (tok !== swapToken || !active) return;
-          const cur = frames[cursor];
-          if (!cur || cur.kind !== 'nowcast' || nowcastLayerId(cur) !== targetId) return;
-          setNowcastFrameOpacity(targetId);
-          setRadarFrameOpacity(null);
-          syncNowcastLayers();   // évince les frames hors fenêtre / d'une autre couche
-        };
-        if (ready) {
-          reveal();
-        } else {
-          // saut lointain / changement de couche : l'ancienne image reste affichée le
-          // temps que la cible se décode (syncNowcastLayers l'a créée), puis bascule.
-          whenSourceLoaded(targetId, reveal, 5);
-        }
-      } else {
-        setRadarFrameOpacity(null);
-        setNowcastFrameOpacity(null);
-      }
-      schedulePointForCurrent();
-      updateActivity(fr);
+      // frame hors fenêtre (saut lointain) : l'ancienne couche reste affichée le
+      // temps que la texture de la cible se décode, puis on bascule. Pas de trou.
+      whenSourceLoaded(targetId, reveal, 5);
     }
-  }
-
-  // Indicateur d'activité : part du domaine portant de la donnée → « rien / faible / … ».
-  const ACTIVITY_LABELS = { none: 'rien à signaler', low: 'activité faible', moderate: 'activité modérée', high: 'activité forte' };
-  function updateActivity(fr) {
-    // garde-fou : l'activité n'a de sens que pour une VRAIE échéance AROME-PI (nowcast, qui
-    // porte `.t`). Sans ça, une frame sans `.t` déclenche `activity?time=undefined` → 422.
-    if (!activityEl || !status || !status.run || !fr || !fr.t) return;
-    // frame PONT à un pas 5 min : l'échéance n'existe pas dans le run AROME → pas de requête
-    // activity (422/ok:false garanti), badge composite à la place.
-    if (!(Array.isArray(status.forecast_times) && status.forecast_times.indexOf(fr.t) !== -1)) {
-      activityEl.textContent = 'radar + AROME-PI';
-      activityEl.className = 'chase-activity lvl-low';
-      return;
-    }
-    if (activityTimer) window.clearTimeout(activityTimer);
-    activityEl.textContent = '…'; activityEl.className = 'chase-activity';
-    const key = activeLayer, t = fr.t, run = status.run;
-    activityTimer = window.setTimeout(async () => {
-      try {
-        const p = new URLSearchParams({ layer: key, time: t, run });
-        const d = await (await fetch('/api/aromepi/activity?' + p.toString())).json();
-        if (frames[cursor] !== fr || activeLayer !== key) return; // l'utilisateur a bougé
-        if (d && d.ok) { activityEl.textContent = ACTIVITY_LABELS[d.level] || ''; activityEl.className = 'chase-activity lvl-' + d.level; }
-        else { activityEl.textContent = ''; activityEl.className = 'chase-activity'; }
-      } catch (_) { activityEl.textContent = ''; }
-    }, 350);
+    schedulePointForCurrent();
   }
 
   function liveIndex() {
     let last = -1;
     for (let i = 0; i < frames.length; i += 1) if (frames[i].kind === 'radar') last = i;
-    if (last < 0) last = frames.findIndex((f) => f.kind === 'nowcast');
     return last < 0 ? 0 : last;
   }
 
@@ -922,7 +718,7 @@
     const rail = document.createElement('div');
     rail.className = 'timeline-rail chase-rail';
     rail.setAttribute('role', 'slider');
-    rail.setAttribute('aria-label', 'Échéance radar / nowcast');
+    rail.setAttribute('aria-label', 'Échéance radar');
     rail.tabIndex = 0;
     const track = document.createElement('div');
     track.className = 'timeline-rail-track';
@@ -933,7 +729,7 @@
     let prevHour = null;
     frames.forEach((fr, i) => {
       const mark = document.createElement('div');
-      mark.className = 'timeline-hour-mark' + (fr.kind === 'nowcast' ? ' is-fcst' : '') + (i === cursor ? ' active' : '');
+      mark.className = 'timeline-hour-mark' + (i === cursor ? ' active' : '');
       mark.style.left = railFrac(fr.epoch) + '%';
       mark.dataset.idx = String(i);
       const line = document.createElement('span'); line.className = 'timeline-hour-line';
@@ -959,7 +755,7 @@
     const scroller = document.createElement('div');
     scroller.className = 'timeline-wheel-scroller';
     scroller.setAttribute('role', 'listbox');
-    scroller.setAttribute('aria-label', 'Échéance radar / nowcast');
+    scroller.setAttribute('aria-label', 'Échéance radar');
     let prevHour = null;
     frames.forEach((fr, i) => {
       const d = new Date(fr.epoch * 1000);
@@ -968,13 +764,13 @@
       prevHour = d.getHours();
       const item = document.createElement('button');
       item.type = 'button';
-      item.className = 'timeline-wheel-item' + (fr.kind === 'nowcast' ? ' is-fcst' : '') + (i === cursor ? ' active' : '');
+      item.className = 'timeline-wheel-item' + (i === cursor ? ' active' : '');
       item.dataset.idx = String(i);
       item.dataset.time = time;
       item.dataset.sparse = sparse;
       item.setAttribute('role', 'option');
       item.setAttribute('aria-selected', i === cursor ? 'true' : 'false');
-      item.setAttribute('aria-label', time + (fr.kind === 'nowcast' ? ' (prévu)' : ' (observé)'));
+      item.setAttribute('aria-label', time + (fr.kind === 'blend' ? ' (extrapolé)' : ' (observé)'));
       const ph = phaseMap.get(i);
       if (ph) {
         const icon = document.createElement('span');
@@ -1165,18 +961,16 @@
       const url = URL.createObjectURL(blob);
       const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
       const a = document.createElement('a');
-      a.href = url; a.download = `chasse_${activeLayer}_${stamp}.webm`;
+      a.href = url; a.download = `chasse_radar_${stamp}.webm`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 8000);
     }
   }
 
   // ── Conditions à un point (popup) ───────────────────────────────────────────
-  function currentNowcastTime() {
+  function currentFrameIso() {
     const fr = frames[cursor];
-    if (fr && fr.kind === 'nowcast') return fr.t;
-    const f = frames.find((x) => x.kind === 'nowcast');
-    return f ? f.t : null;
+    return fr ? fr.iso : null;
   }
 
   function schedulePointForCurrent() {
@@ -1218,43 +1012,31 @@
   }
 
   async function queryPoint(lat, lon, fromTap) {
-    const t = currentNowcastTime();
+    const t = currentFrameIso();
     if (!t) return;
     if (fromTap) { userPos = userPos || { lat, lon }; }
-    showPopup(lat, lon, '<div class="chase-pop-loading">Lecture AROME-PI…</div>');
+    showPopup(lat, lon, '<div class="chase-pop-loading">Lecture radar…</div>');
     const token = ++loadToken;
-    let data = null, obs = null;
+    let obs = null;
     try {
-      // valeurs prévues (AROME-PI) + valeurs OBSERVÉES (mosaïque radar MF) en parallèle
-      const [rp, ro] = await Promise.all([
-        fetch('/api/aromepi/point', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lat, lon, time: t, run: status && status.run, layers: ['reflectivity', 'cape', 'gusts', 'hail', 'graupel'] }),
-        }),
-        frRadarTimes.length ? fetch('/api/radar/fr/point?lat=' + lat + '&lon=' + lon) : Promise.resolve(null),
-      ]);
-      data = await rp.json();
-      if (ro) obs = await ro.json();
+      // valeurs OBSERVÉES (mosaïque radar MF) au point — plus de nowcast modèle.
+      if (frRadarTimes.length) obs = await (await fetch('/api/radar/fr/point?lat=' + lat + '&lon=' + lon)).json();
     } catch (_) {}
     if (token !== loadToken) return;
     if (!popup || !popup.isOpen()) return;        // popup fermé entre-temps
-    if (!data || !data.ok) { showPopup(lat, lon, '<div class="chase-pop-empty">Conditions indisponibles ici.</div>'); return; }
-    showPopup(lat, lon, renderPositionHTML(data.values || {}, t, (obs && obs.ok && obs.in_domain) ? obs : null, { lat, lon }));
+    if (!obs || !obs.ok || !obs.in_domain) { showPopup(lat, lon, '<div class="chase-pop-empty">Conditions indisponibles ici.</div>'); return; }
+    showPopup(lat, lon, renderPositionHTML(t, obs, { lat, lon }));
   }
 
-  function renderPositionHTML(v, t, obs, pos) {
-    const dbz = v.reflectivity, cape = v.cape, gust = v.gusts, hail = v.hail, graupel = v.graupel;
-    // verdict : priorité à l'observé (dBZ mesuré) si disponible, sinon nowcast AROME-PI.
+  function renderPositionHTML(t, obs, pos) {
+    // verdict = l'écho MESURÉ (dBZ radar) — le nowcast modèle a été retiré.
     const obsV = obs && obs.values || {};
-    const echoObs = (typeof obsV.reflectivity === 'number') ? obsV.reflectivity : null;
-    const echo = (echoObs !== null) ? echoObs : ((typeof dbz === 'number') ? Math.max(0, dbz) : null);
+    const echo = (typeof obsV.reflectivity === 'number') ? Math.max(0, obsV.reflectivity) : null;
     let verdict, cls;
     if (echo !== null && echo >= 45) { verdict = '⛈ Cellule active'; cls = 'sev-high'; }
     else if (echo !== null && echo >= 20) { verdict = '🌧 Précipitations'; cls = 'sev-mid'; }
-    else if (typeof cape === 'number' && cape >= 800) { verdict = '⚡ Air instable'; cls = 'sev-watch'; }
     else { verdict = '🌤 Calme'; cls = 'sev-low'; }
-    const hailTxt = (typeof hail === 'number' && hail > 0.5) ? ' · grêle probable' : '';
-    let html = `<div class="chase-verdict ${cls}">${verdict}${hailTxt}<span class="chase-verdict-time">${fmtClock(Math.floor(new Date(t).getTime() / 1000))}</span></div>`;
+    let html = `<div class="chase-verdict ${cls}">${verdict}<span class="chase-verdict-time">${fmtClock(Math.floor(new Date(t).getTime() / 1000))}</span></div>`;
     // Alerte d'approche (moteur cellules) : trajectoire passant à < 15 km de ce point.
     const threat = pos ? cellThreat(pos.lat, pos.lon) : null;
     if (threat) {
@@ -1262,27 +1044,15 @@
       const trendTxt = tc.trend === 'grow' ? 'en intensification' : (tc.trend === 'decay' ? 'en affaiblissement' : 'stable');
       html += `<div class="chase-pos-eta">⚠ Cellule en approche · ~${threat.eta} min · ${tc.speed_kmh} km/h ${bearingCard(tc.bearing)} · ${trendTxt}</div>`;
     }
-    // Bloc OBSERVÉ (radar MF) — les valeurs mesurées au sol, si la mosaïque couvre le point.
-    if (obs && (typeof obsV.reflectivity === 'number' || typeof obsV.echo_top_km === 'number' || typeof obsV.rain_prob === 'number')) {
-      const obsRows = [
-        ['Réflectivité', typeof obsV.reflectivity === 'number' ? Math.round(Math.max(0, obsV.reflectivity)) : '—', ' dBZ'],
-        ['Sommet d’écho', typeof obsV.echo_top_km === 'number' ? obsV.echo_top_km.toFixed(1) : '—', ' km'],
-        ['Proba pluie', typeof obsV.rain_prob === 'number' ? obsV.rain_prob : '—', ' %'],
-      ];
-      const obsClock = fmtClock(Math.floor(new Date(obs.time).getTime() / 1000));
-      html += `<div class="chase-pos-head">Observé · radar MF <span>${obsClock}</span></div>`;
-      html += '<ul class="chase-pos-list">' + obsRows.map((r) => `<li><span>${r[0]}</span><strong>${r[1]}${(r[2] && r[1] !== '—') ? `<span class="chase-unit">${r[2]}</span>` : ''}</strong></li>`).join('') + '</ul>';
-    }
-    // Bloc PRÉVU (AROME-PI).
-    const rows = [
-      ['Réflectivité', echo !== null ? Math.round(echo) : '—', ' dBZ'],
-      ['CAPE', typeof cape === 'number' ? Math.round(cape) : '—', ' J/kg'],
-      ['Rafales 15 min', typeof gust === 'number' ? Math.round(gust) : '—', ' km/h'],
-      ['Grêle (diag)', typeof hail === 'number' ? (hail > 0.5 ? 'oui' : 'non') : '—', ''],
-      ['Graupel', typeof graupel === 'number' ? graupel.toFixed(2) : '—', ''],
+    // Bloc OBSERVÉ (radar MF) — les valeurs mesurées au sol.
+    const obsRows = [
+      ['Réflectivité', typeof obsV.reflectivity === 'number' ? Math.round(Math.max(0, obsV.reflectivity)) : '—', ' dBZ'],
+      ['Sommet d’écho', typeof obsV.echo_top_km === 'number' ? obsV.echo_top_km.toFixed(1) : '—', ' km'],
+      ['Proba pluie', typeof obsV.rain_prob === 'number' ? obsV.rain_prob : '—', ' %'],
     ];
-    if (obs) html += '<div class="chase-pos-head">Prévu · AROME-PI</div>';
-    html += '<ul class="chase-pos-list">' + rows.map((r) => `<li><span>${r[0]}</span><strong>${r[1]}${(r[2] && r[1] !== '—') ? `<span class="chase-unit">${r[2]}</span>` : ''}</strong></li>`).join('') + '</ul>';
+    const obsClock = fmtClock(Math.floor(new Date(obs.time).getTime() / 1000));
+    html += `<div class="chase-pos-head">Observé · radar MF <span>${obsClock}</span></div>`;
+    html += '<ul class="chase-pos-list">' + obsRows.map((r) => `<li><span>${r[0]}</span><strong>${r[1]}${(r[2] && r[1] !== '—') ? `<span class="chase-unit">${r[2]}</span>` : ''}</strong></li>`).join('') + '</ul>';
     return html;
   }
 
@@ -1335,16 +1105,10 @@
   // (rafales/grêle/graupel/mocon), on ne peut pas calibrer l'échelle complète sur données
   // faibles → gradient indicatif + SEUIL CHASSE (l'info actionnable ; les valeurs exactes
   // au point sont dans le popup au clic).
-  const LAYER_LEGENDS = {
-    reflectivity: { title: 'Réflectivité', grad: ['#3ca0ff', '#28d2dc', '#3cdc6e', '#fae63c', '#faa028', '#f0462d', '#c828a0'], scale: ['8 dBZ', '32', '56+'], note: 'Cellule active > 45 dBZ' },
-    cape: { title: 'CAPE · instabilité', grad: ['#00fe00', '#b1fe00', '#fefa00', '#e58700', '#e70d00', '#e00080', '#8c00c3'], scale: ['0', '1500', '3000+ J/kg'], note: 'Orages probables > 1000 J/kg' },
-    gusts: { title: 'Rafales 15 min', grad: ['#00d7ff', '#38b6f2', '#8fd14b', '#fae63c', '#faa028', '#f0462d'], scale: ['faible', '', 'violente'], note: 'Rafale sévère > 90 km/h' },
-    hail: { title: 'Grêle · diagnostic', grad: ['#3ca0ff', '#8fd14b', '#fae63c', '#f0462d'], scale: ['possible', '', 'probable'], note: 'Zones de grêle diagnostiquée' },
-    graupel: { title: 'Graupel (grésil)', grad: ['#3ca0ff', '#28d2dc', '#8fd14b', '#fae63c'], scale: ['0', '', '+ kg/m²'], note: null },
-    mocon: { title: 'Convergence humidité', grad: ['#5a6b8c', '#3cdc6e', '#fae63c', '#f0462d'], scale: ['−', '', '+'], note: 'Convergence (analyse du run)' },
-  };
-  function renderLegend(key) {
-    const cfg = LAYER_LEGENDS[key] || LAYER_LEGENDS.reflectivity;
+  // Légende unique : réflectivité radar (les couches AROME-PI ont été retirées).
+  const REFLECTIVITY_LEGEND = { title: 'Réflectivité', grad: ['#3ca0ff', '#28d2dc', '#3cdc6e', '#fae63c', '#faa028', '#f0462d', '#c828a0'], scale: ['8 dBZ', '32', '56+'], note: 'Cellule active > 45 dBZ' };
+  function renderLegend() {
+    const cfg = REFLECTIVITY_LEGEND;
     const titleEl = document.getElementById('chaseLegendTitle');
     const barEl = document.getElementById('chaseLegendBar');
     const scaleEl = document.getElementById('chaseLegendScale');
@@ -1353,18 +1117,6 @@
     if (barEl) barEl.style.background = 'linear-gradient(90deg, ' + cfg.grad.join(', ') + ')';
     if (scaleEl) scaleEl.innerHTML = cfg.scale.map((s) => `<span>${s}</span>`).join('');
     if (noteEl) { noteEl.textContent = cfg.note || ''; noteEl.hidden = !cfg.note; }
-  }
-
-  function setLayer(key) {
-    activeLayer = key;
-    if (layerTabs) layerTabs.querySelectorAll('.chase-layer-btn').forEach((b) => {
-      const on = b.dataset.chaseLayer === key;
-      b.classList.toggle('active', on);
-      b.setAttribute('aria-selected', on ? 'true' : 'false');
-    });
-    renderLegend(key);   // légende dynamique (toujours affichée)
-    applyCursor();
-    schedulePrefetch();  // précharge la frise de la nouvelle couche active
   }
 
   function onChaseClick(e) {
@@ -1468,7 +1220,7 @@
     controls.setAttribute('aria-hidden', 'false');
     document.body.classList.add('chase-mode');
     setChaseMapTint(true);
-    renderLegend(activeLayer);   // légende de la couche courante (réflectivité au départ)
+    renderLegend();   // légende réflectivité (seule couche restante)
     // on garde la meta-stack visible : sa ligne #metaRun reçoit l'attribution (sauvegarde
     // pour restauration à la sortie). Badge haut-centre : horloge live.
     savedMetaRun = metaRunEl ? metaRunEl.textContent : null;
@@ -1510,13 +1262,8 @@
     setChaseMapTint(false);
     if (nowTimer) { window.clearInterval(nowTimer); nowTimer = null; }
     if (metaRunEl && savedMetaRun != null) { metaRunEl.textContent = savedMetaRun; savedMetaRun = null; }
-    // masquer les couches radar par frame + libérer les couches nowcast (mémoire).
+    // masquer les couches radar par frame.
     for (const id of radarLayerIds) setVis(id, false);
-    for (const id of Array.from(nowcastLayerIds)) {
-      try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {}
-      try { if (map.getSource(id)) map.removeSource(id); } catch (_) {}
-      nowcastLayerIds.delete(id);
-    }
     swapToken++;
     applyCellsVisibility();              // masque l'overlay cellules (active=false)
     applyLightningVisibility();          // masque l'overlay foudre (active=false)
@@ -1535,10 +1282,6 @@
   liveBtn?.addEventListener('click', goLive);
   exportBtn?.addEventListener('click', exportAnimation);
   geoBtn?.addEventListener('click', toggleFollow);
-  layerTabs?.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-chase-layer]');
-    if (btn) setLayer(btn.dataset.chaseLayer);
-  });
   const cellsBtn = document.getElementById('chaseCellsBtn');
   cellsBtn?.addEventListener('click', () => {
     cellsVisible = !cellsVisible;
@@ -1569,5 +1312,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.35';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.36';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

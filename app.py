@@ -78,7 +78,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.35"
+APP_VERSION = "1.3.36"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15551,7 +15551,10 @@ async def aromepi_point(payload: AromepiPointRequest) -> dict[str, Any]:
 # quota 50 req/min partagé avec les requêtes live (point WCS, activity). Les images
 # atterrissent dans le cache de _aromepi_domain_image_sync → les requêtes
 # /api/aromepi/image deviennent quasi instantanées (~45 Ko servis de mémoire).
-AROMEPI_PREWARM_ENABLED = _env_flag("OBJECTIFOUDRE_AROMEPI_PREWARM", True)
+# DÉSACTIVÉ PAR DÉFAUT (décision Anthony 2026-07-19) : AROME-PI est retiré du mode
+# chasse (front v1.3.36) → plus de prewarm ni de quota consommé. Réactivable par
+# env OBJECTIFOUDRE_AROMEPI_PREWARM=1 si le nowcast revenait un jour.
+AROMEPI_PREWARM_ENABLED = _env_flag("OBJECTIFOUDRE_AROMEPI_PREWARM", False)
 AROMEPI_PREWARM_TICK_SECONDS = 90        # cadence de re-scan quand tout est chaud
 AROMEPI_PREWARM_SPACING_SECONDS = 2.5    # entre 2 rendus (couche primaire)
 AROMEPI_PREWARM_SECONDARY_SPACING_SECONDS = 4.0  # couches secondaires (moins pressées)
@@ -17359,13 +17362,16 @@ def _fr_radar_loop() -> None:
             chase_active = time.time() < _fr_radar_chase_active_until[0]
             _fr_radar_state.update(chase_active=chase_active, active_px=active_px)
             if chase_active:
-                # PONT : morph gaté + fondu pondéré blend→AROME-PI sur le recouvrement.
-                try:
-                    ap_key = _aromepi_api_key()
-                    if ap_key:
-                        _fr_bridge_compute(ap_key)
-                except Exception as exc:
-                    _fr_radar_state.update(bridge_error=str(exc))
+                # PONT blend→AROME-PI DÉBRANCHÉ (décision Anthony 2026-07-19, retrait
+                # d'AROME-PI du mode chasse) : plus de _fr_bridge_compute → zéro requête
+                # WMS/WCS AROME-PI depuis la boucle radar. Le code du pont reste en place
+                # (réactivable en décommentant) tant que le nettoyage n'est pas décidé.
+                # try:
+                #     ap_key = _aromepi_api_key()
+                #     if ap_key:
+                #         _fr_bridge_compute(ap_key)
+                # except Exception as exc:
+                #     _fr_radar_state.update(bridge_error=str(exc))
                 # CELLULES : suivi d'objets convectifs (trajectoires + tendances, overlay chasse).
                 try:
                     _fr_cells_compute()
