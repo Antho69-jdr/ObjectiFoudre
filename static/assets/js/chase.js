@@ -154,8 +154,9 @@
       if (radarLayerIds.has(id)) continue;
       try {
         map.addSource(id, { type: 'image', url, coordinates: FRRADAR_CORNERS });
-        // raster-resampling NEAREST : arêtes nettes des cellules.
-        map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 0, 'raster-opacity-transition': { duration: 150 }, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } }, before);
+        // raster-resampling LINEAR : le serveur sert un rendu LISSÉ (zones courbes) —
+        // le filtrage bilinéaire GPU adoucit la dernière marche de pixel au zoom.
+        map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 0, 'raster-opacity-transition': { duration: 150 }, 'raster-resampling': 'linear' }, layout: { visibility: 'none' } }, before);
         radarLayerIds.add(id);
       } catch (_) {}
     }
@@ -1311,5 +1312,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.38';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.39';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

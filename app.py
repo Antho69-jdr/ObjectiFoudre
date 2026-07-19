@@ -78,7 +78,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.38"
+APP_VERSION = "1.3.39"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16212,18 +16212,114 @@ def _fr_radar_convective_px() -> int:
         return -1
 
 
+def _fr_radar_rgba_to_band(a):
+    """Tableau RGBA (notre palette) → champ d'index de bande 0-8 (0 = pas d'écho).
+    CORRESPONDANCE EXACTE d'abord (nos PNG portent nos couleurs telles quelles) ;
+    repli « plus proche » calculé SEULEMENT sur les pixels non appariés (couleurs
+    interpolées d'un warp) — l'ancien tenseur de distances pleine résolution pesait
+    ~600 Mo à 2400², rédhibitoire depuis le rendu d'affichage lissé."""
+    import numpy as np
+    h, w = a.shape[:2]
+    rgb32 = ((a[:, :, 0].astype(np.uint32) << 16)
+             | (a[:, :, 1].astype(np.uint32) << 8) | a[:, :, 2].astype(np.uint32))
+    idx = np.zeros((h, w), np.uint8)
+    for i, c in enumerate(_FR_RADAR_COLORS):
+        idx[rgb32 == ((c[0] << 16) | (c[1] << 8) | c[2])] = i + 1
+    opaque = a[:, :, 3] >= 30
+    rem = opaque & (idx == 0) & (rgb32 != 0)
+    if rem.any():
+        palette = np.array([(0, 0, 0)] + [c[:3] for c in _FR_RADAR_COLORS], np.int32)
+        rgbr = a[rem][:, :3].astype(np.int32)
+        d = ((rgbr[:, None, :] - palette[None, :, :]) ** 2).sum(2)
+        idx[rem] = d.argmin(1).astype(np.uint8)
+    idx[~opaque] = 0
+    return idx
+
+
 def _fr_radar_png_to_field(png: bytes, ds: int):
     """PNG (notre palette) → champ d'intensité (index de bande 0-8) sous-échantillonné ×ds
-    (pour l'estimation de mouvement). Couleur → bande par plus proche de _FR_RADAR_COLORS."""
+    (pour l'estimation de mouvement)."""
     import numpy as np
     from PIL import Image
-    a = np.asarray(Image.open(io.BytesIO(png)).convert("RGBA"))[::ds, ::ds]
-    palette = np.array([(0, 0, 0)] + [c[:3] for c in _FR_RADAR_COLORS], np.int32)
-    rgb = a[:, :, :3].astype(np.int32)
-    d = ((rgb[:, :, None, :] - palette[None, None, :, :]) ** 2).sum(3)
-    idx = d.argmin(2).astype(np.uint8)
-    idx[a[:, :, 3] < 30] = 0
-    return idx
+    return _fr_radar_rgba_to_band(np.asarray(Image.open(io.BytesIO(png)).convert("RGBA"))[::ds, ::ds])
+
+
+# ── LISSAGE D'AFFICHAGE (v1.3.39, demande Anthony : « plus des carrés, des zones ») ────
+# Le PNG SERVI à la carte est une version LISSÉE : champ de bandes flouté (gaussien ~2 px
+# ≈ 2,3 km) pondéré par la validité (pas de halo dans le vide) puis RE-QUANTIFIÉ en bandes
+# → zones aux frontières courbes, même langage que la carte de prévision orageuse. Le PNG
+# BRUT du ring buffer reste la SOURCE DE VÉRITÉ des moteurs (blend, cellules, point) : le
+# lissage n'altère AUCUNE donnée. Rendu ~0,2 s/frame → cache par échéance (purgé avec le
+# ring). Le front passe en raster-resampling linear (chase.js) pour adoucir la dernière
+# marche de pixel.
+FR_RADAR_DISPLAY_BLUR = 2       # rayon du flou boîte (px source ≈ 1,15 km), ×3 passes ≈ gaussien σ≈2,4
+_fr_radar_display_cache: dict[str, bytes] = {}
+_fr_radar_display_lock = threading.Lock()
+
+
+def _fr_radar_box_blur(x, r: int, passes: int = 3):
+    """Flou boîte séparable (fenêtre 2r+1, bords répliqués), ×3 passes ≈ gaussien.
+    (Pillow de la venv ne filtre pas le mode « F » → numpy cumsum, rapide à 2400².)"""
+    import numpy as np
+    k = 2 * r + 1
+    for _ in range(passes):
+        for axis in (0, 1):
+            xp = np.concatenate([
+                np.repeat(x.take([0], axis=axis), r, axis=axis), x,
+                np.repeat(x.take([-1], axis=axis), r, axis=axis)], axis=axis)
+            c = np.cumsum(xp, axis=axis, dtype=np.float32)
+            zero = np.zeros_like(c.take([0], axis=axis))
+            c = np.concatenate([zero, c], axis=axis)
+            if axis == 0:
+                x = (c[k:, :] - c[:-k, :]) / k
+            else:
+                x = (c[:, k:] - c[:, :-k]) / k
+    return x
+
+
+def _fr_radar_display_render(rgba) -> bytes:
+    import numpy as np
+    from PIL import Image
+    band = _fr_radar_rgba_to_band(rgba).astype(np.float32)          # 0..8 (0 = vide)
+    valid = (band > 0).astype(np.float32)
+    if not valid.any():
+        buf = io.BytesIO()
+        Image.fromarray(np.zeros(rgba.shape[:2] + (4,), np.uint8), "RGBA").save(buf, format="PNG", compress_level=1)
+        return buf.getvalue()
+    fb = _fr_radar_box_blur(band, FR_RADAR_DISPLAY_BLUR)
+    fv = _fr_radar_box_blur(valid, FR_RADAR_DISPLAY_BLUR)
+    # normalisation par la validité floutée : l'intensité ne se dilue pas au bord de l'écho
+    field = fb / np.maximum(fv, 1e-3)
+    q = np.clip(np.rint(field), 1, len(_FR_RADAR_COLORS)).astype(np.uint8)
+    # empreinte = isoligne 0,42 du masque flouté (≈ le bord d'origine, coins arrondis ;
+    # les poussières isolées d'1 px s'estompent — affichage seulement)
+    idx = np.where(fv >= 0.42, q, 0).astype(np.uint8)
+    pal = np.zeros((len(_FR_RADAR_COLORS) + 1, 4), np.uint8)
+    for i, c in enumerate(_FR_RADAR_COLORS):
+        pal[i + 1] = c
+    out = pal[idx]
+    buf = io.BytesIO()
+    Image.fromarray(out, "RGBA").save(buf, format="PNG", compress_level=1)
+    return buf.getvalue()
+
+
+def _fr_radar_display_png(iso: str, png: bytes) -> bytes:
+    """Version affichage (lissée) d'une mosaïque du ring, avec cache par échéance."""
+    import numpy as np
+    from PIL import Image
+    with _fr_radar_display_lock:
+        hit = _fr_radar_display_cache.get(iso)
+        if hit:
+            return hit
+    rendered = _fr_radar_display_render(np.asarray(Image.open(io.BytesIO(png)).convert("RGBA")))
+    with _fr_radar_lock:
+        alive = set(_fr_radar_frames)
+    with _fr_radar_display_lock:
+        for k in list(_fr_radar_display_cache):
+            if k not in alive:
+                _fr_radar_display_cache.pop(k, None)
+        _fr_radar_display_cache[iso] = rendered
+    return rendered
 
 
 def _fr_radar_phase_shift(a, b):
@@ -16339,10 +16435,10 @@ def _fr_radar_blend_compute() -> None:
     blend_times: list[str] = []
     for k in range(1, FR_BLEND_LEADS + 1):
         adv = _fr_radar_warp(latest_arr, fy_full, fx_full, k) if advected else latest_arr
-        buf = io.BytesIO()
-        Image.fromarray(adv, "RGBA").save(buf, format="PNG")
         iso = (base_dt + timedelta(minutes=FR_BLEND_STEP_MIN * k)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        frames[iso] = buf.getvalue()
+        # frames blend = AFFICHAGE uniquement (le pont AROME-PI qui les relisait est retiré)
+        # → rendu lissé directement, cohérent avec les mosaïques observées.
+        frames[iso] = _fr_radar_display_render(adv)
         blend_times.append(iso)
     with _fr_blend_lock:
         _fr_blend.update(base_time=latest, speed_kmh=round(speed_kmh), frames=frames,
@@ -17280,7 +17376,8 @@ async def fr_radar_image(time: str = Query(..., min_length=10, max_length=40)) -
         png = _fr_radar_frames.get(time)
     if not png:
         return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=30"})
-    return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+    smooth = await asyncio.to_thread(_fr_radar_display_png, time, png)
+    return Response(content=smooth, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/api/radar/fr/blend/status")
