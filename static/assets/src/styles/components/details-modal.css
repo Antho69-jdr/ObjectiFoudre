@@ -665,8 +665,9 @@
     min-height: 46px;
   }
 
-  #detailsModal .metric-btn .label { font-size: 10px; }
-  #detailsModal .metric-btn .value { font-size: 13px; }
+  /* Tailles de ligne : la BASE uniforme (--tbl-label-size / 15px) vaut aussi en
+     mobile — plus d'override 10px/13px ici (v1.3.28, elles rapetissaient
+     « Score final » et les libellés météo sous les 13px des autres lignes). */
   #detailsModal .details-score-category .metric-card-score .value { font-size: 20px; }
   #detailsModal .metric-btn .hint { display: block; }
   #detailsModal .details-value-category .metric-card .value { font-size: 14px; }

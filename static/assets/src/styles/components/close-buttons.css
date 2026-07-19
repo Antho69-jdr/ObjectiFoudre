@@ -1,5 +1,5 @@
 /* ============================================================================
-   close-buttons.css — boutons de fermeture circulaires (5 IDs).
+   close-buttons.css — boutons de fermeture circulaires (7 IDs).
    ----------------------------------------------------------------------------
    !important RETIRÉS (phase qualité, 2026-06-30) : remplacés par du gain par
    SPÉCIFICITÉ + ORDRE. Importé APRÈS selection.css / selection-layout.css /
@@ -27,6 +27,8 @@
 #closeDrawerBtn,
 #predictionPageCloseBtn,
 #historyPageCloseBtn,
+#maintenancePageCloseBtn,
+#maintenanceReportsClose,
 #selectionCard #closeSelectionBtn {
   aspect-ratio: 1 / 1;
   box-sizing: border-box;
@@ -60,6 +62,8 @@
 #closeDrawerBtn:hover,
 #predictionPageCloseBtn:hover,
 #historyPageCloseBtn:hover,
+#maintenancePageCloseBtn:hover,
+#maintenanceReportsClose:hover,
 #selectionCard #closeSelectionBtn:hover {
   background: rgba(255, 255, 255, 0.09);
   border-color: var(--border-strong);
@@ -87,7 +91,9 @@
   #closeDetailsBtn,
   #closeDrawerBtn,
   #predictionPageCloseBtn,
-  #historyPageCloseBtn {
+  #historyPageCloseBtn,
+  #maintenancePageCloseBtn,
+  #maintenanceReportsClose {
     /* Cible tactile confortable sur téléphone (≥40px). */
     width: 40px;
     height: 40px;

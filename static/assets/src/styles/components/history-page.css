@@ -113,6 +113,20 @@
   border-color: rgba(255, 214, 64, 0.65);
   box-shadow: 0 0 10px rgba(255, 214, 64, 0.35);
 }
+/* Carré 38 verrouillé min+max, préfixe #historyPage (1,1,0) : sans lui,
+   body.mobile-ui button{min-width:88;min-height:46} (0,1,1, toujours posé, même
+   desktop) gagne sur la classe seule (0,1,0) et étire en pilule 88×46.
+   Le bloc ≤920 (44×44, plus bas) reprend la main sur petit écran. */
+#historyPage .history-play-btn,
+#historyPage .history-download-btn,
+#historyPage .history-flash-btn {
+  width: 38px;
+  min-width: 38px;
+  max-width: 38px;
+  height: 38px;
+  min-height: 38px;
+  max-height: 38px;
+}
 .history-scrubber {
   flex: 1 1 auto;
   accent-color: var(--accent);
