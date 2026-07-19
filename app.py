@@ -78,7 +78,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.36"
+APP_VERSION = "1.3.37"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16584,14 +16584,16 @@ def _fr_bridge_compute(api_key: str) -> None:
 # (à +5→+30 min) ; la croissance extrapolée utilise l'amortissement λ(lead)=((lead−1)/5)²
 # (calibré : jamais pire que la persistance à court terme, plein gain à +30 min).
 FR_CELLS_HISTORY = 12       # mosaïques analysées (~1 h)
-FR_CELLS_MIN_AREA = 6       # px DS : seuil enveloppe (détection/suivi)
-# ── Détection par PALIERS DE COULEUR (v1.3.20, demande user). Trois niveaux calés sur les
-# bandes dBZ de la palette radar (_FR_RADAR_BANDS/_COLORS) :
-#   • ENVELOPPE (bleu/vert/jaune, ≥ bande 2 ~16 dBZ) = empreinte large, PEUT contenir
-#     plusieurs cellules distinctes → à segmenter.
-#   • GRAINE (jaune/orange, ≥ bande 4 ~32 dBZ) = structure qui INDIVIDUALISE une cellule.
-#   • CŒUR (orange/rouge/blanc, ≥ bande 5 ~40 dBZ) = intensité (exposition/tendance).
-FR_CELLS_ENV_BAND = 2       # plancher enveloppe (~16 dBZ)
+FR_CELLS_MIN_AREA = 3       # px DS : seuil enveloppe (détection/suivi) — abaissé 6→3 avec
+                            # l'enveloppe JAUNE (bien plus petite que l'ex-16 dBZ) pour ne
+                            # pas perdre les petites cellules naissantes à cœur orange.
+# ── Détection par PALIERS DE COULEUR (v1.3.20, resserrée v1.3.37 — demande Anthony
+# 2026-07-19 : « délimitation au jaune maximum »). Niveaux calés sur les bandes dBZ de la
+# palette radar (_FR_RADAR_BANDS/_COLORS) :
+#   • ENVELOPPE (JAUNE et plus, ≥ bande 4 ~32 dBZ) = la zone dessinée de la cellule.
+#     (Avant v1.3.37 : bande 2 ~16 dBZ → grandes nappes bleu/vert peu parlantes.)
+#   • CŒUR (orange/rouge/blanc, ≥ bande 5 ~40 dBZ) = individualisation + intensité.
+FR_CELLS_ENV_BAND = 4       # plancher enveloppe = JAUNE (~32 dBZ)
 FR_CELLS_MARKER_BAND = 4    # graine « cellule distincte » (~32 dBZ, jaune)
 FR_CELLS_MARKER_MIN = 3     # px DS : aire min d'une graine (sinon speck ignoré)
 FR_CELLS_CORE_BAND = 5      # bande cœur convectif (~40-48 dBZ) — graine primaire d'individualisation
@@ -16704,11 +16706,31 @@ def _convex_hull(pts: list[tuple[int, int]]) -> list[tuple[int, int]]:
     return half(pts) + half(pts[::-1])
 
 
-def _fr_cells_outline(m, max_pts: int = 56) -> list[tuple[int, int]]:
-    """Contour extérieur d'un masque booléen → polygone SIMPLE (sans auto-intersection),
-    ≤ max_pts points [(y, x)…]. Moore neighbor tracing (sans scipy/cv2), simplifié par
-    Douglas-Peucker à epsilon croissant jusqu'à obtenir un anneau simple sous le budget de
-    points ; en dernier recours, enveloppe convexe (jamais de « nœud »)."""
+def _fr_cells_chaikin(ring: list, iterations: int = 2) -> list:
+    """Lissage de Chaikin (coupe de coins 1/4-3/4) sur un anneau FERMÉ : contours COURBES
+    (demande Anthony 2026-07-19) au lieu des polygones anguleux du Douglas-Peucker.
+    Préserve la simplicité de l'anneau (la coupe de coins ne crée pas de croisement).
+    Chaque itération double le nombre de points → garder l'anneau d'entrée COURT."""
+    for _ in range(iterations):
+        n = len(ring)
+        if n < 3:
+            return ring
+        smooth = []
+        for i in range(n):
+            y0, x0 = ring[i]
+            y1, x1 = ring[(i + 1) % n]
+            smooth.append((0.75 * y0 + 0.25 * y1, 0.75 * x0 + 0.25 * x1))
+            smooth.append((0.25 * y0 + 0.75 * y1, 0.25 * x0 + 0.75 * x1))
+        ring = smooth
+    return ring
+
+
+def _fr_cells_outline(m, max_pts: int = 32) -> list[tuple[float, float]]:
+    """Contour extérieur d'un masque booléen → polygone SIMPLE (sans auto-intersection)
+    puis LISSÉ (Chaikin ×2 → contours courbes). Moore neighbor tracing (sans scipy/cv2),
+    simplifié par Douglas-Peucker à epsilon croissant jusqu'à un anneau simple ≤ max_pts
+    (32 : l'anneau reste court AVANT lissage, ×4 points après) ; en dernier recours,
+    enveloppe convexe (jamais de « nœud »)."""
     import numpy as np
     ys, xs = np.where(m)
     if ys.size == 0:
@@ -16752,18 +16774,26 @@ def _fr_cells_outline(m, max_pts: int = 56) -> list[tuple[int, int]]:
         if ring and ring[-1] == ring[0]:
             ring = ring[:-1]
         if 3 <= len(ring) <= max_pts and _ring_is_simple(ring):
-            return ring
+            return _fr_cells_chaikin(ring)
     hull = _convex_hull(pts)          # dernier recours : convexe = simple par nature
-    return hull if len(hull) >= 3 else pts[:max_pts]
+    return _fr_cells_chaikin(hull) if len(hull) >= 3 else pts[:max_pts]
 
 
 def _fr_cells_stats(band, m, with_outline: bool = False) -> dict:
     import numpy as np
     ys, xs = np.where(m)
     w = band[m].astype(np.float32)
+    peak = int(band[m].max())
+    # CŒUR = barycentre des pixels AU palier max de la cellule (« là où ça tape le plus
+    # fort ») : ancrage visuel du point/label demandé par Anthony (2026-07-19). Le
+    # barycentre pondéré cy/cx reste la référence du TRACKER (appariement/vitesse,
+    # mesuré le plus stable au backtest — le pic saute d'un cœur à l'autre).
+    pk_m = m & (band == peak)
+    pys, pxs = np.where(pk_m)
     out = {
         "cy": float((ys * w).sum() / w.sum()), "cx": float((xs * w).sum() / w.sum()),
-        "area": int(m.sum()), "peak": int(band[m].max()), "mass": float(band[m].sum()),
+        "py": float(pys.mean()), "px": float(pxs.mean()),
+        "area": int(m.sum()), "peak": peak, "mass": float(band[m].sum()),
         "ymin": int(ys.min()), "ymax": int(ys.max()),
         "xmin": int(xs.min()), "xmax": int(xs.max()),
     }
@@ -17030,14 +17060,19 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         bearing = (math.degrees(math.atan2(vx, -vy)) + 360.0) % 360.0
         # tendance : seuils sur la pente de masse (unités bande·px/5 min, calées sur le backtest)
         trend = "grow" if d_mass > 15 else ("decay" if d_mass < -15 else "steady")
-        lon, lat = _fr_cells_px_to_lonlat(last["cy"], last["cx"], fh, fw)
+        # ANCRAGE VISUEL AU CŒUR (py/px = pixels au palier max, demande Anthony 2026-07-19) :
+        # le point vitesse/direction et les trajectoires suivent le cœur le plus intense.
+        # La vitesse vy/vx reste calculée sur le barycentre (stabilité mesurée) ; .get(...)
+        # replie sur le barycentre pour les entrées du cache d'extraction antérieures.
+        lon, lat = _fr_cells_px_to_lonlat(last.get("py", last["cy"]), last.get("px", last["cx"]), fh, fw)
         # trajectoires HORODATÉES ([lon, lat, epoch]) : le front positionne la cellule à l'heure
         # sélectionnée sur la frise (interpolation sur la piste passée, extrapolation au futur).
         epochs = [frame_epochs[p[0]] for p in tr]
-        past = [list(_fr_cells_px_to_lonlat(p[1]["cy"], p[1]["cx"], fh, fw)) + [epochs[i]]
+        past = [list(_fr_cells_px_to_lonlat(p[1].get("py", p[1]["cy"]), p[1].get("px", p[1]["cx"]), fh, fw)) + [epochs[i]]
                 for i, p in enumerate(tr)]
         last_epoch = epochs[-1]
-        future = [list(_fr_cells_px_to_lonlat(last["cy"] + vy * m, last["cx"] + vx * m, fh, fw))
+        future = [list(_fr_cells_px_to_lonlat(last.get("py", last["cy"]) + vy * m,
+                                              last.get("px", last["cx"]) + vx * m, fh, fw))
                   + [last_epoch + int(m * 60)]
                   for m in (10, 20, 30)]   # +10/+20/+30 min
         growth_pct = round(d_mass * 2.0 / last["mass"] * 100.0) if last["mass"] > 0 else 0
@@ -17058,8 +17093,9 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
             "lon": lon, "lat": lat, "epoch": last_epoch,
             "_area_px": last["area"],   # interne : filtre d'exposition (retiré avant publication)
             "bbox": [lon_min, lat_min, lon_max, lat_max],
-            # contour RÉEL de l'écho (masque de la dernière mosaïque) : surlignage sur la carte
-            "outline": [list(_fr_cells_px_to_lonlat(oy, ox, fh, fw))
+            # contour RÉEL de l'écho (masque ≥ jaune, lissé Chaikin) : surlignage carte.
+            # Arrondi 3 décimales (~100 m) : le lissage ×4 le nombre de points.
+            "outline": [[round(v, 3) for v in _fr_cells_px_to_lonlat(oy, ox, fh, fw)]
                         for oy, ox in (last.get("outline") or [])],
             "speed_kmh": round(speed), "bearing": round(bearing),
             "trend": trend, "d_mass": round(d_mass, 1),
