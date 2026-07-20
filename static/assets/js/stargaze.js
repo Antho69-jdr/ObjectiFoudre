@@ -60,59 +60,27 @@
   }
 
   // ── Géométrie ──────────────────────────────────────────────────────────────
-  // Point dans un anneau [[lon,lat],…] (lancer de rayon).
-  function pipRing(lon, lat, ring) {
-    let inside = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
-      if (((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / ((yj - yi) || 1e-12) + xi)) inside = !inside;
-    }
-    return inside;
-  }
-  // Sutherland-Hodgman : intersection d'un anneau (sujet, non convexe) avec un
-  // RECTANGLE aligné (fenêtre convexe) → part de la France DANS la cellule.
-  function clipRingToRect(ring, minx, miny, maxx, maxy) {
-    function clip(poly, keep, cut) {
-      const out = [], n = poly.length;
-      for (let i = 0; i < n; i++) {
-        const cur = poly[i], prev = poly[(i + n - 1) % n];
-        const ci = keep(cur), pi = keep(prev);
-        if (ci) { if (!pi) out.push(cut(prev, cur)); out.push(cur); }
-        else if (pi) out.push(cut(prev, cur));
-      }
-      return out;
-    }
-    let p = ring;
-    if (p.length > 1 && p[0][0] === p[p.length - 1][0] && p[0][1] === p[p.length - 1][1]) p = p.slice(0, -1);
-    p = clip(p, q => q[0] >= minx, (a, b) => { const t = (minx - a[0]) / ((b[0] - a[0]) || 1e-12); return [minx, a[1] + t * (b[1] - a[1])]; }); if (p.length < 3) return p;
-    p = clip(p, q => q[0] <= maxx, (a, b) => { const t = (maxx - a[0]) / ((b[0] - a[0]) || 1e-12); return [maxx, a[1] + t * (b[1] - a[1])]; }); if (p.length < 3) return p;
-    p = clip(p, q => q[1] >= miny, (a, b) => { const t = (miny - a[1]) / ((b[1] - a[1]) || 1e-12); return [a[0] + t * (b[0] - a[0]), miny]; }); if (p.length < 3) return p;
-    p = clip(p, q => q[1] <= maxy, (a, b) => { const t = (maxy - a[1]) / ((b[1] - a[1]) || 1e-12); return [a[0] + t * (b[0] - a[0]), maxy]; });
-    return p;
-  }
-  // Coords de chaque cellule ROGNÉE à la silhouette France (mer ET frontières
-  // terrestres). Grille + France statiques → calculé UNE fois puis mis en cache.
+  // Rogne chaque cellule à la silhouette France en RÉUTILISANT la fonction officielle
+  // de la carte de base : `clippedFranceCellGeometry` (grid-clip-geometry.js) — la même
+  // que la grille de score. → clip IDENTIQUE (mer + frontières terrestres), gère les
+  // MultiPolygon et écarte les slivers. Grille + France statiques → cache.
   function computeClippedCells() {
     if (clippedCells && clippedCells._n === data.cells.length) return clippedCells;
-    const MAIN = (typeof FRANCE_GRID_CLIP_MAINLAND_RING !== 'undefined') ? FRANCE_GRID_CLIP_MAINLAND_RING : null;
-    const CORS = (typeof FRANCE_GRID_CLIP_CORSICA_RING !== 'undefined') ? FRANCE_GRID_CLIP_CORSICA_RING : null;
+    const canClip = (typeof clippedFranceCellGeometry === 'function');
     const out = [];
     for (let i = 0; i < data.cells.length; i++) {
       const lon = data.cells[i].lon, lat = data.cells[i].lat;
       const hw = (CELL_KM / (111.32 * Math.cos(lat * Math.PI / 180))) / 2 * OVERLAP;
       const hh = (CELL_KM / 110.574) / 2 * OVERLAP;
       const minx = lon - hw, maxx = lon + hw, miny = lat - hh, maxy = lat + hh;
-      const square = [[minx, miny], [maxx, miny], [maxx, maxy], [minx, maxy], [minx, miny]];
-      const ring = (MAIN && pipRing(lon, lat, MAIN)) ? MAIN : ((CORS && pipRing(lon, lat, CORS)) ? CORS : null);
-      if (!ring) { out.push({ i, coords: square }); continue; }
-      // cellule ENTIÈREMENT dans la France (4 coins) → carré tel quel (pas de clip coûteux)
-      if (pipRing(minx, miny, ring) && pipRing(maxx, miny, ring) && pipRing(maxx, maxy, ring) && pipRing(minx, maxy, ring)) {
-        out.push({ i, coords: square });
+      let geom = null;
+      if (canClip) {
+        try { geom = clippedFranceCellGeometry(minx, miny, maxx, maxy); } catch (_) {}
+        if (!geom) continue;   // aucune part en France → on n'affiche pas la cellule
       } else {
-        const clip = clipRingToRect(ring, minx, miny, maxx, maxy);
-        if (clip.length >= 3) { clip.push(clip[0]); out.push({ i, coords: clip }); }
-        else out.push({ i, coords: square });
+        geom = { type: 'Polygon', coordinates: [[[minx, miny], [maxx, miny], [maxx, maxy], [minx, maxy], [minx, miny]]] };
       }
+      out.push({ i, geom });
     }
     out._n = data.cells.length;
     clippedCells = out;
@@ -136,8 +104,7 @@
         if (q != null) { props['q' + h] = q; any = true; }
       }
       if (!any) continue;
-      feats.push({ type: 'Feature', properties: props,
-        geometry: { type: 'Polygon', coordinates: [c.coords] } });
+      feats.push({ type: 'Feature', properties: props, geometry: c.geom });
     }
     return { type: 'FeatureCollection', features: feats };
   }
@@ -668,5 +635,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.49';
+  window.__stargazeV = '1.3.50';
 })();
