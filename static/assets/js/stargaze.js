@@ -42,6 +42,7 @@
   let playing = false, playTimer = null;
   let layersReady = false, loadToken = 0, clickBound = false;
   let popup = null, userMarker = null;
+  let degraded = false, retryTimer = null;     // repli « obscurité seule » quand la météo AROME manque
   let qualityFC = null;                        // géométrie des cellules construite UNE fois (scores q0..qN en props)
   let bestDark = null, bestDarkHour = null;   // meilleur score/heure sur les heures sombres, par cellule
   let railTrack = null, railMarks = [];
@@ -67,8 +68,10 @@
       const lon = cells[i].lon, lat = cells[i].lat;
       const hw = (CELL_KM / (111.32 * Math.cos(lat * Math.PI / 180))) / 2 * OVERLAP;
       const hh = (CELL_KM / 110.574) / 2 * OVERLAP;
+      const dk = (data.darkness && data.darkness[i] != null) ? data.darkness[i] : null;
       const props = { idx: i };
-      let any = false;
+      if (dk != null) props.dk = dk;   // obscurité (statique) → repli quand la météo manque
+      let any = dk != null;
       for (let h = 0; h < nH; h++) {
         const row = data.scores[h];
         const q = row ? row[i] : null;
@@ -88,6 +91,10 @@
     return ['case',
       ['<', ['coalesce', ['get', prop], -1], 0], 'rgba(0,0,0,0)',
       ['interpolate', ['linear'], ['get', prop]].concat(COLOR_STOPS)];
+  }
+  // Repli « obscurité seule » (météo AROME non chargée) : couleur par obscurité du site.
+  function colorExprDk() {
+    return ['interpolate', ['linear'], ['coalesce', ['get', 'dk'], 0]].concat(COLOR_STOPS);
   }
 
   function topSpotsFC() {
@@ -134,7 +141,7 @@
   // Changement d'heure = SEULEMENT l'expression de couleur → quasi-instantané.
   function paintHour(hi) {
     if (!map.getLayer(QUALITY_LYR)) return;
-    try { map.setPaintProperty(QUALITY_LYR, 'fill-color', colorExpr(hi)); } catch (_) {}
+    try { map.setPaintProperty(QUALITY_LYR, 'fill-color', degraded ? colorExprDk() : colorExpr(hi)); } catch (_) {}
   }
 
   // Recoloration nuit de la carte de base (surroundings visibles), comme le mode chasse.
@@ -163,8 +170,15 @@
   }
 
   function updateHourBadge() {
+    if (!hourEl) return;
+    if (degraded) {
+      hourEl.hidden = false;
+      hourEl.textContent = 'obscurité seule · météo en cours';
+      hourEl.classList.add('is-twilight');
+      return;
+    }
     const h = hours[cursor];
-    if (!hourEl || !h) return;
+    if (!h) { hourEl.hidden = true; return; }
     hourEl.hidden = false;
     hourEl.textContent = fmtHM(h.iso) + (h.dark ? ' · nuit noire' : ' · crépuscule');
     hourEl.classList.toggle('is-twilight', !h.dark);
@@ -308,6 +322,10 @@
       const row = data.scores[hi]; if (!row) continue;
       for (let i = 0; i < n; i++) { const s = row[i]; if (s != null && s > bestDark[i]) { bestDark[i] = s; bestDarkHour[i] = hours[hi].hour; } }
     }
+    // repli « obscurité seule » : à défaut de météo, on classe sur l'obscurité du site.
+    if (degraded || !hours.length) {
+      for (let i = 0; i < n; i++) if (data.darkness && data.darkness[i] != null) bestDark[i] = data.darkness[i];
+    }
   }
 
   function defaultCursor() {
@@ -323,24 +341,33 @@
 
   async function loadData() {
     const token = ++loadToken;
+    if (retryTimer) { window.clearTimeout(retryTimer); retryTimer = null; }
     showHint('Calcul des conditions de la nuit…');
     let d = null;
     try { d = await (await fetch('/api/stargaze/tonight')).json(); } catch (_) {}
     if (token !== loadToken || !active) return;
-    if (!d || !d.ok) {
-      showHint((d && d.message) || 'Grille AROME de la nuit indisponible — réessaie plus tard.');
+    // sans cellules du tout = échec total ; sinon on sert AU MOINS l'obscurité (repli).
+    if (!d || !Array.isArray(d.cells) || !d.cells.length || !Array.isArray(d.darkness)) {
+      showHint((d && d.message) || 'Conditions indisponibles — réessaie plus tard.');
       return;
     }
     hideHint();
-    data = d; hours = d.hours || [];
+    degraded = !d.ok;                       // météo AROME absente → obscurité seule
+    data = d; hours = degraded ? [] : (d.hours || []);
     computeBestDark();
     qualityFC = buildQualityFC();
     if (map.getSource(QUALITY_SRC)) try { map.getSource(QUALITY_SRC).setData(qualityFC); } catch (_) {}
     renderBadge();
     buildFrise();
-    if (map.getSource(TOP_SRC)) try { map.getSource(TOP_SRC).setData(topSpotsFC()); } catch (_) {}
-    cursor = defaultCursor();
-    applyCursor(cursor);
+    if (map.getSource(TOP_SRC)) try { map.getSource(TOP_SRC).setData(degraded ? EMPTY_FC : topSpotsFC()); } catch (_) {}
+    if (degraded) {
+      paintHour(0);
+      // la grille AROME se précharge (ou l'API est momentanément indispo) → on réessaie.
+      retryTimer = window.setTimeout(() => { if (active) loadData(); }, 90000);
+    } else {
+      cursor = defaultCursor();
+      applyCursor(cursor);
+    }
   }
 
   let hintEl = null;
@@ -377,18 +404,27 @@
       onSgLeave();
       return;
     }
-    const sc = data.scores[cursor] ? data.scores[cursor][i] : null;
-    if (sc == null) { onSgLeave(); return; }
-    const cl = data.cloud[cursor] ? data.cloud[cursor][i] : null;
-    const bh = bestDarkHour ? bestDarkHour[i] : null;
-    const col = sgRampColor(sc);
     const el = ensureSgTip();
-    el.style.setProperty('--gct-score', col);
-    el.innerHTML =
-      '<span class="gct-head"><b>Qualité</b><strong style="color:' + col + '">' + sc + '</strong></span>' +
-      '<span class="gct-row"><b>Obscurité</b><span class="gct-val">' + data.darkness[i] + '<span class="gct-unit">/100</span></span></span>' +
-      '<span class="gct-row"><b>Nuages</b><span class="gct-val">' + (cl != null ? Math.round(cl) : '—') + '<span class="gct-unit"> %</span></span></span>' +
-      '<span class="gct-row"><b>Meilleur créneau</b><span class="gct-val">' + (bh != null ? String(bh).padStart(2, '0') + '<span class="gct-unit"> h</span>' : '—') + '</span></span>';
+    if (degraded) {
+      const dk = data.darkness[i];
+      const col = sgRampColor(dk);
+      el.style.setProperty('--gct-score', col);
+      el.innerHTML =
+        '<span class="gct-head"><b>Obscurité</b><strong style="color:' + col + '">' + dk + '</strong></span>' +
+        '<span class="gct-row"><b>Pollution lum.</b><span class="gct-val">' + (100 - dk) + '<span class="gct-unit">/100</span></span></span>';
+    } else {
+      const sc = data.scores[cursor] ? data.scores[cursor][i] : null;
+      if (sc == null) { onSgLeave(); return; }
+      const cl = data.cloud[cursor] ? data.cloud[cursor][i] : null;
+      const bh = bestDarkHour ? bestDarkHour[i] : null;
+      const col = sgRampColor(sc);
+      el.style.setProperty('--gct-score', col);
+      el.innerHTML =
+        '<span class="gct-head"><b>Qualité</b><strong style="color:' + col + '">' + sc + '</strong></span>' +
+        '<span class="gct-row"><b>Obscurité</b><span class="gct-val">' + data.darkness[i] + '<span class="gct-unit">/100</span></span></span>' +
+        '<span class="gct-row"><b>Nuages</b><span class="gct-val">' + (cl != null ? Math.round(cl) : '—') + '<span class="gct-unit"> %</span></span></span>' +
+        '<span class="gct-row"><b>Meilleur créneau</b><span class="gct-val">' + (bh != null ? String(bh).padStart(2, '0') + '<span class="gct-unit"> h</span>' : '—') + '</span></span>';
+    }
     const pt = e.point || { x: 0, y: 0 };
     const cont = map.getContainer();
     const cw = cont ? cont.clientWidth : 0, ch = cont ? cont.clientHeight : 0;
@@ -535,6 +571,8 @@
     if (!active) return;
     active = false;
     stop();
+    if (retryTimer) { window.clearTimeout(retryTimer); retryTimer = null; }
+    degraded = false;
     toggleBtn.classList.remove('active');
     toggleBtn.setAttribute('aria-pressed', 'false');
     controls.setAttribute('aria-hidden', 'true');
@@ -565,5 +603,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.46';
+  window.__stargazeV = '1.3.47';
 })();
