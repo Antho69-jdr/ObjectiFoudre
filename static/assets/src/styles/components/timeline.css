@@ -74,6 +74,11 @@ body.chase-mode #chaseSlots {
   cursor: pointer;
   z-index: 30;
 }
+/* La poignée NE DOIT PAS bouger à l'appui : la règle générique `button:active`
+   {transform:scale(.985)} (0,1,1) battait `.timeline-toggle-btn` (0,1,0) et
+   écrasait le translateX(-50%) → saut de ~36px à droite (perte du centrage).
+   On réaffirme le centrage à l'état actif (0,2,1 > 0,1,1), sans scale. */
+.timeline-toggle-btn:active { transform: translateX(-50%); }
 .timeline-toggle-btn::before {
   content: "";
   position: absolute;
