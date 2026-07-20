@@ -19,21 +19,30 @@
   const geoBtn = document.getElementById('sgGeoBtn');
 
   const QUALITY_SRC = 'sg-quality-src', QUALITY_LYR = 'sg-quality';
-  const MASK_SRC = 'sg-mask-src', MASK_LYR = 'sg-mask';
   const TOP_SRC = 'sg-top-src', TOP_GLOW = 'sg-top-glow', TOP_LYR = 'sg-top';
-  const BEFORE_ID = 'waterway_label';      // insérer SOUS les labels (villes visibles pour l'orientation)
-  const NIGHT_DARK = '#0a0b10';            // hors France = nuit (neutre sombre, sans bleu saturé)
+  // Champ inséré SOUS la couche 'water' → la mer rogne le débordement des cellules au
+  // littoral et le RESTE DU MONDE reste visible (comme la carte de base / mode chasse).
+  const FIELD_BEFORE = 'water';
   const CELL_KM = 15, OVERLAP = 1.06;
   const EMPTY_FC = { type: 'FeatureCollection', features: [] };
   // Rampe V3 « ambre nuit » (opaque) : médiocre = sombre → excellent = or.
-  const COLOR = ['interpolate', ['linear'], ['get', 'q'],
-    12, '#0e0b08', 30, '#241408', 48, '#472810', 62, '#764715', 74, '#ad781b', 84, '#dcab3e', 92, '#f2d488'];
+  const COLOR_STOPS = [12, '#0e0b08', 30, '#241408', 48, '#472810', 62, '#764715', 74, '#ad781b', 84, '#dcab3e', 92, '#f2d488'];
+  // Recoloration NUIT de la carte de base (comme setChaseMapTint) : les surroundings
+  // restent VISIBLES, juste assombris/réchauffés (jamais de bleu). [layer, prop, nuit, normal]
+  const STARGAZE_MAP_TINT = [
+    ['background', 'background-color', '#080a10', '#08101c'],
+    ['water', 'fill-color', 'rgba(16, 20, 28, 1)', 'rgba(38, 56, 72, 1)'],
+    ['landuse_residential', 'fill-color', 'rgba(26, 22, 14, 0.72)', 'rgba(17, 28, 42, 0.72)'],
+    ['waterway', 'line-color', 'rgba(90, 80, 58, 0.55)', 'rgba(70, 100, 124, 0.55)'],
+    ['france-department-lines', 'line-color', 'rgba(184, 150, 92, 0.5)', 'rgba(120, 145, 175, 0.5)'],
+    ['france-region-lines', 'line-color', 'rgba(212, 178, 120, 0.62)', 'rgba(150, 176, 208, 0.62)'],
+  ];
 
   let active = false, data = null, hours = [], cursor = 0;
   let playing = false, playTimer = null;
   let layersReady = false, loadToken = 0, clickBound = false;
   let popup = null, userMarker = null;
-  const hourFcCache = new Map();
+  let qualityFC = null;                        // géométrie des cellules construite UNE fois (scores q0..qN en props)
   let bestDark = null, bestDarkHour = null;   // meilleur score/heure sur les heures sombres, par cellule
   let railTrack = null, railMarks = [];
 
@@ -49,40 +58,36 @@
   }
 
   // ── Géométrie ──────────────────────────────────────────────────────────────
-  function cellFeaturesForHour(hi) {
-    if (hourFcCache.has(hi)) return hourFcCache.get(hi);
-    const row = data.scores[hi];
-    if (!row) { hourFcCache.set(hi, EMPTY_FC); return EMPTY_FC; }
-    const cells = data.cells, feats = [];
+  // UNE seule FeatureCollection : chaque cellule porte son score à CHAQUE heure
+  // (props q0, q1, …). Le changement d'heure ne touche QUE l'expression de couleur
+  // (setPaintProperty) → aucune re-génération de géométrie, quasi-instantané.
+  function buildQualityFC() {
+    const cells = data.cells, nH = hours.length, feats = [];
     for (let i = 0; i < cells.length; i++) {
-      const q = row[i];
-      if (q == null) continue;
       const lon = cells[i].lon, lat = cells[i].lat;
       const hw = (CELL_KM / (111.32 * Math.cos(lat * Math.PI / 180))) / 2 * OVERLAP;
       const hh = (CELL_KM / 110.574) / 2 * OVERLAP;
-      feats.push({ type: 'Feature', properties: { q },
+      const props = { idx: i };
+      let any = false;
+      for (let h = 0; h < nH; h++) {
+        const row = data.scores[h];
+        const q = row ? row[i] : null;
+        if (q != null) { props['q' + h] = q; any = true; }
+      }
+      if (!any) continue;
+      feats.push({ type: 'Feature', properties: props,
         geometry: { type: 'Polygon', coordinates: [[
           [lon - hw, lat - hh], [lon + hw, lat - hh], [lon + hw, lat + hh], [lon - hw, lat + hh], [lon - hw, lat - hh]]] } });
     }
-    const fc = { type: 'FeatureCollection', features: feats };
-    hourFcCache.set(hi, fc);
-    return fc;
+    return { type: 'FeatureCollection', features: feats };
   }
 
-  function franceMaskFC() {
-    // monde MOINS France (métropole + Corse en trous) → cache le débordement des
-    // cellules hors des côtes + peint la nuit autour. Anneaux [[lon,lat],…] globaux.
-    const world = [[-179, 80], [179, 80], [179, -80], [-179, -80], [-179, 80]];
-    const rings = [world];
-    try {
-      if (typeof FRANCE_GRID_CLIP_RINGS !== 'undefined' && Array.isArray(FRANCE_GRID_CLIP_RINGS)) {
-        FRANCE_GRID_CLIP_RINGS.forEach((r) => rings.push(r));
-      } else {
-        if (typeof FRANCE_GRID_CLIP_MAINLAND_RING !== 'undefined') rings.push(FRANCE_GRID_CLIP_MAINLAND_RING);
-        if (typeof FRANCE_GRID_CLIP_CORSICA_RING !== 'undefined') rings.push(FRANCE_GRID_CLIP_CORSICA_RING);
-      }
-    } catch (_) {}
-    return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: rings } }] };
+  // Expression fill-color pour l'heure hi : cellule sans score à cette heure → transparente.
+  function colorExpr(hi) {
+    const prop = 'q' + hi;
+    return ['case',
+      ['<', ['coalesce', ['get', prop], -1], 0], 'rgba(0,0,0,0)',
+      ['interpolate', ['linear'], ['get', prop]].concat(COLOR_STOPS)];
   }
 
   function topSpotsFC() {
@@ -93,24 +98,20 @@
   }
 
   // ── Couches ────────────────────────────────────────────────────────────────
-  function beforeId() { return map.getLayer(BEFORE_ID) ? BEFORE_ID : undefined; }
-
   function ensureLayers() {
     if (!map || !(map.isStyleLoaded && map.isStyleLoaded())) return false;
-    const bid = beforeId();
+    const fieldBefore = map.getLayer(FIELD_BEFORE) ? FIELD_BEFORE : undefined;
+    // Champ de qualité SOUS 'water' → littoral rogné, monde visible. fill-antialias
+    // FALSE (sinon liseré 1px par cellule = « contour décalé »).
     if (!map.getSource(QUALITY_SRC)) map.addSource(QUALITY_SRC, { type: 'geojson', data: EMPTY_FC });
-    // fill-antialias FALSE : sinon MapLibre dessine un liseré 1px par cellule qui,
-    // combiné au recouvrement, produit un « contour décalé » sur chaque carré.
     if (!map.getLayer(QUALITY_LYR)) map.addLayer({ id: QUALITY_LYR, type: 'fill', source: QUALITY_SRC,
-      paint: { 'fill-color': COLOR, 'fill-opacity': 1, 'fill-antialias': false } }, bid);
-    if (!map.getSource(MASK_SRC)) map.addSource(MASK_SRC, { type: 'geojson', data: franceMaskFC() });
-    if (!map.getLayer(MASK_LYR)) map.addLayer({ id: MASK_LYR, type: 'fill', source: MASK_SRC,
-      paint: { 'fill-color': NIGHT_DARK, 'fill-opacity': 1 } }, bid);
+      paint: { 'fill-color': 'rgba(0,0,0,0)', 'fill-opacity': 1, 'fill-antialias': false } }, fieldBefore);
+    // Top spots AU-DESSUS de tout (jamais masqués).
     if (!map.getSource(TOP_SRC)) map.addSource(TOP_SRC, { type: 'geojson', data: EMPTY_FC });
     if (!map.getLayer(TOP_GLOW)) map.addLayer({ id: TOP_GLOW, type: 'circle', source: TOP_SRC,
-      paint: { 'circle-radius': 19, 'circle-color': '#e0ad3f', 'circle-blur': 1, 'circle-opacity': 0.45 } }, bid);
+      paint: { 'circle-radius': 19, 'circle-color': '#e0ad3f', 'circle-blur': 1, 'circle-opacity': 0.45 } });
     if (!map.getLayer(TOP_LYR)) map.addLayer({ id: TOP_LYR, type: 'circle', source: TOP_SRC,
-      paint: { 'circle-radius': 5, 'circle-color': '#f7dfa0', 'circle-stroke-color': '#2a1600', 'circle-stroke-width': 1.4, 'circle-opacity': 0.96 } }, bid);
+      paint: { 'circle-radius': 5, 'circle-color': '#f7dfa0', 'circle-stroke-color': '#2a1600', 'circle-stroke-width': 1.4, 'circle-opacity': 0.96 } });
     layersReady = true;
     return true;
   }
@@ -125,14 +126,27 @@
   }
 
   function setLayersVisible(on) {
-    [QUALITY_LYR, MASK_LYR, TOP_GLOW, TOP_LYR].forEach((id) => {
+    [QUALITY_LYR, TOP_GLOW, TOP_LYR].forEach((id) => {
       if (map.getLayer(id)) { try { map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'); } catch (_) {} }
     });
   }
 
+  // Changement d'heure = SEULEMENT l'expression de couleur → quasi-instantané.
   function paintHour(hi) {
-    if (!map.getSource(QUALITY_SRC)) return;
-    try { map.getSource(QUALITY_SRC).setData(cellFeaturesForHour(hi)); } catch (_) {}
+    if (!map.getLayer(QUALITY_LYR)) return;
+    try { map.setPaintProperty(QUALITY_LYR, 'fill-color', colorExpr(hi)); } catch (_) {}
+  }
+
+  // Recoloration nuit de la carte de base (surroundings visibles), comme le mode chasse.
+  function setStargazeMapTint(on) {
+    if (!map) return;
+    const apply = () => {
+      for (const [layer, prop, nightVal, normalVal] of STARGAZE_MAP_TINT) {
+        if (map.getLayer(layer)) { try { map.setPaintProperty(layer, prop, on ? nightVal : normalVal); } catch (_) {} }
+      }
+    };
+    if (map.isStyleLoaded && map.isStyleLoaded()) apply();
+    else map.once('idle', apply);
   }
 
   // ── Badge + frise ────────────────────────────────────────────────────────
@@ -318,8 +332,10 @@
       return;
     }
     hideHint();
-    data = d; hours = d.hours || []; hourFcCache.clear();
+    data = d; hours = d.hours || [];
     computeBestDark();
+    qualityFC = buildQualityFC();
+    if (map.getSource(QUALITY_SRC)) try { map.getSource(QUALITY_SRC).setData(qualityFC); } catch (_) {}
     renderBadge();
     buildFrise();
     if (map.getSource(TOP_SRC)) try { map.getSource(TOP_SRC).setData(topSpotsFC()); } catch (_) {}
@@ -333,6 +349,56 @@
     hintEl.textContent = txt; hintEl.hidden = false;
   }
   function hideHint() { if (hintEl) hintEl.hidden = true; }
+
+  // ── Tooltip de survol de cellule (identique à la carte de base : .grid-cell-tooltip) ──
+  let sgTipEl = null;
+  function ensureSgTip() {
+    if (sgTipEl && sgTipEl.isConnected) return sgTipEl;
+    const el = document.createElement('div');
+    el.className = 'grid-cell-tooltip';
+    el.setAttribute('aria-hidden', 'true');
+    (map.getContainer() || document.body).appendChild(el);
+    sgTipEl = el;
+    return el;
+  }
+  function sgRampColor(q) {
+    if (q <= COLOR_STOPS[0]) return COLOR_STOPS[1];
+    for (let i = 2; i < COLOR_STOPS.length; i += 2) { if (q <= COLOR_STOPS[i]) return COLOR_STOPS[i + 1]; }
+    return COLOR_STOPS[COLOR_STOPS.length - 1];
+  }
+  function onSgEnter() { map.getCanvas().style.cursor = 'pointer'; }
+  function onSgLeave() { if (map.getCanvas()) map.getCanvas().style.cursor = ''; if (sgTipEl) sgTipEl.classList.remove('is-visible'); }
+  function onSgMove(e) {
+    if (!data) { onSgLeave(); return; }
+    const f = e.features && e.features[0];
+    const i = f ? Number(f.properties.idx) : -1;
+    if (!(i >= 0) || !data.cells[i]
+        || (typeof pointInFranceGridMask === 'function' && e.lngLat && !pointInFranceGridMask(e.lngLat.lng, e.lngLat.lat))) {
+      onSgLeave();
+      return;
+    }
+    const sc = data.scores[cursor] ? data.scores[cursor][i] : null;
+    if (sc == null) { onSgLeave(); return; }
+    const cl = data.cloud[cursor] ? data.cloud[cursor][i] : null;
+    const bh = bestDarkHour ? bestDarkHour[i] : null;
+    const col = sgRampColor(sc);
+    const el = ensureSgTip();
+    el.style.setProperty('--gct-score', col);
+    el.innerHTML =
+      '<span class="gct-head"><b>Qualité</b><strong style="color:' + col + '">' + sc + '</strong></span>' +
+      '<span class="gct-row"><b>Obscurité</b><span class="gct-val">' + data.darkness[i] + '<span class="gct-unit">/100</span></span></span>' +
+      '<span class="gct-row"><b>Nuages</b><span class="gct-val">' + (cl != null ? Math.round(cl) : '—') + '<span class="gct-unit"> %</span></span></span>' +
+      '<span class="gct-row"><b>Meilleur créneau</b><span class="gct-val">' + (bh != null ? String(bh).padStart(2, '0') + '<span class="gct-unit"> h</span>' : '—') + '</span></span>';
+    const pt = e.point || { x: 0, y: 0 };
+    const cont = map.getContainer();
+    const cw = cont ? cont.clientWidth : 0, ch = cont ? cont.clientHeight : 0;
+    const tw = el.offsetWidth || 140, th = el.offsetHeight || 74;
+    const left = (pt.x + 16 + tw > cw) ? pt.x - 16 - tw : pt.x + 16;
+    const top = (pt.y + 16 + th > ch) ? pt.y - 16 - th : pt.y + 16;
+    el.style.left = Math.max(4, left) + 'px';
+    el.style.top = Math.max(4, top) + 'px';
+    el.classList.add('is-visible');
+  }
 
   // ── Interaction carte ───────────────────────────────────────────────────────
   function ensurePopup() {
@@ -449,12 +515,19 @@
     controls.setAttribute('aria-hidden', 'false');
     if (topInfo) topInfo.setAttribute('aria-hidden', 'false');
     document.body.classList.add('stargaze-mode');
+    setStargazeMapTint(true);
     if (ensureLayers()) { hideGrid(true); setLayersVisible(true); }
     else {
       const retry = () => { if (!active) return; if (ensureLayers()) { hideGrid(true); setLayersVisible(true); paintHour(cursor); } else window.setTimeout(retry, 250); };
       window.setTimeout(retry, 250);
     }
-    if (!clickBound) { map.on('click', onMapClick); clickBound = true; }
+    if (!clickBound) {
+      map.on('click', onMapClick);
+      map.on('mousemove', QUALITY_LYR, onSgMove);
+      map.on('mouseenter', QUALITY_LYR, onSgEnter);
+      map.on('mouseleave', QUALITY_LYR, onSgLeave);
+      clickBound = true;
+    }
     await loadData();
   }
 
@@ -467,11 +540,19 @@
     controls.setAttribute('aria-hidden', 'true');
     if (topInfo) topInfo.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('stargaze-mode');
+    setStargazeMapTint(false);
     setLayersVisible(false);
     try { map.getSource(QUALITY_SRC) && map.getSource(QUALITY_SRC).setData(EMPTY_FC); } catch (_) {}
     try { map.getSource(TOP_SRC) && map.getSource(TOP_SRC).setData(EMPTY_FC); } catch (_) {}
     if (layersReady) hideGrid(false);
-    if (clickBound) { map.off('click', onMapClick); clickBound = false; }
+    if (clickBound) {
+      map.off('click', onMapClick);
+      map.off('mousemove', QUALITY_LYR, onSgMove);
+      map.off('mouseenter', QUALITY_LYR, onSgEnter);
+      map.off('mouseleave', QUALITY_LYR, onSgLeave);
+      clickBound = false;
+    }
+    onSgLeave();
     if (popup) { popup.remove(); }
     if (userMarker) { userMarker.remove(); userMarker = null; }
     hideHint();
@@ -484,5 +565,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.45';
+  window.__stargazeV = '1.3.46';
 })();
