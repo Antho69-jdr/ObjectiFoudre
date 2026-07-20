@@ -1229,6 +1229,38 @@
     if (r && /abort/i.test(String(r.name || r.message || r))) e.preventDefault();
   });
 
+  // Poignée de repli RÉUTILISABLE (comme timelineToggleBtn de la frise de base) :
+  // clic → bascule .collapsed sur le dock ; swipe vertical en tactile ; persistée.
+  // Exposée en global → réutilisée par le mode chasse d'étoile.
+  window.setupFriseCollapse = function (dock, btn, storageKey) {
+    if (!dock || !btn) return;
+    const icon = btn.querySelector('.timeline-toggle-icon');
+    const isTouch = () => { try { return window.matchMedia('(hover: none), (pointer: coarse)').matches; } catch (_) { return false; } };
+    function apply(collapsed) {
+      dock.classList.toggle('collapsed', !!collapsed);
+      if (icon) icon.textContent = collapsed ? '↑' : '↓';
+      btn.setAttribute('aria-label', collapsed ? 'Afficher la frise' : 'Masquer la frise');
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      try { localStorage.setItem(storageKey, collapsed ? '1' : '0'); } catch (_) {}
+    }
+    const toggle = () => apply(!dock.classList.contains('collapsed'));
+    try { apply(localStorage.getItem(storageKey) === '1'); } catch (_) {}
+    let pid = null, startY = 0, dragging = false, triggered = false; const TH = 18;
+    btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (isTouch()) { if (!dragging && !triggered) toggle(); triggered = false; return; } toggle(); });
+    btn.addEventListener('pointerdown', (e) => { if (!isTouch() || e.pointerType === 'mouse') return; pid = e.pointerId; startY = e.clientY; dragging = true; triggered = false; btn.classList.add('is-dragging'); try { btn.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); }, { passive: false });
+    btn.addEventListener('pointermove', (e) => {
+      if (!dragging || e.pointerId !== pid) return;
+      const dy = e.clientY - startY, col = dock.classList.contains('collapsed');
+      if (!col && dy > TH) { apply(true); triggered = true; dragging = false; }
+      else if (col && dy < -TH) { apply(false); triggered = true; dragging = false; }
+      if (triggered) { btn.classList.remove('is-dragging'); try { btn.releasePointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); }
+    }, { passive: false });
+    const end = (e) => { if (pid !== null && e.pointerId !== undefined && e.pointerId !== pid) return; btn.classList.remove('is-dragging'); if (pid !== null) { try { btn.releasePointerCapture(pid); } catch (_) {} } pid = null; dragging = false; requestAnimationFrame(() => { triggered = false; }); };
+    btn.addEventListener('pointerup', end);
+    btn.addEventListener('pointercancel', end);
+  };
+  window.setupFriseCollapse(controls, document.getElementById('chaseToggleBtn'), 'storm_chase_collapsed');
+
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.48';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.49';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

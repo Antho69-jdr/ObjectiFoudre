@@ -486,3 +486,11 @@ body.chase-mode .meta-stack .meta-version {
 @media (min-width: 768px) and (max-width: 920px) {
   .chase-layer-rail { left: 10px; }
 }
+
+/* ===== Repli à une poignée (#chaseToggleBtn, comme la frise de base) ===== */
+.chase-overlay { transition: transform var(--dur-base) var(--ease); }
+.chase-frise { transition: opacity var(--dur-base) var(--ease); }
+.chase-overlay.collapsed { transform: translate(-50%, calc(100% + 8px)); }
+.chase-overlay.collapsed .chase-frise { opacity: 0; pointer-events: none; }
+@media (min-width: 1025px) { .chase-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
+@media (max-width: 767px) { .chase-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }

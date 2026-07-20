@@ -118,17 +118,17 @@ body.stargaze-mode #stargazeSlots {
 }
 .timeline-toggle-btn:hover::before,
 .timeline-toggle-btn:focus-visible::before,
-.timeline-dock.collapsed .timeline-toggle-btn::before { opacity: 0; }
+.collapsed .timeline-toggle-btn::before { opacity: 0; }
 .timeline-toggle-btn:hover .timeline-toggle-icon,
 .timeline-toggle-btn:focus-visible .timeline-toggle-icon,
-.timeline-dock.collapsed .timeline-toggle-icon { opacity: 1; }
+.collapsed .timeline-toggle-icon { opacity: 1; }
 .timeline-toggle-btn:focus-visible { outline: none; }
 @media (hover: none), (pointer: coarse) {
   .timeline-toggle-btn { cursor: ns-resize; touch-action: none; }
   .timeline-toggle-btn::before,
-  .timeline-dock.collapsed .timeline-toggle-btn::before { opacity: 1; }
+  .collapsed .timeline-toggle-btn::before { opacity: 1; }
   .timeline-toggle-icon,
-  .timeline-dock.collapsed .timeline-toggle-icon { opacity: 0; }
+  .collapsed .timeline-toggle-icon { opacity: 0; }
 }
 
 /* --- Repli « réduire à une poignée » --------------------------------------

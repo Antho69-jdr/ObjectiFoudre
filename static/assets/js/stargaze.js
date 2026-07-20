@@ -44,6 +44,7 @@
   let popup = null, userMarker = null;
   let degraded = false, retryTimer = null;     // repli « obscurité seule » quand la météo AROME manque
   let qualityFC = null;                        // géométrie des cellules construite UNE fois (scores q0..qN en props)
+  let clippedCells = null;                     // coords de chaque cellule ROGNÉE à la France (statique → cache)
   let bestDark = null, bestDarkHour = null;   // meilleur score/heure sur les heures sombres, par cellule
   let railTrack = null, railMarks = [];
 
@@ -59,15 +60,72 @@
   }
 
   // ── Géométrie ──────────────────────────────────────────────────────────────
-  // UNE seule FeatureCollection : chaque cellule porte son score à CHAQUE heure
-  // (props q0, q1, …). Le changement d'heure ne touche QUE l'expression de couleur
-  // (setPaintProperty) → aucune re-génération de géométrie, quasi-instantané.
-  function buildQualityFC() {
-    const cells = data.cells, nH = hours.length, feats = [];
-    for (let i = 0; i < cells.length; i++) {
-      const lon = cells[i].lon, lat = cells[i].lat;
+  // Point dans un anneau [[lon,lat],…] (lancer de rayon).
+  function pipRing(lon, lat, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+      if (((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / ((yj - yi) || 1e-12) + xi)) inside = !inside;
+    }
+    return inside;
+  }
+  // Sutherland-Hodgman : intersection d'un anneau (sujet, non convexe) avec un
+  // RECTANGLE aligné (fenêtre convexe) → part de la France DANS la cellule.
+  function clipRingToRect(ring, minx, miny, maxx, maxy) {
+    function clip(poly, keep, cut) {
+      const out = [], n = poly.length;
+      for (let i = 0; i < n; i++) {
+        const cur = poly[i], prev = poly[(i + n - 1) % n];
+        const ci = keep(cur), pi = keep(prev);
+        if (ci) { if (!pi) out.push(cut(prev, cur)); out.push(cur); }
+        else if (pi) out.push(cut(prev, cur));
+      }
+      return out;
+    }
+    let p = ring;
+    if (p.length > 1 && p[0][0] === p[p.length - 1][0] && p[0][1] === p[p.length - 1][1]) p = p.slice(0, -1);
+    p = clip(p, q => q[0] >= minx, (a, b) => { const t = (minx - a[0]) / ((b[0] - a[0]) || 1e-12); return [minx, a[1] + t * (b[1] - a[1])]; }); if (p.length < 3) return p;
+    p = clip(p, q => q[0] <= maxx, (a, b) => { const t = (maxx - a[0]) / ((b[0] - a[0]) || 1e-12); return [maxx, a[1] + t * (b[1] - a[1])]; }); if (p.length < 3) return p;
+    p = clip(p, q => q[1] >= miny, (a, b) => { const t = (miny - a[1]) / ((b[1] - a[1]) || 1e-12); return [a[0] + t * (b[0] - a[0]), miny]; }); if (p.length < 3) return p;
+    p = clip(p, q => q[1] <= maxy, (a, b) => { const t = (maxy - a[1]) / ((b[1] - a[1]) || 1e-12); return [a[0] + t * (b[0] - a[0]), maxy]; });
+    return p;
+  }
+  // Coords de chaque cellule ROGNÉE à la silhouette France (mer ET frontières
+  // terrestres). Grille + France statiques → calculé UNE fois puis mis en cache.
+  function computeClippedCells() {
+    if (clippedCells && clippedCells._n === data.cells.length) return clippedCells;
+    const MAIN = (typeof FRANCE_GRID_CLIP_MAINLAND_RING !== 'undefined') ? FRANCE_GRID_CLIP_MAINLAND_RING : null;
+    const CORS = (typeof FRANCE_GRID_CLIP_CORSICA_RING !== 'undefined') ? FRANCE_GRID_CLIP_CORSICA_RING : null;
+    const out = [];
+    for (let i = 0; i < data.cells.length; i++) {
+      const lon = data.cells[i].lon, lat = data.cells[i].lat;
       const hw = (CELL_KM / (111.32 * Math.cos(lat * Math.PI / 180))) / 2 * OVERLAP;
       const hh = (CELL_KM / 110.574) / 2 * OVERLAP;
+      const minx = lon - hw, maxx = lon + hw, miny = lat - hh, maxy = lat + hh;
+      const square = [[minx, miny], [maxx, miny], [maxx, maxy], [minx, maxy], [minx, miny]];
+      const ring = (MAIN && pipRing(lon, lat, MAIN)) ? MAIN : ((CORS && pipRing(lon, lat, CORS)) ? CORS : null);
+      if (!ring) { out.push({ i, coords: square }); continue; }
+      // cellule ENTIÈREMENT dans la France (4 coins) → carré tel quel (pas de clip coûteux)
+      if (pipRing(minx, miny, ring) && pipRing(maxx, miny, ring) && pipRing(maxx, maxy, ring) && pipRing(minx, maxy, ring)) {
+        out.push({ i, coords: square });
+      } else {
+        const clip = clipRingToRect(ring, minx, miny, maxx, maxy);
+        if (clip.length >= 3) { clip.push(clip[0]); out.push({ i, coords: clip }); }
+        else out.push({ i, coords: square });
+      }
+    }
+    out._n = data.cells.length;
+    clippedCells = out;
+    return out;
+  }
+
+  // UNE seule FeatureCollection : chaque cellule (rognée à la France) porte son score
+  // à CHAQUE heure (props q0, q1, …). Le changement d'heure ne touche QUE l'expression
+  // de couleur (setPaintProperty) → aucune re-génération de géométrie, quasi-instantané.
+  function buildQualityFC() {
+    const clipped = computeClippedCells(), nH = hours.length, feats = [];
+    for (const c of clipped) {
+      const i = c.i;
       const dk = (data.darkness && data.darkness[i] != null) ? data.darkness[i] : null;
       const props = { idx: i };
       if (dk != null) props.dk = dk;   // obscurité (statique) → repli quand la météo manque
@@ -79,8 +137,7 @@
       }
       if (!any) continue;
       feats.push({ type: 'Feature', properties: props,
-        geometry: { type: 'Polygon', coordinates: [[
-          [lon - hw, lat - hh], [lon + hw, lat - hh], [lon + hw, lat + hh], [lon - hw, lat + hh], [lon - hw, lat - hh]]] } });
+        geometry: { type: 'Polygon', coordinates: [c.coords] } });
     }
     return { type: 'FeatureCollection', features: feats };
   }
@@ -603,9 +660,13 @@
   toggleBtn.addEventListener('click', () => { active ? deactivate() : activate(); });
   playBtn && playBtn.addEventListener('click', play);
   geoBtn && geoBtn.addEventListener('click', autourDeMoi);
+  // Poignée de repli de la frise (réutilise le helper générique défini par chase.js).
+  if (typeof window.setupFriseCollapse === 'function') {
+    window.setupFriseCollapse(controls, document.getElementById('stargazeToggleBtn'), 'storm_stargaze_collapsed');
+  }
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && active) deactivate(); });
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.48';
+  window.__stargazeV = '1.3.49';
 })();

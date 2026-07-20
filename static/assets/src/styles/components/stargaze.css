@@ -314,3 +314,11 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
      stargaze (6 heures = pas dense) RESTE visible. (0,3,1) bat .timeline-rail. */
   body.stargaze-mode #stargazeSlots .timeline-rail { display: block; }
 }
+
+/* ===== Repli à une poignée (#stargazeToggleBtn, comme la frise de base) ===== */
+.stargaze-overlay { transition: transform var(--dur-base) var(--ease); }
+.stargaze-frise { transition: opacity var(--dur-base) var(--ease); }
+.stargaze-overlay.collapsed { transform: translate(-50%, calc(100% + 8px)); }
+.stargaze-overlay.collapsed .stargaze-frise { opacity: 0; pointer-events: none; }
+@media (min-width: 1025px) { .stargaze-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
+@media (max-width: 767px) { .stargaze-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
