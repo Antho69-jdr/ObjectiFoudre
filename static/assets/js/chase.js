@@ -26,7 +26,7 @@
   let savedMetaRun = null;
 
   // Radar observé = mosaïque réflectivité Météo-France 1 km (décodée/reprojetée serveur,
-  // ring buffer ~2 h). AFFICHAGE VECTORIEL (v1.3.42, demande Anthony « bords lisses et
+  // ring buffer ~2 h). AFFICHAGE VECTORIEL (v1.3.43, demande Anthony « bords lisses et
   // nets ») : le serveur sert les ZONES en GeoJSON (isobandes lissées, /api/radar/fr/
   // shapes) et MapLibre les dessine au GPU → net à TOUS les zooms, fini le raster qui
   // pixélise (nearest) ou floute (linear). UNE source geojson + un fill par bande (match),
@@ -1228,5 +1228,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.42';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.43';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

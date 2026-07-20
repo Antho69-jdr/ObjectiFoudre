@@ -54,6 +54,7 @@ from pydantic import BaseModel, Field
 
 from weather_logic import DEFAULT_CENTER_LABEL, CELL_SIZE_KM, Point, build_historical_analysis_payload, build_latest_payload, build_grid, fetch_model, flatten_rows_for_analysis, group_for_output, km_to_deg_lat, km_to_deg_lon, rows_for_grid_locations
 import weather_logic
+import stargaze  # mode « chasse d'étoile » : pollution lumineuse + astro
 import verification
 import learning
 try:
@@ -78,7 +79,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.42"
+APP_VERSION = "1.3.43"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -3996,6 +3997,62 @@ def _build_meteofrance_france_grid_points(zone_prefix: str = METEOFRANCE_FRANCE_
         row += 1
         lat = float(bounds["south"]) + row * step_lat
     return points
+
+
+# ── CHASSE D'ÉTOILE : carte d'obscurité (pollution lumineuse statique) ────────────
+# stargaze.py fournit le modèle de Walker (validé). L'obscurité par cellule ne change
+# JAMAIS → précalcul une fois, cache disque (regénéré seulement si absent/grille changée).
+_STARGAZE_DARKGRID: list[dict[str, Any]] | None = None
+_STARGAZE_DARKGRID_LOCK = threading.Lock()
+
+
+def _stargaze_darkgrid_cache_path() -> str:
+    base = os.environ.get("OBJECTIFOUDRE_HISTORY_DIR") or os.path.join(BASE_DIR, ".cache")
+    return os.path.join(base, "stargaze_darkgrid.json")
+
+
+def _stargaze_darkgrid() -> list[dict[str, Any]]:
+    """Obscurité par cellule de la grille France (0..100), calculée une fois puis cachée."""
+    global _STARGAZE_DARKGRID
+    with _STARGAZE_DARKGRID_LOCK:
+        if _STARGAZE_DARKGRID is not None:
+            return _STARGAZE_DARKGRID
+        pts = _build_meteofrance_france_grid_points()
+        path = _stargaze_darkgrid_cache_path()
+        # cache valide si même nombre de cellules (la grille est déterministe)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                cached = json.load(fh)
+            if isinstance(cached, list) and len(cached) == len(pts):
+                _STARGAZE_DARKGRID = cached
+                return cached
+        except Exception:
+            pass
+        cells = [(p.lon, p.lat) for p in pts]
+        dk = stargaze.darkness_grid(cells)
+        grid = [{"lon": round(p.lon, 4), "lat": round(p.lat, 4), "darkness": int(d)}
+                for p, d in zip(pts, dk)]
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(grid, fh, separators=(",", ":"))
+        except Exception:
+            pass
+        _STARGAZE_DARKGRID = grid
+        return grid
+
+
+@app.get("/api/stargaze/darkmap")
+async def stargaze_darkmap() -> dict[str, Any]:
+    """Carte d'obscurité France (pollution lumineuse, statique) + contexte astro de la nuit :
+    phase de Lune et fenêtre de nuit astronomique (centre France). Base du mode chasse
+    d'étoile ; la couverture nuageuse (ciel dégagé) sera combinée à l'incrément suivant."""
+    grid = await asyncio.to_thread(_stargaze_darkgrid)
+    now = datetime.now(timezone.utc)
+    moon = stargaze.moon_phase(now)
+    night = stargaze.astronomical_night(now, METEOFRANCE_FRANCE_GRID_CENTER_LAT,
+                                        METEOFRANCE_FRANCE_GRID_CENTER_LON)
+    return {"ok": True, "cells": grid, "count": len(grid), "moon": moon, "night": night}
 
 
 def _get_meteofrance_grib_national_field_cache_payload(field_cache_key: str) -> tuple[dict[str, Any] | None, str | None, float | None]:
