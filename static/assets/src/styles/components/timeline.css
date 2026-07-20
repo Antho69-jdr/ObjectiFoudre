@@ -11,7 +11,8 @@
    le rail/curseur/pastille héritent. Le mode chasse override plus bas. Plus de
    hue-rotate : couleurs propres. */
 .timeline-dock,
-#chaseSlots {
+#chaseSlots,
+#stargazeSlots {
   --tl-accent: 56, 189, 248;     /* cyan #38bdf8 */
   --tl-accent-2: 45, 212, 191;   /* teal #2dd4bf */
   --tl-bright: 224, 242, 254;    /* rgb(var(--tl-bright)) */
@@ -27,6 +28,14 @@ body.chase-mode #chaseSlots {
   --tl-bright: 254, 226, 226;    /* #fee2e2 */
   --tl-cursor: #fca5a5;
   --tl-ring: #f87171;
+}
+/* Mode chasse d'étoile : frise recolorée AMBRE/OR (identité astronome). */
+body.stargaze-mode #stargazeSlots {
+  --tl-accent: 251, 191, 36;     /* ambre #fbbf24 */
+  --tl-accent-2: 245, 158, 11;   /* or #f59e0b */
+  --tl-bright: 255, 233, 176;    /* #ffe9b0 */
+  --tl-cursor: #f6c453;
+  --tl-ring: #fbbf24;
 }
 
 .timeline-dock {

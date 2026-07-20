@@ -35,7 +35,7 @@
   let popup = null, userMarker = null;
   const hourFcCache = new Map();
   let bestDark = null, bestDarkHour = null;   // meilleur score/heure sur les heures sombres, par cellule
-  let railEl = null, cursorEl = null;
+  let railTrack = null, railMarks = [];
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
   function fmtHM(iso) { try { return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); } catch (_) { return '--:--'; } }
@@ -99,8 +99,10 @@
     if (!map || !(map.isStyleLoaded && map.isStyleLoaded())) return false;
     const bid = beforeId();
     if (!map.getSource(QUALITY_SRC)) map.addSource(QUALITY_SRC, { type: 'geojson', data: EMPTY_FC });
+    // fill-antialias FALSE : sinon MapLibre dessine un liseré 1px par cellule qui,
+    // combiné au recouvrement, produit un « contour décalé » sur chaque carré.
     if (!map.getLayer(QUALITY_LYR)) map.addLayer({ id: QUALITY_LYR, type: 'fill', source: QUALITY_SRC,
-      paint: { 'fill-color': COLOR, 'fill-opacity': 1, 'fill-antialias': true } }, bid);
+      paint: { 'fill-color': COLOR, 'fill-opacity': 1, 'fill-antialias': false } }, bid);
     if (!map.getSource(MASK_SRC)) map.addSource(MASK_SRC, { type: 'geojson', data: franceMaskFC() });
     if (!map.getLayer(MASK_LYR)) map.addLayer({ id: MASK_LYR, type: 'fill', source: MASK_SRC,
       paint: { 'fill-color': NIGHT_DARK, 'fill-opacity': 1 } }, bid);
@@ -154,58 +156,97 @@
     hourEl.classList.toggle('is-twilight', !h.dark);
   }
 
-  function railFrac(i) { return hours.length > 1 ? i / (hours.length - 1) : 0.5; }
+  function railFrac(i) {
+    if (!hours.length) return 0;
+    const t0 = hours[0].epoch, t1 = hours[hours.length - 1].epoch;
+    return Math.max(0, Math.min(100, ((hours[i].epoch - t0) / Math.max(1, t1 - t0)) * 100));
+  }
 
+  // Icônes de phase solaire (lever/coucher/nuit) — MÊME rendu que la frise de base
+  // (timeline-solar.js), positionnées sur la fenêtre de la nuit.
+  function addSolarIcons(track) {
+    if (typeof timelinePhaseDefinitions !== 'function' || typeof timelinePhaseIconSvg !== 'function' || !hours.length) return;
+    const t0 = hours[0].epoch, t1 = hours[hours.length - 1].epoch;
+    const days = new Set();
+    for (const e of [t0, t1]) {
+      const d = new Date(e * 1000);
+      days.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    }
+    for (const iso of days) {
+      let defs; try { defs = timelinePhaseDefinitions(iso); } catch (_) { continue; }
+      const [Y, M, D] = iso.split('-').map(Number);
+      const midnight = new Date(Y, M - 1, D, 0, 0, 0).getTime() / 1000;
+      for (const ph of defs) {
+        const pct = ((midnight + ph.hour * 3600 - t0) / Math.max(1, t1 - t0)) * 100;
+        if (pct <= 0 || pct >= 100) continue;
+        const icon = document.createElement('span');
+        icon.className = `timeline-light-icon timeline-light-icon-${ph.type}`;
+        icon.style.left = pct + '%';
+        icon.setAttribute('role', 'img');
+        icon.setAttribute('aria-label', ph.label || ph.type);
+        icon.innerHTML = timelinePhaseIconSvg(ph.type);
+        track.appendChild(icon);
+      }
+    }
+  }
+
+  // Frise = MÊME structure/classes que la frise de base et du mode chasse
+  // (.timeline-rail*, stylée par timeline.css ; recolorée ambre via --tl-accent).
   function buildFrise() {
     if (!slotsEl) return;
     slotsEl.innerHTML = '';
-    railEl = null; cursorEl = null;
+    railTrack = null; railMarks = [];
     if (!hours.length) return;
     const rail = document.createElement('div');
-    rail.className = 'sg-rail';
-    rail.setAttribute('tabindex', '0');
+    rail.className = 'timeline-rail stargaze-rail';
     rail.setAttribute('role', 'slider');
     rail.setAttribute('aria-label', 'Heure de la nuit');
-    const track = document.createElement('div'); track.className = 'sg-rail-track'; rail.appendChild(track);
-    // bande « nuit astronomique »
-    const darkIdx = hours.map((h, i) => (h.dark ? i : -1)).filter((i) => i >= 0);
-    if (darkIdx.length) {
-      const band = document.createElement('div'); band.className = 'sg-rail-dark';
-      band.style.setProperty('--sg-dark-a', String(railFrac(darkIdx[0])));
-      band.style.setProperty('--sg-dark-b', String(railFrac(darkIdx[darkIdx.length - 1])));
-      rail.appendChild(band);
-    }
+    rail.tabIndex = 0;
+    const track = document.createElement('div');
+    track.className = 'timeline-rail-track';
+    addSolarIcons(track);
+    const fill = document.createElement('div'); fill.className = 'timeline-rail-fill'; track.appendChild(fill);
+    const cur = document.createElement('div'); cur.className = 'timeline-rail-cursor';
+    cur.innerHTML = '<span></span>'; track.appendChild(cur);
     hours.forEach((h, i) => {
-      const mk = document.createElement('div');
-      mk.className = 'sg-hour-mark' + (h.dark ? ' dark' : '');
-      mk.style.left = 'calc(7px + (100% - 14px) * ' + railFrac(i) + ')';
-      const tick = document.createElement('div'); tick.className = 'sg-hour-tick';
-      const lab = document.createElement('div'); lab.className = 'sg-hour-label'; lab.textContent = fmtHM(h.iso).replace(':00', 'h');
-      mk.appendChild(tick); mk.appendChild(lab); rail.appendChild(mk);
+      const mark = document.createElement('div');
+      // les heures de VRAIE nuit (sun < −18°) reçoivent un trait ambre marqué.
+      mark.className = 'timeline-hour-mark' + (h.dark ? ' sg-dark-hour' : '') + (i === cursor ? ' active' : '');
+      mark.style.left = railFrac(i) + '%';
+      mark.dataset.idx = String(i);
+      const line = document.createElement('span'); line.className = 'timeline-hour-line';
+      const label = document.createElement('span'); label.className = 'timeline-hour-label';
+      label.textContent = String(new Date(h.epoch * 1000).getHours()).padStart(2, '0');
+      mark.appendChild(line); mark.appendChild(label);
+      track.appendChild(mark);
+      railMarks.push(mark);
     });
-    const cur = document.createElement('div'); cur.className = 'sg-rail-cursor';
-    const curLab = document.createElement('span'); cur.appendChild(curLab);
-    rail.appendChild(cur);
-    cursorEl = cur;
+    rail.appendChild(track);
+    railTrack = track;
     attachRailDrag(rail);
     slotsEl.appendChild(rail);
-    railEl = rail;
     updateCursorUI();
   }
 
   function updateCursorUI() {
-    if (!railEl) return;
-    railEl.style.setProperty('--sg-cursor', String(railFrac(cursor)));
-    railEl.setAttribute('aria-valuetext', hours[cursor] ? fmtHM(hours[cursor].iso) : '');
-    const lab = cursorEl && cursorEl.querySelector('span');
-    if (lab && hours[cursor]) lab.textContent = fmtHM(hours[cursor].iso);
+    if (!railTrack) return;
+    railTrack.style.setProperty('--timeline-active-pct', railFrac(cursor) + '%');
+    const span = railTrack.querySelector('.timeline-rail-cursor span');
+    if (span && hours[cursor]) span.textContent = fmtHM(hours[cursor].iso);
+    railMarks.forEach((m, i) => m.classList.toggle('active', i === cursor));
+    const rail = railTrack.parentElement;
+    if (rail && hours[cursor]) rail.setAttribute('aria-valuetext', fmtHM(hours[cursor].iso));
   }
 
   function attachRailDrag(rail) {
     const pick = (clientX) => {
       const r = rail.getBoundingClientRect();
-      const frac = Math.max(0, Math.min(1, (clientX - r.left - 7) / Math.max(1, r.width - 14)));
-      return Math.round(frac * (hours.length - 1));
+      const frac = Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width)));
+      const t0 = hours[0].epoch, t1 = hours[hours.length - 1].epoch;
+      const target = t0 + frac * (t1 - t0);
+      let best = 0, bd = Infinity;
+      hours.forEach((h, i) => { const d = Math.abs(h.epoch - target); if (d < bd) { bd = d; best = i; } });
+      return best;
     };
     let dragging = false;
     rail.addEventListener('pointerdown', (e) => { dragging = true; try { rail.setPointerCapture(e.pointerId); } catch (_) {} stop(); applyCursor(pick(e.clientX)); });
@@ -443,5 +484,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.44';
+  window.__stargazeV = '1.3.45';
 })();
