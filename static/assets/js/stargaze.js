@@ -329,14 +329,18 @@
   }
 
   function defaultCursor() {
-    // heure sombre au meilleur score médian (sinon milieu de la nuit)
-    let best = -1, bi = Math.floor(hours.length / 2);
+    // Toujours ouvrir sur une heure QUI A DES DONNÉES (préchargement parfois partiel),
+    // en priorisant la vraie nuit puis le meilleur score médian.
+    let best = -Infinity, bi = -1;
     hours.forEach((h, i) => {
-      const row = data.scores[i]; if (!h.dark || !row) return;
+      const row = data.scores[i]; if (!row) return;
       let sum = 0, c = 0; for (const s of row) { if (s != null) { sum += s; c++; } }
-      const med = c ? sum / c : 0; if (med > best) { best = med; bi = i; }
+      if (!c) return;                                   // heure sans aucune cellule → ignorée
+      const score = (sum / c) + (h.dark ? 1000 : 0);    // priorité à la nuit noire
+      if (score > best) { best = score; bi = i; }
     });
-    return bi;
+    if (bi < 0) bi = hours.findIndex((_, i) => data.scores[i]);   // 1re heure avec un tableau
+    return bi < 0 ? 0 : bi;
   }
 
   async function loadData() {
@@ -603,5 +607,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.47';
+  window.__stargazeV = '1.3.48';
 })();
