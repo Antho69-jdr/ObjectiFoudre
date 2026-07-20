@@ -79,7 +79,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.43"
+APP_VERSION = "1.3.44"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4053,6 +4053,207 @@ async def stargaze_darkmap() -> dict[str, Any]:
     night = stargaze.astronomical_night(now, METEOFRANCE_FRANCE_GRID_CENTER_LAT,
                                         METEOFRANCE_FRANCE_GRID_CENTER_LON)
     return {"ok": True, "cells": grid, "count": len(grid), "moon": moon, "night": night}
+
+
+# ── Mode chasse d'étoile : score « meilleur spot CE SOIR » ────────────────────
+# Combine l'obscurité du site (Walker, statique, via _stargaze_darkgrid) × le ciel
+# dégagé (couverture nuageuse AROME de la nuit, par créneau, MÊME chemin cache-only
+# que la page Prévision) × la phase de Lune. Renvoie le score par cellule HEURE PAR
+# HEURE sur la nuit d'observation (frise) + top spots + contexte astro.
+STARGAZE_TWILIGHT_THRESHOLD_DEG = -12.0   # bord de la fenêtre d'observation (crépuscule nautique)
+STARGAZE_DARK_THRESHOLD_DEG = -18.0       # nuit astronomique (vraie obscurité)
+_STARGAZE_TONIGHT_CACHE: dict[str, Any] = {"key": None, "ts": 0.0, "data": None}
+_STARGAZE_TONIGHT_LOCK = threading.Lock()
+_STARGAZE_TONIGHT_TTL_SECONDS = 600
+
+
+def _stargaze_cloud_total_pct(low: Any, mid: Any, high: Any) -> float | None:
+    """Couverture totale du ciel obstruant (%) à partir des 3 étages AROME. On réutilise
+    la MÊME définition que le reste de l'app (`weather_logic.score_clear_sky_guard` →
+    total_cloud_cover) : le cirrus (étage haut) est pondéré à 0,60 (semi-transparent).
+    Valeurs en % (0..100) ; None si les 3 manquent. Repli si `metrics_used` absent."""
+    def _norm(v: Any) -> float | None:
+        if v is None:
+            return None
+        f = float(v)
+        # tolère un éventuel format fraction (0..1.5)
+        if f <= 1.5:
+            f *= 100.0
+        return max(0.0, min(100.0, f))
+    lo = _norm(low)
+    mi = _norm(mid)
+    hi = _norm(high)
+    if lo is None and mi is None and hi is None:
+        return None
+    lo = lo or 0.0
+    mi = mi or 0.0
+    hi = hi or 0.0
+    total = max(lo, mi, hi * 0.60, min(100.0, lo + mi * 0.75 + hi * 0.35))
+    return round(total, 1)
+
+
+def _stargaze_night_hours(now_utc: datetime) -> list[dict[str, Any]]:
+    """Créneaux HORAIRES LOCAUX (Europe/Paris) couvrant la nuit d'observation de ce soir
+    (soleil < −12°), avec l'altitude solaire et le drapeau « vraie obscurité » (< −18°)."""
+    paris = ZoneInfo("Europe/Paris")
+    lat = METEOFRANCE_FRANCE_GRID_CENTER_LAT
+    lon = METEOFRANCE_FRANCE_GRID_CENTER_LON
+    base = now_utc.replace(hour=12, minute=0, second=0, microsecond=0)
+    start = end = None
+    prev = None
+    for i in range(0, 24 * 12 + 1):
+        t = base + timedelta(minutes=5 * i)
+        dark = stargaze._sun_alt_deg(t, lat, lon) < STARGAZE_TWILIGHT_THRESHOLD_DEG
+        if prev is not None:
+            if dark and not prev and start is None:
+                start = t
+            if not dark and prev and start is not None and end is None:
+                end = t
+        prev = dark
+    hours: list[dict[str, Any]] = []
+    if start and end:
+        e_local = end.astimezone(paris)
+        cur = start.astimezone(paris).replace(minute=0, second=0, microsecond=0)
+        while cur < e_local:
+            mid_utc = (cur + timedelta(minutes=30)).astimezone(timezone.utc)
+            sun = stargaze._sun_alt_deg(mid_utc, lat, lon)
+            hours.append({
+                "date": cur.date().isoformat(),
+                "hour": cur.hour,
+                "iso": cur.isoformat(),
+                "epoch": int(cur.timestamp()),
+                "sun_alt": round(sun, 1),
+                "dark": sun < STARGAZE_DARK_THRESHOLD_DEG,
+            })
+            cur += timedelta(hours=1)
+    return hours
+
+
+def _stargaze_tonight() -> dict[str, Any]:
+    """Calcul complet du score « ce soir » par cellule et par heure (voir endpoint)."""
+    now = datetime.now(timezone.utc)
+    cache_key = now.astimezone(ZoneInfo("Europe/Paris")).date().isoformat()
+    with _STARGAZE_TONIGHT_LOCK:
+        c = _STARGAZE_TONIGHT_CACHE
+        if c["data"] is not None and c["key"] == cache_key and (time.time() - c["ts"]) < _STARGAZE_TONIGHT_TTL_SECONDS:
+            return c["data"]
+
+    darkgrid = _stargaze_darkgrid()
+    points = _build_meteofrance_france_grid_points()
+    # darkgrid est aligné aux points (construction déterministe, cache validé par longueur)
+    n = min(len(points), len(darkgrid))
+    cells = [{"lon": round(points[i].lon, 4), "lat": round(points[i].lat, 4)} for i in range(n)]
+    darkness_arr = [int(darkgrid[i]["darkness"]) for i in range(n)]
+    zone_index = {str(points[i].zone): i for i in range(n)}
+
+    moon = stargaze.moon_phase(now)
+    md = float(moon["darkness"])
+    night = stargaze.astronomical_night(now, METEOFRANCE_FRANCE_GRID_CENTER_LAT,
+                                        METEOFRANCE_FRANCE_GRID_CENTER_LON)
+    hours = _stargaze_night_hours(now)
+
+    scores: list[list[int | None] | None] = []
+    clouds: list[list[int | None] | None] = []
+    best_score = [-1] * n
+    best_hour: list[int | None] = [None] * n
+    any_available = False
+    for hslot in hours:
+        try:
+            d = Date.fromisoformat(hslot["date"])
+            res = _serve_france_slot_models_sync(d, int(hslot["hour"]), OBJECTIFOUDRE_AUTO_PRELOAD_GRID, "", None)
+        except Exception:
+            res = {"ok": False}
+        ok = bool(res.get("ok"))
+        hslot["available"] = ok
+        if not ok:
+            scores.append(None)
+            clouds.append(None)
+            continue
+        any_available = True
+        srow: list[int | None] = [None] * n
+        crow: list[int | None] = [None] * n
+        try:
+            hcells = res["payload"]["days"][0]["slots"][0].get("cells", [])
+        except Exception:
+            hcells = []
+        for cell in hcells:
+            i = zone_index.get(str(cell.get("zone", "")))
+            if i is None:
+                continue
+            # total_cloud_cover est déjà calculé par le scoring de l'app (weather_logic) ;
+            # on le réutilise comme source de vérité, repli sur notre formule alignée.
+            ct = (cell.get("metrics_used") or {}).get("total_cloud_cover")
+            if ct is None:
+                ct = _stargaze_cloud_total_pct(cell.get("cloud_cover_low"),
+                                               cell.get("cloud_cover_mid"),
+                                               cell.get("cloud_cover_high"))
+            if ct is None:
+                continue
+            sc = stargaze.observation_score(darkness_arr[i], ct, md)
+            srow[i] = sc
+            crow[i] = int(round(ct))
+            if hslot["dark"] and sc > best_score[i]:
+                best_score[i] = sc
+                best_hour[i] = int(hslot["hour"])
+        scores.append(srow)
+        clouds.append(crow)
+
+    # repli : si la nuit n'a AUCUNE heure vraiment sombre (plein été), on classe sur
+    # toutes les heures disponibles.
+    if any_available and all(b < 0 for b in best_score):
+        for hi, srow in enumerate(scores):
+            if not srow:
+                continue
+            for i, sc in enumerate(srow):
+                if sc is not None and sc > best_score[i]:
+                    best_score[i] = sc
+                    best_hour[i] = int(hours[hi]["hour"])
+
+    # top spots : meilleurs scores de la nuit, dédup spatial (~45 km) pour ne pas
+    # empiler des cellules voisines ; seuil « soirée décente » à 30.
+    top: list[dict[str, Any]] = []
+    for i in sorted(range(n), key=lambda k: best_score[k], reverse=True):
+        if best_score[i] < 30:
+            break
+        lon, lat = cells[i]["lon"], cells[i]["lat"]
+        clash = any(abs(lat - t["lat"]) < 0.65
+                    and abs(lon - t["lon"]) * math.cos(math.radians(lat)) < 0.75
+                    for t in top)
+        if clash:
+            continue
+        top.append({"lon": lon, "lat": lat, "score": int(best_score[i]),
+                    "hour": best_hour[i], "darkness": darkness_arr[i]})
+        if len(top) >= 8:
+            break
+
+    data: dict[str, Any] = {
+        "ok": any_available,
+        "generated_at": now.strftime("%Y-%m-%dT%H:%MZ"),
+        "moon": moon,
+        "night": night,
+        "hours": hours,
+        "count": n,
+        "cells": cells,
+        "darkness": darkness_arr,
+        "scores": scores,
+        "cloud": clouds,
+        "top_spots": top,
+    }
+    if not any_available:
+        data["message"] = ("Grille AROME de la nuit non chargée — repli sur l'obscurité "
+                           "seule (voir /api/stargaze/darkmap).")
+    with _STARGAZE_TONIGHT_LOCK:
+        _STARGAZE_TONIGHT_CACHE.update(key=cache_key, ts=time.time(), data=data)
+    return data
+
+
+@app.get("/api/stargaze/tonight")
+async def stargaze_tonight() -> dict[str, Any]:
+    """Meilleur spot d'observation CE SOIR : score par cellule (obscurité du site ×
+    ciel dégagé AROME × phase de Lune) HEURE PAR HEURE sur la nuit d'observation,
+    + top spots + contexte astro (Lune, nuit noire). Repli propre si la grille AROME
+    n'est pas chargée (ok=False, l'obscurité reste dispo via /darkmap)."""
+    return await asyncio.to_thread(_stargaze_tonight)
 
 
 def _get_meteofrance_grib_national_field_cache_payload(field_cache_key: str) -> tuple[dict[str, Any] | None, str | None, float | None]:

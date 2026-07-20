@@ -1130,6 +1130,8 @@
   // ── Activation / désactivation (bascule sur la carte de base) ────────────────
   async function activate() {
     if (active) return;
+    // exclusion mutuelle avec le mode chasse d'étoile
+    if (typeof window.exitStargazeMode === 'function') window.exitStargazeMode();
     active = true;
     toggleBtn.classList.add('active');
     toggleBtn.setAttribute('aria-pressed', 'true');
@@ -1228,5 +1230,5 @@
   });
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.43';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.44';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

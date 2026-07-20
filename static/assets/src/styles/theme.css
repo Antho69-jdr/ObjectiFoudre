@@ -119,6 +119,7 @@
    !important PORTEURS battent les regles de base partagees). Charge en dernier
    (apres timeline) ; legacy chase purge de components.css. */
 @import "./components/chase.css";
+@import "./components/stargaze.css";
 
 /* Component grid-cell-tooltip : bulle de survol des cellules (look + position
    absolue ; JS pose left/top inline + bascule is-visible). Tier 1 du retrait

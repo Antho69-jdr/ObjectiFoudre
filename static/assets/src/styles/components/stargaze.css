@@ -1,0 +1,376 @@
+/* ==========================================================================
+   MODE « CHASSE D'ÉTOILE » — overlay « meilleur spot d'observation ce soir »
+   --------------------------------------------------------------------------
+   Surface superposée à la carte de base (PAS de plein-écran), même pattern que
+   le mode chasse : bouton rail droit #stargazePageBtn → body.stargaze-mode.
+   IDENTITÉ = AMBRE/OR (l'astronome s'éclaire en rouge/ambre, jamais en bleu) →
+   se distingue du ROUGE VIF de la chasse. Le champ de qualité (cellules opaques
+   ambre nuit) est peint sur la carte par stargaze.js.
+
+   Pilotage JS : stargaze.js (IIFE) crée #stargazeSlots (frise de la nuit),
+   bascule body.stargaze-mode, peint les cellules + top spots + masque France.
+   ========================================================================== */
+
+/* --- Bascule d'affichage selon body.stargaze-mode --- */
+#stargazeControls, #stargazeTopInfo, #stargazeLegend { display: none; }
+body.stargaze-mode #installChip { display: none; }
+body.stargaze-mode #stargazeControls { display: flex; }
+body.stargaze-mode #stargazeTopInfo { display: inline-flex; }
+body.stargaze-mode #stargazeLegend { display: flex; }
+
+/* En mode chasse d'étoile : masquer l'UI de score de base + les badges horaires
+   (remplacés par #stargazeTopInfo). Dock masqué en visibility (garde la mise en
+   page → pas de rétractation à la sortie). */
+body.stargaze-mode #timelineDock {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+body.stargaze-mode #gridSourceBadge,
+body.stargaze-mode #timelineDateLabel,
+body.stargaze-mode #mfQuotaCooldownBadge { display: none !important; }
+
+/* La meta-stack (bandeau bas) suit la DA ambre en chasse d'étoile. */
+body.stargaze-mode .meta-stack {
+  background: rgba(18, 13, 5, 0.92);
+  border-top-color: rgba(251, 191, 36, 0.26);
+}
+body.stargaze-mode .meta-stack .meta-corner {
+  border-right-color: rgba(251, 191, 36, 0.16);
+  color: rgba(253, 244, 214, 0.72);
+}
+body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
+
+/* Bouton « chasse d'étoile » actif (rail droit) : ambre plat chip (identité). */
+#stargazePageBtn.active {
+  background: rgba(251, 191, 36, 0.16);
+  border-color: rgba(251, 191, 36, 0.55);
+  color: #ffe9b0;
+}
+
+/* --- Légende de qualité (bas-gauche) : rampe médiocre → excellent --- */
+.stargaze-legend {
+  position: fixed;
+  left: 14px;
+  bottom: calc(var(--meta-height-px, 48px) + 88px);
+  z-index: 18;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--r-chip);
+  background: rgba(18, 13, 5, 0.82);
+  border: 1px solid rgba(251, 191, 36, 0.26);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  pointer-events: none;
+}
+.sg-legend-title {
+  font-size: var(--fs-10);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--label-section-color);
+}
+.sg-legend-bar {
+  width: 156px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-mid);
+  background: linear-gradient(90deg,
+    #1a1108, #3a2410, #6b4114, #a2701a, #d6a437, #f2d488);
+}
+.sg-legend-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-10);
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+/* --- Badge haut-centre : Lune · nuit noire · heure choisie --- */
+.stargaze-top-info {
+  position: fixed;
+  top: 14px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 18;
+  align-items: center; gap: 8px;
+  padding: 7px 14px;
+  border-radius: var(--r-pill);
+  background: rgba(18, 13, 5, 0.86);
+  border: 1px solid rgba(251, 191, 36, 0.30);
+  color: #fdf1cf;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  font-size: var(--fs-12); font-weight: 700; letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none; white-space: nowrap;
+  max-width: calc(100vw - 28px);
+}
+.sg-moon-icon {
+  flex: 0 0 auto;
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  /* disque lunaire : illumination via --sg-illum (0..1) posé en JS */
+  background:
+    radial-gradient(circle at 50% 50%, transparent 61%, rgba(251,191,36,0.35) 62%),
+    linear-gradient(90deg, #6b5a33 calc((1 - var(--sg-illum, 0.5)) * 100%), #ffe9b0 calc((1 - var(--sg-illum, 0.5)) * 100%));
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.4);
+}
+.sg-moon { color: #ffe9b0; font-weight: var(--fw-extrabold); }
+.sg-sep { opacity: 0.5; }
+.sg-night { color: var(--text-soft); }
+.sg-hour {
+  flex: 0 0 auto;
+  margin-left: 2px;
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  font-weight: var(--fw-extrabold);
+  background: rgba(251, 191, 36, 0.16);
+  color: #ffe9b0;
+}
+.sg-hour.is-twilight { background: rgba(148, 130, 90, 0.22); color: #e8dcc0; }
+.sg-hour[hidden] { display: none; }
+
+/* --- Overlay = même forme que la frise de base (carte flottante), teinte ambre --- */
+.stargaze-overlay {
+  position: fixed;
+  left: 50%; right: auto;
+  bottom: calc(var(--meta-height-px, 48px) + var(--sp-3, 12px));
+  transform: translateX(-50%);
+  width: min(1180px, calc(100vw - 136px));
+  max-width: calc(100vw - 136px);
+  z-index: 18;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 7px var(--sp-4);
+  border-radius: var(--r-xl);
+  background: rgba(18, 13, 5, 0.86);
+  border: 1px solid rgba(251, 191, 36, 0.30);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42), 0 0 26px rgba(245, 158, 11, 0.08);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  overflow: visible;
+}
+@media (min-width: 1025px) {
+  .stargaze-overlay {
+    left: 0; right: 0;
+    width: auto; max-width: none;
+    transform: none;
+    bottom: var(--meta-height-px, var(--timeline-strip-bottom));
+    padding: 7px var(--sp-5);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  .stargaze-overlay .stargaze-frise { width: 100%; max-width: none; }
+  .stargaze-frise .sg-rail-wrap { justify-self: center; width: 100%; max-width: 1180px; }
+}
+
+/* frise : play | rail nuit | autour-de-moi, sur une ligne. */
+.stargaze-frise {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  width: min(100%, 1120px);
+  max-width: calc(100vw - 28px);
+  min-width: 0;
+  margin: 0 auto;
+}
+.sg-frise-btn {
+  flex: 0 0 auto !important;
+  width: 40px !important; height: 40px !important;
+  min-width: 40px !important; min-height: 40px !important; max-width: 40px !important; max-height: 40px !important;
+  display: grid; place-items: center; padding: 0 !important;
+  border-radius: var(--r-chip);
+  border: 1px solid rgba(251, 191, 36, 0.32);
+  background: var(--fill-ghost);
+  color: #f2ddb0; cursor: pointer;
+  font-size: 0;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease),
+              color var(--dur-base) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.sg-frise-btn .icon-svg { width: 20px; height: 20px; }
+.sg-frise-btn:hover {
+  background: rgba(251, 191, 36, 0.10);
+  border-color: rgba(251, 191, 36, 0.5);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.sg-frise-btn:active { transform: translateY(1px); }
+.sg-frise-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.sg-frise-btn.active {
+  background: rgba(251, 191, 36, 0.16);
+  border-color: rgba(251, 191, 36, 0.55);
+  color: #fff;
+}
+
+/* --- Rail de la nuit (custom : quelques heures) --- */
+.sg-rail-wrap { min-width: 0; display: flex; align-items: center; }
+.sg-rail {
+  position: relative;
+  width: 100%;
+  height: 44px;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+.sg-rail:focus-visible { box-shadow: 0 0 0 2px var(--accent-2-soft); border-radius: var(--r-sm); }
+/* piste = déroulé de la nuit : crépuscule (ambre atténué) aux bords, nuit noire au centre */
+.sg-rail-track {
+  position: absolute;
+  left: 7px; right: 7px; top: 50%;
+  height: 6px;
+  transform: translateY(-50%);
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg,
+    rgba(148, 120, 60, 0.55), rgba(30, 22, 10, 0.9) 22%, rgba(20, 15, 8, 0.95) 50%,
+    rgba(30, 22, 10, 0.9) 78%, rgba(148, 120, 60, 0.55));
+  border: 1px solid rgba(251, 191, 36, 0.18);
+}
+/* portion « nuit astronomique » surlignée sous la piste (posée en JS via --sg-dark-a/-b %) */
+.sg-rail-dark {
+  position: absolute;
+  top: 50%; height: 6px;
+  transform: translateY(-50%);
+  left: calc(7px + (100% - 14px) * var(--sg-dark-a, 0.3));
+  width: calc((100% - 14px) * (var(--sg-dark-b, 0.7) - var(--sg-dark-a, 0.3)));
+  border-radius: var(--r-pill);
+  background: rgba(251, 191, 36, 0.30);
+  pointer-events: none;
+}
+.sg-hour-mark {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  pointer-events: none;
+}
+.sg-hour-tick { width: 2px; height: 12px; border-radius: 1px; background: rgba(251, 191, 36, 0.35); }
+.sg-hour-mark.dark .sg-hour-tick { background: rgba(251, 191, 36, 0.6); }
+.sg-hour-label { font-size: var(--fs-10); font-weight: 700; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.sg-rail-cursor {
+  position: absolute;
+  top: 50%;
+  left: calc(7px + (100% - 14px) * var(--sg-cursor, 0.5));
+  transform: translate(-50%, -50%);
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  border: 3px solid #fff5df;
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.32), 0 2px 8px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  z-index: 2;
+}
+.sg-rail-cursor span {
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-extrabold);
+  color: #ffe9b0;
+  background: rgba(18, 13, 5, 0.9);
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Marqueur de position utilisateur (« autour de moi ») --- */
+.sg-user-dot {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  border: 3px solid #fff5df;
+  box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.35), 0 0 10px rgba(251, 191, 36, 0.7);
+}
+
+/* --- Popup (spot / autour de moi) : thème sombre ambre --- */
+.stargaze-popup .maplibregl-popup-content {
+  background: rgba(16, 12, 6, 0.96);
+  color: #f0e6d2;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: var(--r-md);
+  padding: 10px 12px 11px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+.stargaze-popup .maplibregl-popup-tip { border-top-color: rgba(16, 12, 6, 0.96); border-bottom-color: rgba(16, 12, 6, 0.96); }
+.stargaze-popup .maplibregl-popup-close-button { color: var(--text-soft); font-size: var(--fs-18); padding: 0 6px; }
+.stargaze-popup .maplibregl-popup-close-button:focus-visible { outline-color: rgba(251, 191, 36, 0.7); }
+.sg-pop-verdict {
+  display: flex; align-items: center; gap: 8px;
+  font-size: var(--fs-15); font-weight: var(--fw-extrabold);
+  padding: 9px 28px 9px 12px;
+  border-radius: var(--r-md);
+  margin-bottom: 9px;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.14);
+  color: #ffe9b0;
+}
+.sg-pop-score { margin-left: auto; font-variant-numeric: tabular-nums; }
+.sg-pop-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.sg-pop-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; font-size: var(--fs-13); color: rgba(220, 208, 184, 0.82); }
+.sg-pop-list strong { color: #fff5df; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sg-pop-title { margin: 0 0 8px; font-size: var(--fs-13); font-weight: var(--fw-extrabold); color: #ffe9b0; }
+.sg-pop-empty { font-size: var(--fs-13); color: rgba(220, 208, 184, 0.8); }
+
+/* indice de chargement / repli (centre carte) */
+.sg-empty-hint {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 18;
+  padding: 10px 16px;
+  border-radius: var(--r-md);
+  background: rgba(16, 12, 6, 0.86);
+  color: var(--text-soft);
+  font-size: var(--fs-14);
+  pointer-events: none;
+}
+.sg-empty-hint[hidden] { display: none; }
+
+/* ===== ≤1024 (tablette + téléphone paysage) ===== */
+@media (max-width: 1024px) {
+  .stargaze-overlay {
+    bottom: max(var(--sp-3), env(safe-area-inset-bottom));
+    border: 0;
+    box-shadow: var(--shadow-2), 0 0 26px rgba(245, 158, 11, 0.08);
+  }
+  .stargaze-legend { bottom: 83px; }
+}
+@media (max-width: 1024px) and (max-height: 600px) {
+  .stargaze-legend { left: 68px; }
+}
+
+/* ===== Mobile (<768) : carte flottante arrondie (comme le dock mobile) ===== */
+@media (max-width: 767px) {
+  .stargaze-overlay {
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    transform: none;
+    width: auto; max-width: none;
+    bottom: max(var(--sp-3), env(safe-area-inset-bottom));
+    border-radius: var(--r-xl);
+    border: 0;
+    padding: 6px 8px 8px;
+    gap: 4px;
+    background: rgba(18, 13, 5, 0.86);
+  }
+  body.stargaze-mode .stargaze-frise { grid-template-columns: 38px minmax(0, 1fr) 38px; gap: 6px; }
+  body.stargaze-mode .sg-frise-btn {
+    width: 38px !important; height: 40px !important;
+    min-width: 38px !important; min-height: 40px !important; max-width: 38px !important; max-height: 40px !important;
+  }
+  .stargaze-top-info { font-size: var(--fs-11); padding: 6px 11px; gap: 6px; overflow: hidden; }
+  .sg-night { display: none; }   /* place réduite : on garde Lune + heure */
+}
