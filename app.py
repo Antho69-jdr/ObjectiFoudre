@@ -78,7 +78,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.40"
+APP_VERSION = "1.3.41"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16252,10 +16252,6 @@ def _fr_radar_png_to_field(png: bytes, ds: int):
 # lissage n'altère AUCUNE donnée. Rendu ~0,2 s/frame → cache par échéance (purgé avec le
 # ring). Le front passe en raster-resampling linear (chase.js) pour adoucir la dernière
 # marche de pixel.
-_fr_radar_display_cache: dict[str, bytes] = {}
-_fr_radar_display_lock = threading.Lock()
-
-
 def _fr_radar_box_blur(x, r: int, passes: int = 3):
     """Flou boîte séparable (fenêtre 2r+1, bords répliqués), ×3 passes ≈ gaussien.
     (Pillow de la venv ne filtre pas le mode « F » → numpy cumsum, rapide à 2400².)"""
@@ -16382,36 +16378,47 @@ def _fr_ring_dp(ring, eps: float):
     return a[:-1] + b[:-1]
 
 
-def _fr_radar_display_render(rgba) -> bytes:
-    """Rendu d'AFFICHAGE en ZONES à COURBES (v1.3.40, demande Anthony : le style des zones
-    de la carte de prévision, pas un simple flou). Par bande (cumulée ≥k) : contours par
-    marching squares → Douglas-Peucker (retire l'escalier) → lissage de Chaikin ×2
-    (≈ B-spline quadratique = courbes de Bézier) → polygones REMPLIS dans l'ordre croissant
-    des bandes, TROUS respectés (aire de lacet négative → percés du masque de bande, la
-    valeur inférieure peinte dessous reste visible). Grille de travail = ½ résolution
-    (le lissage gomme la maille), rendu à la résolution native. Le PNG BRUT du ring reste
-    la source des moteurs — affichage seulement."""
+def _fr_radar_shapes_features(rgba) -> list:
+    """ZONES VECTORIELLES du radar (v1.3.41, demande Anthony : « bords lisses ET nets ») :
+    le raster plafonnait à ~1,15 km/px (pixellisé en nearest, flou en linear) → on sert la
+    GÉOMÉTRIE et MapLibre dessine au GPU, net à tous les zooms (comme la carte de prévision).
+    ISOBANDES NON CHEVAUCHANTES : la bande k est percée des zones ≥ k+1 (mêmes anneaux lissés
+    → frontières qui coïncident exactement, ni trou ni recouvrement) → une opacité uniforme
+    par bande sans empilement de fills. Anneaux : marching squares → Douglas-Peucker →
+    Chaikin ×2 (≈ B-spline quadratique). Grille ½ résolution (le lissage gomme la maille)."""
     import numpy as np
-    from PIL import Image, ImageDraw
-    H, W = rgba.shape[:2]
-    empty = np.zeros((H, W, 4), np.uint8)
     band = _fr_radar_rgba_to_band(rgba).astype(np.float32)[::2, ::2]
     valid = (band > 0).astype(np.float32)
     if not valid.any():
-        buf = io.BytesIO()
-        Image.fromarray(empty, "RGBA").save(buf, format="PNG", compress_level=1)
-        return buf.getvalue()
-    # champ légèrement dé-bruité, normalisé par la validité (pas de dilution au bord)
+        return []
     fb = _fr_radar_box_blur(band, 1, passes=2)
     fv = _fr_radar_box_blur(valid, 1, passes=2)
     field = np.where(fv >= 0.38, fb / np.maximum(fv, 1e-3), 0.0)
-    # pad 1 px False → tous les contours se ferment, y compris au bord du domaine
     fpad = np.zeros((field.shape[0] + 2, field.shape[1] + 2), np.float32)
     fpad[1:-1, 1:-1] = field
     hh, ww = field.shape
-    sx = W / float(ww); sy = H / float(hh)
-    idx = np.zeros((H, W), np.uint8)
-    for k in range(1, len(_FR_RADAR_COLORS) + 1):
+
+    def ring_lonlat(pts):
+        out = []
+        for x, y in pts:
+            lon, lat = _fr_cells_px_to_lonlat(y - 1.0, x - 1.0, hh, ww)
+            out.append([round(lon, 4), round(lat, 4)])
+        out.append(out[0])
+        return out
+
+    def inside(px, py, ring):
+        n = len(ring); c = False
+        for i in range(n):
+            x0, y0 = ring[i]; x1, y1 = ring[(i + 1) % n]
+            if (y0 > py) != (y1 > py) and px < (x1 - x0) * (py - y0) / ((y1 - y0) or 1e-9) + x0:
+                c = not c
+        return c
+
+    # anneaux par bande : {k: {"outers": [...], "holes": [...]}}, chaque anneau =
+    # {"dp": pts bruts (containment), "sm": pts lissés px, "bbox": (x0,y0,x1,y1)}
+    per_band: dict = {}
+    nb = len(_FR_RADAR_COLORS)
+    for k in range(1, nb + 1):
         mask = fpad >= (k - 0.5)
         if not mask.any():
             break
@@ -16419,48 +16426,87 @@ def _fr_radar_display_render(rgba) -> bytes:
         for ring in _fr_marching_rings(mask):
             area = _fr_ring_area(ring)
             if abs(area) < 2.0:
-                continue                      # poussière (< ~10 km²) — affichage seulement
-            pts = _fr_ring_dp(ring, 1.25)
-            if len(pts) < 3:
                 continue
-            pts = _fr_ring_chaikin(pts, 2)    # les COURBES (≈ B-spline quadratique)
-            poly = [((x - 1.0) * sx, (y - 1.0) * sy) for x, y in pts]   # dé-pad + échelle
-            (outers if area < 0 else holes).append(poly)
-        if not outers:
-            continue
-        mimg = Image.new("L", (W, H), 0)
-        drw = ImageDraw.Draw(mimg)
-        for poly in outers:
-            drw.polygon(poly, fill=255)
-        for poly in holes:
-            drw.polygon(poly, fill=0)
-        idx[np.asarray(mimg) > 0] = k
-    pal = np.zeros((len(_FR_RADAR_COLORS) + 1, 4), np.uint8)
-    for i, c in enumerate(_FR_RADAR_COLORS):
-        pal[i + 1] = c
-    out = pal[idx]
-    buf = io.BytesIO()
-    Image.fromarray(out, "RGBA").save(buf, format="PNG", compress_level=1)
-    return buf.getvalue()
+            dp = _fr_ring_dp(ring, 1.25)
+            if len(dp) < 3:
+                continue
+            sm = _fr_ring_chaikin(dp, 2)
+            xs = [p[0] for p in dp]; ys = [p[1] for p in dp]
+            cxr = sum(xs) / len(xs); cyr = sum(ys) / len(ys)
+            # point de test INTÉRIEUR = 1er sommet tiré de 40 % vers le centroïde (les cœurs
+            # convectifs sont ~étoilés depuis leur centre → toujours dedans, même minuscules).
+            tpx = dp[0][0] + 0.4 * (cxr - dp[0][0]); tpy = dp[0][1] + 0.4 * (cyr - dp[0][1])
+            entry = {"dp": dp, "sm": sm, "bbox": (min(xs), min(ys), max(xs), max(ys)),
+                     "test": (tpx, tpy)}
+            (outers if area < 0 else holes).append(entry)
+        if outers or holes:
+            per_band[k] = {"outers": outers, "holes": holes}
+
+    feats = []
+    for k, rings in per_band.items():
+        # trous de la bande k = ses propres trous + les EXTÉRIEURS de la bande k+1
+        # (isobande : la zone k s'arrête là où k+1 commence, mêmes anneaux lissés)
+        cut = list(rings["holes"]) + list((per_band.get(k + 1) or {}).get("outers") or [])
+        for outer in rings["outers"]:
+            ob = outer["bbox"]
+            ring_holes = []
+            for h in cut:
+                hb = h["bbox"]
+                if hb[0] < ob[0] or hb[1] < ob[1] or hb[2] > ob[2] or hb[3] > ob[3]:
+                    continue                       # bbox pas contenue → pas dedans
+                px, py = h["test"]
+                if inside(px, py, outer["dp"]):
+                    ring_holes.append(ring_lonlat(h["sm"]))
+            feats.append({
+                "type": "Feature",
+                "properties": {"b": k},
+                "geometry": {"type": "Polygon",
+                             "coordinates": [ring_lonlat(outer["sm"])] + ring_holes},
+            })
+    return feats
 
 
-def _fr_radar_display_png(iso: str, png: bytes) -> bytes:
-    """Version affichage (lissée) d'une mosaïque du ring, avec cache par échéance."""
+_fr_radar_shapes_cache: dict[str, Any] = {}
+_fr_blend_shapes_cache: dict[str, Any] = {}
+_fr_radar_shapes_lock = threading.Lock()
+
+
+def _fr_radar_shapes_payload(iso: str, png: bytes) -> dict[str, Any]:
+    """FeatureCollection des zones (cache par échéance, purgé avec le ring)."""
     import numpy as np
     from PIL import Image
-    with _fr_radar_display_lock:
-        hit = _fr_radar_display_cache.get(iso)
-        if hit:
+    with _fr_radar_shapes_lock:
+        hit = _fr_radar_shapes_cache.get(iso)
+        if hit is not None:
             return hit
-    rendered = _fr_radar_display_render(np.asarray(Image.open(io.BytesIO(png)).convert("RGBA")))
+    feats = _fr_radar_shapes_features(np.asarray(Image.open(io.BytesIO(png)).convert("RGBA")))
+    fc = {"type": "FeatureCollection", "features": feats, "time": iso}
     with _fr_radar_lock:
         alive = set(_fr_radar_frames)
-    with _fr_radar_display_lock:
-        for k in list(_fr_radar_display_cache):
-            if k not in alive:
-                _fr_radar_display_cache.pop(k, None)
-        _fr_radar_display_cache[iso] = rendered
-    return rendered
+    with _fr_radar_shapes_lock:
+        for kk in list(_fr_radar_shapes_cache):
+            if kk not in alive:
+                _fr_radar_shapes_cache.pop(kk, None)
+        _fr_radar_shapes_cache[iso] = fc
+    return fc
+
+
+def _fr_blend_shapes_payload(iso: str, png: bytes, gen: str) -> dict[str, Any]:
+    import numpy as np
+    from PIL import Image
+    key = f"{gen}|{iso}"
+    with _fr_radar_shapes_lock:
+        hit = _fr_blend_shapes_cache.get(key)
+        if hit is not None:
+            return hit
+    feats = _fr_radar_shapes_features(np.asarray(Image.open(io.BytesIO(png)).convert("RGBA")))
+    fc = {"type": "FeatureCollection", "features": feats, "time": iso}
+    with _fr_radar_shapes_lock:
+        for kk in list(_fr_blend_shapes_cache):
+            if not kk.startswith(gen + "|"):
+                _fr_blend_shapes_cache.pop(kk, None)
+        _fr_blend_shapes_cache[key] = fc
+    return fc
 
 
 def _fr_radar_phase_shift(a, b):
@@ -16577,9 +16623,9 @@ def _fr_radar_blend_compute() -> None:
     for k in range(1, FR_BLEND_LEADS + 1):
         adv = _fr_radar_warp(latest_arr, fy_full, fx_full, k) if advected else latest_arr
         iso = (base_dt + timedelta(minutes=FR_BLEND_STEP_MIN * k)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        # frames blend = AFFICHAGE uniquement (le pont AROME-PI qui les relisait est retiré)
-        # → rendu lissé directement, cohérent avec les mosaïques observées.
-        frames[iso] = _fr_radar_display_render(adv)
+        buf = io.BytesIO()
+        Image.fromarray(adv, "RGBA").save(buf, format="PNG")
+        frames[iso] = buf.getvalue()
         blend_times.append(iso)
     with _fr_blend_lock:
         _fr_blend.update(base_time=latest, speed_kmh=round(speed_kmh), frames=frames,
@@ -17517,8 +17563,29 @@ async def fr_radar_image(time: str = Query(..., min_length=10, max_length=40)) -
         png = _fr_radar_frames.get(time)
     if not png:
         return Response(content=AROMEPI_TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=30"})
-    smooth = await asyncio.to_thread(_fr_radar_display_png, time, png)
-    return Response(content=smooth, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/api/radar/fr/shapes")
+async def fr_radar_shapes(time: str = Query(..., min_length=10, max_length=40)) -> dict[str, Any]:
+    """ZONES VECTORIELLES (GeoJSON isobandes lissées) d'une mosaïque — le rendu net à tous
+    les zooms du mode chasse (le PNG /image reste la donnée brute)."""
+    with _fr_radar_lock:
+        png = _fr_radar_frames.get(time)
+    if not png:
+        return {"type": "FeatureCollection", "features": [], "time": time}
+    return await asyncio.to_thread(_fr_radar_shapes_payload, time, png)
+
+
+@app.get("/api/radar/fr/blend/shapes")
+async def fr_radar_blend_shapes(time: str = Query(..., min_length=10, max_length=40)) -> dict[str, Any]:
+    """Zones vectorielles d'une frame advectée (extrapolé 0-30 min)."""
+    with _fr_blend_lock:
+        png = (_fr_blend.get("frames") or {}).get(time)
+        gen = str(_fr_blend.get("base_time") or "")
+    if not png:
+        return {"type": "FeatureCollection", "features": [], "time": time}
+    return await asyncio.to_thread(_fr_blend_shapes_payload, time, png, gen)
 
 
 @app.get("/api/radar/fr/blend/status")
