@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="ObjectiFoudre" />
-  <link rel="manifest" href="/manifest.webmanifest?v=1.3.53" />
-  <link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=1.3.53" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png?v=1.3.53" />
+  <link rel="manifest" href="/manifest.webmanifest?v=1.3.54" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=1.3.54" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png?v=1.3.54" />
   <title>ObjectiFoudre — Tactile</title>
   <script>
     // Mode ADMIN : visiter une fois /?admin=<secret> l'active sur ce navigateur
@@ -38,7 +38,7 @@
           seen[key] = true; sent += 1;
           var body = JSON.stringify({
             type: type, message: msg.slice(0, 1000), stack: String(stack || '').slice(0, 4000),
-            page: location.pathname + location.hash, version: '1.3.53',
+            page: location.pathname + location.hash, version: '1.3.54',
             ua: navigator.userAgent.slice(0, 300),
           });
           if (navigator.sendBeacon) navigator.sendBeacon('/api/client-report', new Blob([body], { type: 'text/plain' }));
@@ -59,16 +59,16 @@
       });
     })();
   </script>
-  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.3.53"></script>
-  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.3.53" rel="stylesheet" />
+  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.3.54"></script>
+  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.3.54" rel="stylesheet" />
   <!-- CSS legacy (main/components/responsive) supprimé : tout est désormais dans le
        bundle componentisé theme.css (esbuild de assets/src/styles/). -->
-  <link rel="stylesheet" href="/assets/dist/theme.css?v=1.3.53" />
+  <link rel="stylesheet" href="/assets/dist/theme.css?v=1.3.54" />
 </head>
 <body>
   <div id="mobileBlockScreen" class="mobile-block-screen" hidden>
     <div class="mobile-block-card">
-      <img class="mobile-block-logo" src="/static/logo-splash.png?v=1.3.53" alt="ObjectiFoudre" />
+      <img class="mobile-block-logo" src="/static/logo-splash.png?v=1.3.54" alt="ObjectiFoudre" />
       <div class="mobile-block-title">ObjectiFoudre</div>
       <p class="mobile-block-text">Smartphone non pris en charge.</p>
       <p class="mobile-block-text mobile-block-text-secondary">L'application est disponible uniquement sur PC et tablette.</p>
@@ -77,7 +77,7 @@
   <div id="app">
     <div class="app-loader" id="appLoader" aria-hidden="false">
       <div class="app-loader-card">
-        <img class="app-loader-logo" src="/static/logo-splash.png?v=1.3.53" alt="Objectif Foudre" />
+        <img class="app-loader-logo" src="/static/logo-splash.png?v=1.3.54" alt="Objectif Foudre" />
         <div class="app-loader-subtitle">Chargement de la situation convective…</div>
       </div>
     </div>
@@ -127,21 +127,13 @@
         </svg>
       </button>
       <button id="predictionPageBtn" class="grid-focus-btn" type="button" aria-label="Ouvrir les prévisions orageuses" title="Prévisions orageuses">
-        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M13 3 5 14h6l-1 7 8-11h-6l1-7Z"></path>
-        </svg>
+        <svg class="icon-svg" viewBox="0 0 40 40" aria-hidden="true" fill="none"><rect x="5" y="5" width="31" height="31" rx="2" stroke="currentColor" stroke-width="2"/><path d="M9 8H11V6H12V8H14V6H15V8H17V6H18V8H20V6H21V8H23V6H24V8H26V6H27V8H29V6H30V8H32V6H33V8H35V9H33V11H35V12H33V14H35V15H33V17H35V18H33V20H35V21H33V23H35V24H33V26H35V27H33V29H35V30H33V32H35V33H33V35H32V33H30V35H29V33H27V35H26V33H24V35H23V33H21V35H20V33H18V35H17V33H15V35H14V33H12V35H11V33H9V35H8V33H6V32H8V30H6V29H8V27H6V26H8V24H6V23H8V21H6V20H8V18H6V17H8V15H6V14H8V12H6V11H8V9H6V8H8V6H9V8ZM30 30V32H32V30H30ZM9 32H11V30H9V32ZM12 32H14V30H12V32ZM15 32H17V30H15V32ZM18 32H20V30H18V32ZM21 32H23V30H21V32ZM24 32H26V30H24V32ZM27 32H29V30H27V32ZM30 27V29H32V27H30ZM9 29H11V27H9V29ZM12 29H14V27H12V29ZM15 29H17V27H15V29ZM18 29H20V27H18V29ZM21 29H23V27H21V29ZM24 29H26V27H24V29ZM27 29H29V27H27V29ZM30 24V26H32V24H30ZM9 26H11V24H9V26ZM12 26H14V24H12V26ZM15 26H17V24H15V26ZM18 26H20V24H18V26ZM21 26H23V24H21V26ZM24 26H26V24H24V26ZM27 26H29V24H27V26ZM30 21V23H32V21H30ZM9 23H11V21H9V23ZM12 23H14V21H12V23ZM15 23H17V21H15V23ZM18 23H20V21H18V23ZM21 23H23V21H21V23ZM24 23H26V21H24V23ZM27 23H29V21H27V23ZM30 18V20H32V18H30ZM9 20H11V18H9V20ZM12 20H14V18H12V20ZM15 20H17V18H15V20ZM18 20H20V18H18V20ZM21 20H23V18H21V20ZM24 20H26V18H24V20ZM27 20H29V18H27V20ZM30 15V17H32V15H30ZM9 17H11V15H9V17ZM12 17H14V15H12V17ZM15 17H17V15H15V17ZM18 17H20V15H18V17ZM21 17H23V15H21V17ZM24 17H26V15H24V17ZM27 17H29V15H27V17ZM30 12V14H32V12H30ZM9 14H11V12H9V14ZM12 14H14V12H12V14ZM15 14H17V12H15V14ZM18 14H20V12H18V14ZM21 14H23V12H21V14ZM24 14H26V12H24V14ZM27 14H29V12H27V14ZM30 9V11H32V9H30ZM9 11H11V9H9V11ZM12 11H14V9H12V11ZM15 11H17V9H15V11ZM18 11H20V9H18V11ZM21 11H23V9H21V11ZM24 11H26V9H24V11ZM27 11H29V9H27V11Z" fill="currentColor" fill-opacity="0.5"/><path d="M6.5 34.5L14.5 17.5L23.5 26.5L32.5 8.5" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <button id="chasePageBtn" class="grid-focus-btn grid-focus-btn-chase" type="button" aria-label="Mode chasse" title="Mode chasse">
-        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2a7 7 0 0 1 7 7c0 4.5-7 13-7 13S5 13.5 5 9a7 7 0 0 1 7-7Z"></path>
-          <circle cx="12" cy="9" r="2.3"></circle>
-        </svg>
+        <svg class="icon-svg" viewBox="5 5 30 30" aria-hidden="true" fill="none"><path d="M17 20C17 21.6569 18.3431 23 20 23C21.6569 23 23 21.6569 23 20C23 18.3431 21.6569 17 20 17C18.3431 17 17 18.3431 17 20ZM21.442 20C21.442 20.7964 20.7964 21.442 20 21.442C19.2036 21.442 18.558 20.7964 18.558 20C18.558 19.2036 19.2036 18.558 20 18.558C20.7964 18.558 21.442 19.2036 21.442 20Z" fill="currentColor"/><path d="M15.87 29.3121C15.87 30.4166 14.9746 31.3121 13.87 31.3121C12.7654 31.3121 11.87 30.4166 11.87 29.3121C11.87 28.2075 12.7654 27.3121 13.87 27.3121C14.9746 27.3121 15.87 28.2075 15.87 29.3121ZM12.7541 29.3121C12.7541 29.4088 12.7664 29.5026 12.7895 29.5921C12.8682 29.8966 13.0722 30.1507 13.3432 30.2961C13.5001 30.3803 13.6795 30.428 13.87 30.428C13.9277 30.428 13.9844 30.4236 14.0398 30.4152C14.2939 30.3764 14.5198 30.2519 14.6871 30.0721C14.8725 29.8729 14.986 29.6057 14.986 29.3121C14.986 29.2017 14.9699 29.0951 14.9401 28.9945C14.8732 28.7687 14.7369 28.5729 14.5558 28.4317C14.3666 28.2841 14.1286 28.1961 13.87 28.1961C13.8257 28.1961 13.7819 28.1987 13.7389 28.2037C13.4028 28.2431 13.1123 28.4318 12.9357 28.7017C12.8208 28.8771 12.7541 29.0868 12.7541 29.3121Z" fill="currentColor"/><path fill-rule="evenodd" clip-rule="evenodd" d="M21.7799 8.13275C24.3193 8.51361 26.6696 9.69901 28.4853 11.5147L27.2974 12.7027C25.7358 11.1412 23.7146 10.1217 21.5307 9.79416C19.3468 9.46662 17.1154 9.84825 15.1645 10.883C13.2136 11.9177 11.6461 13.5509 10.6923 15.5427C9.73845 17.5344 9.44869 19.7795 9.86556 21.9481C10.2824 24.1168 11.3839 26.0945 13.0082 27.5906C13.243 27.8068 13.4868 28.0114 13.7389 28.2037C13.4028 28.2431 13.1123 28.4318 12.9357 28.7017C12.8208 28.8771 12.7541 29.0868 12.7541 29.3121C12.7541 29.4088 12.7664 29.5026 12.7895 29.5921C12.4715 29.3531 12.1646 29.0976 11.87 28.8263C9.98133 27.0866 8.70049 24.7869 8.21576 22.2653C7.73103 19.7436 8.06796 17.133 9.17704 14.817C10.2861 12.5011 12.1088 10.602 14.3773 9.39881C16.6458 8.19564 19.2405 7.75188 21.7799 8.13275ZM14.0398 30.4152C15.4668 31.2318 17.0549 31.7513 18.7085 31.9303C21.2614 32.2067 23.8357 31.6568 26.0529 30.3616C28.2701 29.0664 30.0134 27.0941 31.0265 24.7346L29.4828 24.0717C28.6115 26.1009 27.1123 27.7971 25.2055 28.911C23.2987 30.0249 21.0848 30.4977 18.8893 30.2601C17.4927 30.1089 16.1502 29.6752 14.9401 28.9945C14.9699 29.0951 14.986 29.2017 14.986 29.3121C14.986 29.6057 14.8725 29.8729 14.6871 30.0721C14.5198 30.2519 14.2939 30.3764 14.0398 30.4152Z" fill="currentColor"/><path d="M37 20C37 29.3888 29.3888 37 20 37C10.6112 37 3 29.3888 3 20C3 10.6112 10.6112 3 20 3C29.3888 3 37 10.6112 37 20ZM4.7 20C4.7 28.45 11.55 35.3 20 35.3C28.45 35.3 35.3 28.45 35.3 20C35.3 11.55 28.45 4.7 20 4.7C11.55 4.7 4.7 11.55 4.7 20Z" fill="currentColor"/><path d="M20 20L31 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
       </button>
       <button id="stargazePageBtn" class="grid-focus-btn grid-focus-btn-stargaze" type="button" aria-label="Chasse d'étoiles" title="Chasse d'étoiles">
-        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a7 7 0 1 0 11 11Z"></path>
-          <path d="M17.5 3.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7Z" fill="currentColor" stroke="none"></path>
-        </svg>
+        <svg class="icon-svg" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M31.01 4L29.2135 11.9046L36.176 16.0558L28.1031 16.7898L26.3066 24.6944L23.1139 17.2435L15.041 17.9775L21.1406 12.6386L17.9479 5.18768L24.9104 9.33894L31.01 4Z" fill="currentColor"/><path d="M22.0635 17.1537C21.5842 15.9095 21.1048 14.6653 20.6255 13.4211C20.1465 13.6412 19.6569 13.889 19.2081 14.1346C11.1809 18.6728 4.73357 26.1889 3.20966 34.9724C3.12522 35.4583 3.05852 35.9332 3.00401 36.4227C3.12412 35.9451 3.25571 35.486 3.40394 35.0199C6.0804 26.6388 13.2172 20.5968 20.8103 17.5803C21.2223 17.4253 21.6597 17.2733 22.0635 17.1537Z" fill="currentColor"/><path d="M23.8032 18.2434C24.062 18.1828 24.2787 18.0224 24.4027 17.7877C24.5268 17.5536 24.5479 17.2642 24.4645 16.9934C24.3811 16.7226 24.2009 16.4953 23.9665 16.3715C23.732 16.2472 23.4626 16.2366 23.2145 16.3321C22.9747 16.4233 22.7293 16.5226 22.4924 16.6239C18.3608 18.5034 14.1919 21.14 12.3739 25.3434C12.2834 25.5748 12.2038 25.8103 12.1368 26.0479C12.2352 25.8215 12.3451 25.6003 12.4644 25.3859C14.7757 21.5581 19.083 19.6373 23.1244 18.4157C23.3513 18.3533 23.5831 18.2938 23.8032 18.2434Z" fill="currentColor"/><path d="M21.2762 13.1842C21.5188 13.0766 21.7047 12.878 21.7903 12.6269C21.876 12.376 21.8545 12.0932 21.7331 11.8458C21.6116 11.5985 21.401 11.4085 21.15 11.323C20.899 11.2371 20.6282 11.2628 20.3947 11.389C20.3947 11.389 20.3947 11.389 20.3947 11.389C20.0066 11.598 19.6086 11.8247 19.227 12.0523C12.552 16.2327 6.07166 21.9326 4.125 29.7036C4.03118 30.1295 3.95632 30.5585 3.90177 30.9902C3.98921 30.564 4.09643 30.1435 4.22177 29.7288C6.72691 22.2273 13.4713 17.2232 20.1383 13.7195C20.5147 13.5327 20.9036 13.3485 21.2762 13.1842Z" fill="currentColor"/></svg>
       </button>
       <button id="historyPageBtn" class="grid-focus-btn" type="button" aria-label="Ouvrir l'historique des grilles" title="Historique des grilles">
         <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -211,7 +203,7 @@
       <div class="selection-top">
         <h2 class="selection-title" id="selectionTitle">Zone</h2>
         <div class="selection-score selection-score-trigger"><span>Proba</span><strong id="selectionTrigger">-</strong></div>
-        <button class="icon-btn" id="closeSelectionBtn" aria-label="Fermer">×</button>
+        <button class="icon-btn" id="closeSelectionBtn" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button>
       </div>
 
       <div class="selection-meta">
@@ -230,7 +222,7 @@
           <div class="title" id="detailsTitle">Détails cellule</div>
           <div class="small muted" id="detailsSubtitle">Zone · scores et paramètres de l’heure active</div>
         </div>
-        <button class="icon-btn" id="closeDetailsBtn" aria-label="Fermer">×</button>
+        <button class="icon-btn" id="closeDetailsBtn" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button>
       </div>
 
       <div class="details-calc-inspector is-empty" id="detailsCalcInspector">
@@ -289,7 +281,7 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.3.53">Version : v1.3.53 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.3.54">Version : v1.3.54 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" role="dialog" aria-modal="true" aria-labelledby="infoDrawerTitle">
@@ -298,7 +290,7 @@
           <div class="title" id="infoDrawerTitle">Documentation</div>
           <div class="small muted">Score horaire, AROME France, autocomplétion et repères terrain</div>
         </div>
-        <button class="icon-btn" id="closeDrawerBtn" aria-label="Fermer">×</button>
+        <button class="icon-btn" id="closeDrawerBtn" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button>
       </div>
 
       <section class="drawer-section drawer-intro">
@@ -402,7 +394,7 @@
           </div>
           <div class="prediction-page-actions">
             <button class="prediction-download-btn" id="predictionDownloadBtn" type="button" disabled>Exporter PNG</button>
-            <button class="icon-btn prediction-close-btn" id="predictionPageCloseBtn" aria-label="Fermer">×</button>
+            <button class="icon-btn prediction-close-btn" id="predictionPageCloseBtn" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button>
           </div>
           <div class="prediction-date-strip" id="predictionDateStrip" role="tablist" aria-label="Date de prévision"></div>
           <div class="prediction-period-tabs" id="predictionPeriodTabs" role="tablist" aria-label="Période de prévision">
@@ -441,7 +433,7 @@
             <p id="historyPageSubtitle">Choisis une date archivée pour rejouer sa journée en animation.</p>
           </div>
           <div class="prediction-page-actions">
-            <button class="icon-btn prediction-close-btn" id="historyPageCloseBtn" aria-label="Fermer">×</button>
+            <button class="icon-btn prediction-close-btn" id="historyPageCloseBtn" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button>
           </div>
         </header>
         <div class="prediction-page-body history-page-body">
@@ -516,7 +508,7 @@
           </div>
           <div class="prediction-page-actions">
             <span class="maintenance-refresh" id="maintenanceRefresh" aria-live="polite"></span>
-            <button class="icon-btn prediction-close-btn" id="maintenancePageCloseBtn" aria-label="Fermer">×</button>
+            <button class="icon-btn prediction-close-btn" id="maintenancePageCloseBtn" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button>
           </div>
         </header>
         <div class="prediction-page-body maintenance-body">
@@ -556,7 +548,7 @@
               <h3>Rapports de bugs / plantages</h3>
               <div class="mnt-reports-tools">
                 <button type="button" class="mnt-action mnt-reports-clear" id="maintenanceReportsClear">Tout vider</button>
-                <button type="button" class="icon-btn" id="maintenanceReportsClose" aria-label="Fermer">×</button>
+                <button type="button" class="icon-btn" id="maintenanceReportsClose" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button>
               </div>
             </header>
             <div class="mnt-reports-list" id="maintenanceReportsList"><div class="mnt-muted">Chargement…</div></div>
@@ -580,11 +572,11 @@
            ne restent que les deux toggles d'overlays (cellules, foudre). -->
       <!-- Toggle overlay CELLULES SUIVIES. Icône cible + vecteur. -->
       <button class="grid-focus-btn chase-layer-btn active" type="button" id="chaseCellsBtn" aria-pressed="true" aria-label="Cellules suivies (trajectoires + tendances)" title="Cellules suivies (trajectoires + tendances)">
-        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="4"></circle><path d="M13 11l7-7"></path><path d="M15.5 4H20v4.5"></path></svg>
+        <svg class="icon-svg" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M11.4416 24.3333C11.4416 21.3878 13.7138 19 16.5168 19H29.5007V21.6667H16.5168C15.1153 21.6667 13.9792 22.8606 13.9792 24.3333C13.9792 25.8061 15.1153 27 16.5168 27H34.1934C36.2459 27 37.9297 28.7102 37.9985 30.8659C38.0706 33.1262 36.3455 35 34.1934 35H7V32.3333H34.1934C34.9106 32.3333 35.486 31.709 35.4622 30.9557C35.4393 30.2371 34.8776 29.6667 34.1934 29.6667H16.5168C13.7138 29.6667 11.4416 27.2789 11.4416 24.3333Z" fill="currentColor"/><path d="M8 33.5C8 35.433 6.433 37 4.5 37C2.567 37 1 35.433 1 33.5C1 31.567 2.567 30 4.5 30C6.433 30 8 31.567 8 33.5ZM2.75 33.5C2.75 34.4665 3.5335 35.25 4.5 35.25C5.4665 35.25 6.25 34.4665 6.25 33.5C6.25 32.5335 5.4665 31.75 4.5 31.75C3.5335 31.75 2.75 32.5335 2.75 33.5Z" fill="currentColor"/><path d="M36 20.5C36 22.433 34.433 24 32.5 24C30.567 24 29 22.433 29 20.5C29 18.567 30.567 17 32.5 17C34.433 17 36 18.567 36 20.5ZM30.75 20.5C30.75 21.4665 31.5335 22.25 32.5 22.25C33.4665 22.25 34.25 21.4665 34.25 20.5C34.25 19.5335 33.4665 18.75 32.5 18.75C31.5335 18.75 30.75 19.5335 30.75 20.5Z" fill="currentColor"/><path d="M4.5 17C6.433 17 8 18.6966 8 20.7895C8 22.8823 4.5 29 4.5 29C4.5 29 1 22.8823 1 20.7895C1 18.6966 2.567 17 4.5 17ZM4.5 18.2632C3.21134 18.2632 2.16667 19.3942 2.16667 20.7895C2.16667 22.1847 3.21134 23.3158 4.5 23.3158C5.78866 23.3158 6.83333 22.1847 6.83333 20.7895C6.83333 19.3942 5.78866 18.2632 4.5 18.2632Z" fill="currentColor"/><path d="M33.7129 10.9211H31L35.8698 4L34.2871 9.07888H37L32.1302 16L33.7129 10.9211Z" fill="currentColor"/></svg>
       </button>
       <!-- Toggle overlay FOUDRE LIVE (impacts MTG-LI ~30 min, fondu par âge). -->
       <button class="grid-focus-btn chase-layer-btn active" type="button" id="chaseLightningBtn" aria-pressed="true" aria-label="Foudre en direct (impacts MTG-LI)" title="Foudre en direct (impacts MTG-LI)">
-        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 5 13h5l-1 9 8-11h-5l1-9Z"></path><circle cx="18.5" cy="5.5" r="0.9" fill="currentColor" stroke="none"></circle></svg>
+        <svg class="icon-svg" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M19.2345 23.0331H12L24.9862 4L20.7655 17.9669H28L15.0138 37L19.2345 23.0331Z" fill="currentColor"/></svg>
       </button>
     </div>
     <!-- Légende dynamique par couche (titre + gradient + échelle + seuil chasse), pilotée
@@ -646,44 +638,44 @@
       </div>
     </div>
   </div>
-  <script src="/assets/js/dom.js?v=1.3.53"></script>
-  <script src="/assets/js/utils.js?v=1.3.53"></script>
-  <script src="/assets/js/panels.js?v=1.3.53"></script>
-  <script src="/assets/js/state.js?v=1.3.53"></script>
-  <script src="/assets/js/core.js?v=1.3.53"></script>
-  <script src="/assets/js/map-ui.js?v=1.3.53"></script>
-  <script src="/assets/js/timeline-playback.js?v=1.3.53"></script>
-  <script src="/assets/js/timeline-solar.js?v=1.3.53"></script>
-  <script src="/assets/js/timeline-wheel.js?v=1.3.53"></script>
-  <script src="/assets/js/grid-loader.js?v=1.3.53"></script>
-  <script src="/assets/js/grid-clip-geometry.js?v=1.3.53"></script>
-  <script src="/assets/js/grid-geojson.js?v=1.3.53"></script>
-  <script src="/assets/js/france-admin-lines.js?v=1.3.53"></script>
-  <script src="/assets/js/france-regions.js?v=1.3.53"></script>
-  <script src="/assets/js/storm-forecast-data.js?v=1.3.53"></script>
-  <script src="/assets/js/storm-forecast-render.js?v=1.3.53"></script>
-  <script src="/assets/js/storm-forecast-page.js?v=1.3.53"></script>
-  <script src="/assets/js/grid-layers.js?v=1.3.53"></script>
-  <script src="/assets/js/grid.js?v=1.3.53"></script>
-  <script src="/assets/js/metric-data.js?v=1.3.53"></script>
-  <script src="/assets/js/metric-ui.js?v=1.3.53"></script>
-  <script src="/assets/js/selection-detail-data.js?v=1.3.53"></script>
-  <script src="/assets/js/selection-inspector.js?v=1.3.53"></script>
-  <script src="/assets/js/selection-card.js?v=1.3.53"></script>
-  <script src="/assets/js/data.js?v=1.3.53"></script>
-  <script src="/assets/js/services.js?v=1.3.53"></script>
-  <script src="/assets/js/search-autocomplete.js?v=1.3.53"></script>
-  <script src="/assets/js/controls-timeline.js?v=1.3.53"></script>
-  <script src="/assets/js/controls-export.js?v=1.3.53"></script>
-  <script src="/assets/js/controls-meteofrance.js?v=1.3.53"></script>
-  <script src="/assets/js/history.js?v=1.3.53"></script>
-  <script src="/assets/js/maintenance.js?v=1.3.53"></script>
-  <script src="/assets/js/chase.js?v=1.3.53"></script>
-  <script src="/assets/js/stargaze.js?v=1.3.53"></script>
-  <script src="/assets/js/bootstrap.js?v=1.3.53"></script>
-  <script src="/assets/js/mobile-block.js?v=1.3.53"></script>
-  <script src="/assets/js/tooltip.js?v=1.3.53"></script>
+  <script src="/assets/js/dom.js?v=1.3.54"></script>
+  <script src="/assets/js/utils.js?v=1.3.54"></script>
+  <script src="/assets/js/panels.js?v=1.3.54"></script>
+  <script src="/assets/js/state.js?v=1.3.54"></script>
+  <script src="/assets/js/core.js?v=1.3.54"></script>
+  <script src="/assets/js/map-ui.js?v=1.3.54"></script>
+  <script src="/assets/js/timeline-playback.js?v=1.3.54"></script>
+  <script src="/assets/js/timeline-solar.js?v=1.3.54"></script>
+  <script src="/assets/js/timeline-wheel.js?v=1.3.54"></script>
+  <script src="/assets/js/grid-loader.js?v=1.3.54"></script>
+  <script src="/assets/js/grid-clip-geometry.js?v=1.3.54"></script>
+  <script src="/assets/js/grid-geojson.js?v=1.3.54"></script>
+  <script src="/assets/js/france-admin-lines.js?v=1.3.54"></script>
+  <script src="/assets/js/france-regions.js?v=1.3.54"></script>
+  <script src="/assets/js/storm-forecast-data.js?v=1.3.54"></script>
+  <script src="/assets/js/storm-forecast-render.js?v=1.3.54"></script>
+  <script src="/assets/js/storm-forecast-page.js?v=1.3.54"></script>
+  <script src="/assets/js/grid-layers.js?v=1.3.54"></script>
+  <script src="/assets/js/grid.js?v=1.3.54"></script>
+  <script src="/assets/js/metric-data.js?v=1.3.54"></script>
+  <script src="/assets/js/metric-ui.js?v=1.3.54"></script>
+  <script src="/assets/js/selection-detail-data.js?v=1.3.54"></script>
+  <script src="/assets/js/selection-inspector.js?v=1.3.54"></script>
+  <script src="/assets/js/selection-card.js?v=1.3.54"></script>
+  <script src="/assets/js/data.js?v=1.3.54"></script>
+  <script src="/assets/js/services.js?v=1.3.54"></script>
+  <script src="/assets/js/search-autocomplete.js?v=1.3.54"></script>
+  <script src="/assets/js/controls-timeline.js?v=1.3.54"></script>
+  <script src="/assets/js/controls-export.js?v=1.3.54"></script>
+  <script src="/assets/js/controls-meteofrance.js?v=1.3.54"></script>
+  <script src="/assets/js/history.js?v=1.3.54"></script>
+  <script src="/assets/js/maintenance.js?v=1.3.54"></script>
+  <script src="/assets/js/chase.js?v=1.3.54"></script>
+  <script src="/assets/js/stargaze.js?v=1.3.54"></script>
+  <script src="/assets/js/bootstrap.js?v=1.3.54"></script>
+  <script src="/assets/js/mobile-block.js?v=1.3.54"></script>
+  <script src="/assets/js/tooltip.js?v=1.3.54"></script>
   <!-- Bundle modules ES (Phase 3) — s'exécute après le legacy, pont window.OF. Contient idb-cache migré. -->
-  <script type="module" src="/assets/dist/app.js?v=1.3.53"></script>
+  <script type="module" src="/assets/dist/app.js?v=1.3.54"></script>
 </body>
 </html>
