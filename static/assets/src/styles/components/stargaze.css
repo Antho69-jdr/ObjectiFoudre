@@ -324,3 +324,17 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
 .stargaze-overlay.collapsed .stargaze-frise { opacity: 0; pointer-events: none; }
 @media (min-width: 1025px) { .stargaze-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
 @media (max-width: 767px) { .stargaze-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
+/* Téléphone paysage (écran bas) : frise étoile PLEINE LARGEUR, posée AU-DESSUS du
+   rail droit (z-index 36 > rail 35) → le rail passe SOUS la frise (item Trello UI/UX).
+   Placé APRÈS le bloc ≤767 (left/right 8) pour gagner par l'ordre. */
+@media (orientation: landscape) and (max-width: 1024px) and (max-height: 600px) {
+  .stargaze-overlay {
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    width: auto;
+    max-width: none;
+    transform: none;
+    z-index: 36;
+  }
+  .stargaze-overlay.collapsed { transform: translateY(calc(100% + 8px)); }
+}

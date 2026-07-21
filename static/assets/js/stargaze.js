@@ -17,6 +17,8 @@
   const slotsEl = document.getElementById('stargazeSlots');
   const playBtn = document.getElementById('sgPlayBtn');
   const geoBtn = document.getElementById('sgGeoBtn');
+  const PLAY_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M10 8.2 16.3 12 10 15.8Z" fill="currentColor" stroke="none"></path></svg>';
+  const PAUSE_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><rect x="9" y="8.3" width="2.2" height="7.4" rx="0.6" fill="currentColor" stroke="none"></rect><rect x="12.8" y="8.3" width="2.2" height="7.4" rx="0.6" fill="currentColor" stroke="none"></rect></svg>';
 
   const QUALITY_SRC = 'sg-quality-src', QUALITY_LYR = 'sg-quality';
   const TOP_SRC = 'sg-top-src', TOP_GLOW = 'sg-top-glow', TOP_LYR = 'sg-top';
@@ -323,7 +325,7 @@
     if (playing) return stop();
     if (hours.length < 2) return;
     playing = true;
-    if (playBtn) { playBtn.classList.add('active'); playBtn.setAttribute('aria-pressed', 'true'); }
+    if (playBtn) { playBtn.classList.add('active'); playBtn.setAttribute('aria-pressed', 'true'); playBtn.setAttribute('aria-label', 'Pause'); playBtn.title = 'Pause'; playBtn.innerHTML = PAUSE_SVG; }
     playTimer = window.setInterval(() => {
       let next = cursor + 1; if (next >= hours.length) next = 0;
       applyCursor(next);
@@ -333,7 +335,7 @@
     if (!playing) return;
     playing = false;
     if (playTimer) { window.clearInterval(playTimer); playTimer = null; }
-    if (playBtn) { playBtn.classList.remove('active'); playBtn.setAttribute('aria-pressed', 'false'); }
+    if (playBtn) { playBtn.classList.remove('active'); playBtn.setAttribute('aria-pressed', 'false'); playBtn.setAttribute('aria-label', 'Faire défiler la nuit'); playBtn.title = 'Faire défiler la nuit'; playBtn.innerHTML = PLAY_SVG; }
   }
 
   // ── Données ────────────────────────────────────────────────────────────────
@@ -610,5 +612,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.52';
+  window.__stargazeV = '1.3.53';
 })();

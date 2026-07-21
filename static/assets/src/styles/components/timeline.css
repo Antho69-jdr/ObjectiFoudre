@@ -677,6 +677,20 @@ body.stargaze-mode #stargazeSlots {
     max-width: none;
   }
 }
+/* Téléphone paysage (écran bas) : frise PLEINE LARGEUR, posée AU-DESSUS du rail
+   droit (z-index 36 > rail 35) → le rail passe SOUS la frise (item Trello UI/UX). */
+@media (orientation: landscape) and (max-width: 1024px) and (max-height: 600px) {
+  .timeline-dock {
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    width: auto;
+    max-width: none;
+    transform: none;
+    z-index: 36;
+  }
+  /* Pleine largeur (transform:none) → le repli ne doit plus retirer 50% en X. */
+  .timeline-dock.collapsed { transform: translateY(calc(100% + 8px)); }
+}
 @media (min-width: 768px) {
   #slotButtons.timeline-slot-strip.timeline-slider,
   #slotButtons.timeline-slot-strip { -webkit-mask-image: none; mask-image: none; }

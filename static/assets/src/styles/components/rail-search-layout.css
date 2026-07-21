@@ -267,15 +267,22 @@ body.mobile-ui .right-rail-stack {
     }
 }
 
-@media (orientation: landscape) and (max-height: 600px) {
+@media (orientation: landscape) and (max-width: 1024px) and (max-height: 600px) {
+  /* La frise est PLEINE LARGEUR (z-index frise 36 > rail 35). Le rail est CLIPPÉ
+     (overflow-y) PILE au BORD HAUT de la frise : dès qu'un bouton atteint la frise
+     il est totalement masqué (rien ne rend sous ni derrière la frise) — le rail
+     reste SCROLLABLE au-dessus. La frise fait 58px de haut, posée à max(--sp-3, safe)
+     du bas → son bord haut est à (offset + 58) du bas : on clippe le rail exactement
+     là (joint net, ni trou ni transparence). */
   body.mobile-ui .right-rail-scroll,
     .right-rail-scroll {
       top: max(2px, env(safe-area-inset-top)) !important;
-      bottom: calc(var(--touch-meta-h, 30px) + var(--touch-timeline-h, 72px) + env(safe-area-inset-bottom) + 8px) !important;
+      bottom: calc(max(var(--sp-3), env(safe-area-inset-bottom)) + 58px) !important;
     }
-  body.mobile-ui:has(#timelineDock.collapsed) .right-rail-scroll,
-    body:has(#timelineDock.collapsed) .right-rail-scroll {
-      bottom: calc(var(--touch-meta-h, 30px) + env(safe-area-inset-bottom) + 8px) !important;
+  /* Petit spacer bas = course de scroll pour que le DERNIER bouton dégage la frise. */
+  body.mobile-ui .right-rail-scroll::after,
+    .right-rail-scroll::after {
+      flex: 0 0 16px !important;
     }
 }
 

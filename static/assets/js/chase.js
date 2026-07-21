@@ -13,6 +13,8 @@
 
   const geoBtn = document.getElementById('chaseGeoBtn');
   const playBtn = document.getElementById('chasePlayBtn');
+  const PLAY_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M10 8.2 16.3 12 10 15.8Z" fill="currentColor" stroke="none"></path></svg>';
+  const PAUSE_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><rect x="9" y="8.3" width="2.2" height="7.4" rx="0.6" fill="currentColor" stroke="none"></rect><rect x="12.8" y="8.3" width="2.2" height="7.4" rx="0.6" fill="currentColor" stroke="none"></rect></svg>';
   const liveBtn = document.getElementById('chaseLiveBtn');
   const exportBtn = document.getElementById('chaseExportBtn');
   const slotStrip = document.getElementById('chaseSlots');
@@ -828,7 +830,7 @@
     if (playing) return stop();
     if (!frames.length) return;
     playing = true;
-    if (playBtn) { playBtn.classList.add('active'); playBtn.setAttribute('aria-pressed', 'true'); }
+    if (playBtn) { playBtn.classList.add('active'); playBtn.setAttribute('aria-pressed', 'true'); playBtn.setAttribute('aria-label', 'Pause'); playBtn.title = 'Pause'; playBtn.innerHTML = PAUSE_SVG; }
     playTimer = window.setInterval(() => {
       let next = cursor + 1;
       if (next >= frames.length) next = 0;
@@ -838,7 +840,7 @@
   }
   function stop() {
     playing = false;
-    if (playBtn) { playBtn.classList.remove('active'); playBtn.setAttribute('aria-pressed', 'false'); }
+    if (playBtn) { playBtn.classList.remove('active'); playBtn.setAttribute('aria-pressed', 'false'); playBtn.setAttribute('aria-label', "Lecture de l'animation"); playBtn.title = "Lecture de l'animation"; playBtn.innerHTML = PLAY_SVG; }
     if (playTimer) { window.clearInterval(playTimer); playTimer = null; }
   }
 
@@ -1264,5 +1266,5 @@
   window.setupFriseCollapse(controls, document.getElementById('chaseToggleBtn'), 'storm_chase_collapsed');
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.52';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.53';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
