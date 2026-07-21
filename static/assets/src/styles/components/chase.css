@@ -356,7 +356,9 @@ body.chase-mode .meta-stack .meta-version {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
 }
 .chase-popup .maplibregl-popup-tip { border-top-color: rgba(10, 18, 32, 0.96); border-bottom-color: rgba(10, 18, 32, 0.96); }
-.chase-popup .maplibregl-popup-close-button { color: var(--text-soft); font-size: var(--fs-18); padding: 0 6px; }
+/* Bouton × collé au coin haut-droit + plus visible (item Trello UI/UX). */
+.chase-popup .maplibregl-popup-close-button { color: var(--text); font-size: var(--fs-20); line-height: 1; padding: 1px 4px; top: 2px; right: 2px; }
+.chase-popup .maplibregl-popup-close-button:hover { color: #fff; }
 .chase-pop-loading, .chase-pop-empty { font-size: var(--fs-13); color: rgba(226, 232, 240, 0.8); }
 .chase-verdict {
   display: flex;

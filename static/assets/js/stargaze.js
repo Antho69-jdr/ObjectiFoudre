@@ -421,21 +421,16 @@
     for (let i = 2; i < COLOR_STOPS.length; i += 2) { if (q <= COLOR_STOPS[i]) return COLOR_STOPS[i + 1]; }
     return COLOR_STOPS[COLOR_STOPS.length - 1];
   }
-  function onSgEnter() { map.getCanvas().style.cursor = 'pointer'; }
+  function onSgEnter() { if (!sgIsTouch()) map.getCanvas().style.cursor = 'pointer'; }
   function onSgLeave() { if (map.getCanvas()) map.getCanvas().style.cursor = ''; if (sgTipEl) sgTipEl.classList.remove('is-visible'); }
-  function onSgMove(e) {
-    if (!data) { onSgLeave(); return; }
-    const f = e.features && e.features[0];
-    const i = f ? Number(f.properties.idx) : -1;
-    if (!(i >= 0) || !data.cells[i]
-        || (typeof pointInFranceGridMask === 'function' && e.lngLat && !pointInFranceGridMask(e.lngLat.lng, e.lngLat.lat))) {
-      onSgLeave();
-      return;
-    }
+  function sgIsTouch() { try { return window.matchMedia('(hover: none), (pointer: coarse)').matches; } catch (_) { return false; } }
+  // Rend + positionne le tooltip cellule (design .grid-cell-tooltip de la carte de base)
+  // pour la cellule i, au point écran pt. Utilisé au SURVOL (desktop) et au TAP (tactile).
+  function showSgTip(i, pt) {
+    if (!(i >= 0) || !data || !data.cells[i]) { onSgLeave(); return; }
     const el = ensureSgTip();
     if (degraded) {
-      const dk = data.darkness[i];
-      const col = sgRampColor(dk);
+      const dk = data.darkness[i], col = sgRampColor(dk);
       el.style.setProperty('--gct-score', col);
       el.innerHTML =
         '<span class="gct-head"><b>Obscurité</b><strong style="color:' + col + '">' + dk + '</strong></span>' +
@@ -453,7 +448,6 @@
         '<span class="gct-row"><b>Nuages</b><span class="gct-val">' + (cl != null ? Math.round(cl) : '—') + '<span class="gct-unit"> %</span></span></span>' +
         '<span class="gct-row"><b>Meilleur créneau</b><span class="gct-val">' + (bh != null ? String(bh).padStart(2, '0') + '<span class="gct-unit"> h</span>' : '—') + '</span></span>';
     }
-    const pt = e.point || { x: 0, y: 0 };
     const cont = map.getContainer();
     const cw = cont ? cont.clientWidth : 0, ch = cont ? cont.clientHeight : 0;
     const tw = el.offsetWidth || 140, th = el.offsetHeight || 74;
@@ -463,6 +457,18 @@
     el.style.top = Math.max(4, top) + 'px';
     el.classList.add('is-visible');
   }
+  // Desktop : SURVOL → tooltip. (Au tactile, rien au mousemove — cf. tap.)
+  function onSgMove(e) {
+    if (sgIsTouch() || !data) return;
+    const f = e.features && e.features[0];
+    const i = f ? Number(f.properties.idx) : -1;
+    if (!(i >= 0) || !data.cells[i]
+        || (typeof pointInFranceGridMask === 'function' && e.lngLat && !pointInFranceGridMask(e.lngLat.lng, e.lngLat.lat))) {
+      onSgLeave();
+      return;
+    }
+    showSgTip(i, e.point || { x: 0, y: 0 });
+  }
 
   // ── Interaction carte ───────────────────────────────────────────────────────
   function ensurePopup() {
@@ -470,49 +476,16 @@
     return popup;
   }
 
-  function nearestCell(lng, lat) {
-    let bi = -1, bd = Infinity; const cells = data.cells;
-    const cl = Math.cos(lat * Math.PI / 180);
-    for (let i = 0; i < cells.length; i++) {
-      const dx = (cells[i].lon - lng) * cl, dy = (cells[i].lat - lat);
-      const d = dx * dx + dy * dy; if (d < bd) { bd = d; bi = i; }
-    }
-    return bi;
-  }
-
-  function spotPopupHTML(score, hourH, darkness, cloud, title) {
-    const v = verdict(score);
-    let h = '';
-    if (title) h += '<p class="sg-pop-title">' + esc(title) + '</p>';
-    h += '<div class="sg-pop-verdict">' + esc(v) + '<span class="sg-pop-score">' + score + '/100</span></div>';
-    h += '<ul class="sg-pop-list">';
-    if (hourH != null) h += '<li>Meilleur créneau <strong>' + String(hourH).padStart(2, '0') + ' h</strong></li>';
-    if (darkness != null) h += '<li>Obscurité du site <strong>' + darkness + '/100</strong></li>';
-    if (cloud != null) h += '<li>Nuages (créneau) <strong>' + Math.round(cloud) + ' %</strong></li>';
-    h += '</ul>';
-    return h;
-  }
-
-  function onMapClick(e) {
-    if (!data) return;
-    // top spot ?
-    const box = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
+  // Mobile/tablette : TAP sur une cellule → tooltip (le survol n'existe pas au tactile).
+  // Le popup de clic .stargaze-popup est RETIRÉ (item Trello UI/UX) : l'info de cellule
+  // passe UNIQUEMENT par le tooltip .grid-cell-tooltip (survol desktop / tap tactile).
+  function onSgTap(e) {
+    if (!sgIsTouch() || !data) return;
+    const box = [[e.point.x - 12, e.point.y - 12], [e.point.x + 12, e.point.y + 12]];
     let feats = [];
-    try { feats = map.queryRenderedFeatures(box, { layers: [TOP_LYR] }); } catch (_) {}
-    if (feats.length) {
-      const p = feats[0].properties;
-      ensurePopup().setLngLat(feats[0].geometry.coordinates).setHTML(
-        spotPopupHTML(+p.score, p.hour, +p.darkness, null, 'Top spot')).addTo(map);
-      return;
-    }
-    // cellule sous le clic
-    const i = nearestCell(e.lngLat.lng, e.lngLat.lat);
-    if (i < 0) return;
-    const sc = data.scores[cursor] ? data.scores[cursor][i] : null;
-    if (sc == null) return;
-    const cl = data.cloud[cursor] ? data.cloud[cursor][i] : null;
-    ensurePopup().setLngLat([data.cells[i].lon, data.cells[i].lat]).setHTML(
-      spotPopupHTML(sc, bestDarkHour ? bestDarkHour[i] : null, data.darkness[i], cl, null)).addTo(map);
+    try { feats = map.queryRenderedFeatures(box, { layers: [QUALITY_LYR] }); } catch (_) {}
+    const i = feats.length ? Number(feats[0].properties.idx) : -1;
+    if (i >= 0) showSgTip(i, e.point); else onSgLeave();
   }
 
   // ── Autour de moi ────────────────────────────────────────────────────────
@@ -549,7 +522,9 @@
         picks.forEach((p) => {
           const c = data.cells[p.i];
           const brg = bearing(lat, lng, c.lat, c.lon);
-          html += '<li><span>' + Math.round(p.km) + ' km ' + brg + ' · ' + String(bestDarkHour[p.i]).padStart(2, '0') + ' h</span><strong>' + p.s + '/100</strong></li>';
+          const bh = bestDarkHour[p.i];
+          const hourTxt = (bh != null) ? ' · ' + String(bh).padStart(2, '0') + ' h' : '';
+          html += '<li><span>' + Math.round(p.km) + ' km ' + brg + hourTxt + '</span><strong>' + p.s + '/100</strong></li>';
         });
         html += '</ul>';
       }
@@ -586,7 +561,7 @@
       window.setTimeout(retry, 250);
     }
     if (!clickBound) {
-      map.on('click', onMapClick);
+      map.on('click', onSgTap);
       map.on('mousemove', QUALITY_LYR, onSgMove);
       map.on('mouseenter', QUALITY_LYR, onSgEnter);
       map.on('mouseleave', QUALITY_LYR, onSgLeave);
@@ -612,7 +587,7 @@
     try { map.getSource(TOP_SRC) && map.getSource(TOP_SRC).setData(EMPTY_FC); } catch (_) {}
     if (layersReady) hideGrid(false);
     if (clickBound) {
-      map.off('click', onMapClick);
+      map.off('click', onSgTap);
       map.off('mousemove', QUALITY_LYR, onSgMove);
       map.off('mouseenter', QUALITY_LYR, onSgEnter);
       map.off('mouseleave', QUALITY_LYR, onSgLeave);
@@ -635,5 +610,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.50';
+  window.__stargazeV = '1.3.51';
 })();

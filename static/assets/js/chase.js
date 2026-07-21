@@ -1049,8 +1049,10 @@
         }
       }
     } catch (_) {}
+    // Popup « conditions au point » (.chase-popup) RETIRÉ — item Trello UI/UX (info jugée
+    // inutile). On ne garde que le popup de CELLULE suivie (ci-dessus). Un clic ailleurs
+    // ferme simplement le popup cellule épinglé.
     closeCellPopup();
-    queryPoint(e.lngLat.lat, e.lngLat.lng, true);
   }
 
   // Fiche CELLULE (clic sur un point de l'overlay) : identité + cinématique + tendance,
@@ -1262,5 +1264,5 @@
   window.setupFriseCollapse(controls, document.getElementById('chaseToggleBtn'), 'storm_chase_collapsed');
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.50';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.51';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

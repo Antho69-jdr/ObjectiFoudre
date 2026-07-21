@@ -242,7 +242,9 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
 }
 .stargaze-popup .maplibregl-popup-tip { border-top-color: rgba(16, 12, 6, 0.96); border-bottom-color: rgba(16, 12, 6, 0.96); }
-.stargaze-popup .maplibregl-popup-close-button { color: var(--text-soft); font-size: var(--fs-18); padding: 0 6px; }
+/* Bouton × collé au coin haut-droit + plus visible (item Trello UI/UX). */
+.stargaze-popup .maplibregl-popup-close-button { color: #ffe9b0; font-size: var(--fs-20); line-height: 1; padding: 1px 4px; top: 2px; right: 2px; }
+.stargaze-popup .maplibregl-popup-close-button:hover { color: #fff; }
 .stargaze-popup .maplibregl-popup-close-button:focus-visible { outline-color: rgba(251, 191, 36, 0.7); }
 .sg-pop-verdict {
   display: flex; align-items: center; gap: 8px;
