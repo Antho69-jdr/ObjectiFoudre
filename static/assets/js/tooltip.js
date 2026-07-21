@@ -56,6 +56,10 @@
     // Sur tablette/mobile (≤1024px), pas de tooltip d'heure : il masque les info-bulles
     // des icônes jour/nuit de la frise (qu'on veut justement pouvoir lire).
     if (window.innerWidth <= 1024 && isHourTarget(el)) return null;
+    // Boutons des rails (droit + gauche/chasse) sur tablette/mobile : PAS de tooltip au
+    // survol/tap (item Trello UI/UX) — on les révèle UNIQUEMENT via #screenTooltipsBtn.
+    if (window.innerWidth <= 1024 && el.id !== 'screenTooltipsBtn'
+        && el.closest('.right-rail-stack, .chase-layer-rail')) return null;
     return el;
   }
 
@@ -273,14 +277,23 @@
     const btn = document.getElementById('screenTooltipsBtn');
     if (btn) btn.setAttribute('aria-pressed', revealed.length ? 'true' : 'false');
   }
-  // Bouton (délégation : robuste quel que soit l'ordre de chargement).
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest && e.target.closest('#screenTooltipsBtn');
-    if (!btn) return;
-    e.preventDefault();
-    e.stopPropagation();
+  // Bascule du bouton « révéler les info-bulles ».
+  function toggleRevealAll(e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
     if (revealed.length) clearRevealed(); else revealAll();
+  }
+  // Délégation (robuste à l'ordre de chargement)…
+  document.addEventListener('click', (e) => {
+    if (e.target.closest && e.target.closest('#screenTooltipsBtn')) toggleRevealAll(e);
   });
+  // …ET binding DIRECT : dans le rail droit, un parent stoppe la propagation du clic
+  // avant document (la délégation ne recevrait rien). Le listener direct se déclenche
+  // au tout début du bubble, avant ce stopPropagation.
+  (function bindScreenTooltipsBtn() {
+    const b = document.getElementById('screenTooltipsBtn');
+    if (b) b.addEventListener('click', toggleRevealAll);
+    else document.addEventListener('DOMContentLoaded', bindScreenTooltipsBtn);
+  })();
   // --- Pastille d'aide « ? » ponctuelle (.app-help-dot, ex. auto-calibration) --
   // Clic/tap = toggle de SA propre info-bulle (même rendu flottant que « révéler »,
   // ancré au <body>, jamais clippé). Utile au tactile (le survol ne suffit pas).

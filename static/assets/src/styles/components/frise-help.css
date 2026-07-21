@@ -14,43 +14,42 @@
 }
 
 @media (max-width: 1024px) {
+  /* Fait partie du RAIL DROIT (dans le flux, plus d'absolu) : PASTILLE RONDE à la
+     taille des boutons du rail (item Trello UI/UX). Look aligné sur .grid-focus-btn. */
   body.mobile-ui .frise-help-btn {
     display: grid;
     place-items: center;
-    position: absolute;
-    right: 8px;
-    top: -36px;
-    /* cercle parfait */
-    width: 30px;
-    height: 30px;
-    min-width: 30px;
-    max-width: 30px;
-    min-height: 30px;
-    max-height: 30px;
+    box-sizing: border-box;
+    width: var(--rail-btn-size);
+    height: var(--rail-btn-size);
+    min-width: var(--rail-btn-size);
+    max-width: var(--rail-btn-size);
+    min-height: var(--rail-btn-size);
+    max-height: var(--rail-btn-size);
     aspect-ratio: 1 / 1;
     padding: 0;
     margin: 0;
-    border-radius: 50%;
-    border: 1px solid var(--border-mid);
-    background: rgba(10, 20, 35, 0.72);
-    color: #e5edf9;
-    font-size: var(--fs-15);
+    border-radius: 50%;              /* forme RONDE conservée */
+    border: 1px solid var(--ghost-border);
+    background: var(--fill-ghost);
+    color: var(--text-soft);
+    font-size: var(--fs-18);
     font-weight: var(--fw-extrabold);
     line-height: 1;
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
-    backdrop-filter: var(--glass-blur, blur(8px));
-    -webkit-backdrop-filter: var(--glass-blur, blur(8px));
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+    backdrop-filter: blur(16px) saturate(1.15);
+    -webkit-backdrop-filter: blur(16px) saturate(1.15);
     pointer-events: auto;
-    z-index: 131;
     cursor: pointer;
   }
   body.mobile-ui .frise-help-btn:hover {
-    background: rgba(17, 31, 54, 0.9);
-    border-color: var(--border-strong);
+    background: var(--border-faint);
+    border-color: rgba(103, 232, 249, 0.4);
+    color: #fff;
   }
   body.mobile-ui .frise-help-btn[aria-pressed="true"] {
-    background: rgba(14, 165, 233, 0.32);
-    border-color: rgba(125, 211, 252, 0.6);
-    color: #bae6fd;
+    background: rgba(56, 189, 248, 0.16);
+    border-color: rgba(125, 211, 252, 0.55);
+    color: #eafaff;
   }
 }
