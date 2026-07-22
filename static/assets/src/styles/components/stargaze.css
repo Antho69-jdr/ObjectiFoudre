@@ -246,6 +246,12 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
 .stargaze-popup .maplibregl-popup-close-button { color: #ffe9b0; font-size: var(--fs-20); line-height: 1; padding: 1px 4px; top: 2px; right: 2px; }
 .stargaze-popup .maplibregl-popup-close-button:hover { color: #fff; }
 .stargaze-popup .maplibregl-popup-close-button:focus-visible { outline-color: rgba(251, 191, 36, 0.7); }
+/* Tactile : la règle min 88×46 de body.mobile-ui étirait ce bouton → le glyphe ×
+   (centré) fuyait vers le milieu du popup. Carré compact réellement collé au coin. */
+body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
+  min-width: 0; min-height: 0; width: 28px; height: 28px; padding: 0;
+  display: grid; place-items: center; top: 3px; right: 3px;
+}
 .sg-pop-verdict {
   display: flex; align-items: center; gap: 8px;
   font-size: var(--fs-15); font-weight: var(--fw-extrabold);
