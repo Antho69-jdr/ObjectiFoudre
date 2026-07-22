@@ -79,7 +79,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.55"
+APP_VERSION = "1.3.56"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4129,6 +4129,70 @@ def _stargaze_night_hours(now_utc: datetime) -> list[dict[str, Any]]:
     return hours
 
 
+# ── AURORE BORÉALE (item Trello « Détection d'Aurore Boréale ») ──────────────────
+# Indice Kp planétaire NOAA SWPC (observé + prévu, pas de 3 h, JSON public sans clé).
+# Visibilité depuis la France (latitude géomagnétique ~45-48°) : Kp 7 ≈ possible à
+# l'horizon nord, Kp 8-9 ≈ probable sur une large partie du pays.
+SWPC_KP_FORECAST_URL = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json"
+_STARGAZE_AURORA_LOCK = threading.Lock()
+_STARGAZE_AURORA_CACHE: dict[str, Any] = {"ts": 0.0, "data": None}
+_STARGAZE_AURORA_TTL_SECONDS = 1800   # bins Kp de 3 h → 30 min suffisent largement
+
+
+def _stargaze_aurora() -> dict[str, Any] | None:
+    """Chance d'aurore boréale depuis la France : max du Kp (SWPC) sur les prochaines
+    24 h → niveau 0 (rien, Kp<5) / 1 (activité, improbable en France, Kp 5-7) /
+    2 (possible au nord, Kp 7-8) / 3 (probable, Kp ≥8). En cas d'échec SWPC on sert
+    le dernier état connu, sinon None (le badge reste silencieux — non bloquant)."""
+    now = time.time()
+    with _STARGAZE_AURORA_LOCK:
+        c = _STARGAZE_AURORA_CACHE
+        if c["data"] is not None and now - c["ts"] < _STARGAZE_AURORA_TTL_SECONDS:
+            return c["data"]
+    rows: Any = None
+    try:
+        req = urllib.request.Request(SWPC_KP_FORECAST_URL,
+                                     headers={"User-Agent": f"ObjectiFoudre/{APP_VERSION}"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            rows = json.loads(resp.read().decode("utf-8", "replace"))
+    except Exception:
+        rows = None
+    if not isinstance(rows, list) or not rows:
+        with _STARGAZE_AURORA_LOCK:
+            return _STARGAZE_AURORA_CACHE["data"]   # état périmé si dispo, sinon None
+    now_dt = datetime.now(timezone.utc)
+    horizon = now_dt + timedelta(hours=24)
+    kp_now: float | None = None
+    kp_max = 0.0
+    kp_max_at: datetime | None = None
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        try:
+            t = datetime.fromisoformat(str(r.get("time_tag"))).replace(tzinfo=timezone.utc)
+            kp = float(r.get("kp"))
+        except (TypeError, ValueError):
+            continue
+        status = str(r.get("observed") or "")
+        if status in ("observed", "estimated") and t <= now_dt:
+            kp_now = kp   # lignes chronologiques → la dernière ≤ maintenant gagne
+        if now_dt - timedelta(hours=3) <= t <= horizon and kp > kp_max:
+            kp_max, kp_max_at = kp, t
+    level = 3 if kp_max >= 8.0 else (2 if kp_max >= 7.0 else (1 if kp_max >= 5.0 else 0))
+    labels = {0: "aucune chance", 1: "improbable en France",
+              2: "possible au nord", 3: "probable"}
+    data = {
+        "kp_now": kp_now,
+        "kp_max_24h": round(kp_max, 1),
+        "kp_max_at_utc": kp_max_at.strftime("%Y-%m-%dT%H:%MZ") if kp_max_at else None,
+        "level": level,
+        "label": labels[level],
+    }
+    with _STARGAZE_AURORA_LOCK:
+        _STARGAZE_AURORA_CACHE.update(ts=now, data=data)
+    return data
+
+
 def _stargaze_tonight() -> dict[str, Any]:
     """Calcul complet du score « ce soir » par cellule et par heure (voir endpoint)."""
     now = datetime.now(timezone.utc)
@@ -4231,6 +4295,7 @@ def _stargaze_tonight() -> dict[str, Any]:
         "generated_at": now.strftime("%Y-%m-%dT%H:%MZ"),
         "moon": moon,
         "night": night,
+        "aurora": _stargaze_aurora(),
         "hours": hours,
         "count": n,
         "cells": cells,

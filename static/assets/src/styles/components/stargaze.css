@@ -121,6 +121,11 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
 .sg-moon { color: #ffe9b0; font-weight: var(--fw-extrabold); }
 .sg-sep { opacity: 0.5; }
 .sg-night { color: var(--text-soft); }
+/* Aurore boréale (Kp SWPC) : discret par défaut (activité sans chance France),
+   gras ambre dès « possible au nord » (level ≥ 2). Masqué par le JS quand calme. */
+.sg-aurora { color: var(--text-soft); }
+.sg-aurora.is-strong { color: #ffe9b0; font-weight: var(--fw-extrabold); }
+.sg-aurora[hidden], .sg-aurora-sep[hidden] { display: none; }
 .sg-hour {
   flex: 0 0 auto;
   margin-left: 2px;
@@ -318,6 +323,9 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
   }
   .stargaze-top-info { font-size: var(--fs-11); padding: 6px 11px; gap: 6px; overflow: hidden; }
   .sg-night { display: none; }   /* place réduite : on garde Lune + heure */
+  /* Aurore : en étroit on ne garde que le niveau FORT (possible/probable, Kp ≥ 7) —
+     l'info compte alors plus que la nuit noire ; le niveau faible disparaît. */
+  .sg-aurora:not(.is-strong), .sg-aurora-sep:not(.is-strong) { display: none; }
   /* La frise de base bascule sur la molette en ≤767 (rail masqué) ; le rail
      stargaze (6 heures = pas dense) RESTE visible. (0,3,1) bat .timeline-rail. */
   body.stargaze-mode #stargazeSlots .timeline-rail { display: block; }

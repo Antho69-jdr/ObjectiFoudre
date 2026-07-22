@@ -13,6 +13,8 @@
   const moonIconEl = document.getElementById('sgMoonIcon');
   const moonEl = document.getElementById('sgMoon');
   const nightEl = document.getElementById('sgNight');
+  const auroraSepEl = document.getElementById('sgAuroraSep');
+  const auroraEl = document.getElementById('sgAurora');
   const hourEl = document.getElementById('sgHour');
   const slotsEl = document.getElementById('stargazeSlots');
   const playBtn = document.getElementById('sgPlayBtn');
@@ -192,6 +194,20 @@
     if (nightEl) nightEl.textContent = (n.night_start_utc && n.night_end_utc)
       ? 'Nuit noire ' + fmtHMz(n.night_start_utc) + ' → ' + fmtHMz(n.night_end_utc)
       : 'Pas de nuit noire ce soir';
+    // Aurore boréale (Kp NOAA SWPC, servi par /tonight) : silencieux tant que le ciel
+    // géomagnétique est calme (level 0 ou données indisponibles) ; gras ambre dès
+    // « possible au nord » (level ≥ 2, Kp ≥ 7).
+    if (auroraEl && auroraSepEl) {
+      const a = data.aurora || null;
+      const show = !!(a && a.level >= 1);
+      auroraSepEl.hidden = !show;
+      auroraEl.hidden = !show;
+      if (show) {
+        auroraEl.textContent = 'Aurore ' + (a.label || '') + ' (Kp ' + (a.kp_max_24h != null ? a.kp_max_24h : '?') + ')';
+        auroraEl.classList.toggle('is-strong', a.level >= 2);
+        auroraSepEl.classList.toggle('is-strong', a.level >= 2);
+      }
+    }
     updateHourBadge();
   }
 
@@ -612,5 +628,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.55';
+  window.__stargazeV = '1.3.56';
 })();
