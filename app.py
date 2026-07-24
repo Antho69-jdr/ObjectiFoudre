@@ -79,7 +79,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.59"
+APP_VERSION = "1.3.60"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4064,7 +4064,8 @@ STARGAZE_TWILIGHT_THRESHOLD_DEG = -12.0   # bord de la fenêtre d'observation (c
 STARGAZE_DARK_THRESHOLD_DEG = -18.0       # nuit astronomique (vraie obscurité)
 _STARGAZE_TONIGHT_CACHE: dict[str, Any] = {"key": None, "ts": 0.0, "data": None}
 _STARGAZE_TONIGHT_LOCK = threading.Lock()
-_STARGAZE_TONIGHT_TTL_SECONDS = 600
+_STARGAZE_TONIGHT_TTL_SECONDS = 1800      # 30 min : la nébulosité AROME évolue lentement
+_STARGAZE_SLOT_CLOUD_TTL_SECONDS = 1800   # mémoïse la nébulosité par créneau (cf. _stargaze_slot_cloud)
 
 
 def _stargaze_cloud_total_pct(low: Any, mid: Any, high: Any) -> float | None:
@@ -4193,6 +4194,40 @@ def _stargaze_aurora() -> dict[str, Any] | None:
     return data
 
 
+def _stargaze_slot_cloud(target_date: Date, hour: int) -> dict[str, float] | None:
+    """Couverture nuageuse totale (%) par zone pour un créneau AROME/ARPEGE — extraction
+    LÉGÈRE et MÉMOÏSÉE. Sans ça, `/tonight` re-déclenchait à CHAQUE appel × CHAQUE heure
+    de nuit le deep-copy de la grille de score COMPLÈTE (2636 cellules × tous les champs)
+    juste pour lire le nuage → plusieurs secondes. Ici on ne garde qu'un petit dict, caché
+    30 min ; les échecs ne sont PAS cachés (re-tentés quand la grille finit de charger)."""
+    ck = _stable_cache_hash(f"sg-slot-cloud:{target_date.isoformat()}:{hour}:{OBJECTIFOUDRE_AUTO_PRELOAD_GRID or ''}")
+    cached = _get_cached_value(ck, ttl=_STARGAZE_SLOT_CLOUD_TTL_SECONDS)
+    if cached is not None:
+        return cached["payload"] or None
+    try:
+        res = _serve_france_slot_models_sync(target_date, hour, OBJECTIFOUDRE_AUTO_PRELOAD_GRID, "", None)
+    except Exception:
+        res = {"ok": False}
+    if not res.get("ok"):
+        return None
+    try:
+        hcells = res["payload"]["days"][0]["slots"][0].get("cells", [])
+    except Exception:
+        hcells = []
+    out: dict[str, float] = {}
+    for cell in hcells:
+        ct = (cell.get("metrics_used") or {}).get("total_cloud_cover")
+        if ct is None:
+            ct = _stargaze_cloud_total_pct(cell.get("cloud_cover_low"),
+                                           cell.get("cloud_cover_mid"), cell.get("cloud_cover_high"))
+        if ct is not None:
+            out[str(cell.get("zone", ""))] = float(ct)
+    if not out:
+        return None                    # pas de cache d'un créneau vide → re-tenté
+    _set_cached_value(ck, out)
+    return out
+
+
 def _stargaze_tonight() -> dict[str, Any]:
     """Calcul complet du score « ce soir » par cellule et par heure (voir endpoint)."""
     now = datetime.now(timezone.utc)
@@ -4224,10 +4259,10 @@ def _stargaze_tonight() -> dict[str, Any]:
     for hslot in hours:
         try:
             d = Date.fromisoformat(hslot["date"])
-            res = _serve_france_slot_models_sync(d, int(hslot["hour"]), OBJECTIFOUDRE_AUTO_PRELOAD_GRID, "", None)
+            cloudmap = _stargaze_slot_cloud(d, int(hslot["hour"]))
         except Exception:
-            res = {"ok": False}
-        ok = bool(res.get("ok"))
+            cloudmap = None
+        ok = cloudmap is not None
         hslot["available"] = ok
         if not ok:
             scores.append(None)
@@ -4236,22 +4271,9 @@ def _stargaze_tonight() -> dict[str, Any]:
         any_available = True
         srow: list[int | None] = [None] * n
         crow: list[int | None] = [None] * n
-        try:
-            hcells = res["payload"]["days"][0]["slots"][0].get("cells", [])
-        except Exception:
-            hcells = []
-        for cell in hcells:
-            i = zone_index.get(str(cell.get("zone", "")))
+        for zone, ct in cloudmap.items():
+            i = zone_index.get(zone)
             if i is None:
-                continue
-            # total_cloud_cover est déjà calculé par le scoring de l'app (weather_logic) ;
-            # on le réutilise comme source de vérité, repli sur notre formule alignée.
-            ct = (cell.get("metrics_used") or {}).get("total_cloud_cover")
-            if ct is None:
-                ct = _stargaze_cloud_total_pct(cell.get("cloud_cover_low"),
-                                               cell.get("cloud_cover_mid"),
-                                               cell.get("cloud_cover_high"))
-            if ct is None:
                 continue
             sc = stargaze.observation_score(darkness_arr[i], ct, md)
             srow[i] = sc

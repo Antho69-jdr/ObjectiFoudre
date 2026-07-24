@@ -196,10 +196,10 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
   .stargaze-frise .sg-rail-wrap { justify-self: center; width: 100%; max-width: 1180px; }
 }
 
-/* frise : play | rail nuit | autour-de-moi | agenda, sur une ligne. */
+/* frise : play | rail nuit | ◄ ► nuit | autour-de-moi | agenda, sur UNE ligne.
+   Flexbox (et non grid) → les flèches masquées ne laissent aucun trou. */
 .stargaze-frise {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) 40px 40px;
+  display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
@@ -208,6 +208,7 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
   min-width: 0;
   margin: 0 auto;
 }
+.stargaze-frise .sg-rail-wrap { flex: 1 1 auto; }
 .sg-frise-btn {
   flex: 0 0 auto !important;
   width: 40px !important; height: 40px !important;
@@ -312,35 +313,9 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 }
 .sg-empty-hint[hidden] { display: none; }
 
-/* --- Sélecteur de nuit (prévision nébulosité ECMWF) : navigation flèches légère --- */
-.sg-nights {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 2px 6px;
-}
-.sg-nights[hidden] { display: none; }
-.sg-night-nav {
-  flex: 0 0 auto;
-  width: 30px; height: 30px;
-  display: grid; place-items: center;
-  padding: 0;
-  border-radius: var(--r-chip);
-  border: 1px solid rgba(251, 191, 36, 0.28);
-  background: rgba(120, 84, 20, 0.16);
-  color: #ffd479;
-}
-.sg-night-nav .icon-svg { width: 16px; height: 16px; }
+/* --- Navigation entre les nuits (flèches sur la ligne de la frise) --- */
+.sg-night-nav[hidden] { display: none; }
 .sg-night-nav:disabled { opacity: 0.32; }
-.sg-night-current {
-  min-width: 128px;
-  text-align: center;
-  color: #ffe9b0;
-  font-size: var(--fs-13);
-  font-weight: var(--fw-extrabold);
-  white-space: nowrap;
-}
 /* Nuit future : la piste horaire est remplacée par un libellé statique centré. */
 .sg-rail-wrap.sg-night-static {
   display: flex;
@@ -473,7 +448,7 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
     gap: 4px;
     background: rgba(18, 13, 5, 0.86);
   }
-  body.stargaze-mode .stargaze-frise { grid-template-columns: 38px minmax(0, 1fr) 38px 38px; gap: 6px; }
+  body.stargaze-mode .stargaze-frise { gap: 6px; }
   body.stargaze-mode .sg-frise-btn {
     width: 38px !important; height: 40px !important;
     min-width: 38px !important; min-height: 40px !important; max-width: 38px !important; max-height: 40px !important;

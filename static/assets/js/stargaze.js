@@ -17,10 +17,8 @@
   const auroraEl = document.getElementById('sgAurora');
   const hourEl = document.getElementById('sgHour');
   const slotsEl = document.getElementById('stargazeSlots');
-  const nightsEl = document.getElementById('sgNights');
   const nightPrevBtn = document.getElementById('sgNightPrev');
   const nightNextBtn = document.getElementById('sgNightNext');
-  const nightCurrentEl = document.getElementById('sgNightCurrent');
   const playBtn = document.getElementById('sgPlayBtn');
   const geoBtn = document.getElementById('sgGeoBtn');
   const PLAY_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M10 8.2 16.3 12 10 15.8Z" fill="currentColor" stroke="none"></path></svg>';
@@ -474,18 +472,16 @@
     return [0].concat(nights.map((n, i) => (n.available ? i + 1 : -1)).filter((k) => k > 0));
   }
 
-  function buildNightSelector() {   // ici : navigation par flèches (préc/suiv)
-    if (!nightsEl) return;
+  function buildNightSelector() {   // flèches préc/suiv sur la ligne de la frise
+    if (!nightPrevBtn || !nightNextBtn) return;
     const order = nightOrder();
-    if (order.length <= 1) { nightsEl.hidden = true; return; }
-    nightsEl.hidden = false;
+    const show = order.length > 1;   // au moins une nuit future disponible
+    nightPrevBtn.hidden = !show;
+    nightNextBtn.hidden = !show;
+    if (!show) return;
     const pos = Math.max(0, order.indexOf(viewNight));
-    if (nightCurrentEl) {
-      nightCurrentEl.textContent = viewNight === 0
-        ? 'Ce soir' : ('Nuit du ' + nightLabel(outlookData.nights[viewNight - 1].date));
-    }
-    if (nightPrevBtn) nightPrevBtn.disabled = pos <= 0;
-    if (nightNextBtn) nightNextBtn.disabled = pos >= order.length - 1;
+    nightPrevBtn.disabled = pos <= 0;
+    nightNextBtn.disabled = pos >= order.length - 1;
   }
 
   function stepNight(dir) {
@@ -529,7 +525,7 @@
       slotsEl.classList.add('sg-night-static');
       const lab = document.createElement('div');
       lab.className = 'sg-night-static-label';
-      lab.textContent = 'Prévision nébulosité ECMWF';
+      lab.textContent = 'Nuit du ' + nightLabel(ngt.date) + ' · prévision ECMWF';
       slotsEl.appendChild(lab);
     }
     paintHour(0);
@@ -736,7 +732,8 @@
     stop();
     viewNight = 0;
     setSat(false);
-    if (nightsEl) { nightsEl.hidden = true; }
+    if (nightPrevBtn) nightPrevBtn.hidden = true;
+    if (nightNextBtn) nightNextBtn.hidden = true;
     if (slotsEl) slotsEl.classList.remove('sg-night-static');
     if (retryTimer) { window.clearTimeout(retryTimer); retryTimer = null; }
     degraded = false;
@@ -862,5 +859,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.59';
+  window.__stargazeV = '1.3.60';
 })();
