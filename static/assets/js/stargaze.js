@@ -18,6 +18,9 @@
   const hourEl = document.getElementById('sgHour');
   const slotsEl = document.getElementById('stargazeSlots');
   const nightsEl = document.getElementById('sgNights');
+  const nightPrevBtn = document.getElementById('sgNightPrev');
+  const nightNextBtn = document.getElementById('sgNightNext');
+  const nightCurrentEl = document.getElementById('sgNightCurrent');
   const playBtn = document.getElementById('sgPlayBtn');
   const geoBtn = document.getElementById('sgGeoBtn');
   const PLAY_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M10 8.2 16.3 12 10 15.8Z" fill="currentColor" stroke="none"></path></svg>';
@@ -25,6 +28,15 @@
 
   const QUALITY_SRC = 'sg-quality-src', QUALITY_LYR = 'sg-quality';
   const TOP_SRC = 'sg-top-src', TOP_GLOW = 'sg-top-glow', TOP_LYR = 'sg-top';
+  // Calque SATELLITE nuages live (EUMETSAT View Service, WMS public sans clé) : carte
+  // IR 10.8 µm globale (nuages jour ET nuit). MapLibre charge les tuiles WMS en <img>
+  // (aucun souci CORS). Inséré SOUS les top spots (jamais masqués).
+  const SAT_SRC = 'sg-sat-src', SAT_LYR = 'sg-sat';
+  const SAT_WMS = 'https://view.eumetsat.int/geoserver/wms?service=WMS&version=1.3.0'
+    + '&request=GetMap&layers=mumi:worldcloudmap_ir108&styles=&crs=EPSG:3857'
+    + '&bbox={bbox-epsg-3857}&width=256&height=256&format=image/png&transparent=true';
+  const satBtn = document.getElementById('sgSatBtn');
+  let satOn = false;
   // Champ inséré SOUS la couche 'water' → la mer rogne le débordement des cellules au
   // littoral et le RESTE DU MONDE reste visible (comme la carte de base / mode chasse).
   const FIELD_BEFORE = 'water';
@@ -456,26 +468,32 @@
     } catch (_) { return dateIso; }
   }
 
-  function buildNightSelector() {
-    if (!nightsEl) return;
+  // Ordre de navigation : « ce soir » (0) puis les nuits ECMWF disponibles (index 1..N).
+  function nightOrder() {
     const nights = (outlookData && outlookData.nights) || [];
-    const avail = nights.map((n, i) => ({ n, k: i + 1 })).filter((x) => x.n.available);
-    if (!avail.length) { nightsEl.hidden = true; return; }
+    return [0].concat(nights.map((n, i) => (n.available ? i + 1 : -1)).filter((k) => k > 0));
+  }
+
+  function buildNightSelector() {   // ici : navigation par flèches (préc/suiv)
+    if (!nightsEl) return;
+    const order = nightOrder();
+    if (order.length <= 1) { nightsEl.hidden = true; return; }
     nightsEl.hidden = false;
-    nightsEl.innerHTML = '';
-    const mk = (k, label) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'sg-night-chip' + (k === viewNight ? ' active' : '');
-      b.setAttribute('role', 'tab');
-      b.setAttribute('aria-selected', k === viewNight ? 'true' : 'false');
-      b.textContent = label;
-      b.addEventListener('click', () => selectNight(k));
-      if (k === viewNight) requestAnimationFrame(() => { try { b.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (_) {} });
-      nightsEl.appendChild(b);
-    };
-    mk(0, 'Ce soir');
-    for (const { n, k } of avail) mk(k, nightLabel(n.date));
+    const pos = Math.max(0, order.indexOf(viewNight));
+    if (nightCurrentEl) {
+      nightCurrentEl.textContent = viewNight === 0
+        ? 'Ce soir' : ('Nuit du ' + nightLabel(outlookData.nights[viewNight - 1].date));
+    }
+    if (nightPrevBtn) nightPrevBtn.disabled = pos <= 0;
+    if (nightNextBtn) nightNextBtn.disabled = pos >= order.length - 1;
+  }
+
+  function stepNight(dir) {
+    const order = nightOrder();
+    const pos = order.indexOf(viewNight);
+    const next = pos + dir;
+    if (pos < 0 || next < 0 || next >= order.length) return;
+    selectNight(order[next]);
   }
 
   function selectNight(k) {
@@ -484,7 +502,7 @@
     viewNight = k;
     if (k === 0) renderTonight();
     else renderFutureNight(k);
-    buildNightSelector();   // reflète l'onglet actif
+    buildNightSelector();   // maj libellé + flèches
   }
 
   // Nuit future : dataset synthétique « une heure » → réutilise tout le pipeline de
@@ -511,12 +529,34 @@
       slotsEl.classList.add('sg-night-static');
       const lab = document.createElement('div');
       lab.className = 'sg-night-static-label';
-      lab.textContent = 'Nuit du ' + nightLabel(ngt.date) + ' · prévision ECMWF';
+      lab.textContent = 'Prévision nébulosité ECMWF';
       slotsEl.appendChild(lab);
     }
     paintHour(0);
     if (map.getSource(TOP_SRC)) try { map.getSource(TOP_SRC).setData(topSpotsFC()); } catch (_) {}
   }
+
+  // ── Calque satellite nuages (rail gauche) ────────────────────────────────────
+  function setSat(on) {
+    satOn = on;
+    if (satBtn) { satBtn.classList.toggle('active', on); satBtn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    if (!map) return;
+    if (on) {
+      if (!map.getSource(SAT_SRC)) {
+        map.addSource(SAT_SRC, { type: 'raster', tiles: [SAT_WMS], tileSize: 256,
+          attribution: 'Nuages : EUMETSAT' });
+      }
+      if (!map.getLayer(SAT_LYR)) {
+        const before = map.getLayer(TOP_GLOW) ? TOP_GLOW : undefined;   // sous les top spots
+        try { map.addLayer({ id: SAT_LYR, type: 'raster', source: SAT_SRC, paint: { 'raster-opacity': 0.82 } }, before); } catch (_) {}
+      } else {
+        try { map.setLayoutProperty(SAT_LYR, 'visibility', 'visible'); } catch (_) {}
+      }
+    } else if (map.getLayer(SAT_LYR)) {
+      try { map.setLayoutProperty(SAT_LYR, 'visibility', 'none'); } catch (_) {}
+    }
+  }
+  satBtn && satBtn.addEventListener('click', () => setSat(!satOn));
 
   let hintEl = null;
   function showHint(txt) {
@@ -695,6 +735,7 @@
     active = false;
     stop();
     viewNight = 0;
+    setSat(false);
     if (nightsEl) { nightsEl.hidden = true; }
     if (slotsEl) slotsEl.classList.remove('sg-night-static');
     if (retryTimer) { window.clearTimeout(retryTimer); retryTimer = null; }
@@ -798,6 +839,8 @@
     agendaBtn && agendaBtn.setAttribute('aria-expanded', 'false');
   }
 
+  nightPrevBtn && nightPrevBtn.addEventListener('click', () => stepNight(-1));
+  nightNextBtn && nightNextBtn.addEventListener('click', () => stepNight(1));
   agendaBtn && agendaBtn.addEventListener('click', toggleAgenda);
   agendaCloseBtn && agendaCloseBtn.addEventListener('click', hideAgenda);
   agendaPrev && agendaPrev.addEventListener('click', () => { if (agendaMonth > 0) { agendaMonth--; renderAgenda(); } });
@@ -819,5 +862,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.58';
+  window.__stargazeV = '1.3.59';
 })();
