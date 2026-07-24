@@ -79,7 +79,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.56"
+APP_VERSION = "1.3.57"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4319,6 +4319,46 @@ async def stargaze_tonight() -> dict[str, Any]:
     + top spots + contexte astro (Lune, nuit noire). Repli propre si la grille AROME
     n'est pas chargée (ok=False, l'obscurité reste dispo via /darkmap)."""
     return await asyncio.to_thread(_stargaze_tonight)
+
+
+# ── AGENDA ASTRO DE L'ANNÉE (item Trello « Agenda … levé/couché de soleil/lune ») ─
+# Almanach jour par jour : lever/coucher du Soleil et de la Lune + phase, au centre
+# France, jours calendaires LOCAUX (Europe/Paris). Éphéméride lunaire validée contre
+# met.no (écarts 0-3 min, cf. .h_collect/astro_prototype/test_riseset.py). Statique
+# pour une année → calculé une fois (~1 s) puis servi depuis la RAM.
+_STARGAZE_AGENDA_LOCK = threading.Lock()
+_STARGAZE_AGENDA_CACHE: dict[int, dict[str, Any]] = {}
+
+
+def _stargaze_agenda(year: int) -> dict[str, Any]:
+    with _STARGAZE_AGENDA_LOCK:
+        if year in _STARGAZE_AGENDA_CACHE:
+            return _STARGAZE_AGENDA_CACHE[year]
+    tz = ZoneInfo("Europe/Paris")
+    lat, lon = METEOFRANCE_FRANCE_GRID_CENTER_LAT, METEOFRANCE_FRANCE_GRID_CENTER_LON
+    days: list[dict[str, Any]] = []
+    d = Date(year, 1, 1)
+    while d.year == year:
+        start_utc = datetime(d.year, d.month, d.day, tzinfo=tz).astimezone(timezone.utc)
+        ev = stargaze.day_events(start_utc, lat, lon)
+        ev["date"] = d.isoformat()
+        days.append(ev)
+        d += timedelta(days=1)
+    data = {"ok": True, "year": year, "lat": lat, "lon": lon,
+            "tz": "Europe/Paris", "days": days}
+    with _STARGAZE_AGENDA_LOCK:
+        _STARGAZE_AGENDA_CACHE[year] = data
+        while len(_STARGAZE_AGENDA_CACHE) > 4:      # borne mémoire (4 années max)
+            _STARGAZE_AGENDA_CACHE.pop(next(iter(_STARGAZE_AGENDA_CACHE)))
+    return data
+
+
+@app.get("/api/stargaze/agenda")
+async def stargaze_agenda(year: int | None = Query(None, ge=2020, le=2035)) -> dict[str, Any]:
+    """Agenda astro d'une année (défaut : année en cours) — lever/coucher du Soleil
+    et de la Lune par jour calendaire local + phase de Lune (centre France)."""
+    y = year or datetime.now(ZoneInfo("Europe/Paris")).year
+    return await asyncio.to_thread(_stargaze_agenda, y)
 
 
 def _get_meteofrance_grib_national_field_cache_payload(field_cache_key: str) -> tuple[dict[str, Any] | None, str | None, float | None]:

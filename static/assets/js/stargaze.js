@@ -614,8 +614,89 @@
     onSgLeave();
     if (popup) { popup.remove(); }
     if (userMarker) { userMarker.remove(); userMarker = null; }
+    hideAgenda();
     hideHint();
   }
+
+  // ── Agenda astro de l'année (item Trello) ─────────────────────────────────
+  // Almanach mensuel navigable : lever/coucher Soleil + Lune + phase par jour
+  // calendaire local (centre France). Données /api/stargaze/agenda, chargées au
+  // premier appui puis gardées (statiques pour l'année).
+  const agendaBtn = document.getElementById('sgAgendaBtn');
+  const agendaPanel = document.getElementById('sgAgendaPanel');
+  const agendaTitle = document.getElementById('sgAgendaTitle');
+  const agendaBody = document.getElementById('sgAgendaBody');
+  const agendaPrev = document.getElementById('sgAgendaPrev');
+  const agendaNext = document.getElementById('sgAgendaNext');
+  const agendaCloseBtn = document.getElementById('sgAgendaClose');
+  const MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet',
+    'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  let agendaData = null, agendaMonth = new Date().getMonth(), agendaLoading = false;
+
+  function agendaOpenState() { return !!(agendaPanel && !agendaPanel.hidden); }
+  function fmtEvent(z) { return z ? fmtHMz(z) : '—'; }
+
+  function renderAgenda() {
+    if (!agendaData || !agendaTitle || !agendaBody) return;
+    const y = agendaData.year;
+    agendaTitle.textContent = MONTHS_FR[agendaMonth].charAt(0).toUpperCase() + MONTHS_FR[agendaMonth].slice(1) + ' ' + y;
+    if (agendaPrev) agendaPrev.disabled = agendaMonth <= 0;
+    if (agendaNext) agendaNext.disabled = agendaMonth >= 11;
+    const now = new Date();
+    const todayIso = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    const mm = String(agendaMonth + 1).padStart(2, '0');
+    const rows = [];
+    for (const d of agendaData.days) {
+      if (!d.date || !d.date.startsWith(y + '-' + mm)) continue;
+      const wd = new Date(d.date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short' });
+      const cls = 'sg-a-row' + (d.date === todayIso ? ' is-today' : '')
+        + (d.moon_illumination <= 0.05 ? ' is-newmoon' : '');
+      rows.push('<div class="' + cls + '">'
+        + '<span class="sg-a-day">' + esc(wd) + ' ' + Number(d.date.slice(8)) + '</span>'
+        + '<span>' + fmtEvent(d.sunrise_utc) + '</span><span>' + fmtEvent(d.sunset_utc) + '</span>'
+        + '<span>' + fmtEvent(d.moonrise_utc) + '</span><span>' + fmtEvent(d.moonset_utc) + '</span>'
+        + '<span class="sg-a-phase" title="' + esc(d.moon_phase) + '">'
+        + '<span class="sg-moon-icon sg-a-moonicon" style="--sg-illum:' + Number(d.moon_illumination || 0) + '"></span>'
+        + Math.round((d.moon_illumination || 0) * 100) + ' %</span>'
+        + '</div>');
+    }
+    agendaBody.innerHTML = rows.join('');
+    const t = agendaBody.querySelector('.is-today');
+    if (t) t.scrollIntoView({ block: 'center' });
+    else agendaBody.scrollTop = 0;
+  }
+
+  async function toggleAgenda() {
+    if (!agendaPanel) return;
+    if (agendaOpenState()) { hideAgenda(); return; }
+    agendaPanel.hidden = false;
+    agendaBtn && agendaBtn.setAttribute('aria-expanded', 'true');
+    if (!agendaData) {
+      agendaBody.innerHTML = '<div class="sg-a-loading">Calcul de l’éphéméride…</div>';
+      if (!agendaLoading) {
+        agendaLoading = true;
+        try {
+          const d = await (await fetch('/api/stargaze/agenda')).json();
+          if (d && d.ok && Array.isArray(d.days)) agendaData = d;
+        } catch (_) {}
+        agendaLoading = false;
+      }
+      if (!agendaData) { agendaBody.innerHTML = '<div class="sg-a-loading">Agenda indisponible.</div>'; return; }
+      agendaMonth = new Date().getMonth();
+    }
+    renderAgenda();
+  }
+
+  function hideAgenda() {
+    if (!agendaPanel || agendaPanel.hidden) return;
+    agendaPanel.hidden = true;
+    agendaBtn && agendaBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  agendaBtn && agendaBtn.addEventListener('click', toggleAgenda);
+  agendaCloseBtn && agendaCloseBtn.addEventListener('click', hideAgenda);
+  agendaPrev && agendaPrev.addEventListener('click', () => { if (agendaMonth > 0) { agendaMonth--; renderAgenda(); } });
+  agendaNext && agendaNext.addEventListener('click', () => { if (agendaMonth < 11) { agendaMonth++; renderAgenda(); } });
 
   toggleBtn.addEventListener('click', () => { active ? deactivate() : activate(); });
   playBtn && playBtn.addEventListener('click', play);
@@ -624,9 +705,14 @@
   if (typeof window.setupFriseCollapse === 'function') {
     window.setupFriseCollapse(controls, document.getElementById('stargazeToggleBtn'), 'storm_stargaze_collapsed');
   }
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && active) deactivate(); });
+  // Échap : ferme d'abord l'agenda s'il est ouvert, sinon quitte le mode.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !active) return;
+    if (agendaOpenState()) { hideAgenda(); return; }
+    deactivate();
+  });
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.56';
+  window.__stargazeV = '1.3.57';
 })();
