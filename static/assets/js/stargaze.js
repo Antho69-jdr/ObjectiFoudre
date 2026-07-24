@@ -17,6 +17,7 @@
   const auroraEl = document.getElementById('sgAurora');
   const hourEl = document.getElementById('sgHour');
   const slotsEl = document.getElementById('stargazeSlots');
+  const nightsEl = document.getElementById('sgNights');
   const playBtn = document.getElementById('sgPlayBtn');
   const geoBtn = document.getElementById('sgGeoBtn');
   const PLAY_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M10 8.2 16.3 12 10 15.8Z" fill="currentColor" stroke="none"></path></svg>';
@@ -51,6 +52,9 @@
   let clippedCells = null;                     // coords de chaque cellule ROGNÉE à la France (statique → cache)
   let bestDark = null, bestDarkHour = null;   // meilleur score/heure sur les heures sombres, par cellule
   let railTrack = null, railMarks = [];
+  // Prévision nébulosité des prochaines nuits (ECMWF) : « ce soir » (index 0, /tonight,
+  // AROME horaire) + nuits futures (index ≥1, /outlook, une carte par nuit).
+  let tonightData = null, outlookData = null, viewNight = 0, outlookLoading = false;
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
   function fmtHM(iso) { try { return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); } catch (_) { return '--:--'; } }
@@ -213,6 +217,7 @@
 
   function updateHourBadge() {
     if (!hourEl) return;
+    if (viewNight > 0) { hourEl.hidden = true; return; }   // nuit future : libellé dans la frise
     if (degraded) {
       hourEl.hidden = false;
       hourEl.textContent = 'obscurité seule · météo en cours';
@@ -398,8 +403,22 @@
       return;
     }
     hideHint();
-    degraded = !d.ok;                       // météo AROME absente → obscurité seule
-    data = d; hours = degraded ? [] : (d.hours || []);
+    tonightData = d;
+    viewNight = 0;
+    renderTonight();
+    buildNightSelector();
+    loadOutlook();
+  }
+
+  // Rendu de « ce soir » (données /tonight, AROME horaire) — extrait de loadData pour
+  // pouvoir y revenir depuis le sélecteur de nuit.
+  function renderTonight() {
+    if (!tonightData) return;
+    if (retryTimer) { window.clearTimeout(retryTimer); retryTimer = null; }
+    degraded = !tonightData.ok;             // météo AROME absente → obscurité seule
+    data = tonightData; hours = degraded ? [] : (data.hours || []);
+    if (slotsEl) slotsEl.classList.remove('sg-night-static');
+    if (playBtn) playBtn.style.display = '';   // ce soir : lecture des heures dispo
     computeBestDark();
     qualityFC = buildQualityFC();
     if (map.getSource(QUALITY_SRC)) try { map.getSource(QUALITY_SRC).setData(qualityFC); } catch (_) {}
@@ -409,11 +428,94 @@
     if (degraded) {
       paintHour(0);
       // la grille AROME se précharge (ou l'API est momentanément indispo) → on réessaie.
-      retryTimer = window.setTimeout(() => { if (active) loadData(); }, 90000);
+      retryTimer = window.setTimeout(() => { if (active && viewNight === 0) loadData(); }, 90000);
     } else {
       cursor = defaultCursor();
       applyCursor(cursor);
     }
+  }
+
+  // ── Prévision nébulosité des prochaines nuits (ECMWF, /api/stargaze/outlook) ──
+  function loadOutlook() {
+    if (outlookData) { buildNightSelector(); return; }
+    if (outlookLoading) return;
+    outlookLoading = true;
+    fetch('/api/stargaze/outlook').then((r) => r.json()).then((d) => {
+      outlookLoading = false;
+      if (d && d.ok && Array.isArray(d.nights) && d.nights.some((n) => n.available)) {
+        outlookData = d; buildNightSelector();
+      }
+    }).catch(() => { outlookLoading = false; });
+  }
+
+  function nightLabel(dateIso) {   // "2026-07-25" → "Ven. 25" (soir de la nuit)
+    try {
+      const dt = new Date(dateIso + 'T12:00:00');
+      const wd = dt.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '');
+      return wd.charAt(0).toUpperCase() + wd.slice(1) + ' ' + dt.getDate();
+    } catch (_) { return dateIso; }
+  }
+
+  function buildNightSelector() {
+    if (!nightsEl) return;
+    const nights = (outlookData && outlookData.nights) || [];
+    const avail = nights.map((n, i) => ({ n, k: i + 1 })).filter((x) => x.n.available);
+    if (!avail.length) { nightsEl.hidden = true; return; }
+    nightsEl.hidden = false;
+    nightsEl.innerHTML = '';
+    const mk = (k, label) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sg-night-chip' + (k === viewNight ? ' active' : '');
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', k === viewNight ? 'true' : 'false');
+      b.textContent = label;
+      b.addEventListener('click', () => selectNight(k));
+      if (k === viewNight) requestAnimationFrame(() => { try { b.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (_) {} });
+      nightsEl.appendChild(b);
+    };
+    mk(0, 'Ce soir');
+    for (const { n, k } of avail) mk(k, nightLabel(n.date));
+  }
+
+  function selectNight(k) {
+    if (k === viewNight) return;
+    stop();
+    viewNight = k;
+    if (k === 0) renderTonight();
+    else renderFutureNight(k);
+    buildNightSelector();   // reflète l'onglet actif
+  }
+
+  // Nuit future : dataset synthétique « une heure » → réutilise tout le pipeline de
+  // rendu (buildQualityFC/paintHour/topSpotsFC/renderBadge) sans le dupliquer.
+  function renderFutureNight(k) {
+    const ngt = outlookData && outlookData.nights[k - 1];
+    if (!ngt || !ngt.available) { viewNight = 0; renderTonight(); return; }
+    if (retryTimer) { window.clearTimeout(retryTimer); retryTimer = null; }
+    degraded = false;
+    const epoch = Math.floor(new Date(ngt.date + 'T23:00:00').getTime() / 1000);
+    data = {
+      ok: true, cells: outlookData.cells, darkness: outlookData.darkness,
+      scores: [ngt.scores], cloud: [ngt.cloud], moon: ngt.moon, night: ngt.night,
+      top_spots: ngt.top_spots, hours: [{ iso: ngt.date + 'T23:00Z', epoch, dark: true }],
+    };
+    hours = data.hours; cursor = 0;
+    if (playBtn) playBtn.style.display = 'none';   // nuit future : une seule valeur, rien à faire défiler
+    computeBestDark();
+    qualityFC = buildQualityFC();
+    if (map.getSource(QUALITY_SRC)) try { map.getSource(QUALITY_SRC).setData(qualityFC); } catch (_) {}
+    renderBadge();
+    if (slotsEl) {
+      slotsEl.innerHTML = '';
+      slotsEl.classList.add('sg-night-static');
+      const lab = document.createElement('div');
+      lab.className = 'sg-night-static-label';
+      lab.textContent = 'Nuit du ' + nightLabel(ngt.date) + ' · prévision ECMWF';
+      slotsEl.appendChild(lab);
+    }
+    paintHour(0);
+    if (map.getSource(TOP_SRC)) try { map.getSource(TOP_SRC).setData(topSpotsFC()); } catch (_) {}
   }
 
   let hintEl = null;
@@ -592,6 +694,9 @@
     if (!active) return;
     active = false;
     stop();
+    viewNight = 0;
+    if (nightsEl) { nightsEl.hidden = true; }
+    if (slotsEl) slotsEl.classList.remove('sg-night-static');
     if (retryTimer) { window.clearTimeout(retryTimer); retryTimer = null; }
     degraded = false;
     toggleBtn.classList.remove('active');
@@ -714,5 +819,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.57';
+  window.__stargazeV = '1.3.58';
 })();

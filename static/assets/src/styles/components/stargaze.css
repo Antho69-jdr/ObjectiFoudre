@@ -289,6 +289,47 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 }
 .sg-empty-hint[hidden] { display: none; }
 
+/* --- Sélecteur de nuit (prévision nébulosité ECMWF des prochaines nuits) --- */
+.sg-nights {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0 2px 6px;
+}
+.sg-nights::-webkit-scrollbar { display: none; }
+.sg-nights[hidden] { display: none; }
+.sg-night-chip {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  border-radius: var(--r-chip);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  background: rgba(120, 84, 20, 0.16);
+  color: #e8dcc0;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+.sg-night-chip.active {
+  background: rgba(251, 191, 36, 0.9);
+  border-color: rgba(251, 191, 36, 0.9);
+  color: #201200;
+  font-weight: var(--fw-extrabold);
+}
+/* Nuit future : la piste horaire est remplacée par un libellé statique centré. */
+.sg-rail-wrap.sg-night-static {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+}
+.sg-night-static-label {
+  color: #ffe9b0;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  text-align: center;
+}
+
 /* --- Agenda astro de l'année (panneau mensuel, /api/stargaze/agenda) --- */
 .sg-agenda-panel {
   position: fixed;

@@ -79,7 +79,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.57"
+APP_VERSION = "1.3.58"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4359,6 +4359,150 @@ async def stargaze_agenda(year: int | None = Query(None, ge=2020, le=2035)) -> d
     et de la Lune par jour calendaire local + phase de Lune (centre France)."""
     y = year or datetime.now(ZoneInfo("Europe/Paris")).year
     return await asyncio.to_thread(_stargaze_agenda, y)
+
+
+# ── PRÉVISION NÉBULOSITÉ DES PROCHAINES NUITS (ECMWF IFS, jusqu'à ~J+10) ──────────
+# « Ce soir » (J+0) reste servi par /tonight (AROME horaire, fin). Ici : les NUITS
+# SUIVANTES via la couverture nuageuse totale (tcc) de l'open data ECMWF (0,25°),
+# une carte de qualité par nuit (obscurité × ciel dégagé ECMWF × Lune de la nuit) +
+# top spots — pour choisir QUELLE nuit sortir. Réutilise tout le pipeline ECMWF de la
+# tendance orageuse (index → Range-fetch GRIB2 → eccodes → échantillon grille France).
+_STARGAZE_OUTLOOK_LOCK = threading.Lock()
+_STARGAZE_OUTLOOK_CACHE: dict[str, Any] = {"key": None, "ts": 0.0, "data": None}
+_STARGAZE_OUTLOOK_TTL_SECONDS = 3600
+
+
+def _ecmwf_tcc_grid(run_date: Date, run_hour: int, step_hours: int,
+                    points: list[Any], indices_cache: dict[str, Any]) -> dict[str, float] | None:
+    """Couverture nuageuse totale ECMWF (%) échantillonnée par cellule (zone→%)."""
+    messages = _ecmwf_fetch_index(run_date, run_hour, step_hours)
+    if not messages:
+        return None
+    message = _ecmwf_message_for_param(messages, "tcc")
+    if message is None:
+        return None
+    raw = _ecmwf_fetch_message_raw(run_date, run_hour, step_hours, message)
+    if raw is None:
+        return None
+    decoded = _ecmwf_decode_grid_values(raw)
+    if decoded is None:
+        return None
+    meta, values = decoded
+    indices = indices_cache.get("indices")
+    if indices is None:
+        indices = _ecmwf_point_grid_indices(meta, points)
+        indices_cache["indices"] = indices
+    n = len(values)
+    out: dict[str, float] = {}
+    for point, idx in zip(points, indices):
+        if idx is None or idx >= n:
+            continue
+        v = float(values[idx])
+        if v != v:                       # NaN
+            continue
+        pct = v * 100.0 if v <= 1.5 else v   # tcc ECMWF = fraction 0..1
+        out[str(point.zone)] = max(0.0, min(100.0, pct))
+    return out or None
+
+
+def _stargaze_outlook_sync() -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    run = _ecmwf_latest_trend_run()
+    if run is None:
+        return {"ok": False, "nights": [], "message": "Prévision ECMWF indisponible."}
+    run_date, run_hour = run
+    cache_key = f"{run_date.isoformat()}T{run_hour:02d}"
+    with _STARGAZE_OUTLOOK_LOCK:
+        c = _STARGAZE_OUTLOOK_CACHE
+        if c["data"] is not None and c["key"] == cache_key and (time.time() - c["ts"]) < _STARGAZE_OUTLOOK_TTL_SECONDS:
+            return c["data"]
+
+    darkgrid = _stargaze_darkgrid()
+    points = _build_meteofrance_france_grid_points()
+    n = min(len(points), len(darkgrid))
+    cells = [{"lon": round(points[i].lon, 4), "lat": round(points[i].lat, 4)} for i in range(n)]
+    darkness_arr = [int(darkgrid[i]["darkness"]) for i in range(n)]
+    zone_index = {str(points[i].zone): i for i in range(n)}
+
+    tz = ZoneInfo("Europe/Paris")
+    today_local = now.astimezone(tz).date()
+    run_dt = datetime.combine(run_date, Time(hour=run_hour), tzinfo=timezone.utc)
+    indices_cache: dict[str, Any] = {}     # grille ECMWF identique pour tous les pas
+    nights: list[dict[str, Any]] = []
+
+    for d in range(1, 10):     # nuits futures : ce soir (J+0) = /tonight (AROME)
+        evening = today_local + timedelta(days=d)                # soir de cette nuit
+        # cœur de la nuit = 00:00 UTC du lendemain (≈01-02 h locale, toujours en pleine
+        # nuit) ; multiple de 24 h → pas ECMWF toujours publié (3 h jusqu'à J+6, 6 h après).
+        morning = evening + timedelta(days=1)
+        instant = datetime(morning.year, morning.month, morning.day, 0, 0, tzinfo=timezone.utc)
+        step = int(round((instant - run_dt).total_seconds() / 3600.0))
+        if step <= 0 or step > ECMWF_TREND_MAX_STEP_HOURS:
+            continue
+        cloudmap = _ecmwf_tcc_grid(run_date, run_hour, step, points, indices_cache)
+        moon = stargaze.moon_phase(instant)
+        md = float(moon["darkness"])
+        night = stargaze.astronomical_night(
+            datetime(evening.year, evening.month, evening.day, 12, 0, tzinfo=timezone.utc),
+            METEOFRANCE_FRANCE_GRID_CENTER_LAT, METEOFRANCE_FRANCE_GRID_CENTER_LON)
+        scores: list[int | None] = [None] * n
+        clouds: list[int | None] = [None] * n
+        best_score = [-1] * n
+        if cloudmap:
+            for zone, ct in cloudmap.items():
+                i = zone_index.get(zone)
+                if i is None:
+                    continue
+                sc = stargaze.observation_score(darkness_arr[i], ct, md)
+                scores[i] = sc
+                clouds[i] = int(round(ct))
+                best_score[i] = sc
+        # top spots de la nuit (même dédup spatial ~45 km que /tonight, seuil 30)
+        top: list[dict[str, Any]] = []
+        for i in sorted(range(n), key=lambda k: best_score[k], reverse=True):
+            if best_score[i] < 30:
+                break
+            lon, lat = cells[i]["lon"], cells[i]["lat"]
+            if any(abs(lat - t["lat"]) < 0.65
+                   and abs(lon - t["lon"]) * math.cos(math.radians(lat)) < 0.75 for t in top):
+                continue
+            top.append({"lon": lon, "lat": lat, "score": int(best_score[i]),
+                        "darkness": darkness_arr[i]})
+            if len(top) >= 8:
+                break
+        nights.append({
+            "date": evening.isoformat(),               # date du SOIR de la nuit
+            "available": cloudmap is not None,
+            "moon": moon,
+            "night": night,
+            "scores": scores,
+            "cloud": clouds,
+            "top_spots": top,
+        })
+
+    data = {
+        "ok": any(x["available"] for x in nights),
+        "generated_at": now.strftime("%Y-%m-%dT%H:%MZ"),
+        "run": cache_key,
+        "attribution": ECMWF_TREND_ATTRIBUTION,
+        "count": n,
+        "cells": cells,
+        "darkness": darkness_arr,
+        "nights": nights,
+    }
+    if not data["ok"]:
+        data["message"] = "Prévision nébulosité ECMWF indisponible pour l'instant."
+    with _STARGAZE_OUTLOOK_LOCK:
+        _STARGAZE_OUTLOOK_CACHE.update(key=cache_key, ts=time.time(), data=data)
+    return data
+
+
+@app.get("/api/stargaze/outlook")
+async def stargaze_outlook() -> dict[str, Any]:
+    """Prévision de nébulosité des prochaines nuits (ECMWF IFS open data, ~J+1→J+9) :
+    carte de qualité d'observation par nuit (obscurité × ciel dégagé ECMWF × Lune) +
+    top spots + contexte astro. « Ce soir » (J+0) reste sur /tonight (AROME horaire)."""
+    return await asyncio.to_thread(_stargaze_outlook_sync)
 
 
 def _get_meteofrance_grib_national_field_cache_payload(field_cache_key: str) -> tuple[dict[str, Any] | None, str | None, float | None]:
