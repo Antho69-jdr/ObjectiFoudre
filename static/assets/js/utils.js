@@ -422,6 +422,9 @@
     async function geocodeCity(query, signal) {
       const q = query.trim();
       if (!q) throw new Error('Ville vide');
+      // Coordonnées directes ("45.77, 2.96", "45.77N 2.96E"…) → pas de géocodage
+      const coord = (typeof parseCoordinates === 'function') ? parseCoordinates(q) : null;
+      if (coord) return { lat: coord.lat, lon: coord.lon, label: coord.label };
       const variants = Array.from(new Set([
         q,
         q.normalize('NFD').replace(/[̀-ͯ]/g, ''),

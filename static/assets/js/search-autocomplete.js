@@ -3,6 +3,35 @@ let autocompleteItems = [];
 let autocompleteActiveIndex = -1;
 let autocompleteDebounceTimer = null;
 
+// Recherche par COORDONNÉES : "45.77, 2.96", "45.77 2.96", "45.77N 2.96E",
+// "N45.77 E2.96", "2.96E 45.77N"… Renvoie {lat, lon, label} ou null.
+// Décimal (virgule ou point), cardinaux optionnels ; sans cardinal, ordre lat,lon
+// avec heuristique de bascule si l'ordre semble inversé pour la France.
+function parseCoordinates(input) {
+  const s = String(input || '').trim();
+  if (!s) return null;
+  const re = /^\s*([nsew]?)\s*(-?\d{1,3}(?:[.,]\d+)?)\s*°?\s*([nsew]?)\s*(?:\s*[,;/]\s*|\s+)\s*([nsew]?)\s*(-?\d{1,3}(?:[.,]\d+)?)\s*°?\s*([nsew]?)\s*$/i;
+  const m = s.match(re);
+  if (!m) return null;
+  const g1 = { card: (m[1] || m[3] || '').toUpperCase(), val: parseFloat(m[2].replace(',', '.')) };
+  const g2 = { card: (m[4] || m[6] || '').toUpperCase(), val: parseFloat(m[5].replace(',', '.')) };
+  if (!Number.isFinite(g1.val) || !Number.isFinite(g2.val)) return null;
+  const signed = (g) => (g.card === 'S' || g.card === 'W') ? -Math.abs(g.val)
+    : (g.card === 'N' || g.card === 'E') ? Math.abs(g.val) : g.val;
+  const isLat = (c) => c === 'N' || c === 'S';
+  const isLon = (c) => c === 'E' || c === 'W';
+  let lat, lon;
+  if (isLat(g1.card) || isLon(g2.card)) { lat = signed(g1); lon = signed(g2); }
+  else if (isLat(g2.card) || isLon(g1.card)) { lat = signed(g2); lon = signed(g1); }
+  else {
+    lat = g1.val; lon = g2.val;
+    const frLat = (v) => v >= 41 && v <= 52, frLon = (v) => v >= -6 && v <= 10;
+    if (!frLat(lat) && frLon(lat) && frLat(lon)) { const t = lat; lat = lon; lon = t; }
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  return { lat, lon, label: `${lat.toFixed(5)}, ${lon.toFixed(5)}` };
+}
+
 function getAutocompleteContainer() {
   return document.getElementById('searchAutocomplete');
 }
@@ -116,6 +145,11 @@ function setupSearchAutocomplete() {
     if (autocompleteController) autocompleteController.abort();
     if (query.length < 2) {
       closeSearchAutocomplete();
+      return;
+    }
+    const coord = parseCoordinates(query);
+    if (coord) {
+      renderSearchAutocomplete([{ label: coord.label, context: 'Aller à ces coordonnées', lat: coord.lat, lon: coord.lon }]);
       return;
     }
     autocompleteDebounceTimer = setTimeout(async () => {
