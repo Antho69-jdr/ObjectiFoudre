@@ -361,6 +361,7 @@
     var back = document.createElement('div'); back.className = 'ofspot-modal-back';
     var modal = document.createElement('div'); modal.className = 'ofspot-modal';
     modal.innerHTML =
+      '<button type="button" class="ofspot-modal-close" aria-label="Fermer">×</button>' +
       '<h4>Modifier le spot</h4>' +
       '<label>Nom<input class="e-name" maxlength="60"></label>' +
       '<label>Description<textarea class="e-notes" rows="3" maxlength="280"></textarea></label>' +
@@ -376,6 +377,7 @@
     modal.querySelector('.e-lon').value = spot.lon;
     var err = modal.querySelector('.err');
     var close = function () { back.remove(); };
+    modal.querySelector('.ofspot-modal-close').addEventListener('click', close);
     back.addEventListener('click', function (e) { if (e.target === back) close(); });
     document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
     modal.querySelector('.cancel').addEventListener('click', close);
@@ -422,9 +424,11 @@
       '.ofspot-pin:focus-visible{outline:2px solid #46c0e6;outline-offset:2px;border-radius:4px}',
       '.ofspot-popup .maplibregl-popup-content{background:#121a25;color:#e9eff7;border:1px solid #22303f;',
       'border-radius:14px;padding:14px 14px 12px;box-shadow:0 12px 30px -12px #000c;font-family:ui-sans-serif,system-ui,sans-serif}',
-      '.ofspot-popup .maplibregl-popup-close-button{color:#8ba0b8;font-size:18px;padding:2px 7px}',
+      '.ofspot-popup .maplibregl-popup-close-button{top:5px;right:5px;min-width:0!important;min-height:0!important;width:28px!important;height:28px!important;display:grid;place-items:center;',
+      'color:#8ba0b8;font-size:20px;line-height:1;padding:0;border-radius:7px}',
+      '.ofspot-popup .maplibregl-popup-close-button:hover{background:#ffffff12;color:#e9eff7}',
       '.ofspot-popup .maplibregl-popup-tip{border-top-color:#121a25;border-bottom-color:#121a25}',
-      '.ofspot-head{display:flex;align-items:center;gap:8px;justify-content:space-between;margin-bottom:8px}',
+      '.ofspot-head{display:flex;align-items:center;gap:8px;justify-content:space-between;margin-bottom:8px;padding-right:24px}',
       '.ofspot-name{font-weight:650;font-size:15px;letter-spacing:-.01em}',
       '.ofspot-badge{font-family:ui-monospace,monospace;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}',
       '.ofspot-ros{display:flex;justify-content:center;margin:2px 0 8px}',
@@ -445,7 +449,7 @@
       '.ofspot-add-btn .plus{font-size:17px;line-height:1;font-weight:700}',
       // formulaire
       '.ofspot-form{display:flex;flex-direction:column;gap:9px;min-width:210px}',
-      '.ofspot-form h4{margin:0 0 2px;font-size:14px;font-weight:650}',
+      '.ofspot-form h4{margin:0 0 2px;font-size:14px;font-weight:650;padding-right:22px}',
       '.ofspot-form label{font-size:11px;color:#8ba0b8;display:flex;flex-direction:column;gap:3px}',
       '.ofspot-form input,.ofspot-form textarea{background:#0e1620;border:1px solid #22303f;border-radius:8px;',
       'color:#e9eff7;font:inherit;font-size:13px;padding:7px 9px;width:100%;box-sizing:border-box;resize:vertical}',
@@ -483,8 +487,12 @@
       '.ofspot-card-abtn.del:hover{border-color:#e8725a}',
       // modale d\'édition
       '.ofspot-modal-back{position:fixed;inset:0;z-index:30;background:#04070ccc;display:flex;align-items:center;justify-content:center;padding:16px}',
-      '.ofspot-modal{background:#121a25;color:#e9eff7;border:1px solid #22303f;border-radius:14px;padding:18px;width:min(420px,100%);max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px -20px #000}',
-      '.ofspot-modal h4{margin:0 0 12px;font-size:16px;font-weight:650}',
+      '.ofspot-modal{position:relative;background:#121a25;color:#e9eff7;border:1px solid #22303f;border-radius:14px;padding:18px;width:min(420px,100%);max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px -20px #000}',
+      '.ofspot-modal-close{position:absolute;top:8px;right:8px;min-width:0!important;min-height:0!important;width:32px!important;height:32px!important;box-sizing:border-box;display:grid;place-items:center;',
+      'background:transparent;border:none;color:#8ba0b8;font-size:24px;line-height:1;border-radius:8px;cursor:pointer;padding:0}',
+      '.ofspot-modal-close:hover{background:#ffffff12;color:#e9eff7}',
+      '.ofspot-modal-close:focus-visible{outline:2px solid #46c0e6}',
+      '.ofspot-modal h4{margin:0 26px 12px 0;font-size:16px;font-weight:650}',
       '.ofspot-modal label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#8ba0b8;margin-bottom:10px}',
       '.ofspot-modal input,.ofspot-modal textarea{background:#0e1620;border:1px solid #22303f;border-radius:8px;color:#e9eff7;font:inherit;font-size:14px;padding:8px 10px;width:100%;box-sizing:border-box;resize:vertical}',
       '.ofspot-modal input:focus,.ofspot-modal textarea:focus{outline:2px solid #46c0e6;border-color:#46c0e6}',
