@@ -242,6 +242,37 @@ def moderate(spot_id: str, action: str) -> dict:
         return spots[idx]
 
 
+def update_spot(spot_id: str, *, name: str | None = None, notes: str | None = None,
+                lon: float | None = None, lat: float | None = None) -> dict:
+    """Modifie un spot (admin). Champs None = inchangés. Si la position change, l'horizon
+    est remis à None (recalcul déclenché par app.py). Lève SpotError si invalide/introuvable."""
+    with _lock:
+        spots = _load()
+        idx = next((i for i, s in enumerate(spots) if s["id"] == spot_id), None)
+        if idx is None:
+            raise SpotError("Spot introuvable.")
+        s = spots[idx]
+        if name is not None:
+            cname = _clean_text(name, _NAME_MAX, "Nom")
+            if len(cname) < 2:
+                raise SpotError("Nom : au moins 2 caractères.")
+            s["name"] = cname
+        if notes is not None:
+            s["notes"] = re.sub(r"\s+", " ", _clean_text(str(notes)[:_NOTES_MAX], _NOTES_MAX, "Description")).strip()
+        if lon is not None and lat is not None:
+            try:
+                lon = float(lon); lat = float(lat)
+            except (TypeError, ValueError):
+                raise SpotError("Coordonnées invalides.")
+            if not (_FR[0] <= lon <= _FR[1] and _FR[2] <= lat <= _FR[3]):
+                raise SpotError("Le spot doit être en France métropolitaine.")
+            if abs(s["lon"] - lon) > 1e-6 or abs(s["lat"] - lat) > 1e-6:
+                s["lon"] = round(lon, 6); s["lat"] = round(lat, 6)
+                s["horizon"] = None      # position changée → recalcul de l'horizon
+        _save(spots)
+        return s
+
+
 def attach_horizon(spot_id: str, horizon_summary: dict) -> dict | None:
     """Mémorise le résumé d'horizon calculé (openness, denivele…) sur le spot."""
     with _lock:

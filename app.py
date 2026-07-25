@@ -81,7 +81,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.65"
+APP_VERSION = "1.3.66"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4627,6 +4627,23 @@ async def api_spots_import(payload: dict[str, Any], background_tasks: Background
     for sp in res["created"]:
         background_tasks.add_task(_spot_compute_horizon, sp["id"], sp["lon"], sp["lat"])
     return {"ok": True, "created": len(res["created"]), "skipped": res["skipped"]}
+
+
+@app.post("/api/spots/{spot_id}/update")
+async def api_spots_update(spot_id: str, payload: dict[str, Any], background_tasks: BackgroundTasks,
+                           secret: str | None = Query(None)) -> dict[str, Any]:
+    """[admin] Modifie un spot (nom, notes, position). Recalcule l'horizon si la position change."""
+    _validate_server_admin_secret(secret or "")
+    try:
+        updated = await asyncio.to_thread(
+            spots.update_spot, spot_id,
+            name=payload.get("name"), notes=payload.get("notes"),
+            lon=payload.get("lon"), lat=payload.get("lat"))
+    except spots.SpotError as exc:
+        return {"ok": False, "error": str(exc)}
+    if updated.get("horizon") is None:   # position changée → recalcul en tâche de fond
+        background_tasks.add_task(_spot_compute_horizon, updated["id"], updated["lon"], updated["lat"])
+    return {"ok": True, "spot": {k: updated[k] for k in ("id", "name", "lon", "lat", "notes", "status")}}
 
 
 def _get_meteofrance_grib_national_field_cache_payload(field_cache_key: str) -> tuple[dict[str, Any] | None, str | None, float | None]:

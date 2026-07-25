@@ -316,8 +316,9 @@
 
   function tableCard(spot) {
     var h = spot.horizon;
-    var card = document.createElement('button'); card.type = 'button'; card.className = 'ofspot-card';
-    card.setAttribute('aria-label', 'Voir ' + spot.name + ' sur la carte');
+    var card = document.createElement('div'); card.className = 'ofspot-card';
+    var main = document.createElement('button'); main.type = 'button'; main.className = 'ofspot-card-main';
+    main.setAttribute('aria-label', 'Voir ' + spot.name + ' sur la carte');
     var ros = document.createElement('div'); ros.className = 'ofspot-card-ros';
     if (h && h.azimuths && h.azimuths.length) ros.appendChild(makeRosace(h.azimuths, h.openness, 92));
     var info = document.createElement('div'); info.className = 'ofspot-card-info';
@@ -330,13 +331,72 @@
     } else { meta.textContent = 'horizon en calcul…'; }
     info.append(nm, meta);
     if (spot.notes) { var nt = document.createElement('div'); nt.className = 'ofspot-card-notes'; nt.textContent = spot.notes; info.appendChild(nt); }
-    card.append(ros, info);
-    card.addEventListener('click', function () {
+    main.append(ros, info);
+    main.addEventListener('click', function () {
       closeSpotsPage();
       if (typeof map !== 'undefined') map.flyTo({ center: [spot.lon, spot.lat], zoom: 10 });
       setTimeout(function () { openFiche(spot, [spot.lon, spot.lat]); }, 700);
     });
+    card.appendChild(main);
+    if (isAdmin()) {
+      var acts = document.createElement('div'); acts.className = 'ofspot-card-admin';
+      var edit = document.createElement('button'); edit.type = 'button'; edit.className = 'ofspot-card-abtn';
+      edit.textContent = 'Modifier';
+      edit.addEventListener('click', function (e) { e.stopPropagation(); openEditForm(spot); });
+      var del = document.createElement('button'); del.type = 'button'; del.className = 'ofspot-card-abtn del';
+      del.textContent = 'Supprimer';
+      del.addEventListener('click', function (e) { e.stopPropagation(); deleteSpot(spot); });
+      acts.append(edit, del);
+      card.appendChild(acts);
+    }
     return card;
+  }
+
+  function deleteSpot(spot) {
+    if (!confirm('Supprimer le spot « ' + spot.name + ' » ? Cette action est définitive.')) return;
+    moderate(spot.id, 'delete');   // moderate() rafraîchit table + marqueurs + toast
+  }
+
+  function openEditForm(spot) {
+    var back = document.createElement('div'); back.className = 'ofspot-modal-back';
+    var modal = document.createElement('div'); modal.className = 'ofspot-modal';
+    modal.innerHTML =
+      '<h4>Modifier le spot</h4>' +
+      '<label>Nom<input class="e-name" maxlength="60"></label>' +
+      '<label>Description<textarea class="e-notes" rows="3" maxlength="280"></textarea></label>' +
+      '<div class="ofspot-modal-coords"><label>Latitude<input class="e-lat" inputmode="decimal"></label>' +
+      '<label>Longitude<input class="e-lon" inputmode="decimal"></label></div>' +
+      '<div class="err" role="alert"></div>' +
+      '<div class="ofspot-modal-row"><button type="button" class="del">Supprimer</button><span class="sp"></span>' +
+      '<button type="button" class="cancel">Annuler</button><button type="button" class="save">Enregistrer</button></div>';
+    back.appendChild(modal); document.body.appendChild(back);
+    modal.querySelector('.e-name').value = spot.name || '';
+    modal.querySelector('.e-notes').value = spot.notes || '';
+    modal.querySelector('.e-lat').value = spot.lat;
+    modal.querySelector('.e-lon').value = spot.lon;
+    var err = modal.querySelector('.err');
+    var close = function () { back.remove(); };
+    back.addEventListener('click', function (e) { if (e.target === back) close(); });
+    document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
+    modal.querySelector('.cancel').addEventListener('click', close);
+    modal.querySelector('.del').addEventListener('click', function () { close(); deleteSpot(spot); });
+    modal.querySelector('.save').addEventListener('click', function () {
+      var name = modal.querySelector('.e-name').value.trim();
+      var notes = modal.querySelector('.e-notes').value.trim();
+      var lat = parseFloat(String(modal.querySelector('.e-lat').value).replace(',', '.'));
+      var lon = parseFloat(String(modal.querySelector('.e-lon').value).replace(',', '.'));
+      if (name.length < 2) { err.textContent = 'Nom : 2 caractères minimum.'; return; }
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) { err.textContent = 'Coordonnées invalides.'; return; }
+      var btn = modal.querySelector('.save'); btn.disabled = true; btn.textContent = '…';
+      fetch('/api/spots/' + spot.id + '/update?secret=' + encodeURIComponent(adminSecret()), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, notes: notes, lat: lat, lon: lon }),
+      }).then(function (r) { return r.ok ? r.json() : { ok: false }; })
+        .then(function (res) {
+          if (res && res.ok) { close(); toast('Spot modifié ✓'); loadSpots().then(function () { renderTable(); }); }
+          else { err.textContent = (res && res.error) || 'Échec de la modification.'; btn.disabled = false; btn.textContent = 'Enregistrer'; }
+        }).catch(function () { err.textContent = 'Réseau indisponible.'; btn.disabled = false; btn.textContent = 'Enregistrer'; });
+    });
   }
 
   // ── onglet rail : ouvre la page ────────────────────────────────────────────
@@ -410,10 +470,33 @@
       '.ofspot-tbl-add .plus{font-size:16px;font-weight:700;line-height:1}',
       '.ofspot-tbl-add:hover{filter:brightness(1.06)}',
       '.ofspot-tbl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}',
-      '.ofspot-card{display:flex;gap:12px;text-align:left;align-items:center;background:#121a25;color:#e9eff7;',
-      'border:1px solid #22303f;border-radius:13px;padding:12px;cursor:pointer;font:inherit;transition:border-color .15s,transform .15s}',
-      '.ofspot-card:hover{border-color:#46c0e6;transform:translateY(-1px)}',
-      '.ofspot-card:focus-visible{outline:2px solid #46c0e6;outline-offset:2px}',
+      '.ofspot-card{display:flex;flex-direction:column;background:#121a25;color:#e9eff7;',
+      'border:1px solid #22303f;border-radius:13px;overflow:hidden;transition:border-color .15s}',
+      '.ofspot-card:hover{border-color:#46c0e6}',
+      '.ofspot-card-main{display:flex;gap:12px;text-align:left;align-items:center;background:none;border:none;',
+      'color:inherit;font:inherit;padding:12px;cursor:pointer;width:100%}',
+      '.ofspot-card-main:focus-visible{outline:2px solid #46c0e6;outline-offset:-2px}',
+      '.ofspot-card-admin{display:flex;gap:6px;justify-content:flex-end;padding:0 12px 11px}',
+      '.ofspot-card-abtn{font:inherit;font-size:12px;font-weight:600;border-radius:7px;padding:5px 11px;cursor:pointer;border:1px solid #22303f;background:transparent;color:#8ba0b8}',
+      '.ofspot-card-abtn:hover{color:#e9eff7;border-color:#46c0e6}',
+      '.ofspot-card-abtn.del{color:#e8725a;border-color:#e8725a44}',
+      '.ofspot-card-abtn.del:hover{border-color:#e8725a}',
+      // modale d\'édition
+      '.ofspot-modal-back{position:fixed;inset:0;z-index:30;background:#04070ccc;display:flex;align-items:center;justify-content:center;padding:16px}',
+      '.ofspot-modal{background:#121a25;color:#e9eff7;border:1px solid #22303f;border-radius:14px;padding:18px;width:min(420px,100%);max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px -20px #000}',
+      '.ofspot-modal h4{margin:0 0 12px;font-size:16px;font-weight:650}',
+      '.ofspot-modal label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#8ba0b8;margin-bottom:10px}',
+      '.ofspot-modal input,.ofspot-modal textarea{background:#0e1620;border:1px solid #22303f;border-radius:8px;color:#e9eff7;font:inherit;font-size:14px;padding:8px 10px;width:100%;box-sizing:border-box;resize:vertical}',
+      '.ofspot-modal input:focus,.ofspot-modal textarea:focus{outline:2px solid #46c0e6;border-color:#46c0e6}',
+      '.ofspot-modal-coords{display:flex;gap:10px}',
+      '.ofspot-modal-coords label{flex:1}',
+      '.ofspot-modal .err{color:#e8725a;font-size:12px;min-height:16px;margin-bottom:4px}',
+      '.ofspot-modal-row{display:flex;gap:8px;align-items:center}',
+      '.ofspot-modal-row .sp{flex:1}',
+      '.ofspot-modal-row button{font:inherit;font-size:13px;font-weight:600;border-radius:8px;padding:8px 14px;cursor:pointer;border:1px solid #22303f;background:transparent;color:#e9eff7}',
+      '.ofspot-modal-row .save{background:#46c0e6;color:#08222c;border-color:#46c0e6}',
+      '.ofspot-modal-row .del{color:#e8725a;border-color:#e8725a55}',
+      '.ofspot-modal-row .cancel{color:#8ba0b8}',
       '.ofspot-card-ros{flex:none;width:92px;height:92px;display:flex;align-items:center;justify-content:center}',
       '.ofspot-card-info{min-width:0;display:flex;flex-direction:column;gap:4px}',
       '.ofspot-card-name{font-weight:640;font-size:14px;letter-spacing:-.01em}',
