@@ -3,6 +3,8 @@ __pycache__/
 *.bak
 .cache/
 history/
+data/horizon_cache/
+spots.json
 orages_output_horizons.json
 mnt/
 Clef API*.txt

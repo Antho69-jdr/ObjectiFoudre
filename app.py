@@ -55,6 +55,8 @@ from pydantic import BaseModel, Field
 from weather_logic import DEFAULT_CENTER_LABEL, CELL_SIZE_KM, Point, build_historical_analysis_payload, build_latest_payload, build_grid, fetch_model, flatten_rows_for_analysis, group_for_output, km_to_deg_lat, km_to_deg_lon, rows_for_grid_locations
 import weather_logic
 import stargaze  # mode « chasse d'étoile » : pollution lumineuse + astro
+import horizon  # « Mes spots » : horizon / champ de vision dégagé (topographie RGE ALTI)
+import spots  # « Mes spots » : store JSON des spots partagés + modération
 import verification
 import learning
 try:
@@ -79,7 +81,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.60"
+APP_VERSION = "1.3.61"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4525,6 +4527,84 @@ async def stargaze_outlook() -> dict[str, Any]:
     carte de qualité d'observation par nuit (obscurité × ciel dégagé ECMWF × Lune) +
     top spots + contexte astro. « Ce soir » (J+0) reste sur /tonight (AROME horaire)."""
     return await asyncio.to_thread(_stargaze_outlook_sync)
+
+
+@app.get("/api/horizon")
+async def api_horizon(
+    lon: float = Query(..., ge=-5.5, le=9.8),
+    lat: float = Query(..., ge=41.0, le=51.6),
+) -> dict[str, Any]:
+    """Horizon / champ de vision dégagé d'un spot (topographie RGE ALTI = MNT dérivé du
+    LiDAR HD, cf. audit .h_collect/audit_lidar_2026-07-24.md). Renvoie l'indice d'ouverture
+    0..100, l'horizon par azimut, le dénivelé max. Calcul ~13 s à froid via l'API altimétrie
+    IGN, puis caché par (lon,lat) — terrain statique. Enrichissement NON-FATAL : en cas
+    d'échec réseau IGN, renvoie ok=False (le reste de l'app n'en dépend pas)."""
+    try:
+        scan = await asyncio.to_thread(horizon.cached_horizon_scan, lon, lat)
+    except horizon.HorizonError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, **scan}
+
+
+# ── « Mes spots » : store de spots partagés (JSON volume) + modération ─────────
+class SpotCreateRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=80)
+    lon: float = Field(..., ge=-5.5, le=9.8)
+    lat: float = Field(..., ge=41.0, le=51.6)
+    notes: str = Field("", max_length=300)
+    author_token: str = Field("", max_length=64)
+
+
+def _spot_compute_horizon(spot_id: str, lon: float, lat: float) -> None:
+    """Tâche de fond : calcule l'horizon du spot et l'y attache (best-effort, non-fatal)."""
+    try:
+        scan = horizon.cached_horizon_scan(lon, lat)
+        summary = {k: scan[k] for k in ("openness", "mean_horizon_deg", "max_horizon_deg",
+                                        "pct_below_5deg", "denivele_max_m", "z0")}
+        summary["azimuths"] = scan["azimuths"]
+        spots.attach_horizon(spot_id, summary)
+    except Exception:  # noqa: BLE001 - le spot existe déjà, l'horizon se recalcule au besoin
+        pass
+
+
+@app.get("/api/spots")
+async def api_spots_list() -> dict[str, Any]:
+    """Spots publics approuvés — alimente le calque des 3 cartes + la vue tableau."""
+    return {"ok": True, "spots": await asyncio.to_thread(spots.list_public)}
+
+
+@app.post("/api/spots")
+async def api_spots_create(payload: SpotCreateRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """Crée un spot : validation automatique → statut 'pending' (en attente de modération
+    manuelle ; jamais public sans revue). L'horizon est calculé en tâche de fond."""
+    try:
+        spot = await asyncio.to_thread(
+            spots.create_spot, payload.name, payload.lon, payload.lat,
+            author_token=payload.author_token, notes=payload.notes)
+    except spots.SpotError as exc:
+        return {"ok": False, "error": str(exc)}
+    background_tasks.add_task(_spot_compute_horizon, spot["id"], payload.lon, payload.lat)
+    return {"ok": True, "spot": {k: spot[k] for k in
+                                 ("id", "name", "lon", "lat", "notes", "status", "created_utc")}}
+
+
+@app.get("/api/spots/pending")
+async def api_spots_pending(secret: str | None = Query(None)) -> dict[str, Any]:
+    """[admin] Spots en attente de modération (secret serveur requis)."""
+    _validate_server_admin_secret(secret or "")
+    return {"ok": True, "spots": await asyncio.to_thread(spots.list_all, "pending")}
+
+
+@app.post("/api/spots/{spot_id}/moderate")
+async def api_spots_moderate(spot_id: str, action: str = Query(...),
+                             secret: str | None = Query(None)) -> dict[str, Any]:
+    """[admin] Modération manuelle d'un spot : action ∈ {approve, reject, delete}."""
+    _validate_server_admin_secret(secret or "")
+    try:
+        res = await asyncio.to_thread(spots.moderate, spot_id, action)
+    except spots.SpotError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "result": res}
 
 
 def _get_meteofrance_grib_national_field_cache_payload(field_cache_key: str) -> tuple[dict[str, Any] | None, str | None, float | None]:
