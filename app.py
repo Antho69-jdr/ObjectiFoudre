@@ -81,7 +81,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.63"
+APP_VERSION = "1.3.64"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4605,6 +4605,28 @@ async def api_spots_moderate(spot_id: str, action: str = Query(...),
     except spots.SpotError as exc:
         return {"ok": False, "error": str(exc)}
     return {"ok": True, "result": res}
+
+
+@app.post("/api/spots/import")
+async def api_spots_import(payload: dict[str, Any], background_tasks: BackgroundTasks,
+                           secret: str | None = Query(None)) -> dict[str, Any]:
+    """[admin] Import en masse de spots (ex. liste Google Maps exportée). Corps :
+    { "spots": [{name, lon, lat, notes|note}], "status": "approved"|"pending" }.
+    Bypass le rate-limit, dédoublonne, calcule l'horizon de chaque spot en tâche de fond."""
+    _validate_server_admin_secret(secret or "")
+    items = payload.get("spots") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        return {"ok": False, "error": "Corps invalide : { spots: [...] } attendu."}
+    if len(items) > 500:
+        return {"ok": False, "error": "Trop d'éléments (max 500 par import)."}
+    status = payload.get("status", "approved")
+    try:
+        res = await asyncio.to_thread(spots.import_spots, items, status=status)
+    except spots.SpotError as exc:
+        return {"ok": False, "error": str(exc)}
+    for sp in res["created"]:
+        background_tasks.add_task(_spot_compute_horizon, sp["id"], sp["lon"], sp["lat"])
+    return {"ok": True, "created": len(res["created"]), "skipped": res["skipped"]}
 
 
 def _get_meteofrance_grib_national_field_cache_payload(field_cache_key: str) -> tuple[dict[str, Any] | None, str | None, float | None]:

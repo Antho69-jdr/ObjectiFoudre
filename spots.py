@@ -171,6 +171,41 @@ def create_spot(name: str, lon: float, lat: float, *, author_token: str = "",
         return spot
 
 
+def import_spots(items: list[dict], *, status: str = "approved", author_token: str = "import") -> dict:
+    """Import en masse (admin) : bypass le rate-limit, collapse/tronque les notes, dédoublonne
+    (bbox + <50 m via _validate_new). items = [{name, lon, lat, notes|note}]. Renvoie
+    {created:[spot…], skipped:[{name, reason}]}. status ∈ {approved, pending}."""
+    if status not in ("approved", "pending"):
+        raise SpotError(f"statut invalide : {status}")
+    created, skipped = [], []
+    with _lock:
+        spots = _load()
+        for it in items or []:
+            try:
+                name = it.get("name")
+                lon = it.get("lon"); lat = it.get("lat")
+                raw_note = str(it.get("notes") if it.get("notes") is not None else (it.get("note") or ""))
+                note = re.sub(r"\s+", " ", raw_note).strip()[:_NOTES_MAX]   # une ligne, tronquée
+                cname, cnote = _validate_new(name, lon, lat, note, spots)
+                spot = {
+                    "id": uuid.uuid4().hex[:12],
+                    "name": cname, "lon": round(float(lon), 6), "lat": round(float(lat), 6),
+                    "notes": cnote, "status": status,
+                    "author": {"kind": "anon", "id": author_token},
+                    "created_utc": _now_iso(),
+                    "moderated_utc": _now_iso() if status == "approved" else None,
+                    "horizon": None, "flags": [], "source": "import",
+                }
+                spots.append(spot)   # ajouté au fur et à mesure → dédoublonne dans le lot aussi
+                created.append(spot)
+            except SpotError as exc:
+                skipped.append({"name": str(it.get("name"))[:60], "reason": str(exc)})
+            except (TypeError, ValueError):
+                skipped.append({"name": str(it.get("name"))[:60], "reason": "entrée invalide"})
+        _save(spots)
+    return {"created": created, "skipped": skipped}
+
+
 def list_public() -> list[dict]:
     """Spots approuvés uniquement, vue publique (carte + tableau)."""
     with _lock:

@@ -220,7 +220,12 @@
         if (!d || !d.ok) { sec.className = 'ofspot-mod ofspot-mod-err'; sec.textContent = 'Modération inaccessible (secret admin invalide ?).'; return; }
         var pend = d.spots || [];
         var head = document.createElement('div'); head.className = 'ofspot-mod-head';
-        head.innerHTML = '<span class="ofspot-mod-title">Modération</span><span class="ofspot-mod-badge">' + pend.length + ' en attente</span>';
+        var hl = document.createElement('span'); hl.className = 'ofspot-mod-title'; hl.textContent = 'Modération';
+        var hb = document.createElement('span'); hb.className = 'ofspot-mod-badge'; hb.textContent = pend.length + ' en attente';
+        var imp = document.createElement('button'); imp.type = 'button'; imp.className = 'ofspot-mod-btn ofspot-imp';
+        imp.textContent = 'Importer un fichier';
+        imp.addEventListener('click', openImportPicker);
+        head.append(hl, hb, imp);
         sec.appendChild(head);
         if (!pend.length) { var e = document.createElement('div'); e.className = 'ofspot-mod-empty'; e.textContent = 'Rien à valider pour l\'instant.'; sec.appendChild(e); return; }
         pend.forEach(function (s) { sec.appendChild(modRow(s)); });
@@ -244,6 +249,44 @@
     });
     row.append(info, acts);
     return row;
+  }
+
+  // import de fichier (admin) : JSON [{name,lon,lat,note}] ou {spots:[…]}
+  function openImportPicker() {
+    var inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.json,application/json';
+    inp.addEventListener('change', function () { if (inp.files && inp.files[0]) handleImportFile(inp.files[0]); });
+    inp.click();
+  }
+
+  function handleImportFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var arr;
+      try {
+        var parsed = JSON.parse(reader.result);
+        arr = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.spots) ? parsed.spots : null);
+      } catch (e) { toast('Fichier JSON illisible.'); return; }
+      if (!arr || !arr.length) { toast('Aucun spot dans le fichier.'); return; }
+      var payloadSpots = arr.map(function (p) {
+        return { name: p.name, lon: Number(p.lon), lat: Number(p.lat), notes: (p.notes != null ? p.notes : (p.note || '')) };
+      }).filter(function (p) { return p.name && Number.isFinite(p.lon) && Number.isFinite(p.lat); });
+      if (!payloadSpots.length) { toast('Format non reconnu (attendu : name, lon, lat).'); return; }
+      if (!confirm('Importer ' + payloadSpots.length + ' spot(s) comme APPROUVÉS (visibles publiquement) ?')) return;
+      toast('Import en cours…');
+      fetch('/api/spots/import?secret=' + encodeURIComponent(adminSecret()), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spots: payloadSpots, status: 'approved' }),
+      }).then(function (r) { return r.ok ? r.json() : { ok: false, status: r.status }; })
+        .then(function (res) {
+          if (!res || !res.ok) { toast('Import refusé (secret admin ?).'); return; }
+          var msg = res.created + ' spot(s) importé(s)';
+          if (res.skipped && res.skipped.length) msg += ' · ' + res.skipped.length + ' ignoré(s)';
+          toast(msg + '. Horizons en calcul…', 5200);
+          loadSpots().then(function () { renderTable(); });
+        }).catch(function () { toast('Réseau indisponible.'); });
+    };
+    reader.readAsText(file);
   }
 
   function renderTable() {
@@ -396,6 +439,7 @@
       '.ofspot-mod-btn.mod-reject{color:#e3b34b;border-color:#e3b34b55}',
       '.ofspot-mod-btn.mod-delete{color:#e8725a;border-color:#e8725a55}',
       '.ofspot-mod-btn:hover{filter:brightness(1.08)}',
+      '.ofspot-imp{margin-left:auto;color:#46c0e6;border-color:#46c0e6}',
     ].join('');
     document.head.appendChild(s);
   }
