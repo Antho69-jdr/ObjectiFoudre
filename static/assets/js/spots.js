@@ -400,7 +400,8 @@
       'background:#121a25;color:#e9eff7;border:1px solid #22303f;border-radius:10px;padding:10px 16px;font-size:13px;',
       'box-shadow:0 12px 30px -12px #000c;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;max-width:80vw;text-align:center}',
       '.ofspot-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}',
-      // page tableau
+      // page tableau : colonne unique scrollable (le gabarit .prediction-page-body est une grille 2 col.)
+      '.prediction-page-body.ofspot-page-body{display:block;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}',
       '#ofspotTableBody{width:100%;max-width:900px;margin:0 auto;padding:4px 2px 24px}',
       '.ofspot-tbl-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 16px;flex-wrap:wrap}',
       '.ofspot-tbl-count{font-family:ui-monospace,monospace;font-size:12px;color:#8ba0b8;letter-spacing:.02em}',
