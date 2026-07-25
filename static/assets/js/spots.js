@@ -190,10 +190,67 @@
     document.body.classList.remove('spots-open');
   }
 
+  // admin : réutilise le mécanisme existant (?admin=<secret> → classe objf-admin + objfAdminSecret)
+  function isAdmin() { try { return document.documentElement.classList.contains('objf-admin'); } catch (e) { return false; } }
+  function adminSecret() { try { return localStorage.getItem('objfAdminSecret') || ''; } catch (e) { return ''; } }
+
+  function moderate(spotId, action, row) {
+    var qs = '?secret=' + encodeURIComponent(adminSecret()) + '&action=' + action;
+    if (row) row.style.opacity = '.5';
+    return fetch('/api/spots/' + spotId + '/moderate' + qs, { method: 'POST' })
+      .then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
+      .then(function (res) {
+        toast(res && res.ok ? (action === 'approve' ? 'Spot approuvé ✓' : action === 'reject' ? 'Spot rejeté' : 'Spot supprimé')
+                            : ((res && res.error) || 'Action refusée.'));
+        return loadSpots().then(function () { renderTable(); });
+      })
+      .catch(function () { if (row) row.style.opacity = ''; toast('Réseau indisponible.'); });
+  }
+
+  function renderModeration(container) {
+    if (!isAdmin()) return;
+    var sec = document.createElement('section'); sec.className = 'ofspot-mod';
+    sec.setAttribute('aria-label', 'Modération des spots');
+    sec.textContent = 'Chargement des spots en attente…';
+    container.appendChild(sec);
+    fetch('/api/spots/pending?secret=' + encodeURIComponent(adminSecret()))
+      .then(function (r) { return r.ok ? r.json() : { ok: false, status: r.status }; })
+      .then(function (d) {
+        sec.innerHTML = '';
+        if (!d || !d.ok) { sec.className = 'ofspot-mod ofspot-mod-err'; sec.textContent = 'Modération inaccessible (secret admin invalide ?).'; return; }
+        var pend = d.spots || [];
+        var head = document.createElement('div'); head.className = 'ofspot-mod-head';
+        head.innerHTML = '<span class="ofspot-mod-title">Modération</span><span class="ofspot-mod-badge">' + pend.length + ' en attente</span>';
+        sec.appendChild(head);
+        if (!pend.length) { var e = document.createElement('div'); e.className = 'ofspot-mod-empty'; e.textContent = 'Rien à valider pour l\'instant.'; sec.appendChild(e); return; }
+        pend.forEach(function (s) { sec.appendChild(modRow(s)); });
+      })
+      .catch(function () { sec.className = 'ofspot-mod ofspot-mod-err'; sec.textContent = 'Modération indisponible.'; });
+  }
+
+  function modRow(s) {
+    var row = document.createElement('div'); row.className = 'ofspot-mod-row';
+    var info = document.createElement('div'); info.className = 'ofspot-mod-info';
+    var nm = document.createElement('div'); nm.className = 'ofspot-mod-name'; nm.textContent = s.name;
+    var meta = document.createElement('div'); meta.className = 'ofspot-mod-meta';
+    meta.textContent = s.lat.toFixed(4) + ', ' + s.lon.toFixed(4) + (s.notes ? ' · ' + s.notes : '');
+    info.append(nm, meta);
+    var acts = document.createElement('div'); acts.className = 'ofspot-mod-acts';
+    [['approve', 'Approuver'], ['reject', 'Rejeter'], ['delete', 'Supprimer']].forEach(function (a) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'ofspot-mod-btn mod-' + a[0];
+      b.textContent = a[1];
+      b.addEventListener('click', function () { moderate(s.id, a[0], row); });
+      acts.appendChild(b);
+    });
+    row.append(info, acts);
+    return row;
+  }
+
   function renderTable() {
     var body = document.getElementById('ofspotTableBody');
     if (!body) return;
     body.innerHTML = '';
+    renderModeration(body);
     var bar = document.createElement('div'); bar.className = 'ofspot-tbl-bar';
     var count = document.createElement('span'); count.className = 'ofspot-tbl-count';
     count.textContent = spotsData.length + ' spot' + (spotsData.length > 1 ? 's' : '') + ' public' + (spotsData.length > 1 ? 's' : '');
@@ -320,6 +377,25 @@
       '.ofspot-card-badge{font-weight:600;padding:2px 8px;border-radius:999px}',
       '.ofspot-card-notes{font-size:12px;color:#8ba0b8;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
       '.ofspot-empty{text-align:center;color:#8ba0b8;padding:40px 0;font-size:14px}',
+      // modération (admin)
+      '.ofspot-mod{max-width:900px;margin:0 auto 20px;border:1px solid #3a3320;background:#1a1710;',
+      'border-radius:13px;padding:14px 16px}',
+      '.ofspot-mod-err{color:#e8725a;border-color:#3a2420;background:#1a1210;font-size:13px}',
+      '.ofspot-mod-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}',
+      '.ofspot-mod-title{font-weight:650;font-size:14px;color:#e3b34b}',
+      '.ofspot-mod-badge{font-family:ui-monospace,monospace;font-size:11px;font-weight:600;color:#e3b34b;',
+      'background:#e3b34b22;padding:2px 8px;border-radius:999px}',
+      '.ofspot-mod-empty{color:#8ba0b8;font-size:13px}',
+      '.ofspot-mod-row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;',
+      'padding:9px 0;border-top:1px solid #ffffff10}',
+      '.ofspot-mod-name{font-weight:600;font-size:13.5px}',
+      '.ofspot-mod-meta{font-family:ui-monospace,monospace;font-size:11px;color:#8ba0b8;margin-top:2px}',
+      '.ofspot-mod-acts{display:flex;gap:7px;flex-wrap:wrap}',
+      '.ofspot-mod-btn{font:inherit;font-size:12px;font-weight:600;border-radius:7px;padding:5px 11px;cursor:pointer;border:1px solid #22303f;background:transparent;color:#e9eff7}',
+      '.ofspot-mod-btn.mod-approve{background:#3fce97;color:#062018;border-color:#3fce97}',
+      '.ofspot-mod-btn.mod-reject{color:#e3b34b;border-color:#e3b34b55}',
+      '.ofspot-mod-btn.mod-delete{color:#e8725a;border-color:#e8725a55}',
+      '.ofspot-mod-btn:hover{filter:brightness(1.08)}',
     ].join('');
     document.head.appendChild(s);
   }
