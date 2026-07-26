@@ -859,5 +859,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.73';
+  window.__stargazeV = '1.3.75';
 })();

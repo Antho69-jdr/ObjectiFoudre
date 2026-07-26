@@ -13,6 +13,7 @@
   var COL = {
     sky: '#46c0e6', skySoft: 'rgba(29,151,196,.16)',
     relief: '#b8804f', reliefDeep: '#5a3d25',
+    near: '#5aab6b',            // obstruction PROCHE (arbres/bâti, MNS) — distincte du relief
     line: '#22303f', ink: '#e9eff7', muted: '#8ba0b8', faint: '#7c93ad', surface: '#121a25',
     good: '#3fce97', warn: '#e3b34b', bad: '#e8725a',
   };
@@ -50,12 +51,13 @@
     defs.appendChild(g); svg.appendChild(defs);
     svg.appendChild(el('path', { d: rimPath + 'Z ' + vis + 'Z', 'fill-rule': 'evenodd', fill: 'url(#ofrel' + size + ')', opacity: .9 }));
     svg.appendChild(el('path', { d: vis + 'Z', fill: 'none', stroke: COL.sky, 'stroke-width': 1.4, 'stroke-linejoin': 'round' }));
-    // marqueurs de crête
+    // marqueurs de crête : relief (ocre, à sa distance) OU obstruction proche (vert, MNS)
     for (i = 0; i < N; i++) {
       o = azimuths[i]; if (o.horizon_deg < BLOCK_DEG) continue;
       var m = pt(cx, cy, R, o.dist_km, i * step);
+      var isNear = o.blocker === 'near';
       svg.appendChild(el('circle', { cx: m[0], cy: m[1], r: big ? (2.4 + o.horizon_deg / 9) : (1.5 + o.horizon_deg / 16),
-        fill: angColor(o.horizon_deg), stroke: COL.surface, 'stroke-width': 1.1 }));
+        fill: isNear ? COL.near : angColor(o.horizon_deg), stroke: COL.surface, 'stroke-width': 1.1 }));
     }
     // croix + cardinaux (halo) + graduations km
     ['N','E','S','W'].forEach(function (lbl, k) {
@@ -106,6 +108,7 @@
         statCell('Ciel bas dégagé', h.pct_below_5deg + ' %') +
         statCell('Relief autour', '+' + (h.denivele_max_m || 0) + ' m');
       wrap.appendChild(stats);
+      wrap.appendChild(buildNearLine(h));
     } else {
       var pend = document.createElement('div'); pend.className = 'ofspot-pending';
       pend.textContent = 'Champ de vision en cours de calcul…';
@@ -119,6 +122,26 @@
   }
   function statCell(k, v) {
     return '<div class="ofspot-stat"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>';
+  }
+
+  // ligne « obstruction proche » (arbres/bâti, MNS LiDAR HD)
+  function buildNearLine(h) {
+    var el2 = document.createElement('div'); el2.className = 'ofspot-near';
+    if (h.mns_available === false) {
+      el2.classList.add('muted');
+      el2.innerHTML = '<span class="ofspot-near-dot muted"></span>Obstruction proche : non couverte (LiDAR HD)';
+    } else if (h.near_blocked_pct > 0) {
+      var worst = null;
+      (h.azimuths || []).forEach(function (a) {
+        if (a.blocker === 'near' && a.near_deg != null && (!worst || a.near_deg > worst.near_deg)) worst = a;
+      });
+      var txt = 'Obstruction proche (arbres/bâti) : ' + h.near_blocked_pct + '% des directions';
+      if (worst) txt += ' · gêne à ' + worst.near_dist_m + ' m au ' + worst.cardinal + ' (+' + Math.round(worst.near_deg) + '°)';
+      el2.innerHTML = '<span class="ofspot-near-dot"></span>' + txt;
+    } else {
+      el2.innerHTML = '<span class="ofspot-near-dot"></span>Aucune obstruction proche';
+    }
+    return el2;
   }
 
   // ── marqueurs + calque ─────────────────────────────────────────────────────
@@ -222,10 +245,13 @@
         var head = document.createElement('div'); head.className = 'ofspot-mod-head';
         var hl = document.createElement('span'); hl.className = 'ofspot-mod-title'; hl.textContent = 'Modération';
         var hb = document.createElement('span'); hb.className = 'ofspot-mod-badge'; hb.textContent = pend.length + ' en attente';
+        var rec = document.createElement('button'); rec.type = 'button'; rec.className = 'ofspot-mod-btn ofspot-rec';
+        rec.textContent = 'Recalculer'; rec.title = 'Recalculer l\'horizon de tous les spots (obstruction proche incluse)';
+        rec.addEventListener('click', recomputeAll);
         var imp = document.createElement('button'); imp.type = 'button'; imp.className = 'ofspot-mod-btn ofspot-imp';
         imp.textContent = 'Importer un fichier';
         imp.addEventListener('click', openImportPicker);
-        head.append(hl, hb, imp);
+        head.append(hl, hb, rec, imp);
         sec.appendChild(head);
         if (!pend.length) { var e = document.createElement('div'); e.className = 'ofspot-mod-empty'; e.textContent = 'Rien à valider pour l\'instant.'; sec.appendChild(e); return; }
         pend.forEach(function (s) { sec.appendChild(modRow(s)); });
@@ -249,6 +275,16 @@
     });
     row.append(info, acts);
     return row;
+  }
+
+  // recalcul de tous les horizons (admin) — ex. après ajout de l'obstruction proche
+  function recomputeAll() {
+    if (!confirm('Recalculer l\'horizon de tous les spots (obstruction proche incluse) ? Quelques minutes en arrière-plan.')) return;
+    toast('Recalcul lancé…');
+    fetch('/api/spots/recompute?secret=' + encodeURIComponent(adminSecret()), { method: 'POST' })
+      .then(function (r) { return r.ok ? r.json() : { ok: false }; })
+      .then(function (res) { toast(res && res.ok ? (res.recomputing + ' spots en recalcul…') : 'Refusé (secret admin ?)', 4500); })
+      .catch(function () { toast('Réseau indisponible.'); });
   }
 
   // import de fichier (admin) : JSON [{name,lon,lat,note}] ou {spots:[…]}

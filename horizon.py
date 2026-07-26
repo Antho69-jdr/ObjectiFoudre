@@ -143,6 +143,83 @@ def _horizon_angle(z_eye: float, ds: list[float], zs: list[float]) -> tuple[floa
     return best, best_d
 
 
+# ── Obstruction PROCHE (arbres / bâti) via MNS LiDAR HD ──────────────────────
+# Le relief (RGE ALTI) ne voit ni les arbres ni les bâtiments. Le MNS (surface =
+# sol + végétation + bâti) les voit. Accès : WMS GetMap GeoTIFF float32 (pas de
+# valeur ponctuelle). On tire UNE dalle ~400 m autour du spot et on l'échantillonne.
+# Dé-risqué et validé main : .h_collect/mns_s0_obstruction.py (forêt +45°, ville +38°).
+_MNS_WMS = "https://data.geopf.fr/wms-r/wms"
+_MNS_LAYER = "IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93"
+_NEAR_M = 400.0            # portée de l'obstruction proche (m)
+_NEAR_STEP = 4.0          # pas d'échantillonnage le long d'un rayon (m)
+_NEAR_IGNORE = 8.0        # ignore l'immédiat (< 8 m ; le point lui-même)
+_MNS_COVER_MIN = 0.30     # fraction min de valeurs valides → dalle "couverte"
+
+
+def _fetch_mns(lon: float, lat: float, half_m: float = _NEAR_M + 40.0):
+    """Dalle MNS autour du point → (array float32, bbox) ou None (pas de couverture LiDAR
+    HD, deps absentes, ou échec réseau — non-fatal : on retombe sur le relief seul)."""
+    try:
+        import io
+        import numpy as np
+        from PIL import Image
+    except Exception:
+        return None
+    dlat = half_m / 111320.0
+    dlon = half_m / (111320.0 * math.cos(math.radians(lat)))
+    minlon, maxlon = lon - dlon, lon + dlon
+    minlat, maxlat = lat - dlat, lat + dlat
+    px = min(1000, max(256, int(2 * half_m)))     # ~1 m/px, plafonné 1000
+    params = {
+        "SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetMap", "LAYERS": _MNS_LAYER,
+        "STYLES": "", "CRS": "EPSG:4326",
+        "BBOX": f"{minlat},{minlon},{maxlat},{maxlon}",   # WMS 1.3.0 / EPSG:4326 → axes lat,lon
+        "WIDTH": px, "HEIGHT": px, "FORMAT": "image/geotiff",
+    }
+    url = f"{_MNS_WMS}?" + urllib.parse.urlencode(params)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": _UA})
+        with urllib.request.urlopen(req, timeout=40) as r:
+            raw = r.read()
+        arr = np.asarray(Image.open(io.BytesIO(raw)), dtype=float)
+    except Exception:
+        return None
+    valid = arr[(arr > -100) & (arr < 5000)]
+    if arr.size == 0 or valid.size / arr.size < _MNS_COVER_MIN:
+        return None      # pas (ou trop peu) de couverture LiDAR HD ici
+    return arr, (minlon, minlat, maxlon, maxlat)
+
+
+def _mns_sample(arr, bbox, lon: float, lat: float):
+    """Valeur MNS au plus proche voisin (None hors dalle / nodata). row 0 = haut = maxlat."""
+    minlon, minlat, maxlon, maxlat = bbox
+    hgt, wid = arr.shape
+    col = int(round((lon - minlon) / (maxlon - minlon) * (wid - 1)))
+    row = int(round((maxlat - lat) / (maxlat - minlat) * (hgt - 1)))
+    if 0 <= row < hgt and 0 <= col < wid:
+        z = arr[row, col]
+        if -100 < z < 5000:
+            return float(z)
+    return None
+
+
+def _near_obstruction(lon: float, lat: float, az: float, z_eye: float, mns) -> tuple[float, float]:
+    """Angle d'élévation max (deg) de la surface proche le long d'un azimut + sa distance (m).
+    Renvoie (-90, 0) si rien vu. Courbure négligeable sur < 400 m."""
+    arr, bbox = mns
+    best_ang, best_d = -90.0, 0.0
+    d = _NEAR_IGNORE
+    while d <= _NEAR_M:
+        lon1, lat1 = _dest_point(lon, lat, az, d)
+        z = _mns_sample(arr, bbox, lon1, lat1)
+        if z is not None:
+            ang = math.degrees(math.atan2(z - z_eye, d))
+            if ang > best_ang:
+                best_ang, best_d = ang, d
+        d += _NEAR_STEP
+    return best_ang, best_d
+
+
 def horizon_scan(lon: float, lat: float, *, n_az: int = DEF_N_AZ, dist_km: float = DEF_DIST_KM,
                  samples: int = DEF_SAMPLES, eye_h: float = DEF_EYE_H) -> dict:
     """Scan d'horizon 360° d'un spot. Renvoie :
@@ -154,19 +231,29 @@ def horizon_scan(lon: float, lat: float, *, n_az: int = DEF_N_AZ, dist_km: float
     z_eye = z0 + eye_h
     dist_m = dist_km * 1000.0
     azimuths = [360.0 * i / n_az for i in range(n_az)]
+    mns = _fetch_mns(lon, lat)      # dalle d'obstruction proche (None si pas de couverture)
 
-    def one(az: float) -> tuple[float, float, float, float]:
+    def one(az: float) -> dict:
         r = _ray(lon, lat, az, dist_m, samples)
-        ang, dist = _horizon_angle(z_eye, r["d"], r["z"])
-        return az, ang, dist, r["denivele_pos"]
+        ter_ang, ter_dist = _horizon_angle(z_eye, r["d"], r["z"])          # relief lointain (m)
+        near_ang, near_dist = (-90.0, 0.0)
+        if mns is not None:
+            near_ang, near_dist = _near_obstruction(lon, lat, az, z_eye, mns)  # arbres/bâti (m)
+        if near_ang > ter_ang:
+            hz, hd, blocker = near_ang, near_dist, "near"
+        else:
+            hz, hd, blocker = ter_ang, ter_dist, "far"
+        return {"az": az, "hz": hz, "hd": hd, "blocker": blocker,
+                "near_deg": near_ang, "near_dist": near_dist, "den": r["denivele_pos"]}
 
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as ex:
-        rows = sorted(ex.map(one, azimuths))
+        rows = sorted(ex.map(one, azimuths), key=lambda x: x["az"])
 
-    angles = [a for _, a, _, _ in rows]
-    denivele_max = max((dp for _, _, _, dp in rows), default=0.0)
+    angles = [r["hz"] for r in rows]
+    denivele_max = max((r["den"] for r in rows), default=0.0)
     mean_ang = sum(angles) / len(angles)
     openness = max(0.0, min(100.0, 100.0 - 4.0 * mean_ang))
+    near_blocked = sum(1 for r in rows if r["blocker"] == "near" and r["hz"] > 5.0)
     return {
         "lon": lon, "lat": lat, "z0": round(z0, 1),
         "openness": round(openness, 1),
@@ -175,9 +262,14 @@ def horizon_scan(lon: float, lat: float, *, n_az: int = DEF_N_AZ, dist_km: float
         "pct_below_5deg": round(100.0 * sum(1 for a in angles if a < 5.0) / len(angles)),
         "pct_below_2deg": round(100.0 * sum(1 for a in angles if a < 2.0) / len(angles)),
         "denivele_max_m": round(denivele_max),
-        "azimuths": [{"az": round(az, 1), "cardinal": cardinal(az), "horizon_deg": round(a, 2),
-                      "dist_km": round(dist / 1000.0, 2)}
-                     for az, a, dist, _ in rows],
+        "mns_available": mns is not None,
+        "near_blocked_pct": round(100.0 * near_blocked / len(rows)),
+        "azimuths": [{"az": round(r["az"], 1), "cardinal": cardinal(r["az"]),
+                      "horizon_deg": round(r["hz"], 2), "dist_km": round(r["hd"] / 1000.0, 3),
+                      "blocker": r["blocker"],
+                      "near_deg": (round(r["near_deg"], 2) if r["near_deg"] > -90 else None),
+                      "near_dist_m": (round(r["near_dist"]) if r["near_deg"] > -90 else None)}
+                     for r in rows],
     }
 
 
@@ -242,12 +334,24 @@ def cached_horizon_scan(lon: float, lat: float, **kw) -> dict:
         return scan
 
 
+def clear_cached(lon: float, lat: float) -> bool:
+    """Supprime l'entrée de cache d'un point → force un recalcul complet au prochain scan
+    (ex. après ajout de l'obstruction proche : rafraîchir les spots existants)."""
+    try:
+        (_cache_dir() / f"{_cache_key(lon, lat)}.json").unlink(missing_ok=True)
+        return True
+    except Exception:
+        return False
+
+
 # --- self-test standalone ----------------------------------------------------
 if __name__ == "__main__":
+    # Cas couvrant les 3 régimes : dégagé+MNS, bloqué par obstruction proche, terrain
+    # seul (hors couverture MNS → repli). Validés à la main (S0 relief + S0 MNS).
     SPOTS = {
-        "Puy de Dôme (sommet)":   (2.9646, 45.7723, "ouvert"),
-        "Chamonix (vallée)":      (6.8694, 45.9237, "encaissé"),
-        "Beauce (plaine)":        (1.5000, 48.3000, "plat"),
+        "ZI les Rochers (dégagé, MNS)":     (1.354299, 46.906442, "ouvert"),   # champ + éoliennes
+        "Table Messimy (arbres proches)":   (4.654292, 45.709948, "bloqué"),   # cerné d'arbres <20 m
+        "Beauce (hors couverture MNS)":     (1.5000, 48.3000, "plat"),         # terrain seul
     }
     ok = True
     for name, (lon, lat, attendu) in SPOTS.items():
@@ -255,14 +359,12 @@ if __name__ == "__main__":
         s = horizon_scan(lon, lat)
         dt = time.time() - t0
         print(f"\n=== {name} — attendu: {attendu} ===")
-        print(f"  z0={s['z0']} m  ouverture={s['openness']}/100  "
-              f"horizon moy={s['mean_horizon_deg']:+.2f}° max={s['max_horizon_deg']:+.2f}°  "
-              f"<5°={s['pct_below_5deg']}%  dénivelé_max={s['denivele_max_m']} m  ({dt:.1f}s)")
-        # assertions de non-régression (validées à la main au S0)
-        if attendu == "ouvert" and s["openness"] < 90:
+        print(f"  z0={s['z0']} m  ouverture={s['openness']}/100  MNS={s['mns_available']}  "
+              f"proche_bloqué={s['near_blocked_pct']}%  horizon moy={s['mean_horizon_deg']:+.2f}°  ({dt:.1f}s)")
+        if attendu == "ouvert" and s["openness"] < 80:
             print("  ✗ ATTENDU ouvert mais ouverture basse"); ok = False
-        if attendu == "encaissé" and s["openness"] > 50:
-            print("  ✗ ATTENDU encaissé mais ouverture haute"); ok = False
-        if attendu == "plat" and s["openness"] < 95:
-            print("  ✗ ATTENDU plat mais ouverture basse"); ok = False
+        if attendu == "bloqué" and s["openness"] > 40:
+            print("  ✗ ATTENDU bloqué (arbres proches) mais ouverture haute"); ok = False
+        if attendu == "plat" and (s["openness"] < 95 or s["mns_available"]):
+            print("  ✗ ATTENDU plat sans couverture MNS"); ok = False
     print("\n" + ("✓ self-test OK" if ok else "✗ self-test ÉCHOUÉ"))

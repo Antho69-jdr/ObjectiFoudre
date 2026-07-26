@@ -81,7 +81,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.73"
+APP_VERSION = "1.3.75"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4560,7 +4560,8 @@ def _spot_compute_horizon(spot_id: str, lon: float, lat: float) -> None:
     try:
         scan = horizon.cached_horizon_scan(lon, lat)
         summary = {k: scan[k] for k in ("openness", "mean_horizon_deg", "max_horizon_deg",
-                                        "pct_below_5deg", "denivele_max_m", "z0")}
+                                        "pct_below_5deg", "denivele_max_m", "z0",
+                                        "mns_available", "near_blocked_pct")}
         summary["azimuths"] = scan["azimuths"]
         spots.attach_horizon(spot_id, summary)
     except Exception:  # noqa: BLE001 - le spot existe déjà, l'horizon se recalcule au besoin
@@ -4644,6 +4645,18 @@ async def api_spots_update(spot_id: str, payload: dict[str, Any], background_tas
     if updated.get("horizon") is None:   # position changée → recalcul en tâche de fond
         background_tasks.add_task(_spot_compute_horizon, updated["id"], updated["lon"], updated["lat"])
     return {"ok": True, "spot": {k: updated[k] for k in ("id", "name", "lon", "lat", "notes", "status")}}
+
+
+@app.post("/api/spots/recompute")
+async def api_spots_recompute(background_tasks: BackgroundTasks, secret: str | None = Query(None)) -> dict[str, Any]:
+    """[admin] Recalcule l'horizon de tous les spots (ex. après ajout de l'obstruction proche).
+    Vide le cache de chaque point + relance le calcul en tâche de fond (sérialisé)."""
+    _validate_server_admin_secret(secret or "")
+    all_spots = await asyncio.to_thread(spots.list_all)
+    for s in all_spots:
+        horizon.clear_cached(s["lon"], s["lat"])
+        background_tasks.add_task(_spot_compute_horizon, s["id"], s["lon"], s["lat"])
+    return {"ok": True, "recomputing": len(all_spots)}
 
 
 def _get_meteofrance_grib_national_field_cache_payload(field_cache_key: str) -> tuple[dict[str, Any] | None, str | None, float | None]:
