@@ -2,8 +2,8 @@
    Calque de spots de chasse PARTAGÉ sur la carte de base `map` (state.js) : visible dans
    les 3 modes (Prévision / Chasse / Étoiles). Clic sur un spot → fiche avec la rosace de
    champ de vision (vue de dessus, rayon = distance 30 km, crêtes à leur distance réelle).
-   Source : GET /api/spots. Bouton rail droit (#spotsPageBtn) pour afficher/masquer.
-   CSS injecté ici (auto-suffisant, insensible au purge du build). Rien de bloquant :
+   Source : GET /api/spots. Bouton rail droit (#spotsPageBtn) ouvre la page tableau.
+   CSS dans components/spots.css (build esbuild → theme.css). Rien de bloquant :
    si /api/spots échoue, le reste de l'app n'en dépend pas. */
 (function () {
   'use strict';
@@ -413,129 +413,6 @@
     });
   }
 
-  // ── styles (auto-suffisants) ───────────────────────────────────────────────
-  function injectCSS() {
-    if (document.getElementById('ofspot-style')) return;
-    var s = document.createElement('style'); s.id = 'ofspot-style';
-    s.textContent = [
-      '.ofspot-pin{width:22px;height:28px;cursor:pointer;transform:translateY(2px);filter:drop-shadow(0 2px 3px #0007)}',
-      '.ofspot-pin-dot{display:block;width:16px;height:16px;margin:0 auto;border-radius:50% 50% 50% 0;',
-      'transform:rotate(-45deg);background:var(--pin);border:2px solid #fff;box-sizing:border-box}',
-      '.ofspot-pin:focus-visible{outline:2px solid #46c0e6;outline-offset:2px;border-radius:4px}',
-      '.ofspot-popup .maplibregl-popup-content{background:#121a25;color:#e9eff7;border:1px solid #22303f;',
-      'border-radius:14px;padding:14px 14px 12px;box-shadow:0 12px 30px -12px #000c;font-family:ui-sans-serif,system-ui,sans-serif}',
-      '.ofspot-popup .maplibregl-popup-close-button{top:5px;right:5px;min-width:0!important;min-height:0!important;width:28px!important;height:28px!important;display:grid;place-items:center;',
-      'color:#8ba0b8;font-size:20px;line-height:1;padding:0;border-radius:7px}',
-      '.ofspot-popup .maplibregl-popup-close-button:hover{background:#ffffff12;color:#e9eff7}',
-      '.ofspot-popup .maplibregl-popup-tip{border-top-color:#121a25;border-bottom-color:#121a25}',
-      '.ofspot-head{display:flex;align-items:center;gap:8px;justify-content:space-between;margin-bottom:8px;padding-right:24px}',
-      '.ofspot-name{font-weight:650;font-size:15px;letter-spacing:-.01em}',
-      '.ofspot-badge{font-family:ui-monospace,monospace;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}',
-      '.ofspot-ros{display:flex;justify-content:center;margin:2px 0 8px}',
-      '.ofspot-stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#22303f;border:1px solid #22303f;border-radius:9px;overflow:hidden}',
-      '.ofspot-stat{background:#121a25;padding:6px 9px;display:flex;flex-direction:column;gap:1px}',
-      '.ofspot-stat .k{font-size:10px;color:#8ba0b8}',
-      '.ofspot-stat .v{font-family:ui-monospace,monospace;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}',
-      '.ofspot-notes{margin-top:8px;font-size:12px;color:#8ba0b8;line-height:1.4}',
-      '.ofspot-pending{font-size:12px;color:#8ba0b8;text-align:center;padding:14px 0}',
-      // bouton flottant « + Ajouter »
-      '.ofspot-add-btn{position:fixed;left:12px;bottom:96px;z-index:6;display:none;align-items:center;gap:7px;',
-      'background:#121a25;color:#e9eff7;border:1px solid #22303f;border-radius:999px;padding:9px 14px 9px 11px;',
-      'font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;font-weight:600;cursor:pointer;',
-      'box-shadow:0 8px 22px -8px #000b}',
-      '.ofspot-add-btn.show{display:inline-flex}',
-      '.ofspot-add-btn:hover{border-color:#46c0e6}',
-      '.ofspot-add-btn.arming{background:#46c0e6;color:#08222c;border-color:#46c0e6}',
-      '.ofspot-add-btn .plus{font-size:17px;line-height:1;font-weight:700}',
-      // formulaire
-      '.ofspot-form{display:flex;flex-direction:column;gap:9px;min-width:210px}',
-      '.ofspot-form h4{margin:0 0 2px;font-size:14px;font-weight:650;padding-right:22px}',
-      '.ofspot-form label{font-size:11px;color:#8ba0b8;display:flex;flex-direction:column;gap:3px}',
-      '.ofspot-form input,.ofspot-form textarea{background:#0e1620;border:1px solid #22303f;border-radius:8px;',
-      'color:#e9eff7;font:inherit;font-size:13px;padding:7px 9px;width:100%;box-sizing:border-box;resize:vertical}',
-      '.ofspot-form input:focus,.ofspot-form textarea:focus{outline:2px solid #46c0e6;outline-offset:0;border-color:#46c0e6}',
-      '.ofspot-form .row{display:flex;gap:8px;justify-content:flex-end;margin-top:2px}',
-      '.ofspot-form button{font:inherit;font-size:13px;font-weight:600;border-radius:8px;padding:7px 13px;cursor:pointer;border:1px solid #22303f}',
-      '.ofspot-form .cancel{background:transparent;color:#8ba0b8}',
-      '.ofspot-form .save{background:#46c0e6;color:#08222c;border-color:#46c0e6}',
-      '.ofspot-form .err{color:#e8725a;font-size:11.5px;min-height:0}',
-      // toast
-      '.ofspot-toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%) translateY(10px);z-index:20;',
-      'background:#121a25;color:#e9eff7;border:1px solid #22303f;border-radius:10px;padding:10px 16px;font-size:13px;',
-      'box-shadow:0 12px 30px -12px #000c;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;max-width:80vw;text-align:center}',
-      '.ofspot-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}',
-      // page tableau : colonne unique scrollable (le gabarit .prediction-page-body est une grille 2 col.)
-      '.prediction-page-body.ofspot-page-body{display:block;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}',
-      '#ofspotTableBody{width:100%;max-width:900px;margin:0 auto;padding:4px 2px 24px}',
-      '.ofspot-tbl-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 16px;flex-wrap:wrap}',
-      '.ofspot-tbl-count{font-family:ui-monospace,monospace;font-size:12px;color:#8ba0b8;letter-spacing:.02em}',
-      '.ofspot-tbl-add{display:inline-flex;align-items:center;gap:6px;background:#46c0e6;color:#08222c;border:none;',
-      'border-radius:999px;padding:8px 15px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}',
-      '.ofspot-tbl-add .plus{font-size:16px;font-weight:700;line-height:1}',
-      '.ofspot-tbl-add:hover{filter:brightness(1.06)}',
-      '.ofspot-tbl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}',
-      '.ofspot-card{display:flex;flex-direction:column;background:#121a25;color:#e9eff7;',
-      'border:1px solid #22303f;border-radius:13px;overflow:hidden;transition:border-color .15s}',
-      '.ofspot-card:hover{border-color:#46c0e6}',
-      '.ofspot-card-main{display:flex;gap:12px;text-align:left;align-items:center;background:none;border:none;',
-      'color:inherit;font:inherit;padding:12px;cursor:pointer;width:100%}',
-      '.ofspot-card-main:focus-visible{outline:2px solid #46c0e6;outline-offset:-2px}',
-      '.ofspot-card-admin{display:flex;gap:6px;justify-content:flex-end;padding:0 12px 11px}',
-      '.ofspot-card-abtn{font:inherit;font-size:12px;font-weight:600;border-radius:7px;padding:5px 11px;cursor:pointer;border:1px solid #22303f;background:transparent;color:#8ba0b8}',
-      '.ofspot-card-abtn:hover{color:#e9eff7;border-color:#46c0e6}',
-      '.ofspot-card-abtn.del{color:#e8725a;border-color:#e8725a44}',
-      '.ofspot-card-abtn.del:hover{border-color:#e8725a}',
-      // modale d\'édition
-      '.ofspot-modal-back{position:fixed;inset:0;z-index:30;background:#04070ccc;display:flex;align-items:center;justify-content:center;padding:16px}',
-      '.ofspot-modal{position:relative;background:#121a25;color:#e9eff7;border:1px solid #22303f;border-radius:14px;padding:18px;width:min(420px,100%);max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px -20px #000}',
-      '.ofspot-modal-close{position:absolute;top:8px;right:8px;min-width:0!important;min-height:0!important;width:32px!important;height:32px!important;box-sizing:border-box;display:grid;place-items:center;',
-      'background:transparent;border:none;color:#8ba0b8;font-size:24px;line-height:1;border-radius:8px;cursor:pointer;padding:0}',
-      '.ofspot-modal-close:hover{background:#ffffff12;color:#e9eff7}',
-      '.ofspot-modal-close:focus-visible{outline:2px solid #46c0e6}',
-      '.ofspot-modal h4{margin:0 26px 12px 0;font-size:16px;font-weight:650}',
-      '.ofspot-modal label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#8ba0b8;margin-bottom:10px}',
-      '.ofspot-modal input,.ofspot-modal textarea{background:#0e1620;border:1px solid #22303f;border-radius:8px;color:#e9eff7;font:inherit;font-size:14px;padding:8px 10px;width:100%;box-sizing:border-box;resize:vertical}',
-      '.ofspot-modal input:focus,.ofspot-modal textarea:focus{outline:2px solid #46c0e6;border-color:#46c0e6}',
-      '.ofspot-modal-coords{display:flex;gap:10px}',
-      '.ofspot-modal-coords label{flex:1}',
-      '.ofspot-modal .err{color:#e8725a;font-size:12px;min-height:16px;margin-bottom:4px}',
-      '.ofspot-modal-row{display:flex;gap:8px;align-items:center}',
-      '.ofspot-modal-row .sp{flex:1}',
-      '.ofspot-modal-row button{font:inherit;font-size:13px;font-weight:600;border-radius:8px;padding:8px 14px;cursor:pointer;border:1px solid #22303f;background:transparent;color:#e9eff7}',
-      '.ofspot-modal-row .save{background:#46c0e6;color:#08222c;border-color:#46c0e6}',
-      '.ofspot-modal-row .del{color:#e8725a;border-color:#e8725a55}',
-      '.ofspot-modal-row .cancel{color:#8ba0b8}',
-      '.ofspot-card-ros{flex:none;width:92px;height:92px;display:flex;align-items:center;justify-content:center}',
-      '.ofspot-card-info{min-width:0;display:flex;flex-direction:column;gap:4px}',
-      '.ofspot-card-name{font-weight:640;font-size:14px;letter-spacing:-.01em}',
-      '.ofspot-card-meta{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-family:ui-monospace,monospace;font-size:11.5px;color:#8ba0b8}',
-      '.ofspot-card-badge{font-weight:600;padding:2px 8px;border-radius:999px}',
-      '.ofspot-card-notes{font-size:12px;color:#8ba0b8;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
-      '.ofspot-empty{text-align:center;color:#8ba0b8;padding:40px 0;font-size:14px}',
-      // modération (admin)
-      '.ofspot-mod{max-width:900px;margin:0 auto 20px;border:1px solid #3a3320;background:#1a1710;',
-      'border-radius:13px;padding:14px 16px}',
-      '.ofspot-mod-err{color:#e8725a;border-color:#3a2420;background:#1a1210;font-size:13px}',
-      '.ofspot-mod-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}',
-      '.ofspot-mod-title{font-weight:650;font-size:14px;color:#e3b34b}',
-      '.ofspot-mod-badge{font-family:ui-monospace,monospace;font-size:11px;font-weight:600;color:#e3b34b;',
-      'background:#e3b34b22;padding:2px 8px;border-radius:999px}',
-      '.ofspot-mod-empty{color:#8ba0b8;font-size:13px}',
-      '.ofspot-mod-row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;',
-      'padding:9px 0;border-top:1px solid #ffffff10}',
-      '.ofspot-mod-name{font-weight:600;font-size:13.5px}',
-      '.ofspot-mod-meta{font-family:ui-monospace,monospace;font-size:11px;color:#8ba0b8;margin-top:2px}',
-      '.ofspot-mod-acts{display:flex;gap:7px;flex-wrap:wrap}',
-      '.ofspot-mod-btn{font:inherit;font-size:12px;font-weight:600;border-radius:7px;padding:5px 11px;cursor:pointer;border:1px solid #22303f;background:transparent;color:#e9eff7}',
-      '.ofspot-mod-btn.mod-approve{background:#3fce97;color:#062018;border-color:#3fce97}',
-      '.ofspot-mod-btn.mod-reject{color:#e3b34b;border-color:#e3b34b55}',
-      '.ofspot-mod-btn.mod-delete{color:#e8725a;border-color:#e8725a55}',
-      '.ofspot-mod-btn:hover{filter:brightness(1.08)}',
-      '.ofspot-imp{margin-left:auto;color:#46c0e6;border-color:#46c0e6}',
-    ].join('');
-    document.head.appendChild(s);
-  }
-
   // ── ajout d'un spot (bouton + → clic carte → formulaire) ───────────────────
   var addMode = false, addBtn = null, formPopup = null;
 
@@ -621,7 +498,6 @@
 
   // ── init ───────────────────────────────────────────────────────────────────
   function init() {
-    injectCSS();
     wireRail();
     injectAddButton();
     if (typeof map === 'undefined') return;

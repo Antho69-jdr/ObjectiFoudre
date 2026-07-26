@@ -121,6 +121,12 @@
 @import "./components/chase.css";
 @import "./components/stargaze.css";
 
+/* Component spots : « Mes spots » (marqueurs, fiche, ajout, tableau, moderation,
+   modale d'edition). Migre depuis le CSS auto-injecte de spots.js. Charge apres
+   button.css → l'ordre + la specificite priment ; croix de fermeture en !important
+   PORTEUR pour echapper a body.mobile-ui button{min-width:88px}. */
+@import "./components/spots.css";
+
 /* Component grid-cell-tooltip : bulle de survol des cellules (look + position
    absolue ; JS pose left/top inline + bascule is-visible). Tier 1 du retrait
    legacy. 0 !important ; legacy purge de components.css. */
