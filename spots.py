@@ -97,6 +97,7 @@ def _public_view(s: dict) -> dict:
     return {
         "id": s["id"], "name": s["name"], "lon": s["lon"], "lat": s["lat"],
         "notes": s.get("notes", ""), "created_utc": s.get("created_utc"),
+        "inner_radius_m": s.get("inner_radius_m", 0),
         "horizon": s.get("horizon"),
         "author_kind": (s.get("author") or {}).get("kind", "anon"),
     }
@@ -148,8 +149,15 @@ def _rate_limit(existing: list[dict], author_token: str) -> None:
 
 
 # --- API publique du store ---------------------------------------------------
+def _clean_inner_radius(v) -> float:
+    try:
+        return max(0.0, min(300.0, float(v or 0)))     # rayon central (donut), 0..300 m
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def create_spot(name: str, lon: float, lat: float, *, author_token: str = "",
-                notes: str = "", auto_approve: bool = False) -> dict:
+                notes: str = "", inner_radius_m: float = 0.0, auto_approve: bool = False) -> dict:
     """Crée un spot (statut `pending` par défaut). Lève SpotError si la validation auto
     refuse. `auto_approve` réservé aux tests/admin ; en prod un spot passe par la revue."""
     with _lock:
@@ -159,7 +167,7 @@ def create_spot(name: str, lon: float, lat: float, *, author_token: str = "",
         spot = {
             "id": uuid.uuid4().hex[:12],
             "name": cname, "lon": round(float(lon), 6), "lat": round(float(lat), 6),
-            "notes": cnotes,
+            "notes": cnotes, "inner_radius_m": _clean_inner_radius(inner_radius_m),
             "status": "approved" if auto_approve else "pending",
             "author": {"kind": "anon", "id": author_token or ""},  # → {kind:account,id} plus tard
             "created_utc": _now_iso(), "moderated_utc": None,
@@ -191,6 +199,7 @@ def import_spots(items: list[dict], *, status: str = "approved", author_token: s
                     "id": uuid.uuid4().hex[:12],
                     "name": cname, "lon": round(float(lon), 6), "lat": round(float(lat), 6),
                     "notes": cnote, "status": status,
+                    "inner_radius_m": _clean_inner_radius(it.get("inner_radius_m")),
                     "author": {"kind": "anon", "id": author_token},
                     "created_utc": _now_iso(),
                     "moderated_utc": _now_iso() if status == "approved" else None,
@@ -243,9 +252,10 @@ def moderate(spot_id: str, action: str) -> dict:
 
 
 def update_spot(spot_id: str, *, name: str | None = None, notes: str | None = None,
-                lon: float | None = None, lat: float | None = None) -> dict:
-    """Modifie un spot (admin). Champs None = inchangés. Si la position change, l'horizon
-    est remis à None (recalcul déclenché par app.py). Lève SpotError si invalide/introuvable."""
+                lon: float | None = None, lat: float | None = None,
+                inner_radius_m: float | None = None) -> dict:
+    """Modifie un spot (admin). Champs None = inchangés. Si la position OU le rayon central
+    (donut) change, l'horizon est remis à None (recalcul déclenché par app.py)."""
     with _lock:
         spots = _load()
         idx = next((i for i, s in enumerate(spots) if s["id"] == spot_id), None)
@@ -269,6 +279,13 @@ def update_spot(spot_id: str, *, name: str | None = None, notes: str | None = No
             if abs(s["lon"] - lon) > 1e-6 or abs(s["lat"] - lat) > 1e-6:
                 s["lon"] = round(lon, 6); s["lat"] = round(lat, 6)
                 s["horizon"] = None      # position changée → recalcul de l'horizon
+        if inner_radius_m is not None:
+            new_r = _clean_inner_radius(inner_radius_m)
+            if abs(float(s.get("inner_radius_m", 0)) - new_r) > 0.5:
+                s["inner_radius_m"] = new_r
+                s["horizon"] = None      # donut changé → recalcul
+            else:
+                s["inner_radius_m"] = new_r
         _save(spots)
         return s
 

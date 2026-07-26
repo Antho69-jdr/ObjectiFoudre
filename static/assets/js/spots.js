@@ -101,12 +101,14 @@
       var ros = document.createElement('div'); ros.className = 'ofspot-ros';
       ros.appendChild(makeRosace(h.azimuths, h.openness, 210));
       wrap.appendChild(ros);
+      var innerR = Math.round(+(spot.inner_radius_m || h.inner_radius_m || 0));
       var stats = document.createElement('div'); stats.className = 'ofspot-stats';
       stats.innerHTML =
         statCell('Altitude', Math.round(h.z0) + ' m') +
         statCell('Horizon moyen', (h.mean_horizon_deg >= 0 ? '+' : '') + h.mean_horizon_deg + '°') +
         statCell('Ciel bas dégagé', h.pct_below_5deg + ' %') +
-        statCell('Relief autour', '+' + (h.denivele_max_m || 0) + ' m');
+        (innerR > 0 ? statCell('Trou central', '⌀ ' + innerR + ' m')
+                    : statCell('Relief autour', '+' + (h.denivele_max_m || 0) + ' m'));
       wrap.appendChild(stats);
       wrap.appendChild(buildNearLine(h));
     } else {
@@ -171,6 +173,13 @@
     return [lo2 * 180 / Math.PI, la2 * 180 / Math.PI];
   }
 
+  function geoDistM(lon1, lat1, lon2, lat2) {     // haversine (m)
+    var R = 6371000, dLa = (lat2 - lat1) * Math.PI / 180, dLo = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLa / 2) * Math.sin(dLa / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+  }
+
   function ensureVisionLayers() {
     if (typeof map === 'undefined' || typeof map.getSource !== 'function' || map.getSource(VIS_SRC)) return;
     map.addSource(VIS_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -184,6 +193,10 @@
       paint: { 'circle-radius': ['interpolate', ['linear'], ['get', 'deg'], 2, 3, 45, 8],
         'circle-color': ['match', ['get', 'blocker'], 'near', '#5aab6b', '#b8804f'],
         'circle-stroke-color': '#0b1017', 'circle-stroke-width': 1 } });
+    map.addLayer({ id: VIS_SRC + '-hole', type: 'fill', source: VIS_SRC, filter: ['==', ['get', 'kind'], 'hole'],
+      paint: { 'fill-color': '#f0a54a', 'fill-opacity': 0.18 } });
+    map.addLayer({ id: VIS_SRC + '-holeline', type: 'line', source: VIS_SRC, filter: ['==', ['get', 'kind'], 'hole'],
+      paint: { 'line-color': '#f0a54a', 'line-width': 1.6, 'line-dasharray': [2, 2] } });
     map.addLayer({ id: VIS_SRC + '-center', type: 'circle', source: VIS_SRC, filter: ['==', ['get', 'kind'], 'center'],
       paint: { 'circle-radius': 4, 'circle-color': '#e9eff7', 'circle-stroke-color': '#0b1017', 'circle-stroke-width': 1.5 } });
     if (!visionWired) {   // clic sur le fond (hors marqueur) → referme le cercle
@@ -196,6 +209,13 @@
     var pts = [];
     for (var a = 0; a <= 360; a += 8) pts.push(destPoint(lon, lat, a, radM));
     return { type: 'Feature', properties: { kind: 'ring' }, geometry: { type: 'LineString', coordinates: pts } };
+  }
+
+  function discFeature(lon, lat, radM, kind) {   // polygone plein (trou du donut)
+    var pts = [];
+    for (var a = 0; a <= 360; a += 6) pts.push(destPoint(lon, lat, a, radM));
+    pts.push(pts[0]);
+    return { type: 'Feature', properties: { kind: kind || 'hole' }, geometry: { type: 'Polygon', coordinates: [pts] } };
   }
 
   function visionFeatures(spot) {
@@ -216,6 +236,8 @@
           geometry: { type: 'Point', coordinates: destPoint(lon, lat, o.az, dm) } });
       });
     }
+    var innerR = +(spot.inner_radius_m || (h && h.inner_radius_m) || 0);
+    if (innerR > 0.5) feats.push(discFeature(lon, lat, innerR, 'hole'));
     feats.push({ type: 'Feature', properties: { kind: 'center' }, geometry: { type: 'Point', coordinates: [lon, lat] } });
     return { type: 'FeatureCollection', features: feats };
   }
@@ -514,6 +536,9 @@
       '<label>Description<textarea class="e-notes" rows="3" maxlength="280"></textarea></label>' +
       '<div class="ofspot-modal-coords"><label>Latitude<input class="e-lat" inputmode="decimal"></label>' +
       '<label>Longitude<input class="e-lon" inputmode="decimal"></label></div>' +
+      '<label class="f-inner-lbl">Trou central (donut) <span class="e-inner-val"></span>' +
+      '<input type="range" class="e-inner" min="0" max="' + MAX_INNER + '" step="1"></label>' +
+      '<div class="f-inner-help">0 = point simple. Sinon l\'obstacle central (chapelle…) est ignoré dans le trou.</div>' +
       '<div class="err" role="alert"></div>' +
       '<div class="ofspot-modal-row"><button type="button" class="del">Supprimer</button><span class="sp"></span>' +
       '<button type="button" class="cancel">Annuler</button><button type="button" class="save">Enregistrer</button></div>';
@@ -522,6 +547,10 @@
     modal.querySelector('.e-notes').value = spot.notes || '';
     modal.querySelector('.e-lat').value = spot.lat;
     modal.querySelector('.e-lon').value = spot.lon;
+    var innerEl = modal.querySelector('.e-inner'), innerVal = modal.querySelector('.e-inner-val');
+    var curInner = Math.round(+(spot.inner_radius_m || 0));
+    innerEl.value = curInner; innerVal.textContent = curInner + ' m';
+    innerEl.addEventListener('input', function () { innerVal.textContent = Math.round(+innerEl.value || 0) + ' m'; });
     var err = modal.querySelector('.err');
     var close = function () { back.remove(); };
     modal.querySelector('.ofspot-modal-close').addEventListener('click', close);
@@ -539,7 +568,7 @@
       var btn = modal.querySelector('.save'); btn.disabled = true; btn.textContent = '…';
       fetch('/api/spots/' + spot.id + '/update?secret=' + encodeURIComponent(adminSecret()), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name, notes: notes, lat: lat, lon: lon }),
+        body: JSON.stringify({ name: name, notes: notes, lat: lat, lon: lon, inner_radius_m: Math.round(+innerEl.value || 0) }),
       }).then(function (r) { return r.ok ? r.json() : { ok: false }; })
         .then(function (res) {
           if (res && res.ok) { close(); toast('Spot modifié ✓'); loadSpots().then(function () { renderTable(); }); }
@@ -560,8 +589,11 @@
     });
   }
 
-  // ── ajout d'un spot (bouton + → clic carte → formulaire) ───────────────────
+  // ── ajout d'un spot (bouton + → presser-glisser sur la carte → formulaire) ──
+  // Presser = poser le centre. Glisser (souris maintenue / doigt) = régler le trou
+  // central (le « donut » : chapelle, antenne… qu'on contourne). Relâcher = formulaire.
   var addMode = false, formPopup = null;
+  var MAX_INNER = 300;   // rayon max du trou (m), aligné sur le backend
 
   function clientToken() {
     var t = '';
@@ -579,22 +611,100 @@
     setTimeout(function () { t.classList.remove('show'); setTimeout(function () { t.remove(); }, 260); }, ms || 3200);
   }
 
+  // ── prévisualisation live du centre + trou pendant le geste (source dédiée) ──
+  var PRE_SRC = 'ofspot-preview';
+  function ensurePreviewLayers() {
+    if (typeof map === 'undefined' || typeof map.getSource !== 'function' || map.getSource(PRE_SRC)) return;
+    map.addSource(PRE_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: PRE_SRC + '-fill', type: 'fill', source: PRE_SRC, filter: ['==', ['get', 'kind'], 'hole'],
+      paint: { 'fill-color': '#f0a54a', 'fill-opacity': 0.22 } });
+    map.addLayer({ id: PRE_SRC + '-line', type: 'line', source: PRE_SRC, filter: ['==', ['get', 'kind'], 'hole'],
+      paint: { 'line-color': '#f0a54a', 'line-width': 1.8, 'line-dasharray': [2, 2] } });
+    map.addLayer({ id: PRE_SRC + '-center', type: 'circle', source: PRE_SRC, filter: ['==', ['get', 'kind'], 'center'],
+      paint: { 'circle-radius': 5, 'circle-color': '#f0a54a', 'circle-stroke-color': '#0b1017', 'circle-stroke-width': 2 } });
+  }
+  function setPreview(lon, lat, radM) {
+    ensurePreviewLayers();
+    var s = map.getSource(PRE_SRC); if (!s) return;
+    var feats = [{ type: 'Feature', properties: { kind: 'center' }, geometry: { type: 'Point', coordinates: [lon, lat] } }];
+    if (radM > 0.5) feats.push(discFeature(lon, lat, radM, 'hole'));
+    s.setData({ type: 'FeatureCollection', features: feats });
+  }
+  function clearPreview() {
+    if (typeof map !== 'undefined' && map.getSource && map.getSource(PRE_SRC)) {
+      map.getSource(PRE_SRC).setData({ type: 'FeatureCollection', features: [] });
+    }
+  }
+
+  // ── badge live du rayon pendant le glisser ──────────────────────────────────
+  var radBadge = null;
+  function showRadiusBadge(r) {
+    if (!radBadge) {
+      radBadge = document.createElement('div'); radBadge.className = 'ofspot-radbadge';
+      document.body.appendChild(radBadge);   // top-level : échappe au contexte d'empilement de la carte
+    }
+    radBadge.innerHTML = r >= 0.5
+      ? 'Trou central <b>' + Math.round(r) + ' m</b>'
+      : 'Point simple · <span class="hint">glisse pour un trou</span>';
+    radBadge.classList.add('show');
+  }
+  function hideRadiusBadge() { if (radBadge) radBadge.classList.remove('show'); }
+
+  // ── geste presser-glisser-relâcher (souris + tactile) ───────────────────────
+  var pressing = false, pressCenter = null, pressRad = 0;
+
+  function addPressStart(e) {
+    if (!addMode) return;
+    var oe = e.originalEvent;
+    if (oe && oe.touches && oe.touches.length > 1) return;   // laisse le pinch-zoom
+    if (oe && oe.preventDefault) oe.preventDefault();
+    pressing = true; pressCenter = e.lngLat; pressRad = 0;
+    map.dragPan.disable();
+    setPreview(pressCenter.lng, pressCenter.lat, 0);
+    showRadiusBadge(0);
+    map.on('mousemove', addPressMove); map.on('touchmove', addPressMove);
+    map.on('mouseup', addPressEnd); map.on('touchend', addPressEnd); map.on('touchcancel', addPressEnd);
+  }
+  function addPressMove(e) {
+    if (!pressing || !pressCenter) return;
+    var d = geoDistM(pressCenter.lng, pressCenter.lat, e.lngLat.lng, e.lngLat.lat);
+    pressRad = Math.max(0, Math.min(MAX_INNER, d));
+    setPreview(pressCenter.lng, pressCenter.lat, pressRad);
+    showRadiusBadge(pressRad);
+  }
+  function addPressEnd() {
+    if (!pressing) return;
+    pressing = false;
+    map.off('mousemove', addPressMove); map.off('touchmove', addPressMove);
+    map.off('mouseup', addPressEnd); map.off('touchend', addPressEnd); map.off('touchcancel', addPressEnd);
+    map.dragPan.enable();
+    hideRadiusBadge();
+    var c = pressCenter, r = Math.round(pressRad);
+    exitAddMode();                     // sort du mode (garde la prévisu jusqu'au formulaire)
+    setPreview(c.lng, c.lat, r);       // fige la prévisu sous le formulaire
+    openAddForm(c, r);
+  }
+
   function enterAddMode() {
     if (typeof map === 'undefined') return;
     addMode = true;
-    document.querySelectorAll('.spots-add-btn').forEach(function (b) { b.classList.add('active'); b.setAttribute('title', 'Clique sur la carte pour poser le spot'); });
+    document.querySelectorAll('.spots-add-btn').forEach(function (b) { b.classList.add('active'); b.setAttribute('title', 'Presse la carte pour poser le spot'); });
     map.getCanvas().style.cursor = 'crosshair';
-    map.on('click', onMapClickAdd);
-    toast('Clique sur la carte pour poser ton spot');
+    ensurePreviewLayers();
+    map.on('mousedown', addPressStart); map.on('touchstart', addPressStart);
+    toast('Presse sur la carte pour poser le centre — maintiens et glisse pour régler le trou central.', 4600);
   }
 
   function exitAddMode() {
     addMode = false;
     document.querySelectorAll('.spots-add-btn').forEach(function (b) { b.classList.remove('active'); b.setAttribute('title', 'Ajouter un spot'); });
-    if (typeof map !== 'undefined') { map.getCanvas().style.cursor = ''; map.off('click', onMapClickAdd); }
+    if (typeof map === 'undefined') return;
+    map.getCanvas().style.cursor = '';
+    map.off('mousedown', addPressStart); map.off('touchstart', addPressStart);
+    map.off('mousemove', addPressMove); map.off('touchmove', addPressMove);
+    map.off('mouseup', addPressEnd); map.off('touchend', addPressEnd); map.off('touchcancel', addPressEnd);
+    if (pressing) { pressing = false; map.dragPan.enable(); hideRadiusBadge(); }
   }
-
-  function onMapClickAdd(e) { if (!addMode) return; exitAddMode(); openAddForm(e.lngLat); }
 
   function submitSpot(payload) {
     return fetch('/api/spots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -603,24 +713,35 @@
       }); });
   }
 
-  function openAddForm(lngLat) {
+  function openAddForm(lngLat, innerRadius) {
+    innerRadius = Math.max(0, Math.min(MAX_INNER, Math.round(innerRadius || 0)));
     var form = document.createElement('div'); form.className = 'ofspot-form';
     form.innerHTML =
       '<h4>Nouveau spot</h4>' +
       '<label>Nom<input type="text" maxlength="60" placeholder="Belvédère du…" class="f-name"></label>' +
       '<label>Description (optionnel)<textarea rows="2" maxlength="280" placeholder="Vue dégagée vers l\'ouest…" class="f-notes"></textarea></label>' +
+      '<label class="f-inner-lbl">Trou central (donut) <span class="f-inner-val">' + innerRadius + ' m</span>' +
+      '<input type="range" class="f-inner" min="0" max="' + MAX_INNER + '" step="1" value="' + innerRadius + '"></label>' +
+      '<div class="f-inner-help">Contourne un obstacle central (chapelle, antenne…) : il est ignoré dans le trou.</div>' +
       '<div class="err" role="alert"></div>' +
       '<div class="row"><button type="button" class="cancel">Annuler</button><button type="button" class="save">Enregistrer</button></div>';
     if (!formPopup) formPopup = new maplibregl.Popup({ className: 'ofspot-popup', closeButton: true, closeOnClick: false, maxWidth: '260px', offset: 16 });
     formPopup.setLngLat(lngLat).setDOMContent(form).addTo(map);
+    formPopup.off('close', clearPreview); formPopup.on('close', clearPreview);   // referme → efface la prévisu
     var nameEl = form.querySelector('.f-name'), notesEl = form.querySelector('.f-notes'), errEl = form.querySelector('.err');
+    var innerEl = form.querySelector('.f-inner'), innerVal = form.querySelector('.f-inner-val');
+    innerEl.addEventListener('input', function () {
+      var v = Math.round(+innerEl.value || 0); innerVal.textContent = v + ' m';
+      setPreview(lngLat.lng, lngLat.lat, v);
+    });
     setTimeout(function () { try { nameEl.focus(); } catch (e) {} }, 60);
     form.querySelector('.cancel').addEventListener('click', function () { formPopup.remove(); });
     form.querySelector('.save').addEventListener('click', function () {
       var name = nameEl.value.trim();
       if (name.length < 2) { errEl.textContent = 'Donne un nom (2 caractères minimum).'; nameEl.focus(); return; }
       var btn = form.querySelector('.save'); btn.disabled = true; btn.textContent = '…';
-      submitSpot({ name: name, lon: lngLat.lng, lat: lngLat.lat, notes: notesEl.value.trim(), author_token: clientToken() })
+      submitSpot({ name: name, lon: lngLat.lng, lat: lngLat.lat, notes: notesEl.value.trim(),
+                   inner_radius_m: Math.round(+innerEl.value || 0), author_token: clientToken() })
         .then(function (res) {
           if (res && res.ok) { formPopup.remove(); toast('Merci ! Ton spot est en attente de validation.', 4200); }
           else { errEl.textContent = (res && res.error) || 'Échec de l\'enregistrement.'; btn.disabled = false; btn.textContent = 'Enregistrer'; }

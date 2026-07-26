@@ -203,12 +203,14 @@ def _mns_sample(arr, bbox, lon: float, lat: float):
     return None
 
 
-def _near_obstruction(lon: float, lat: float, az: float, z_eye: float, mns) -> tuple[float, float]:
-    """Angle d'élévation max (deg) de la surface proche le long d'un azimut + sa distance (m).
-    Renvoie (-90, 0) si rien vu. Courbure négligeable sur < 400 m."""
+def _near_obstruction(lon: float, lat: float, az: float, z_eye: float, mns,
+                      start_m: float = _NEAR_IGNORE) -> tuple[float, float]:
+    """Angle d'élévation max (deg) de la surface proche le long d'un azimut + sa distance (m),
+    en IGNORANT tout ce qui est plus proche que start_m (mode donut : l'objet central dans le
+    trou n'est pas compté). Renvoie (-90, 0) si rien vu. Courbure négligeable sur < 400 m."""
     arr, bbox = mns
     best_ang, best_d = -90.0, 0.0
-    d = _NEAR_IGNORE
+    d = max(_NEAR_IGNORE, start_m)
     while d <= _NEAR_M:
         lon1, lat1 = _dest_point(lon, lat, az, d)
         z = _mns_sample(arr, bbox, lon1, lat1)
@@ -221,24 +223,36 @@ def _near_obstruction(lon: float, lat: float, az: float, z_eye: float, mns) -> t
 
 
 def horizon_scan(lon: float, lat: float, *, n_az: int = DEF_N_AZ, dist_km: float = DEF_DIST_KM,
-                 samples: int = DEF_SAMPLES, eye_h: float = DEF_EYE_H) -> dict:
-    """Scan d'horizon 360° d'un spot. Renvoie :
-      z0 (alt. spot, m), openness (0..100), mean_horizon_deg, max_horizon_deg,
-      pct_below_5deg, pct_below_2deg, denivele_max_m (relief le plus marqué autour),
-      azimuths [{az, cardinal, horizon_deg}].
+                 samples: int = DEF_SAMPLES, eye_h: float = DEF_EYE_H,
+                 inner_radius_m: float = 0.0) -> dict:
+    """Scan d'horizon 360° d'un spot. Renvoie z0, openness (0..100), mean/max_horizon_deg,
+    pct_below_*, denivele_max_m, mns_available, near_blocked_pct, inner_radius_m,
+    azimuths [{az, cardinal, horizon_deg, dist_km, blocker, near_*}].
+
+    Mode DONUT (inner_radius_m > 0) : on observe depuis le centre mais on IGNORE toute
+    obstruction proche située à moins de inner_radius (l'objet central — chapelle, antenne —
+    est « rangé » dans le trou et ne bloque jamais, comme si on faisait le tour). Les alentours
+    au-delà du trou gardent leur vraie distance au centre, donc les arbres périphériques ne
+    sont pas artificiellement rapprochés.
     Lève HorizonError en cas d'échec réseau (à traiter en enrichissement non-fatal)."""
+    inner_radius_m = max(0.0, min(300.0, float(inner_radius_m or 0.0)))
     z0 = point_elevation(lon, lat)
     z_eye = z0 + eye_h
     dist_m = dist_km * 1000.0
     azimuths = [360.0 * i / n_az for i in range(n_az)]
     mns = _fetch_mns(lon, lat)      # dalle d'obstruction proche (None si pas de couverture)
 
+    # Mode DONUT : on observe depuis le centre mais on IGNORE tout obstacle plus proche que
+    # inner_radius (l'objet central « rangé » dans le trou : chapelle, antenne…). Les alentours
+    # gardent leur vraie distance au centre → on n'exagère pas les arbres périphériques.
+    near_start = max(_NEAR_IGNORE, inner_radius_m)
+
     def one(az: float) -> dict:
         r = _ray(lon, lat, az, dist_m, samples)
         ter_ang, ter_dist = _horizon_angle(z_eye, r["d"], r["z"])          # relief lointain (m)
         near_ang, near_dist = (-90.0, 0.0)
         if mns is not None:
-            near_ang, near_dist = _near_obstruction(lon, lat, az, z_eye, mns)  # arbres/bâti (m)
+            near_ang, near_dist = _near_obstruction(lon, lat, az, z_eye, mns, start_m=near_start)
         if near_ang > ter_ang:
             hz, hd, blocker = near_ang, near_dist, "near"
         else:
@@ -264,6 +278,7 @@ def horizon_scan(lon: float, lat: float, *, n_az: int = DEF_N_AZ, dist_km: float
         "denivele_max_m": round(denivele_max),
         "mns_available": mns is not None,
         "near_blocked_pct": round(100.0 * near_blocked / len(rows)),
+        "inner_radius_m": round(inner_radius_m),
         "azimuths": [{"az": round(r["az"], 1), "cardinal": cardinal(r["az"]),
                       "horizon_deg": round(r["hz"], 2), "dist_km": round(r["hd"] / 1000.0, 3),
                       "blocker": r["blocker"],
@@ -295,9 +310,11 @@ def _cache_dir() -> Path:
     return d
 
 
-def _cache_key(lon: float, lat: float) -> str:
-    # ~11 m de résolution (5 décimales) : deux spots à <11 m partagent leur horizon (OK)
-    return f"{lat:.5f}_{lon:.5f}"
+def _cache_key(lon: float, lat: float, inner_radius_m: float = 0.0) -> str:
+    # ~11 m de résolution (5 décimales) : deux spots à <11 m partagent leur horizon (OK).
+    # Le rayon de donut fait partie de la clé (même point, donut différent = scan différent).
+    base = f"{lat:.5f}_{lon:.5f}"
+    return f"{base}_r{round(float(inner_radius_m or 0))}" if inner_radius_m else base
 
 
 _scan_lock = threading.Lock()   # sérialise les calculs COLD (jamais > _MAX_WORKERS requêtes IGN)
@@ -318,7 +335,7 @@ def cached_horizon_scan(lon: float, lat: float, **kw) -> dict:
     temps ne lancent PAS N scans en parallèle (sinon 3·N requêtes concurrentes → 429 IGN).
     Le cache est re-vérifié sous verrou (double-checked) pour ne pas recalculer un point
     qu'un autre thread vient de terminer."""
-    path = _cache_dir() / f"{_cache_key(lon, lat)}.json"
+    path = _cache_dir() / f"{_cache_key(lon, lat, kw.get('inner_radius_m', 0))}.json"
     hit = _read_cache(path)
     if hit is not None:
         return hit
@@ -335,10 +352,12 @@ def cached_horizon_scan(lon: float, lat: float, **kw) -> dict:
 
 
 def clear_cached(lon: float, lat: float) -> bool:
-    """Supprime l'entrée de cache d'un point → force un recalcul complet au prochain scan
-    (ex. après ajout de l'obstruction proche : rafraîchir les spots existants)."""
+    """Supprime les entrées de cache d'un point (base + variantes donut _r*) → force un
+    recalcul complet au prochain scan (ex. après ajout de l'obstruction proche / du donut)."""
     try:
-        (_cache_dir() / f"{_cache_key(lon, lat)}.json").unlink(missing_ok=True)
+        base = _cache_key(lon, lat)                       # "lat_lon"
+        for p in _cache_dir().glob(base + "*.json"):      # base + "…_r15.json"
+            p.unlink(missing_ok=True)
         return True
     except Exception:
         return False

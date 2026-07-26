@@ -81,7 +81,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.77"
+APP_VERSION = "1.3.78"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4552,16 +4552,18 @@ class SpotCreateRequest(BaseModel):
     lon: float = Field(..., ge=-5.5, le=9.8)
     lat: float = Field(..., ge=41.0, le=51.6)
     notes: str = Field("", max_length=300)
+    inner_radius_m: float = Field(0.0, ge=0.0, le=300.0)
     author_token: str = Field("", max_length=64)
 
 
-def _spot_compute_horizon(spot_id: str, lon: float, lat: float) -> None:
-    """Tâche de fond : calcule l'horizon du spot et l'y attache (best-effort, non-fatal)."""
+def _spot_compute_horizon(spot_id: str, lon: float, lat: float, inner_radius_m: float = 0.0) -> None:
+    """Tâche de fond : calcule l'horizon du spot (mode donut si inner_radius_m>0) et l'y
+    attache (best-effort, non-fatal)."""
     try:
-        scan = horizon.cached_horizon_scan(lon, lat)
+        scan = horizon.cached_horizon_scan(lon, lat, inner_radius_m=inner_radius_m)
         summary = {k: scan[k] for k in ("openness", "mean_horizon_deg", "max_horizon_deg",
                                         "pct_below_5deg", "denivele_max_m", "z0",
-                                        "mns_available", "near_blocked_pct")}
+                                        "mns_available", "near_blocked_pct", "inner_radius_m")}
         summary["azimuths"] = scan["azimuths"]
         spots.attach_horizon(spot_id, summary)
     except Exception:  # noqa: BLE001 - le spot existe déjà, l'horizon se recalcule au besoin
@@ -4581,10 +4583,10 @@ async def api_spots_create(payload: SpotCreateRequest, background_tasks: Backgro
     try:
         spot = await asyncio.to_thread(
             spots.create_spot, payload.name, payload.lon, payload.lat,
-            author_token=payload.author_token, notes=payload.notes)
+            author_token=payload.author_token, notes=payload.notes, inner_radius_m=payload.inner_radius_m)
     except spots.SpotError as exc:
         return {"ok": False, "error": str(exc)}
-    background_tasks.add_task(_spot_compute_horizon, spot["id"], payload.lon, payload.lat)
+    background_tasks.add_task(_spot_compute_horizon, spot["id"], payload.lon, payload.lat, spot.get("inner_radius_m", 0))
     return {"ok": True, "spot": {k: spot[k] for k in
                                  ("id", "name", "lon", "lat", "notes", "status", "created_utc")}}
 
@@ -4626,7 +4628,7 @@ async def api_spots_import(payload: dict[str, Any], background_tasks: Background
     except spots.SpotError as exc:
         return {"ok": False, "error": str(exc)}
     for sp in res["created"]:
-        background_tasks.add_task(_spot_compute_horizon, sp["id"], sp["lon"], sp["lat"])
+        background_tasks.add_task(_spot_compute_horizon, sp["id"], sp["lon"], sp["lat"], sp.get("inner_radius_m", 0))
     return {"ok": True, "created": len(res["created"]), "skipped": res["skipped"]}
 
 
@@ -4639,12 +4641,13 @@ async def api_spots_update(spot_id: str, payload: dict[str, Any], background_tas
         updated = await asyncio.to_thread(
             spots.update_spot, spot_id,
             name=payload.get("name"), notes=payload.get("notes"),
-            lon=payload.get("lon"), lat=payload.get("lat"))
+            lon=payload.get("lon"), lat=payload.get("lat"),
+            inner_radius_m=payload.get("inner_radius_m"))
     except spots.SpotError as exc:
         return {"ok": False, "error": str(exc)}
-    if updated.get("horizon") is None:   # position changée → recalcul en tâche de fond
-        background_tasks.add_task(_spot_compute_horizon, updated["id"], updated["lon"], updated["lat"])
-    return {"ok": True, "spot": {k: updated[k] for k in ("id", "name", "lon", "lat", "notes", "status")}}
+    if updated.get("horizon") is None:   # position/donut changé → recalcul en tâche de fond
+        background_tasks.add_task(_spot_compute_horizon, updated["id"], updated["lon"], updated["lat"], updated.get("inner_radius_m", 0))
+    return {"ok": True, "spot": {k: updated[k] for k in ("id", "name", "lon", "lat", "notes", "status", "inner_radius_m")}}
 
 
 @app.post("/api/spots/recompute")
@@ -4655,7 +4658,7 @@ async def api_spots_recompute(background_tasks: BackgroundTasks, secret: str | N
     all_spots = await asyncio.to_thread(spots.list_all)
     for s in all_spots:
         horizon.clear_cached(s["lon"], s["lat"])
-        background_tasks.add_task(_spot_compute_horizon, s["id"], s["lon"], s["lat"])
+        background_tasks.add_task(_spot_compute_horizon, s["id"], s["lon"], s["lat"], s.get("inner_radius_m", 0))
     return {"ok": True, "recomputing": len(all_spots)}
 
 
