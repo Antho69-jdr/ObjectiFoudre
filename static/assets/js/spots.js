@@ -160,10 +160,122 @@
     return d;
   }
 
-  function openFiche(spot, lngLat) {
-    if (typeof maplibregl === 'undefined' || typeof map === 'undefined') return;
-    if (!popup) popup = new maplibregl.Popup({ className: 'ofspot-popup', closeButton: true, closeOnClick: true, maxWidth: '260px', offset: 16 });
-    popup.setLngLat(lngLat).setDOMContent(buildFiche(spot)).addTo(map);
+  // ── Cercle de vision GÉO imprimé sur la carte + panneau de stats ────────────
+  var VIS_SRC = 'ofspot-vision', selectedSpotId = null, panelEl = null, visionWired = false;
+
+  function destPoint(lon, lat, azDeg, distM) {   // destination géodésique (sphère)
+    var R = 6371000, br = azDeg * Math.PI / 180, ad = distM / R;
+    var la1 = lat * Math.PI / 180, lo1 = lon * Math.PI / 180;
+    var la2 = Math.asin(Math.sin(la1) * Math.cos(ad) + Math.cos(la1) * Math.sin(ad) * Math.cos(br));
+    var lo2 = lo1 + Math.atan2(Math.sin(br) * Math.sin(ad) * Math.cos(la1), Math.cos(ad) - Math.sin(la1) * Math.sin(la2));
+    return [lo2 * 180 / Math.PI, la2 * 180 / Math.PI];
+  }
+
+  function ensureVisionLayers() {
+    if (typeof map === 'undefined' || typeof map.getSource !== 'function' || map.getSource(VIS_SRC)) return;
+    map.addSource(VIS_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: VIS_SRC + '-basin', type: 'fill', source: VIS_SRC, filter: ['==', ['get', 'kind'], 'basin'],
+      paint: { 'fill-color': '#46c0e6', 'fill-opacity': 0.16 } });
+    map.addLayer({ id: VIS_SRC + '-rings', type: 'line', source: VIS_SRC, filter: ['==', ['get', 'kind'], 'ring'],
+      paint: { 'line-color': '#9fbccb', 'line-opacity': 0.35, 'line-dasharray': [2, 3], 'line-width': 1 } });
+    map.addLayer({ id: VIS_SRC + '-basinline', type: 'line', source: VIS_SRC, filter: ['==', ['get', 'kind'], 'basin'],
+      paint: { 'line-color': '#46c0e6', 'line-width': 1.6 } });
+    map.addLayer({ id: VIS_SRC + '-crete', type: 'circle', source: VIS_SRC, filter: ['==', ['get', 'kind'], 'crete'],
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['get', 'deg'], 2, 3, 45, 8],
+        'circle-color': ['match', ['get', 'blocker'], 'near', '#5aab6b', '#b8804f'],
+        'circle-stroke-color': '#0b1017', 'circle-stroke-width': 1 } });
+    map.addLayer({ id: VIS_SRC + '-center', type: 'circle', source: VIS_SRC, filter: ['==', ['get', 'kind'], 'center'],
+      paint: { 'circle-radius': 4, 'circle-color': '#e9eff7', 'circle-stroke-color': '#0b1017', 'circle-stroke-width': 1.5 } });
+    if (!visionWired) {   // clic sur le fond (hors marqueur) → referme le cercle
+      map.on('click', function () { if (!addMode && selectedSpotId) clearVision(); });
+      visionWired = true;
+    }
+  }
+
+  function ringFeature(lon, lat, radM) {
+    var pts = [];
+    for (var a = 0; a <= 360; a += 8) pts.push(destPoint(lon, lat, a, radM));
+    return { type: 'Feature', properties: { kind: 'ring' }, geometry: { type: 'LineString', coordinates: pts } };
+  }
+
+  function visionFeatures(spot) {
+    var h = spot.horizon, lon = spot.lon, lat = spot.lat, MAXM = 30000, feats = [];
+    for (var km = 5; km <= 30; km += 5) feats.push(ringFeature(lon, lat, km * 1000));
+    if (h && h.azimuths && h.azimuths.length) {
+      var poly = [];
+      h.azimuths.forEach(function (o) {
+        var dm = (o.horizon_deg >= 2) ? Math.min(o.dist_km * 1000, MAXM) : MAXM;
+        poly.push(destPoint(lon, lat, o.az, dm));
+      });
+      poly.push(poly[0]);
+      feats.push({ type: 'Feature', properties: { kind: 'basin' }, geometry: { type: 'Polygon', coordinates: [poly] } });
+      h.azimuths.forEach(function (o) {
+        if (o.horizon_deg < 2) return;
+        var dm = (o.blocker === 'near' && o.near_dist_m) ? o.near_dist_m : o.dist_km * 1000;
+        feats.push({ type: 'Feature', properties: { kind: 'crete', blocker: o.blocker || 'far', deg: o.horizon_deg },
+          geometry: { type: 'Point', coordinates: destPoint(lon, lat, o.az, dm) } });
+      });
+    }
+    feats.push({ type: 'Feature', properties: { kind: 'center' }, geometry: { type: 'Point', coordinates: [lon, lat] } });
+    return { type: 'FeatureCollection', features: feats };
+  }
+
+  function showVision(spot) {
+    if (typeof map === 'undefined') return;
+    ensureVisionLayers();
+    var src = map.getSource(VIS_SRC);
+    if (src) src.setData(visionFeatures(spot));
+    selectedSpotId = spot.id;
+    showPanel(spot);
+    try {
+      var b = new maplibregl.LngLatBounds();
+      [0, 90, 180, 270].forEach(function (a) { b.extend(destPoint(spot.lon, spot.lat, a, 30000)); });
+      map.fitBounds(b, { padding: 70, duration: 700, maxZoom: 11 });
+    } catch (e) {}
+  }
+
+  function clearVision() {
+    if (typeof map !== 'undefined' && map.getSource && map.getSource(VIS_SRC)) {
+      map.getSource(VIS_SRC).setData({ type: 'FeatureCollection', features: [] });
+    }
+    selectedSpotId = null;
+    if (panelEl) panelEl.classList.remove('show');
+  }
+
+  function showPanel(spot) {
+    var h = spot.horizon || null;
+    if (!panelEl) { panelEl = document.createElement('div'); panelEl.className = 'ofspot-panel'; panelEl.id = 'ofspotPanel'; document.body.appendChild(panelEl); }
+    panelEl.innerHTML = '';
+    var close = document.createElement('button'); close.type = 'button'; close.className = 'ofspot-panel-close'; close.setAttribute('aria-label', 'Fermer'); close.textContent = '×';
+    close.addEventListener('click', clearVision);
+    panelEl.appendChild(close);
+    var head = document.createElement('div'); head.className = 'ofspot-head';
+    var nm = document.createElement('div'); nm.className = 'ofspot-name'; nm.textContent = spot.name; head.appendChild(nm);
+    if (h) {
+      var badge = document.createElement('span'); badge.className = 'ofspot-badge';
+      badge.style.color = scoreColor(h.openness); badge.style.background = scoreColor(h.openness) + '22';
+      badge.textContent = Math.round(h.openness) + '/100 · ' + scoreLabel(h.openness); head.appendChild(badge);
+    }
+    panelEl.appendChild(head);
+    if (h && h.azimuths) {
+      var stats = document.createElement('div'); stats.className = 'ofspot-stats';
+      stats.innerHTML = statCell('Altitude', Math.round(h.z0) + ' m') +
+        statCell('Horizon moyen', (h.mean_horizon_deg >= 0 ? '+' : '') + h.mean_horizon_deg + '°') +
+        statCell('Ciel bas dégagé', h.pct_below_5deg + ' %') +
+        statCell('Relief autour', '+' + (h.denivele_max_m || 0) + ' m');
+      panelEl.appendChild(stats);
+      panelEl.appendChild(buildNearLine(h));
+      var leg = document.createElement('div'); leg.className = 'ofspot-panel-legend';
+      leg.innerHTML = '<span><i style="background:#46c0e6"></i>ciel dégagé</span>' +
+        '<span><i style="background:#b8804f"></i>relief</span>' +
+        '<span><i style="background:#5aab6b"></i>obstruction proche</span>';
+      panelEl.appendChild(leg);
+    } else {
+      var pend = document.createElement('div'); pend.className = 'ofspot-pending';
+      pend.textContent = 'Champ de vision en cours de calcul…'; panelEl.appendChild(pend);
+    }
+    if (spot.notes) { var nt = document.createElement('div'); nt.className = 'ofspot-notes'; nt.textContent = spot.notes; panelEl.appendChild(nt); }
+    panelEl.classList.add('show');
   }
 
   function clearMarkers() { markers.forEach(function (m) { m.remove(); }); markers = []; }
@@ -174,8 +286,8 @@
     spots.forEach(function (spot) {
       if (typeof spot.lon !== 'number' || typeof spot.lat !== 'number') return;
       var e = pinEl(spot), lngLat = [spot.lon, spot.lat];
-      e.addEventListener('click', function (ev) { ev.stopPropagation(); openFiche(spot, lngLat); });
-      e.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openFiche(spot, lngLat); } });
+      e.addEventListener('click', function (ev) { ev.stopPropagation(); showVision(spot); });
+      e.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); showVision(spot); } });
       var mk = new maplibregl.Marker({ element: e, anchor: 'bottom' }).setLngLat(lngLat).addTo(map);
       // MapLibre force aria-label="Map marker" sur l'élément → on le rétablit après addTo
       var h = spot.horizon;
@@ -370,8 +482,7 @@
     main.append(ros, info);
     main.addEventListener('click', function () {
       closeSpotsPage();
-      if (typeof map !== 'undefined') map.flyTo({ center: [spot.lon, spot.lat], zoom: 10 });
-      setTimeout(function () { openFiche(spot, [spot.lon, spot.lat]); }, 700);
+      showVision(spot);   // dessine le cercle de vision sur la carte + panneau
     });
     card.appendChild(main);
     if (isAdmin()) {
@@ -468,13 +579,10 @@
     setTimeout(function () { t.classList.remove('show'); setTimeout(function () { t.remove(); }, 260); }, ms || 3200);
   }
 
-  function applyAddBtnVisibility() { if (addBtn) addBtn.classList.add('show'); }
-
   function enterAddMode() {
-    if (typeof map === 'undefined') return;
+    if (typeof map === 'undefined' || !addBtn) return;
     addMode = true;
-    addBtn.classList.add('arming');
-    addBtn.querySelector('.lbl').textContent = 'Clique sur la carte…';
+    addBtn.classList.add('active'); addBtn.setAttribute('title', 'Clique sur la carte pour poser le spot');
     map.getCanvas().style.cursor = 'crosshair';
     map.on('click', onMapClickAdd);
     toast('Clique sur la carte pour poser ton spot');
@@ -482,7 +590,7 @@
 
   function exitAddMode() {
     addMode = false;
-    if (addBtn) { addBtn.classList.remove('arming'); addBtn.querySelector('.lbl').textContent = 'Ajouter un spot'; }
+    if (addBtn) { addBtn.classList.remove('active'); addBtn.setAttribute('title', 'Ajouter un spot'); }
     if (typeof map !== 'undefined') { map.getCanvas().style.cursor = ''; map.off('click', onMapClickAdd); }
   }
 
@@ -521,23 +629,27 @@
     });
   }
 
-  function injectAddButton() {
-    if (document.getElementById('ofspotAddBtn')) return;
-    addBtn = document.createElement('button');
-    addBtn.id = 'ofspotAddBtn'; addBtn.type = 'button'; addBtn.className = 'ofspot-add-btn';
-    addBtn.setAttribute('aria-label', 'Ajouter un spot');
-    addBtn.innerHTML = '<span class="plus" aria-hidden="true">+</span><span class="lbl">Ajouter un spot</span>';
-    addBtn.addEventListener('click', function () { addMode ? exitAddMode() : enterAddMode(); });
-    document.body.appendChild(addBtn);
-    applyAddBtnVisibility();
+  // ── rail GAUCHE : afficher/masquer les spots + ajouter (boutons icône) ──────
+  function wireLeftRail() {
+    var tog = document.getElementById('spotsToggleBtn');
+    addBtn = document.getElementById('spotsAddRailBtn');
+    if (tog) tog.addEventListener('click', function () {
+      visible = !visible;
+      applyVisibility();
+      tog.classList.toggle('active', visible);
+      tog.setAttribute('aria-pressed', visible ? 'true' : 'false');
+      if (!visible) clearVision();   // masque aussi le cercle de vision affiché
+    });
+    if (addBtn) addBtn.addEventListener('click', function () { addMode ? exitAddMode() : enterAddMode(); });
   }
 
   // ── init ───────────────────────────────────────────────────────────────────
   function init() {
     wireRail();
-    injectAddButton();
+    wireLeftRail();
     if (typeof map === 'undefined') return;
-    if (map.loaded()) loadSpots(); else map.on('load', loadSpots);
+    if (map.loaded()) { loadSpots(); ensureVisionLayers(); }
+    else map.on('load', function () { loadSpots(); ensureVisionLayers(); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

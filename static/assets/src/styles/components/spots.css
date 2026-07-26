@@ -14,6 +14,20 @@
 .ofspot-pin-dot { display: block; width: 16px; height: 16px; margin: 0 auto; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--pin); border: 2px solid #fff; box-sizing: border-box; }
 .ofspot-pin:focus-visible { outline: 2px solid #46c0e6; outline-offset: 2px; border-radius: 4px; }
 
+/* ── Rail GAUCHE « Mes spots » (même forme que les rails de calques chasse/étoile) ── */
+.spots-rail {
+  position: fixed; left: 14px; top: 50%; transform: translateY(-50%);
+  z-index: 17; display: flex; flex-direction: column; gap: var(--right-rail-gap, 12px);
+}
+/* masqué hors vue de base : chasse/étoile ont leur propre rail gauche ; overlays plein écran */
+body.chase-mode .spots-rail,
+body.stargaze-mode .spots-rail,
+body.spots-open .spots-rail,
+body.history-open .spots-rail { display: none; }
+.spots-rail .grid-focus-btn:hover { background: rgba(70, 192, 230, 0.12); border-color: rgba(70, 192, 230, 0.5); color: #fff; }
+.spots-rail .grid-focus-btn.active { background: rgba(70, 192, 230, 0.18); border-color: rgba(70, 192, 230, 0.6); color: #fff; }
+body.mobile-ui .spots-rail { left: 10px; }
+
 /* ── Fiche (popup MapLibre) ────────────────────────────────────────────── */
 .ofspot-popup .maplibregl-popup-content { background: #121a25; color: #e9eff7; border: 1px solid #22303f; border-radius: 14px; padding: 14px 14px 12px; box-shadow: 0 12px 30px -12px #000c; font-family: ui-sans-serif, system-ui, sans-serif; }
 .ofspot-popup .maplibregl-popup-close-button { top: 5px; right: 5px; min-width: 0 !important; min-height: 0 !important; width: 28px !important; height: 28px !important; display: grid; place-items: center; color: #8ba0b8; font-size: 20px; line-height: 1; padding: 0; border-radius: 7px; }
@@ -33,6 +47,26 @@
 .ofspot-near.muted { color: #8ba0b8; }
 .ofspot-near-dot { width: 9px; height: 9px; border-radius: 50%; background: #5aab6b; flex: none; margin-top: 3px; }
 .ofspot-near-dot.muted { background: #8ba0b8; }
+
+/* ── Panneau de stats du spot sélectionné (le cercle de vision est sur la carte) ── */
+.ofspot-panel {
+  position: fixed; z-index: 15; left: 64px; bottom: 20px; width: 300px; max-width: calc(100vw - 88px);
+  background: #121a25; color: #e9eff7; border: 1px solid #22303f; border-radius: 14px; padding: 14px 14px 12px;
+  box-shadow: 0 14px 34px -14px #000c; opacity: 0; transform: translateY(8px); pointer-events: none;
+  transition: opacity .18s, transform .18s;
+}
+.ofspot-panel.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.ofspot-panel .ofspot-head { padding-right: 26px; }
+.ofspot-panel-close {
+  position: absolute; top: 8px; right: 8px; min-width: 0 !important; min-height: 0 !important;
+  width: 30px !important; height: 30px !important; display: grid; place-items: center;
+  background: transparent; border: none; color: #8ba0b8; font-size: 22px; line-height: 1; border-radius: 8px; cursor: pointer; padding: 0;
+}
+.ofspot-panel-close:hover { background: #ffffff12; color: #e9eff7; }
+.ofspot-panel-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; font-size: 11px; color: #8ba0b8; }
+.ofspot-panel-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.ofspot-panel-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+body.mobile-ui .ofspot-panel { left: 8px; right: 8px; width: auto; max-width: none; bottom: 12px; }
 
 /* ── Bouton flottant « + Ajouter » ─────────────────────────────────────── */
 .ofspot-add-btn { position: fixed; left: 12px; bottom: 96px; z-index: 6; display: none; align-items: center; gap: 7px; background: #121a25; color: #e9eff7; border: 1px solid #22303f; border-radius: 999px; padding: 9px 14px 9px 11px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 8px 22px -8px #000b; }
