@@ -67,7 +67,7 @@ const map = new maplibregl.Map({
   style: STYLE,
   center: [currentCenter.lon, currentCenter.lat],
   zoom: 5.55,
-  maxZoom: 12.5,
+  maxZoom: 18,
   preserveDrawingBuffer: true,
 });
 if (typeof applyResponsiveMode === 'function') applyResponsiveMode();

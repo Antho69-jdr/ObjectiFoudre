@@ -561,7 +561,7 @@
   }
 
   // ── ajout d'un spot (bouton + → clic carte → formulaire) ───────────────────
-  var addMode = false, addBtn = null, formPopup = null;
+  var addMode = false, formPopup = null;
 
   function clientToken() {
     var t = '';
@@ -580,9 +580,9 @@
   }
 
   function enterAddMode() {
-    if (typeof map === 'undefined' || !addBtn) return;
+    if (typeof map === 'undefined') return;
     addMode = true;
-    addBtn.classList.add('active'); addBtn.setAttribute('title', 'Clique sur la carte pour poser le spot');
+    document.querySelectorAll('.spots-add-btn').forEach(function (b) { b.classList.add('active'); b.setAttribute('title', 'Clique sur la carte pour poser le spot'); });
     map.getCanvas().style.cursor = 'crosshair';
     map.on('click', onMapClickAdd);
     toast('Clique sur la carte pour poser ton spot');
@@ -590,7 +590,7 @@
 
   function exitAddMode() {
     addMode = false;
-    if (addBtn) { addBtn.classList.remove('active'); addBtn.setAttribute('title', 'Ajouter un spot'); }
+    document.querySelectorAll('.spots-add-btn').forEach(function (b) { b.classList.remove('active'); b.setAttribute('title', 'Ajouter un spot'); });
     if (typeof map !== 'undefined') { map.getCanvas().style.cursor = ''; map.off('click', onMapClickAdd); }
   }
 
@@ -629,18 +629,41 @@
     });
   }
 
-  // ── rail GAUCHE : afficher/masquer les spots + ajouter (boutons icône) ──────
-  function wireLeftRail() {
-    var tog = document.getElementById('spotsToggleBtn');
-    addBtn = document.getElementById('spotsAddRailBtn');
-    if (tog) tog.addEventListener('click', function () {
-      visible = !visible;
-      applyVisibility();
-      tog.classList.toggle('active', visible);
-      tog.setAttribute('aria-pressed', visible ? 'true' : 'false');
-      if (!visible) clearVision();   // masque aussi le cercle de vision affiché
+  // ── rails GAUCHE : afficher/masquer les spots + ajouter (boutons icône) ──────
+  // Présents dans le rail de base ET injectés dans les rails de calques chasse/étoile.
+  var EYE_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+  var ADD_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-11a7 7 0 1 0-14 0c0 4.5 7 11 7 11Z"/><path d="M12 7v6M9 10h6"/></svg>';
+
+  function injectRailButtons(railId) {
+    var rail = document.getElementById(railId);
+    if (!rail || rail.querySelector('.spots-toggle-btn')) return;
+    var t = document.createElement('button'); t.type = 'button'; t.className = 'grid-focus-btn spots-toggle-btn';
+    t.setAttribute('aria-label', 'Afficher / masquer les spots'); t.title = 'Afficher / masquer les spots'; t.innerHTML = EYE_SVG;
+    var a = document.createElement('button'); a.type = 'button'; a.className = 'grid-focus-btn spots-add-btn';
+    a.setAttribute('aria-label', 'Ajouter un spot'); a.title = 'Ajouter un spot'; a.innerHTML = ADD_SVG;
+    rail.appendChild(t); rail.appendChild(a);
+  }
+
+  function syncToggleBtns() {
+    document.querySelectorAll('.spots-toggle-btn').forEach(function (b) {
+      b.classList.toggle('active', visible);
+      b.setAttribute('aria-pressed', visible ? 'true' : 'false');
     });
-    if (addBtn) addBtn.addEventListener('click', function () { addMode ? exitAddMode() : enterAddMode(); });
+  }
+
+  function toggleSpots() {
+    visible = !visible;
+    applyVisibility();
+    syncToggleBtns();
+    if (!visible) clearVision();   // masque aussi le cercle de vision affiché
+  }
+
+  function wireLeftRail() {
+    injectRailButtons('chaseLayerRail');
+    injectRailButtons('stargazeLayerRail');
+    document.querySelectorAll('.spots-toggle-btn').forEach(function (b) { b.addEventListener('click', toggleSpots); });
+    document.querySelectorAll('.spots-add-btn').forEach(function (b) { b.addEventListener('click', function () { addMode ? exitAddMode() : enterAddMode(); }); });
+    syncToggleBtns();
   }
 
   // ── init ───────────────────────────────────────────────────────────────────
