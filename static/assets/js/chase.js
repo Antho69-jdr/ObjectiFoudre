@@ -295,19 +295,18 @@
   }
   function bindCellHover() {
     const SHAPE = CELLS_SRC + '-core';
+    // Le survol ne fait QUE curseur + surbrillance : plus d'aperçu popup au survol.
+    // Le menu de cellule s'ouvre au CLIC (épinglé) et ne doit PAS se fermer quand la
+    // souris bouge pour aller cliquer une option → aucun close au mouseleave.
     map.on('mousemove', SHAPE, (e) => {
       const f = e.features && e.features[0];
       if (!f) return;
       map.getCanvas().style.cursor = 'pointer';
       setCellHover(f.id);
-      const idx = f.properties && f.properties.cellIdx;
-      const c = (frCells.cells || [])[idx];
-      if (c && !cellPopupPinned) showCellPopup(c);
     });
     map.on('mouseleave', SHAPE, () => {
       map.getCanvas().style.cursor = '';
       setCellHover(null);
-      if (!cellPopupPinned) closeCellPopup();
     });
   }
 
@@ -903,28 +902,72 @@
   }
 
   // ── Tooltip CELLULE (survol desktop / tap tablette) ─────────────────────────
-  // Popup dédié, distinct du popup « conditions au point » : le survol l'ouvre au
-  // centroïde de la cellule (stable, ne suit pas la souris) ; le tap l'ÉPINGLE
-  // (closeButton, reste jusqu'au prochain tap ailleurs) pour la tablette.
+  // Popup de cellule (menu au clic, cf. showCellMenu). Épinglé (closeButton, reste
+  // jusqu'au × ou au prochain clic ailleurs) ; ne suit pas la souris.
   let cellPopup = null;
   let cellPopupIdx = -1;
   let cellPopupPinned = false;
-  function showCellPopup(c, pinned) {
-    if (!cellPopup) cellPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, className: 'chase-popup chase-cell-popup', maxWidth: '250px', offset: 14 });
-    const idx = (frCells.cells || []).indexOf(c);
-    // même cellule déjà affichée : ne pas reconstruire (évite le clignotement au mousemove)
-    if (cellPopup.isOpen() && cellPopupIdx === idx && !pinned) return;
-    cellPopupIdx = idx;
-    if (pinned) cellPopupPinned = true;
-    const t = frames[cursor] ? frames[cursor].epoch : (Date.now() / 1000);
-    const pos = cellPosAt(c, t) || [c.lon, c.lat];
-    cellPopup.setLngLat(pos).setHTML(renderCellHTML(c)).addTo(map);
-    cellPopup.once('close', () => { cellPopupPinned = false; cellPopupIdx = -1; });
-  }
   function closeCellPopup() {
     cellPopupPinned = false;
     cellPopupIdx = -1;
     if (cellPopup && cellPopup.isOpen()) cellPopup.remove();
+    // ferme aussi la mise en avant « spots viables » liée à la cellule (Phase 1).
+    if (window.ObjectiFoudreSpots && window.ObjectiFoudreSpots.clearStormHighlight) {
+      try { window.ObjectiFoudreSpots.clearStormHighlight(); } catch (_) {}
+    }
+  }
+
+  // ── Menu de cellule (clic) : petite modale d'options — Voir les spots / Détails ──
+  const CCM_PIN = '<svg class="ccm-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10Z"></path><circle cx="12" cy="11" r="2.2"></circle></svg>';
+  const CCM_INFO = '<svg class="ccm-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 11.2v4.6"></path><path d="M12 7.7h.01" stroke-width="2.4"></path></svg>';
+  function cellMenuHTML(c) {
+    const mv = c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}` : 'quasi statique';
+    const dbz = c.peak_dbz != null ? ` · ${Math.round(c.peak_dbz)} dBZ` : '';
+    const hasSpots = !!(window.ObjectiFoudreSpots && window.ObjectiFoudreSpots.highlightStorm);
+    return `<div class="chase-cell-menu">`
+      + `<div class="ccm-head">⛈ Cellule suivie<span class="ccm-sub">${mv}${dbz}</span></div>`
+      + (hasSpots ? `<button type="button" class="ccm-opt ccm-opt-spots" data-act="spots">${CCM_PIN}<span>Voir les spots viables</span></button>` : '')
+      + `<button type="button" class="ccm-opt" data-act="details">${CCM_INFO}<span>Détails de la cellule</span></button>`
+      + `</div>`;
+  }
+  function cellDetailsHTML(c) {
+    return `<button type="button" class="ccm-back" data-act="back">‹ Options</button>` + renderCellHTML(c);
+  }
+  function wireCellMenu(c) {
+    const root = cellPopup && cellPopup.getElement();
+    if (!root) return;
+    root.querySelectorAll('.ccm-opt').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.act === 'spots') {
+          if (window.ObjectiFoudreSpots && window.ObjectiFoudreSpots.highlightStorm) {
+            try { window.ObjectiFoudreSpots.highlightStorm(c); } catch (_) {}
+          }
+          // ferme le menu SANS passer par closeCellPopup (qui effacerait le highlight)
+          cellPopupPinned = false;
+          if (cellPopup) cellPopup.remove();
+        } else if (btn.dataset.act === 'details') {
+          cellPopup.setHTML(cellDetailsHTML(c));
+          wireCellBack(c);
+        }
+      });
+    });
+  }
+  function wireCellBack(c) {
+    const root = cellPopup && cellPopup.getElement();
+    if (!root) return;
+    const b = root.querySelector('.ccm-back');
+    if (b) b.addEventListener('click', () => { cellPopup.setHTML(cellMenuHTML(c)); wireCellMenu(c); });
+  }
+  // Clic cellule → ouvre le MENU (épinglé). Le survol desktop garde l'aperçu détails.
+  function showCellMenu(c) {
+    if (!cellPopup) cellPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, className: 'chase-popup chase-cell-popup', maxWidth: '250px', offset: 14 });
+    cellPopupIdx = (frCells.cells || []).indexOf(c);
+    cellPopupPinned = true;
+    const t = frames[cursor] ? frames[cursor].epoch : (Date.now() / 1000);
+    const pos = cellPosAt(c, t) || [c.lon, c.lat];
+    cellPopup.setLngLat(pos).setHTML(cellMenuHTML(c)).addTo(map);
+    wireCellMenu(c);
+    cellPopup.once('close', () => { cellPopupPinned = false; cellPopupIdx = -1; });
   }
 
   async function queryPoint(lat, lon, fromTap) {
@@ -1047,7 +1090,7 @@
         if (hits && hits.length) {
           const idx = hits[0].properties && hits[0].properties.cellIdx;
           const c = (frCells.cells || [])[idx];
-          if (c) { setCellHover(hits[0].id); showCellPopup(c, true); return; }
+          if (c) { setCellHover(hits[0].id); showCellMenu(c); return; }
         }
       }
     } catch (_) {}
@@ -1195,6 +1238,7 @@
     if (prefetchKick) { window.clearTimeout(prefetchKick); prefetchKick = null; }
     if (chaseClickBound) { map.off('click', onChaseClick); chaseClickBound = false; }
     if (popup) { popup.remove(); }
+    closeCellPopup();                     // ferme la fiche cellule + la mise en avant spots
     if (follow) toggleFollow();          // coupe le suivi géoloc
     if (userMarker) { userMarker.remove(); userMarker = null; }
   }
@@ -1266,5 +1310,5 @@
   window.setupFriseCollapse(controls, document.getElementById('chaseToggleBtn'), 'storm_chase_collapsed');
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.83';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.87';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

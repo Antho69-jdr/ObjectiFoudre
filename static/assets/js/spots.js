@@ -298,6 +298,7 @@
 
   function showVision(spot) {
     if (typeof map === 'undefined') return;
+    clearStormHighlight();   // une seule fiche à la fois (spot vs orage)
     ensureVisionLayers();
     var src = map.getSource(VIS_SRC);
     if (src) src.setData(visionFeatures(spot));
@@ -316,6 +317,179 @@
     }
     selectedSpotId = null;
     if (panelEl) panelEl.classList.remove('show');
+  }
+
+  // ══ CHASSE : « spots viables pour CETTE cellule orageuse » ══════════════════
+  // Appelé par chase.js au clic d'une cellule suivie (/api/radar/fr/cells). Croise la
+  // position + le cap/vitesse de l'orage avec l'horizon DIRECTIONNEL de chaque spot :
+  // un spot est viable s'il est à BONNE DISTANCE et DÉGAGÉ DANS LA DIRECTION de l'orage.
+  var STORM_SRC = 'ofspot-storm', stormPanelEl = null, stormPulseRAF = null, stormPulseLast = 0, stormActive = false;
+  var STORM_MAX = 6;   // nb max de spots mis en avant
+
+  function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  // horizon moyen (°) + crête la plus proche DANS le cap az (secteur ±22,5°).
+  function horizonTowardAz(h, az) {
+    if (!h || !h.azimuths || !h.azimuths.length) return { deg: 18, near: false, dist_km: 0 };
+    var sep = function (a) { return Math.abs(((a.az - az + 180) % 360 + 360) % 360 - 180); };
+    var vals = h.azimuths.filter(function (a) { return sep(a) <= 22.5; });
+    if (!vals.length) {
+      var best = null, bd = 1e9;
+      h.azimuths.forEach(function (a) { var d = sep(a); if (d < bd) { bd = d; best = a; } });
+      vals = best ? [best] : [];
+    }
+    if (!vals.length) return { deg: 18, near: false, dist_km: 0 };
+    var deg = vals.reduce(function (s, a) { return s + (a.horizon_deg || 0); }, 0) / vals.length;
+    var near = vals.some(function (a) { return a.blocker === 'near' && (a.horizon_deg || 0) > 5; });
+    var dmin = Math.min.apply(null, vals.map(function (a) { return (a.dist_km != null ? a.dist_km : 30); }));
+    return { deg: deg, near: near, dist_km: dmin };
+  }
+
+  // Approche : plus courte distance orage↔spot le long du vecteur de déplacement
+  // (même math que le « ETA sur ta position » de chase.js). ETA en minutes si l'orage
+  // se rapproche vraiment (t* dans le futur, à ≤ 2,5 h).
+  function stormApproach(spot, cell) {
+    if (!cell.speed_kmh || cell.speed_kmh <= 8 || cell.bearing == null) return { closing: false, etaMin: null, missKm: null };
+    var br = cell.bearing * Math.PI / 180;
+    var vN = cell.speed_kmh * Math.cos(br), vE = cell.speed_kmh * Math.sin(br);
+    var dN = (spot.lat - cell.lat) * 111.0;
+    var dE = (spot.lon - cell.lon) * 111.0 * Math.cos(spot.lat * Math.PI / 180);
+    var v2 = vN * vN + vE * vE || 1e-9;
+    var tStar = (dN * vN + dE * vE) / v2;                       // heures jusqu'au plus près
+    var missKm = Math.hypot(dN - vN * tStar, dE - vE * tStar);
+    // « se rapproche » = point le plus proche DEVANT (≤ 2,5 h) ET passage à ≤ 30 km
+    // (sinon l'orage file à côté → pas d'ETA trompeur).
+    var closing = tStar > 0 && tStar <= 2.5 && missKm <= 30;
+    return { closing: closing, etaMin: closing ? Math.max(1, Math.round(tStar * 60)) : null, missKm: Math.round(missKm) };
+  }
+
+  function scoreSpotForStorm(spot, cell) {
+    if (typeof spot.lon !== 'number' || typeof spot.lat !== 'number') return null;
+    var clat = Math.cos(spot.lat * Math.PI / 180);
+    var dE = (cell.lon - spot.lon) * 111.32 * clat;
+    var dN = (cell.lat - spot.lat) * 110.574;
+    var km = Math.sqrt(dE * dE + dN * dN);
+    var az = (Math.atan2(dE, dN) * 180 / Math.PI + 360) % 360;  // cap spot → orage
+    var clr = horizonTowardAz(spot.horizon, az);
+    // fenêtre de distance : idéale ~15-40 km, nulle < 6 km (sous l'orage) ou > 70 km (trop loin)
+    var distScore;
+    if (km < 6 || km > 70) distScore = 0;
+    else if (km <= 25) distScore = (km - 6) / 19;
+    else distScore = Math.max(0, (70 - km) / 45);
+    var clearScore = Math.max(0, Math.min(1, 1 - clr.deg / 18));
+    var appr = stormApproach(spot, cell);
+    var score = Math.round(100 * Math.max(0, Math.min(1, 0.56 * clearScore + 0.34 * distScore + (appr.closing ? 0.10 : 0))));
+    // viable = à bonne distance ET dégagé vers l'orage (pas d'obstruction proche dans ce cap)
+    var viable = distScore > 0 && clr.deg <= 11 && !clr.near;
+    return { spot: spot, km: km, az: az, cardinal: cardinal(az), clearanceDeg: clr.deg,
+             blockedNear: clr.near, approach: appr, score: score, viable: viable };
+  }
+
+  function ensureStormLayers() {
+    if (typeof map === 'undefined' || typeof map.getSource !== 'function' || map.getSource(STORM_SRC)) return;
+    map.addSource(STORM_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: STORM_SRC + '-link', type: 'line', source: STORM_SRC, filter: ['==', ['get', 'kind'], 'link'],
+      layout: { 'line-cap': 'round' },
+      paint: { 'line-color': '#ffb038', 'line-width': ['interpolate', ['linear'], ['get', 'score'], 0, 1.2, 100, 3.4],
+               'line-opacity': 0.75, 'line-dasharray': [1.6, 1.2] } });
+    map.addLayer({ id: STORM_SRC + '-glow', type: 'circle', source: STORM_SRC, filter: ['==', ['get', 'kind'], 'spot'],
+      paint: { 'circle-radius': 15, 'circle-color': ['get', 'color'], 'circle-blur': 1, 'circle-opacity': 0.4 } });
+    map.addLayer({ id: STORM_SRC + '-spot', type: 'circle', source: STORM_SRC, filter: ['==', ['get', 'kind'], 'spot'],
+      paint: { 'circle-radius': 6.5, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#0c1118', 'circle-stroke-width': 1.6, 'circle-opacity': 0.98 } });
+    map.addLayer({ id: STORM_SRC + '-cellglow', type: 'circle', source: STORM_SRC, filter: ['==', ['get', 'kind'], 'cell'],
+      paint: { 'circle-radius': 16, 'circle-color': '#ff4d4d', 'circle-blur': 1, 'circle-opacity': 0.45 } });
+    map.addLayer({ id: STORM_SRC + '-cell', type: 'circle', source: STORM_SRC, filter: ['==', ['get', 'kind'], 'cell'],
+      paint: { 'circle-radius': 6, 'circle-color': '#ff6a6a', 'circle-stroke-color': '#3a0000', 'circle-stroke-width': 1.6 } });
+  }
+
+  function stormPulseTick(t) {
+    if (!stormActive) { stormPulseRAF = null; return; }
+    if (t - stormPulseLast >= 45) {
+      stormPulseLast = t;
+      var k = 0.5 + 0.5 * Math.sin(t / 1000 * 2.4);
+      try {
+        if (map.getLayer(STORM_SRC + '-cellglow')) map.setPaintProperty(STORM_SRC + '-cellglow', 'circle-radius', 13 + 8 * k);
+        if (map.getLayer(STORM_SRC + '-glow')) map.setPaintProperty(STORM_SRC + '-glow', 'circle-opacity', 0.22 + 0.32 * k);
+      } catch (e) {}
+    }
+    stormPulseRAF = requestAnimationFrame(stormPulseTick);
+  }
+  function startStormPulse() { if (stormPulseRAF == null) { stormPulseLast = 0; stormPulseRAF = requestAnimationFrame(stormPulseTick); } }
+  function stopStormPulse() { if (stormPulseRAF != null) { cancelAnimationFrame(stormPulseRAF); stormPulseRAF = null; } }
+
+  function focusStormSpot(spot) {
+    try { map.flyTo({ center: [spot.lon, spot.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 8, 9), duration: 650 }); } catch (e) {}
+  }
+
+  function showStormPanel(cell, picks) {
+    if (!stormPanelEl) { stormPanelEl = document.createElement('div'); stormPanelEl.className = 'ofspot-storm-panel'; stormPanelEl.id = 'ofspotStormPanel'; document.body.appendChild(stormPanelEl); }
+    stormPanelEl.innerHTML = '';
+    var close = document.createElement('button'); close.type = 'button'; close.className = 'ofspot-panel-close'; close.setAttribute('aria-label', 'Fermer'); close.textContent = '×';
+    close.addEventListener('click', clearStormHighlight);
+    stormPanelEl.appendChild(close);
+    var head = document.createElement('div'); head.className = 'ofspot-storm-head';
+    var mv = (cell.speed_kmh > 5) ? (cell.speed_kmh + ' km/h ' + cardinal(cell.bearing)) : 'quasi statique';
+    head.innerHTML = '<span class="ofspot-storm-title">⛈ Spots pour cette cellule</span>' +
+      '<span class="ofspot-storm-sub">' + mv + (cell.peak_dbz != null ? ' · ' + Math.round(cell.peak_dbz) + ' dBZ' : '') + '</span>';
+    stormPanelEl.appendChild(head);
+    if (!picks.length) {
+      var empty = document.createElement('div'); empty.className = 'ofspot-storm-empty';
+      empty.textContent = spotsData.length ? 'Aucun spot dégagé et bien placé pour cette cellule.' : 'Aucun spot enregistré pour l’instant.';
+      stormPanelEl.appendChild(empty);
+    } else {
+      var list = document.createElement('div'); list.className = 'ofspot-storm-list';
+      picks.forEach(function (p, i) {
+        var col = scoreColor(p.score);
+        var appr = (p.approach && p.approach.closing) ? (' · arrive ~' + p.approach.etaMin + ' min') : '';
+        var clearTxt = p.clearanceDeg <= 4 ? 'très dégagé' : (p.clearanceDeg <= 8 ? 'dégagé' : 'passable');
+        var row = document.createElement('button'); row.type = 'button'; row.className = 'ofspot-storm-row';
+        // 2 lignes compactes (lisible même en colonnes étroites) : distance+cap / dégagement+ETA
+        row.innerHTML = '<span class="ofspot-storm-rank" style="color:' + col + ';background:' + col + '22">' + (i + 1) + '</span>' +
+          '<span class="ofspot-storm-info"><b>' + escapeHtml(p.spot.name) + '</b>' +
+          '<small>' + Math.round(p.km) + ' km · ' + p.cardinal + '</small>' +
+          '<small>' + clearTxt + appr + '</small></span>' +
+          '<span class="ofspot-storm-score" style="color:' + col + '">' + p.score + '</span>';
+        row.addEventListener('click', function () { focusStormSpot(p.spot); });
+        list.appendChild(row);
+      });
+      stormPanelEl.appendChild(list);
+    }
+    stormPanelEl.classList.add('show');
+  }
+
+  // API publique appelée par chase.js au clic d'une cellule.
+  function highlightStorm(cell) {
+    if (!cell || typeof map === 'undefined' || typeof map.getSource !== 'function') return;
+    clearVision();   // une seule fiche à la fois (spot vs orage)
+    ensureStormLayers();
+    var scored = [];
+    for (var i = 0; i < spotsData.length; i++) {
+      var r = scoreSpotForStorm(spotsData[i], cell);
+      if (r && r.viable) scored.push(r);
+    }
+    scored.sort(function (a, b) { return b.score - a.score; });
+    var picks = scored.slice(0, STORM_MAX);
+    var feats = [{ type: 'Feature', properties: { kind: 'cell' }, geometry: { type: 'Point', coordinates: [cell.lon, cell.lat] } }];
+    picks.forEach(function (p) {
+      feats.push({ type: 'Feature', properties: { kind: 'link', score: p.score },
+        geometry: { type: 'LineString', coordinates: [[p.spot.lon, p.spot.lat], [cell.lon, cell.lat]] } });
+      feats.push({ type: 'Feature', properties: { kind: 'spot', score: p.score, color: scoreColor(p.score) },
+        geometry: { type: 'Point', coordinates: [p.spot.lon, p.spot.lat] } });
+    });
+    var src = map.getSource(STORM_SRC);
+    if (src) { try { src.setData({ type: 'FeatureCollection', features: feats }); } catch (e) {} }
+    stormActive = true;
+    startStormPulse();
+    showStormPanel(cell, picks);
+  }
+
+  function clearStormHighlight() {
+    stormActive = false;
+    stopStormPulse();
+    if (typeof map !== 'undefined' && map.getSource && map.getSource(STORM_SRC)) {
+      try { map.getSource(STORM_SRC).setData({ type: 'FeatureCollection', features: [] }); } catch (e) {}
+    }
+    if (stormPanelEl) stormPanelEl.classList.remove('show');
   }
 
   function showPanel(spot) {
@@ -915,5 +1089,5 @@
   else init();
 
   // exposé pour debug / rechargement après ajout
-  window.ObjectiFoudreSpots = { reload: loadSpots };
+  window.ObjectiFoudreSpots = { reload: loadSpots, highlightStorm: highlightStorm, clearStormHighlight: clearStormHighlight };
 })();

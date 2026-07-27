@@ -366,6 +366,32 @@ body.mobile-ui .chase-popup .maplibregl-popup-close-button {
   display: grid; place-items: center; top: 3px; right: 3px;
 }
 .chase-pop-loading, .chase-pop-empty { font-size: var(--fs-13); color: rgba(226, 232, 240, 0.8); }
+
+/* --- Menu de cellule (clic) : petite modale d'options (Voir les spots / Détails) --- */
+.chase-cell-menu { display: flex; flex-direction: column; gap: 6px; min-width: 176px; }
+.ccm-head {
+  display: flex; flex-direction: column; gap: 1px;
+  font-size: var(--fs-13); font-weight: var(--fw-extrabold); color: #ffb4a0;
+  padding: 0 24px 7px 2px; margin-bottom: 2px;
+  border-bottom: 1px solid var(--ghost-border-soft);
+}
+.ccm-head .ccm-sub { font-size: var(--fs-11); font-weight: 600; color: rgba(190, 205, 226, 0.7); font-variant-numeric: tabular-nums; }
+.ccm-opt {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  font: inherit; font-size: var(--fs-13); font-weight: 600; color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--ghost-border-soft);
+  border-radius: 9px; padding: 9px 11px; cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.ccm-opt:hover { background: rgba(255, 90, 60, 0.14); border-color: rgba(255, 120, 90, 0.55); color: #fff; }
+.ccm-opt-spots:hover { background: rgba(255, 176, 56, 0.16); border-color: rgba(255, 176, 56, 0.6); }
+.ccm-opt .ccm-ic { flex: 0 0 auto; width: 17px; height: 17px; }
+.ccm-back {
+  font: inherit; font-size: var(--fs-12); font-weight: 700; color: rgba(190, 205, 226, 0.85);
+  background: transparent; border: none; padding: 0 0 8px; cursor: pointer;
+  min-width: 0 !important; min-height: 0 !important;
+}
+.ccm-back:hover { color: #fff; }
 .chase-verdict {
   display: flex;
   align-items: center;

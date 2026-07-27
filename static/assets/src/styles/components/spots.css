@@ -85,6 +85,38 @@ body.mobile-ui .spots-rail { left: 10px; }
 /* +34px : dégage aussi la poignée de repli de la frise (z 30, ~30px au-dessus du dock). */
 body.mobile-ui .ofspot-panel { left: 8px; right: 8px; width: auto; max-width: none; bottom: calc(var(--timeline-height, 88px) + 34px); }
 
+/* ── Chasse : panneau « spots viables pour cette cellule orageuse » (Phase 1) ──
+   Même gabarit/z-index que .ofspot-panel, accent ambre orage. En mode chasse, il
+   apparaît au clic d'une cellule ; ferme avec la fiche cellule. */
+.ofspot-storm-panel {
+  position: fixed; z-index: 39; left: 64px; bottom: calc(var(--timeline-height, 88px) + 16px);
+  /* large → la liste passe en colonnes (autant que la largeur le permet). */
+  width: min(680px, calc(100vw - 88px));
+  background: #12161e; color: #e9eff7; border: 1px solid #3a2a1c; border-radius: 14px; padding: 12px 14px 12px;
+  box-shadow: 0 14px 34px -14px #000c; opacity: 0; transform: translateY(8px); pointer-events: none;
+  transition: opacity .18s, transform .18s;
+}
+.ofspot-storm-panel.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.ofspot-storm-head { display: flex; flex-direction: column; gap: 2px; padding-right: 26px; margin-bottom: 8px; }
+.ofspot-storm-title { font-size: 13.5px; font-weight: 800; color: #ffd9a6; letter-spacing: .01em; }
+.ofspot-storm-sub { font-size: 11.5px; color: #b79878; font-variant-numeric: tabular-nums; }
+.ofspot-storm-empty { font-size: 12.5px; color: #8ba0b8; padding: 4px 0 2px; }
+/* Grille responsive : autant de colonnes que la largeur du panneau le permet
+   (auto-fit → les colonnes vides s'effacent, les cartes remplissent la largeur). */
+.ofspot-storm-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 6px; align-items: stretch; }
+.ofspot-storm-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  font: inherit; background: #171d26; border: 1px solid #22303f; border-radius: 10px;
+  padding: 7px 9px; cursor: pointer; color: #e9eff7; transition: border-color .15s, background .15s;
+}
+.ofspot-storm-row:hover { border-color: #ffb03899; background: #1c232e; }
+.ofspot-storm-rank { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ofspot-storm-info { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ofspot-storm-info b { font-size: 13px; font-weight: 700; white-space: normal; overflow-wrap: anywhere; line-height: 1.2; }
+.ofspot-storm-info small { font-size: 11px; color: #93a7bd; font-variant-numeric: tabular-nums; }
+.ofspot-storm-score { flex: 0 0 auto; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+body.mobile-ui .ofspot-storm-panel { left: 8px; right: 8px; width: auto; max-width: none; bottom: calc(var(--timeline-height, 88px) + 34px); }
+
 /* ── Bouton flottant « + Ajouter » ─────────────────────────────────────── */
 .ofspot-add-btn { position: fixed; left: 12px; bottom: 96px; z-index: 6; display: none; align-items: center; gap: 7px; background: #121a25; color: #e9eff7; border: 1px solid #22303f; border-radius: 999px; padding: 9px 14px 9px 11px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 8px 22px -8px #000b; }
 .ofspot-add-btn.show { display: inline-flex; }
