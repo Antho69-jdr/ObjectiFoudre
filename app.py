@@ -81,7 +81,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.87"
+APP_VERSION = "1.3.88"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4095,6 +4095,18 @@ def _stargaze_cloud_total_pct(low: Any, mid: Any, high: Any) -> float | None:
     return round(total, 1)
 
 
+def _stargaze_cloud_layers_norm(low: Any, mid: Any, high: Any) -> tuple[float | None, float | None, float | None]:
+    """Nébulosité par ÉTAGE (%) normalisée (masque « nébulosité par couche »)."""
+    def _norm(v: Any) -> float | None:
+        if v is None:
+            return None
+        f = float(v)
+        if f <= 1.5:
+            f *= 100.0
+        return round(max(0.0, min(100.0, f)), 1)
+    return (_norm(low), _norm(mid), _norm(high))
+
+
 def _stargaze_night_hours(now_utc: datetime) -> list[dict[str, Any]]:
     """Créneaux HORAIRES LOCAUX (Europe/Paris) couvrant la nuit d'observation de ce soir
     (soleil < −12°), avec l'altitude solaire et le drapeau « vraie obscurité » (< −18°)."""
@@ -4120,12 +4132,14 @@ def _stargaze_night_hours(now_utc: datetime) -> list[dict[str, Any]]:
         while cur < e_local:
             mid_utc = (cur + timedelta(minutes=30)).astimezone(timezone.utc)
             sun = stargaze._sun_alt_deg(mid_utc, lat, lon)
+            moon_alt = stargaze._moon_alt_deg(mid_utc, lat, lon)   # masque « pollution lunaire »
             hours.append({
                 "date": cur.date().isoformat(),
                 "hour": cur.hour,
                 "iso": cur.isoformat(),
                 "epoch": int(cur.timestamp()),
                 "sun_alt": round(sun, 1),
+                "moon_alt": round(moon_alt, 1),
                 "dark": sun < STARGAZE_DARK_THRESHOLD_DEG,
             })
             cur += timedelta(hours=1)
@@ -4216,14 +4230,16 @@ def _stargaze_slot_cloud(target_date: Date, hour: int) -> dict[str, float] | Non
         hcells = res["payload"]["days"][0]["slots"][0].get("cells", [])
     except Exception:
         hcells = []
-    out: dict[str, float] = {}
+    out: dict[str, dict[str, float | None]] = {}
     for cell in hcells:
+        lo = cell.get("cloud_cover_low"); mi = cell.get("cloud_cover_mid"); hi = cell.get("cloud_cover_high")
         ct = (cell.get("metrics_used") or {}).get("total_cloud_cover")
         if ct is None:
-            ct = _stargaze_cloud_total_pct(cell.get("cloud_cover_low"),
-                                           cell.get("cloud_cover_mid"), cell.get("cloud_cover_high"))
-        if ct is not None:
-            out[str(cell.get("zone", ""))] = float(ct)
+            ct = _stargaze_cloud_total_pct(lo, mi, hi)
+        if ct is None:
+            continue
+        nlo, nmi, nhi = _stargaze_cloud_layers_norm(lo, mi, hi)
+        out[str(cell.get("zone", ""))] = {"t": float(ct), "lo": nlo, "mi": nmi, "hi": nhi}
     if not out:
         return None                    # pas de cache d'un créneau vide → re-tenté
     _set_cached_value(ck, out)
@@ -4255,6 +4271,9 @@ def _stargaze_tonight() -> dict[str, Any]:
 
     scores: list[list[int | None] | None] = []
     clouds: list[list[int | None] | None] = []
+    clouds_lo: list[list[int | None] | None] = []   # nébulosité par couche (masque)
+    clouds_mi: list[list[int | None] | None] = []
+    clouds_hi: list[list[int | None] | None] = []
     best_score = [-1] * n
     best_hour: list[int | None] = [None] * n
     any_available = False
@@ -4269,22 +4288,31 @@ def _stargaze_tonight() -> dict[str, Any]:
         if not ok:
             scores.append(None)
             clouds.append(None)
+            clouds_lo.append(None); clouds_mi.append(None); clouds_hi.append(None)
             continue
         any_available = True
         srow: list[int | None] = [None] * n
         crow: list[int | None] = [None] * n
-        for zone, ct in cloudmap.items():
+        lorow: list[int | None] = [None] * n
+        mirow: list[int | None] = [None] * n
+        hirow: list[int | None] = [None] * n
+        for zone, cm in cloudmap.items():
             i = zone_index.get(zone)
             if i is None:
                 continue
+            ct = cm["t"]
             sc = stargaze.observation_score(darkness_arr[i], ct, md)
             srow[i] = sc
             crow[i] = int(round(ct))
+            lorow[i] = None if cm["lo"] is None else int(round(cm["lo"]))
+            mirow[i] = None if cm["mi"] is None else int(round(cm["mi"]))
+            hirow[i] = None if cm["hi"] is None else int(round(cm["hi"]))
             if hslot["dark"] and sc > best_score[i]:
                 best_score[i] = sc
                 best_hour[i] = int(hslot["hour"])
         scores.append(srow)
         clouds.append(crow)
+        clouds_lo.append(lorow); clouds_mi.append(mirow); clouds_hi.append(hirow)
 
     # repli : si la nuit n'a AUCUNE heure vraiment sombre (plein été), on classe sur
     # toutes les heures disponibles.
@@ -4326,6 +4354,9 @@ def _stargaze_tonight() -> dict[str, Any]:
         "darkness": darkness_arr,
         "scores": scores,
         "cloud": clouds,
+        "cloud_low": clouds_lo,
+        "cloud_mid": clouds_mi,
+        "cloud_high": clouds_hi,
         "top_spots": top,
     }
     if not any_available:

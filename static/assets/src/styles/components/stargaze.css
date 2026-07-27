@@ -41,6 +41,18 @@ body.stargaze-mode #stargazeLayerRail { display: flex; }
 }
 @media (max-width: 767px) { .stargaze-layer-rail { left: 8px; gap: 8px; } }
 
+/* Bouton « nébulosité par couche » : badge coin bas-droit = couche courante (Bas/Moy/Haut). */
+.sg-cloud-btn { position: relative; }
+.sg-cloud-badge {
+  position: absolute; bottom: 1px; right: 1px;
+  min-width: 0 !important; min-height: 0 !important;
+  padding: 1px 3px; border-radius: 4px;
+  font-size: 8px; font-weight: 800; line-height: 1; letter-spacing: 0.02em;
+  background: rgba(251, 191, 36, 0.92); color: #1a1205;
+  pointer-events: none;
+}
+.sg-cloud-badge:empty { display: none; }
+
 /* En mode chasse d'étoile : masquer l'UI de score de base + les badges horaires
    (remplacés par #stargazeTopInfo). Dock masqué en visibility (garde la mise en
    page → pas de rétractation à la sortie). */

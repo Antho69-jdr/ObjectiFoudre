@@ -22,6 +22,9 @@
   const playBtn = document.getElementById('sgPlayBtn');
   const geoBtn = document.getElementById('sgGeoBtn');
   const bestBtn = document.getElementById('sgBestBtn');
+  const lightBtn = document.getElementById('sgLightBtn');
+  const moonMaskBtn = document.getElementById('sgMoonMaskBtn');
+  const cloudBtn = document.getElementById('sgCloudBtn');
   const PLAY_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M10 8.2 16.3 12 10 15.8Z" fill="currentColor" stroke="none"></path></svg>';
   const PAUSE_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><rect x="9" y="8.3" width="2.2" height="7.4" rx="0.6" fill="currentColor" stroke="none"></rect><rect x="12.8" y="8.3" width="2.2" height="7.4" rx="0.6" fill="currentColor" stroke="none"></rect></svg>';
 
@@ -34,6 +37,12 @@
   const BEST_REL_DROP = 15;     // on garde les cellules à moins de 15 pts du meilleur du créneau
   const BEST_SEP_DEG = 0.33;    // dédoublonnage spatial (spots distincts) ≈ 35 km
   const BEST_MAX = 12;          // nb max de cellules soulignées
+  // ── Masques superposables (item Trello « 3 masques ») : pollution lumineuse (site),
+  //    pollution lunaire (voile selon l'heure), nébulosité par couche (basse/moyenne/haute).
+  const MASK_SRC = 'sg-mask-src', MASK_LIGHT = 'sg-mask-light', MASK_MOON = 'sg-mask-moon', MASK_CLOUD = 'sg-mask-cloud';
+  const CLOUD_KEYS = ['lo', 'mi', 'hi'];                                   // basses / moyennes / hautes
+  const CLOUD_LABELS = ['Nuages bas', 'Nuages moyens', 'Nuages hauts'];
+  const CLOUD_SHORT = ['Bas', 'Moy', 'Haut'];
   // Calque SATELLITE nuages live (EUMETSAT View Service, WMS public sans clé) : carte
   // IR 10.8 µm globale (nuages jour ET nuit). MapLibre charge les tuiles WMS en <img>
   // (aucun souci CORS). Inséré SOUS les top spots (jamais masqués).
@@ -72,6 +81,8 @@
   let bestCellsOn = true;                     // liseré « meilleures cellules » du créneau (on/off)
   let cellGeomByIdx = null;                   // idx cellule → géométrie rognée (pour le liseré)
   let pulseRAF = null, pulseLast = 0;         // animation du liseré pulsatile
+  let maskFC = null;                          // géométrie cellules + obscurité + nuages par heure/couche
+  let maskLightOn = false, maskMoonOn = false, cloudIdx = -1;   // cloudIdx : -1 off, 0/1/2 = bas/moy/haut
   let railTrack = null, railMarks = [];
   // Prévision nébulosité des prochaines nuits (ECMWF) : « ce soir » (index 0, /tonight,
   // AROME horaire) + nuits futures (index ≥1, /outlook, une carte par nuit).
@@ -158,6 +169,108 @@
     return ['interpolate', ['linear'], ['coalesce', ['get', 'dk'], 0]].concat(COLOR_STOPS);
   }
 
+  // ── Masques (pollution lumineuse / lune / nébulosité par couche) ─────────────
+  // FC = géométrie des cellules + obscurité (dk, statique) + nébulosité par couche et
+  // par heure (props clo{h}/cmi{h}/chi{h}). Construite une fois par nuit ; le changement
+  // d'heure ne touche que les expressions d'opacité (setPaintProperty).
+  function buildMaskFC() {
+    const clipped = computeClippedCells(), nH = hours.length, feats = [];
+    for (const c of clipped) {
+      const i = c.i;
+      const props = { idx: i };
+      if (data.darkness && data.darkness[i] != null) props.dk = data.darkness[i];
+      for (let h = 0; h < nH; h++) {
+        const lo = (data.cloud_low && data.cloud_low[h]) ? data.cloud_low[h][i] : null;
+        const mi = (data.cloud_mid && data.cloud_mid[h]) ? data.cloud_mid[h][i] : null;
+        const hg = (data.cloud_high && data.cloud_high[h]) ? data.cloud_high[h][i] : null;
+        if (lo != null) props['clo' + h] = lo;
+        if (mi != null) props['cmi' + h] = mi;
+        if (hg != null) props['chi' + h] = hg;
+      }
+      feats.push({ type: 'Feature', properties: props, geometry: c.geom });
+    }
+    return { type: 'FeatureCollection', features: feats };
+  }
+  // Pollution lumineuse = 100 − obscurité : voile rouge d'autant plus marqué que le site
+  // est pollué (spot sombre → ~transparent). Statique → posé à la création de la couche.
+  function lightMaskOpacityExpr() {
+    return ['interpolate', ['linear'], ['-', 100, ['coalesce', ['get', 'dk'], 100]],
+      20, 0, 55, 0.22, 85, 0.5, 100, 0.62];
+  }
+  // Nébulosité de la couche `key` (lo/mi/hi) à l'heure hi → voile gris.
+  function cloudMaskOpacityExpr(hi, key) {
+    const prop = 'c' + key + hi;
+    return ['interpolate', ['linear'], ['coalesce', ['get', prop], 0], 0, 0, 25, 0.14, 60, 0.42, 100, 0.74];
+  }
+  // Voile lunaire UNIFORME (la Lune est ~identique sur toute la France) : intensité =
+  // illumination × présence au-dessus de l'horizon à l'heure affichée.
+  function moonVeilOpacity(hi) {
+    const h = hours[hi];
+    if (!h || h.moon_alt == null) return 0;
+    const illum = (data.moon && data.moon.illumination != null) ? data.moon.illumination : 0.5;
+    const alt = Math.max(0, Math.min(1, (h.moon_alt + 2) / 22));   // 0 sous l'horizon → 1 haut dans le ciel
+    return Math.round(Math.max(0, Math.min(0.55, illum * alt * 0.62)) * 1000) / 1000;
+  }
+
+  function applyMaskVisibility() {
+    const vis = (id, on) => { if (map.getLayer(id)) { try { map.setLayoutProperty(id, 'visibility', (on && active) ? 'visible' : 'none'); } catch (_) {} } };
+    vis(MASK_LIGHT, maskLightOn);
+    vis(MASK_MOON, maskMoonOn);
+    vis(MASK_CLOUD, cloudIdx >= 0);
+  }
+  function paintMasks(hi) {
+    if (!map.getLayer(MASK_MOON)) return;
+    try {
+      if (maskMoonOn) map.setPaintProperty(MASK_MOON, 'fill-opacity', moonVeilOpacity(hi));
+      if (cloudIdx >= 0) map.setPaintProperty(MASK_CLOUD, 'fill-opacity', cloudMaskOpacityExpr(hi, CLOUD_KEYS[cloudIdx]));
+    } catch (_) {}
+  }
+  // (Re)pose la géométrie des masques + applique visibilité/opacité pour le curseur courant.
+  function updateMaskLayer() {
+    if (!map || !map.getSource(MASK_SRC)) return;
+    maskFC = buildMaskFC();
+    try { map.getSource(MASK_SRC).setData(maskFC); } catch (_) {}
+    applyMaskVisibility();
+    paintMasks(cursor);
+  }
+
+  function setMaskLight(on) {
+    maskLightOn = on;
+    if (lightBtn) { lightBtn.classList.toggle('active', on); lightBtn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    applyMaskVisibility();
+  }
+  function setMaskMoon(on) {
+    maskMoonOn = on;
+    if (moonMaskBtn) { moonMaskBtn.classList.toggle('active', on); moonMaskBtn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    applyMaskVisibility();
+    paintMasks(cursor);
+  }
+  // Nébulosité : cycle off → basses → moyennes → hautes → off (badge = couche courante).
+  function cycleCloud() {
+    cloudIdx = (cloudIdx >= CLOUD_KEYS.length - 1) ? -1 : cloudIdx + 1;
+    if (cloudBtn) {
+      const on = cloudIdx >= 0;
+      cloudBtn.classList.toggle('active', on);
+      cloudBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      cloudBtn.title = on ? ('Nébulosité — ' + CLOUD_LABELS[cloudIdx]) : 'Nébulosité par couche';
+      const badge = cloudBtn.querySelector('.sg-cloud-badge');
+      if (badge) badge.textContent = on ? CLOUD_SHORT[cloudIdx] : '';
+    }
+    applyMaskVisibility();
+    paintMasks(cursor);
+  }
+  function syncMaskButtons() {
+    if (lightBtn) { lightBtn.classList.toggle('active', maskLightOn); lightBtn.setAttribute('aria-pressed', maskLightOn ? 'true' : 'false'); }
+    if (moonMaskBtn) { moonMaskBtn.classList.toggle('active', maskMoonOn); moonMaskBtn.setAttribute('aria-pressed', maskMoonOn ? 'true' : 'false'); }
+    if (cloudBtn) {
+      const on = cloudIdx >= 0;
+      cloudBtn.classList.toggle('active', on);
+      cloudBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      const badge = cloudBtn.querySelector('.sg-cloud-badge');
+      if (badge) badge.textContent = on ? CLOUD_SHORT[cloudIdx] : '';
+    }
+  }
+
   // Meilleures cellules DE L'HEURE hi : géométries rognées à souligner d'un liseré.
   // Sélection : cellules à moins de BEST_REL_DROP pts du meilleur score du créneau (et
   // ≥ BEST_MIN_ABS), triées, dédoublonnées spatialement → une poignée de spots distincts.
@@ -232,6 +345,19 @@
     if (!map.getSource(QUALITY_SRC)) map.addSource(QUALITY_SRC, { type: 'geojson', data: EMPTY_FC });
     if (!map.getLayer(QUALITY_LYR)) map.addLayer({ id: QUALITY_LYR, type: 'fill', source: QUALITY_SRC,
       paint: { 'fill-color': 'rgba(0,0,0,0)', 'fill-opacity': 1, 'fill-antialias': false } }, fieldBefore);
+    // Masques superposables AU-DESSUS du champ de qualité (mais sous le littoral/monde) :
+    // fill sur la géométrie des cellules, opacité pilotée par les données. Empilement
+    // cloud → moon → light (translucides → cumulables).
+    if (!map.getSource(MASK_SRC)) map.addSource(MASK_SRC, { type: 'geojson', data: EMPTY_FC });
+    if (!map.getLayer(MASK_CLOUD)) map.addLayer({ id: MASK_CLOUD, type: 'fill', source: MASK_SRC,
+      layout: { visibility: 'none' },
+      paint: { 'fill-color': '#cdd7e4', 'fill-opacity': 0, 'fill-antialias': false } }, fieldBefore);
+    if (!map.getLayer(MASK_MOON)) map.addLayer({ id: MASK_MOON, type: 'fill', source: MASK_SRC,
+      layout: { visibility: 'none' },
+      paint: { 'fill-color': '#f0c674', 'fill-opacity': 0, 'fill-antialias': false } }, fieldBefore);
+    if (!map.getLayer(MASK_LIGHT)) map.addLayer({ id: MASK_LIGHT, type: 'fill', source: MASK_SRC,
+      layout: { visibility: 'none' },
+      paint: { 'fill-color': '#ff5a4d', 'fill-opacity': lightMaskOpacityExpr(), 'fill-antialias': false } }, fieldBefore);
     // Liseré « meilleures cellules » AU-DESSUS de tout : halo large flou + trait net.
     // line sur des polygones = contour de la cellule (MapLibre trace les anneaux).
     if (!map.getSource(BEST_SRC)) map.addSource(BEST_SRC, { type: 'geojson', data: EMPTY_FC });
@@ -260,6 +386,7 @@
     [BEST_GLOW, BEST_LINE].forEach((id) => {
       if (map.getLayer(id)) { try { map.setLayoutProperty(id, 'visibility', bestVis ? 'visible' : 'none'); } catch (_) {} }
     });
+    applyMaskVisibility();
   }
 
   // Changement d'heure = SEULEMENT l'expression de couleur → quasi-instantané.
@@ -431,6 +558,7 @@
     cursor = Math.max(0, Math.min(hours.length - 1, i));
     paintHour(cursor);
     updateBestLayer();   // le liseré « meilleures cellules » suit le créneau affiché
+    paintMasks(cursor);  // voile lunaire + nébulosité de couche suivent aussi l'heure
     updateCursorUI();
     updateHourBadge();
   }
@@ -515,6 +643,7 @@
     computeBestDark();
     qualityFC = buildQualityFC();
     if (map.getSource(QUALITY_SRC)) try { map.getSource(QUALITY_SRC).setData(qualityFC); } catch (_) {}
+    updateMaskLayer();   // masques : pollution lumineuse (dk) marche même en dégradé
     renderBadge();
     buildFrise();
     if (degraded) {
@@ -604,6 +733,7 @@
     computeBestDark();
     qualityFC = buildQualityFC();
     if (map.getSource(QUALITY_SRC)) try { map.getSource(QUALITY_SRC).setData(qualityFC); } catch (_) {}
+    updateMaskLayer();   // pollution lumineuse OK ; nuages/lune vides (outlook = total seul)
     renderBadge();
     if (slotsEl) {
       slotsEl.innerHTML = '';
@@ -797,6 +927,7 @@
     if (topInfo) topInfo.setAttribute('aria-hidden', 'false');
     document.body.classList.add('stargaze-mode');
     if (bestBtn) { bestBtn.classList.toggle('active', bestCellsOn); bestBtn.setAttribute('aria-pressed', bestCellsOn ? 'true' : 'false'); }
+    syncMaskButtons();
     setStargazeMapTint(true);
     if (ensureLayers()) { hideGrid(true); setLayersVisible(true); }
     else {
@@ -935,6 +1066,9 @@
   playBtn && playBtn.addEventListener('click', play);
   geoBtn && geoBtn.addEventListener('click', autourDeMoi);
   bestBtn && bestBtn.addEventListener('click', () => setBestCells(!bestCellsOn));
+  lightBtn && lightBtn.addEventListener('click', () => setMaskLight(!maskLightOn));
+  moonMaskBtn && moonMaskBtn.addEventListener('click', () => setMaskMoon(!maskMoonOn));
+  cloudBtn && cloudBtn.addEventListener('click', cycleCloud);
   // Poignée de repli de la frise (réutilise le helper générique défini par chase.js).
   if (typeof window.setupFriseCollapse === 'function') {
     window.setupFriseCollapse(controls, document.getElementById('stargazeToggleBtn'), 'storm_stargaze_collapsed');
@@ -948,5 +1082,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.87';
+  window.__stargazeV = '1.3.88';
 })();
