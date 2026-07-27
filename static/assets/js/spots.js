@@ -167,28 +167,36 @@
   function bestDirs(ratios) {       // 1-2 meilleures directions (pour l'aria/tooltip)
     if (!ratios) return [];
     return _DIRS8.map(function (d, i) { return { lbl: _DIRLBL[i], r: ratios[i] }; })
-      .sort(function (a, b) { return b.r - a.r; }).slice(0, 2)
-      .filter(function (x) { return x.r > 0.55; }).map(function (x) { return x.lbl; });
+      .sort(function (a, b) { return b.r - a.r; }).slice(0, 3)
+      .filter(function (x) { return x.r >= 0.62; }).map(function (x) { return x.lbl; });
   }
+  var _CDIR_GOOD = '#43c46a', _CDIR_MUT = '#8394a6';   // vert = prédilection, gris = ordinaire
+  function dirGreen(ratios) {        // quelles directions sont « de prédilection » (dégagées)
+    var g = [false, false, false, false, false, false, false, false];
+    if (!ratios) return g;
+    var best = -1, bv = -1;
+    for (var i = 0; i < 8; i++) { if (ratios[i] >= 0.62) g[i] = true; if (ratios[i] > bv) { bv = ratios[i]; best = i; } }
+    if (best >= 0 && !g.some(function (x) { return x; })) g[best] = true;   // au moins la meilleure
+    return g;
+  }
+  // Rose des vents SIMPLE : 8 flèches (cardinales longues), la/les direction(s) de
+  // prédilection en VERT, les autres en gris. Carte orientée nord → haut = N.
   function compassSVG(spot) {
-    var h = spot.horizon, color = h ? scoreColor(h.openness) : COL.muted;
-    var ratios = dirRatios(h), RMIN = 2.5, RMAX = 15.5, pts = [], ticks = '';
+    var green = dirGreen(dirRatios(spot.horizon)), arrows = '';
     for (var i = 0; i < 8; i++) {
-      var a = _DIRS8[i] * Math.PI / 180;
-      var ratio = ratios ? ratios[i] : (i % 2 === 0 ? 0.75 : 0.6);
-      var r = RMIN + ratio * (RMAX - RMIN);
-      pts.push((20 + r * Math.sin(a)).toFixed(1) + ',' + (20 - r * Math.cos(a)).toFixed(1));
-      // petit repère de direction sur l'anneau (les 8 directions restent lisibles)
-      var tx = (20 + 15.2 * Math.sin(a)).toFixed(1), ty = (20 - 15.2 * Math.cos(a)).toFixed(1);
-      ticks += '<circle cx="' + tx + '" cy="' + ty + '" r="' + (i % 2 === 0 ? 0.9 : 0.6) + '"/>';
+      var a = _DIRS8[i] * Math.PI / 180, card = (i % 2 === 0);
+      var R = card ? 15 : 9.5, w = card ? 2.0 : 1.5;
+      var ux = Math.sin(a), uy = -Math.cos(a), px = -uy, py = ux;
+      var tip = (20 + R * ux).toFixed(1) + ',' + (20 + R * uy).toFixed(1);
+      var bl = (20 + w * px).toFixed(1) + ',' + (20 + w * py).toFixed(1);
+      var br = (20 - w * px).toFixed(1) + ',' + (20 - w * py).toFixed(1);
+      arrows += '<polygon points="' + tip + ' ' + bl + ' ' + br + '" fill="' +
+        (green[i] ? _CDIR_GOOD : _CDIR_MUT) + '"' + (green[i] ? '' : ' opacity="0.5"') + '/>';
     }
     return '<svg viewBox="0 0 40 40" class="ofspot-compass" aria-hidden="true">' +
       '<circle cx="20" cy="20" r="16.5" class="ofspot-compass-bg"/>' +
-      '<g class="ofspot-compass-ticks">' + ticks + '</g>' +
-      '<polygon points="' + pts.join(' ') + '" class="ofspot-compass-fov" style="fill:' + color + ';stroke:' + color + '"/>' +
-      '<circle cx="20" cy="20" r="16.5" class="ofspot-compass-ring" style="stroke:' + color + '"/>' +
-      '<polygon points="20,1.6 16.8,7.2 23.2,7.2" class="ofspot-compass-n" style="fill:' + color + '"/>' +
-      '<circle cx="20" cy="20" r="1.8" style="fill:' + color + '"/>' +
+      arrows +
+      '<circle cx="20" cy="20" r="2.1" class="ofspot-compass-hub"/>' +
       '</svg>';
   }
   function pinEl(spot) {
