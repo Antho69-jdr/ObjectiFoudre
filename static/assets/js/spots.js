@@ -170,7 +170,7 @@
       .sort(function (a, b) { return b.r - a.r; }).slice(0, 3)
       .filter(function (x) { return x.r >= 0.62; }).map(function (x) { return x.lbl; });
   }
-  var _CDIR_GOOD = '#43c46a', _CDIR_MUT = '#8394a6';   // vert = prédilection, gris = ordinaire
+  var _CDIR_GOOD = '#3ee06a';        // vert vif = direction de prédilection
   function dirGreen(ratios) {        // quelles directions sont « de prédilection » (dégagées)
     var g = [false, false, false, false, false, false, false, false];
     if (!ratios) return g;
@@ -179,24 +179,25 @@
     if (best >= 0 && !g.some(function (x) { return x; })) g[best] = true;   // au moins la meilleure
     return g;
   }
-  // Rose des vents SIMPLE : 8 flèches (cardinales longues), la/les direction(s) de
-  // prédilection en VERT, les autres en gris. Carte orientée nord → haut = N.
+  // Rose des vents SIMPLE : on ne dessine QUE les flèches vertes (directions de
+  // prédilection) sur disque sombre → contraste maximal, la direction saute aux yeux.
+  // Carte orientée nord → haut = N. Diagonales presque aussi longues que les cardinales.
   function compassSVG(spot) {
     var green = dirGreen(dirRatios(spot.horizon)), arrows = '';
     for (var i = 0; i < 8; i++) {
+      if (!green[i]) continue;       // directions ordinaires : non dessinées
       var a = _DIRS8[i] * Math.PI / 180, card = (i % 2 === 0);
-      var R = card ? 15 : 9.5, w = card ? 2.0 : 1.5;
+      var R = card ? 15.5 : 13.5, w = card ? 2.7 : 2.3;
       var ux = Math.sin(a), uy = -Math.cos(a), px = -uy, py = ux;
       var tip = (20 + R * ux).toFixed(1) + ',' + (20 + R * uy).toFixed(1);
       var bl = (20 + w * px).toFixed(1) + ',' + (20 + w * py).toFixed(1);
       var br = (20 - w * px).toFixed(1) + ',' + (20 - w * py).toFixed(1);
-      arrows += '<polygon points="' + tip + ' ' + bl + ' ' + br + '" fill="' +
-        (green[i] ? _CDIR_GOOD : _CDIR_MUT) + '"' + (green[i] ? '' : ' opacity="0.5"') + '/>';
+      arrows += '<polygon points="' + tip + ' ' + bl + ' ' + br + '" fill="' + _CDIR_GOOD + '"/>';
     }
     return '<svg viewBox="0 0 40 40" class="ofspot-compass" aria-hidden="true">' +
       '<circle cx="20" cy="20" r="16.5" class="ofspot-compass-bg"/>' +
       arrows +
-      '<circle cx="20" cy="20" r="2.1" class="ofspot-compass-hub"/>' +
+      '<circle cx="20" cy="20" r="2.3" class="ofspot-compass-hub"/>' +
       '</svg>';
   }
   function pinEl(spot) {
