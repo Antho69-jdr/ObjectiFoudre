@@ -149,37 +149,61 @@
   // ── marqueurs + calque ─────────────────────────────────────────────────────
   var markers = [], popup = null, visible = true, loaded = false, spotsData = [];
 
-  // Rose des vents : 8 branches (N NE E SE S SO O NO), cardinales plus longues.
-  // Géométrie calculée une fois (identique pour tous les spots), la couleur varie.
-  var _compassSpokes = (function () {
-    var s = '';
+  // Marqueur = rose des vents des DIRECTIONS DE PRÉDILECTION : chaque branche pointe
+  // vers une des 8 directions (N NE E SE S SO O NO) ; sa LONGUEUR/opacité encode
+  // l'ouverture dans cette direction (branche longue = vue dégagée = direction de choix).
+  var _DIRS8 = [0, 45, 90, 135, 180, 225, 270, 315];
+  var _DIRLBL = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+  function dirRatios(h) {           // ouverture 0..1 par direction (1 = très dégagé)
+    if (!h || !h.azimuths || !h.azimuths.length) return null;
+    var MAXDEG = 18;                // horizon ≥18° ≈ direction bouchée (échelle visuelle)
+    return _DIRS8.map(function (d) {
+      var vals = h.azimuths.filter(function (a) { return Math.abs(((a.az - d + 180) % 360) - 180) <= 22.5; });
+      if (!vals.length) return 0.5;
+      var m = vals.reduce(function (s, a) { return s + (a.horizon_deg || 0); }, 0) / vals.length;
+      return Math.max(0.1, Math.min(1, 1 - m / MAXDEG));
+    });
+  }
+  function bestDirs(ratios) {       // 1-2 meilleures directions (pour l'aria/tooltip)
+    if (!ratios) return [];
+    return _DIRS8.map(function (d, i) { return { lbl: _DIRLBL[i], r: ratios[i] }; })
+      .sort(function (a, b) { return b.r - a.r; }).slice(0, 2)
+      .filter(function (x) { return x.r > 0.55; }).map(function (x) { return x.lbl; });
+  }
+  function compassSVG(spot) {
+    var h = spot.horizon, color = h ? scoreColor(h.openness) : COL.muted;
+    var ratios = dirRatios(h), RMIN = 2.5, RMAX = 15.5, pts = [], ticks = '';
     for (var i = 0; i < 8; i++) {
-      var a = i * 45 * Math.PI / 180, card = (i % 2 === 0);
-      var r1 = 6.5, r2 = card ? 14.5 : 11.0;
-      var x1 = (20 + r1 * Math.sin(a)).toFixed(1), y1 = (20 - r1 * Math.cos(a)).toFixed(1);
-      var x2 = (20 + r2 * Math.sin(a)).toFixed(1), y2 = (20 - r2 * Math.cos(a)).toFixed(1);
-      s += '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke-width="' + (card ? 1.7 : 1.1) + '"/>';
+      var a = _DIRS8[i] * Math.PI / 180;
+      var ratio = ratios ? ratios[i] : (i % 2 === 0 ? 0.75 : 0.6);
+      var r = RMIN + ratio * (RMAX - RMIN);
+      pts.push((20 + r * Math.sin(a)).toFixed(1) + ',' + (20 - r * Math.cos(a)).toFixed(1));
+      // petit repère de direction sur l'anneau (les 8 directions restent lisibles)
+      var tx = (20 + 15.2 * Math.sin(a)).toFixed(1), ty = (20 - 15.2 * Math.cos(a)).toFixed(1);
+      ticks += '<circle cx="' + tx + '" cy="' + ty + '" r="' + (i % 2 === 0 ? 0.9 : 0.6) + '"/>';
     }
-    return s;
-  })();
-  function compassSVG(color) {
     return '<svg viewBox="0 0 40 40" class="ofspot-compass" aria-hidden="true">' +
-      '<circle cx="20" cy="20" r="16" class="ofspot-compass-bg"/>' +
-      '<g class="ofspot-compass-spokes">' + _compassSpokes + '</g>' +
-      '<circle cx="20" cy="20" r="16" class="ofspot-compass-ring" style="stroke:' + color + '"/>' +
-      '<polygon points="20,2.5 17.3,7.6 22.7,7.6" class="ofspot-compass-n" style="fill:' + color + '"/>' +
-      '<circle cx="20" cy="20" r="2.3" style="fill:' + color + '"/>' +
+      '<circle cx="20" cy="20" r="16.5" class="ofspot-compass-bg"/>' +
+      '<g class="ofspot-compass-ticks">' + ticks + '</g>' +
+      '<polygon points="' + pts.join(' ') + '" class="ofspot-compass-fov" style="fill:' + color + ';stroke:' + color + '"/>' +
+      '<circle cx="20" cy="20" r="16.5" class="ofspot-compass-ring" style="stroke:' + color + '"/>' +
+      '<polygon points="20,1.6 16.8,7.2 23.2,7.2" class="ofspot-compass-n" style="fill:' + color + '"/>' +
+      '<circle cx="20" cy="20" r="1.8" style="fill:' + color + '"/>' +
       '</svg>';
   }
   function pinEl(spot) {
-    var h = spot.horizon;
-    var color = h ? scoreColor(h.openness) : COL.muted;
+    var h = spot.horizon, best = bestDirs(dirRatios(h));
+    var label = 'Spot ' + spot.name +
+      (h ? ', ouverture ' + Math.round(h.openness) + ' sur 100' + (best.length ? ', dégagé vers ' + best.join(' et ') : '') : '');
     var d = document.createElement('div');
     d.className = 'ofspot-pin';
     d.setAttribute('role', 'button');
     d.setAttribute('tabindex', '0');
-    d.setAttribute('aria-label', 'Spot ' + spot.name + (h ? ', ouverture ' + Math.round(h.openness) + ' sur 100' : ''));
-    d.innerHTML = compassSVG(color);
+    d.setAttribute('aria-label', label);
+    d._ofLabel = label;
+    d._ofTitle = spot.name + (best.length ? ' — dégagé vers ' + best.join(', ') : '');
+    d.title = d._ofTitle;
+    d.innerHTML = compassSVG(spot);
     return d;
   }
 
@@ -343,9 +367,9 @@
       e.addEventListener('click', function (ev) { ev.stopPropagation(); showVision(spot); });
       e.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); showVision(spot); } });
       var mk = new maplibregl.Marker({ element: e, anchor: 'center' }).setLngLat(lngLat).addTo(map);
-      // MapLibre force aria-label="Map marker" sur l'élément → on le rétablit après addTo
-      var h = spot.horizon;
-      e.setAttribute('aria-label', 'Spot ' + spot.name + (h ? ', ouverture ' + Math.round(h.openness) + ' sur 100' : ''));
+      // MapLibre force aria-label="Map marker" sur l'élément → on rétablit l'aria enrichi (avec directions)
+      e.setAttribute('aria-label', e._ofLabel || ('Spot ' + spot.name));
+      if (e._ofTitle) e.title = e._ofTitle;
       e.setAttribute('data-spot-id', spot.id);
       markers.push(mk);
     });
@@ -724,11 +748,26 @@
   function ensureGeolocChip() {
     if (geolocChip) return geolocChip;
     var b = document.createElement('button'); b.type = 'button'; b.className = 'ofspot-geoloc-chip';
+    b.setAttribute('aria-label', 'Créer un spot à ma position'); b.title = 'Créer un spot à ma position';
     b.innerHTML = GEO_SVG + '<span>Ma position</span>';
     b.addEventListener('click', geolocateAndAdd);
-    document.body.appendChild(b); geolocChip = b; return b;
+    document.body.appendChild(b); geolocChip = b;
+    window.addEventListener('resize', positionGeolocChip);
+    return b;
   }
-  function showGeolocChip() { ensureGeolocChip().classList.add('show'); }
+  // colle la pastille juste à DROITE du bouton « Ajouter un spot » visible (du rail actif)
+  function positionGeolocChip() {
+    if (!geolocChip || !geolocChip.classList.contains('show')) return;
+    var target = null;
+    document.querySelectorAll('.spots-add-btn').forEach(function (b) {
+      var r = b.getBoundingClientRect(); if (r.width > 0 && r.height > 0) target = b;
+    });
+    if (!target) return;
+    var r = target.getBoundingClientRect();
+    geolocChip.style.left = Math.round(r.right + 10) + 'px';
+    geolocChip.style.top = Math.round(r.top + r.height / 2) + 'px';
+  }
+  function showGeolocChip() { ensureGeolocChip().classList.add('show'); positionGeolocChip(); }
   function hideGeolocChip() { if (geolocChip) geolocChip.classList.remove('show'); }
   function geolocateAndAdd() {
     if (!navigator.geolocation) { toast('Géolocalisation indisponible sur cet appareil.'); return; }
