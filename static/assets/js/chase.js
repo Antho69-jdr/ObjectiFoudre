@@ -1310,5 +1310,5 @@
   window.setupFriseCollapse(controls, document.getElementById('chaseToggleBtn'), 'storm_chase_collapsed');
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.88';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.90';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();

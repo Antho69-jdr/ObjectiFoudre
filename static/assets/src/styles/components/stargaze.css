@@ -41,17 +41,47 @@ body.stargaze-mode #stargazeLayerRail { display: flex; }
 }
 @media (max-width: 767px) { .stargaze-layer-rail { left: 8px; gap: 8px; } }
 
-/* Bouton « nébulosité par couche » : badge coin bas-droit = couche courante (Bas/Moy/Haut). */
-.sg-cloud-btn { position: relative; }
-.sg-cloud-badge {
-  position: absolute; bottom: 1px; right: 1px;
-  min-width: 0 !important; min-height: 0 !important;
-  padding: 1px 3px; border-radius: 4px;
-  font-size: 8px; font-weight: 800; line-height: 1; letter-spacing: 0.02em;
-  background: rgba(251, 191, 36, 0.92); color: #1a1205;
-  pointer-events: none;
+/* Modale « Couches » : ancrée à droite du rail gauche (mode étoile). Recolore le champ
+   selon les critères cochés (multi-sélection). */
+.sg-layers-panel {
+  position: fixed; z-index: 20;
+  left: 64px; top: 50%; transform: translateY(-50%);
+  width: 220px; padding: 10px 10px 8px;
+  border-radius: var(--r-panel, 14px);
+  background: rgba(16, 12, 6, 0.94);
+  border: 1px solid rgba(251, 191, 36, 0.30);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  color: #f2e8d0; display: flex; flex-direction: column; gap: 2px;
 }
-.sg-cloud-badge:empty { display: none; }
+.sg-layers-panel[hidden] { display: none; }
+.sg-layers-title { font-size: var(--fs-13); font-weight: var(--fw-extrabold); color: #ffe9b0; padding: 0 2px 1px; }
+.sg-layers-hint { font-size: var(--fs-10); color: rgba(242, 232, 208, 0.6); padding: 0 2px 6px; line-height: 1.3; }
+.sg-layer-group { display: flex; flex-direction: column; }
+.sg-layer-row {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  font: inherit; font-size: var(--fs-13); font-weight: 600; color: #f2e8d0;
+  background: transparent; border: 0; border-radius: 8px; padding: 8px; cursor: pointer;
+  min-width: 0 !important; min-height: 0 !important;
+}
+.sg-layer-row:hover { background: rgba(251, 191, 36, 0.10); }
+.sg-layer-lbl { flex: 1 1 auto; }
+.sg-layer-chk {
+  flex: 0 0 auto; width: 17px; height: 17px; border-radius: 5px;
+  border: 1.5px solid rgba(251, 191, 36, 0.45); background: transparent; position: relative;
+}
+.sg-layer-row.is-checked .sg-layer-chk { background: #f0c460; border-color: #f0c460; }
+.sg-layer-row.is-checked .sg-layer-chk::after {
+  content: ''; position: absolute; left: 5px; top: 1px; width: 4px; height: 9px;
+  border: solid #1a1205; border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.sg-layer-chev { flex: 0 0 auto; color: rgba(251, 191, 36, 0.7); font-size: 11px; transition: transform .15s; }
+.sg-layer-parent[aria-expanded="true"] .sg-layer-chev { transform: rotate(180deg); }
+.sg-layer-subs { display: none; flex-direction: column; padding-left: 15px; }
+.sg-layer-subs.open { display: flex; }
+.sg-layer-sub { font-size: var(--fs-12); }
+@media (max-width: 767px) { .sg-layers-panel { left: 56px; width: min(232px, calc(100vw - 66px)); } }
 
 /* En mode chasse d'étoile : masquer l'UI de score de base + les badges horaires
    (remplacés par #stargazeTopInfo). Dock masqué en visibility (garde la mise en
