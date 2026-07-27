@@ -21,11 +21,19 @@
   const nightNextBtn = document.getElementById('sgNightNext');
   const playBtn = document.getElementById('sgPlayBtn');
   const geoBtn = document.getElementById('sgGeoBtn');
+  const bestBtn = document.getElementById('sgBestBtn');
   const PLAY_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M10 8.2 16.3 12 10 15.8Z" fill="currentColor" stroke="none"></path></svg>';
   const PAUSE_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><rect x="9" y="8.3" width="2.2" height="7.4" rx="0.6" fill="currentColor" stroke="none"></rect><rect x="12.8" y="8.3" width="2.2" height="7.4" rx="0.6" fill="currentColor" stroke="none"></rect></svg>';
 
   const QUALITY_SRC = 'sg-quality-src', QUALITY_LYR = 'sg-quality';
-  const TOP_SRC = 'sg-top-src', TOP_GLOW = 'sg-top-glow', TOP_LYR = 'sg-top';
+  // « Meilleures cellules » de l'HEURE affichée : liseré ambre pulsatile qui souligne
+  // les cellules les mieux notées au créneau courant (suit le curseur, plus « meilleure
+  // heure de la nuit »). Remplace les anciens points « top spots ». On/off via #sgBestBtn.
+  const BEST_SRC = 'sg-best-src', BEST_GLOW = 'sg-best-glow', BEST_LINE = 'sg-best-line';
+  const BEST_MIN_ABS = 20;      // ne jamais souligner une cellule sous ce score
+  const BEST_REL_DROP = 15;     // on garde les cellules à moins de 15 pts du meilleur du créneau
+  const BEST_SEP_DEG = 0.33;    // dédoublonnage spatial (spots distincts) ≈ 35 km
+  const BEST_MAX = 12;          // nb max de cellules soulignées
   // Calque SATELLITE nuages live (EUMETSAT View Service, WMS public sans clé) : carte
   // IR 10.8 µm globale (nuages jour ET nuit). MapLibre charge les tuiles WMS en <img>
   // (aucun souci CORS). Inséré SOUS les top spots (jamais masqués).
@@ -61,6 +69,9 @@
   let qualityFC = null;                        // géométrie des cellules construite UNE fois (scores q0..qN en props)
   let clippedCells = null;                     // coords de chaque cellule ROGNÉE à la France (statique → cache)
   let bestDark = null, bestDarkHour = null;   // meilleur score/heure sur les heures sombres, par cellule
+  let bestCellsOn = true;                     // liseré « meilleures cellules » du créneau (on/off)
+  let cellGeomByIdx = null;                   // idx cellule → géométrie rognée (pour le liseré)
+  let pulseRAF = null, pulseLast = 0;         // animation du liseré pulsatile
   let railTrack = null, railMarks = [];
   // Prévision nébulosité des prochaines nuits (ECMWF) : « ce soir » (index 0, /tonight,
   // AROME horaire) + nuits futures (index ≥1, /outlook, une carte par nuit).
@@ -82,8 +93,15 @@
   // de la carte de base : `clippedFranceCellGeometry` (grid-clip-geometry.js) — la même
   // que la grille de score. → clip IDENTIQUE (mer + frontières terrestres), gère les
   // MultiPolygon et écarte les slivers. Grille + France statiques → cache.
+  function indexCellGeom(cells) {   // idx cellule → géométrie rognée (liseré meilleures cellules)
+    cellGeomByIdx = {};
+    for (const c of cells) cellGeomByIdx[c.i] = c.geom;
+  }
   function computeClippedCells() {
-    if (clippedCells && clippedCells._n === data.cells.length) return clippedCells;
+    if (clippedCells && clippedCells._n === data.cells.length) {
+      if (!cellGeomByIdx) indexCellGeom(clippedCells);
+      return clippedCells;
+    }
     const canClip = (typeof clippedFranceCellGeometry === 'function');
     const out = [];
     for (let i = 0; i < data.cells.length; i++) {
@@ -102,6 +120,7 @@
     }
     out._n = data.cells.length;
     clippedCells = out;
+    indexCellGeom(out);
     return out;
   }
 
@@ -139,11 +158,69 @@
     return ['interpolate', ['linear'], ['coalesce', ['get', 'dk'], 0]].concat(COLOR_STOPS);
   }
 
-  function topSpotsFC() {
-    const top = (data && data.top_spots) || [];
-    return { type: 'FeatureCollection', features: top.map((t, i) => ({ type: 'Feature',
-      properties: { idx: i, score: t.score, hour: t.hour, darkness: t.darkness },
-      geometry: { type: 'Point', coordinates: [t.lon, t.lat] } })) };
+  // Meilleures cellules DE L'HEURE hi : géométries rognées à souligner d'un liseré.
+  // Sélection : cellules à moins de BEST_REL_DROP pts du meilleur score du créneau (et
+  // ≥ BEST_MIN_ABS), triées, dédoublonnées spatialement → une poignée de spots distincts.
+  function bestCellsFC(hi) {
+    if (degraded || !data || !data.scores || !data.scores[hi] || !cellGeomByIdx) return EMPTY_FC;
+    const row = data.scores[hi];
+    let mx = 0;
+    for (const s of row) { if (s != null && s > mx) mx = s; }
+    const floor = Math.max(BEST_MIN_ABS, mx - BEST_REL_DROP);
+    const cand = [];
+    for (let i = 0; i < row.length; i++) {
+      const s = row[i];
+      if (s == null || s < floor || !cellGeomByIdx[i] || !data.cells[i]) continue;
+      cand.push({ i, s, lon: data.cells[i].lon, lat: data.cells[i].lat });
+    }
+    if (!cand.length) return EMPTY_FC;
+    cand.sort((a, b) => b.s - a.s);
+    const picks = [];
+    for (const c of cand) {
+      const cl = Math.cos(c.lat * Math.PI / 180);
+      if (picks.some((p) => Math.abs(p.lat - c.lat) < BEST_SEP_DEG && Math.abs(p.lon - c.lon) * cl < BEST_SEP_DEG)) continue;
+      picks.push(c);
+      if (picks.length >= BEST_MAX) break;
+    }
+    return { type: 'FeatureCollection', features: picks.map((p) => ({
+      type: 'Feature', properties: { idx: p.i, score: p.s }, geometry: cellGeomByIdx[p.i] })) };
+  }
+
+  // (Re)peuple la source du liseré pour le curseur courant (vidée si off/dégradé).
+  function updateBestLayer() {
+    if (!map || !map.getSource(BEST_SRC)) return;
+    const fc = (bestCellsOn && !degraded) ? bestCellsFC(cursor) : EMPTY_FC;
+    try { map.getSource(BEST_SRC).setData(fc); } catch (_) {}
+  }
+
+  // Liseré PULSATILE : anime opacité/épaisseur en sinus tant que le mode est actif.
+  // Throttlé ~22 fps (le battement n'a pas besoin de 60 fps → carte plus au repos).
+  function pulseTick(t) {
+    if (!active || !bestCellsOn) { pulseRAF = null; return; }
+    if (t - pulseLast >= 45) {
+      pulseLast = t;
+      const k = 0.5 + 0.5 * Math.sin(t / 1000 * 2.2);   // battement ~1,4 s
+      try {
+        if (map.getLayer(BEST_GLOW)) {
+          map.setPaintProperty(BEST_GLOW, 'line-opacity', 0.24 + 0.44 * k);
+          map.setPaintProperty(BEST_GLOW, 'line-width', 6.5 + 6.5 * k);
+        }
+        if (map.getLayer(BEST_LINE)) map.setPaintProperty(BEST_LINE, 'line-opacity', 0.68 + 0.32 * k);
+      } catch (_) {}
+    }
+    pulseRAF = requestAnimationFrame(pulseTick);
+  }
+  function startPulse() { if (pulseRAF == null) { pulseLast = 0; pulseRAF = requestAnimationFrame(pulseTick); } }
+  function stopPulse() { if (pulseRAF != null) { cancelAnimationFrame(pulseRAF); pulseRAF = null; } }
+
+  function setBestCells(on) {
+    bestCellsOn = on;
+    if (bestBtn) { bestBtn.classList.toggle('active', on); bestBtn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    [BEST_GLOW, BEST_LINE].forEach((id) => {
+      if (map.getLayer(id)) { try { map.setLayoutProperty(id, 'visibility', (on && active) ? 'visible' : 'none'); } catch (_) {} }
+    });
+    updateBestLayer();
+    if (on && active) startPulse(); else stopPulse();
   }
 
   // ── Couches ────────────────────────────────────────────────────────────────
@@ -155,12 +232,15 @@
     if (!map.getSource(QUALITY_SRC)) map.addSource(QUALITY_SRC, { type: 'geojson', data: EMPTY_FC });
     if (!map.getLayer(QUALITY_LYR)) map.addLayer({ id: QUALITY_LYR, type: 'fill', source: QUALITY_SRC,
       paint: { 'fill-color': 'rgba(0,0,0,0)', 'fill-opacity': 1, 'fill-antialias': false } }, fieldBefore);
-    // Top spots AU-DESSUS de tout (jamais masqués).
-    if (!map.getSource(TOP_SRC)) map.addSource(TOP_SRC, { type: 'geojson', data: EMPTY_FC });
-    if (!map.getLayer(TOP_GLOW)) map.addLayer({ id: TOP_GLOW, type: 'circle', source: TOP_SRC,
-      paint: { 'circle-radius': 19, 'circle-color': '#e0ad3f', 'circle-blur': 1, 'circle-opacity': 0.45 } });
-    if (!map.getLayer(TOP_LYR)) map.addLayer({ id: TOP_LYR, type: 'circle', source: TOP_SRC,
-      paint: { 'circle-radius': 5, 'circle-color': '#f7dfa0', 'circle-stroke-color': '#2a1600', 'circle-stroke-width': 1.4, 'circle-opacity': 0.96 } });
+    // Liseré « meilleures cellules » AU-DESSUS de tout : halo large flou + trait net.
+    // line sur des polygones = contour de la cellule (MapLibre trace les anneaux).
+    if (!map.getSource(BEST_SRC)) map.addSource(BEST_SRC, { type: 'geojson', data: EMPTY_FC });
+    if (!map.getLayer(BEST_GLOW)) map.addLayer({ id: BEST_GLOW, type: 'line', source: BEST_SRC,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': '#f5b942', 'line-width': 9, 'line-blur': 6, 'line-opacity': 0.5 } });
+    if (!map.getLayer(BEST_LINE)) map.addLayer({ id: BEST_LINE, type: 'line', source: BEST_SRC,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': '#ffe9b0', 'line-width': 2.4, 'line-opacity': 0.95 } });
     layersReady = true;
     return true;
   }
@@ -175,8 +255,10 @@
   }
 
   function setLayersVisible(on) {
-    [QUALITY_LYR, TOP_GLOW, TOP_LYR].forEach((id) => {
-      if (map.getLayer(id)) { try { map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'); } catch (_) {} }
+    if (map.getLayer(QUALITY_LYR)) { try { map.setLayoutProperty(QUALITY_LYR, 'visibility', on ? 'visible' : 'none'); } catch (_) {} }
+    const bestVis = on && bestCellsOn;   // le liseré ne s'affiche que si le toggle est ON
+    [BEST_GLOW, BEST_LINE].forEach((id) => {
+      if (map.getLayer(id)) { try { map.setLayoutProperty(id, 'visibility', bestVis ? 'visible' : 'none'); } catch (_) {} }
     });
   }
 
@@ -348,6 +430,7 @@
     if (!hours.length) return;
     cursor = Math.max(0, Math.min(hours.length - 1, i));
     paintHour(cursor);
+    updateBestLayer();   // le liseré « meilleures cellules » suit le créneau affiché
     updateCursorUI();
     updateHourBadge();
   }
@@ -434,14 +517,16 @@
     if (map.getSource(QUALITY_SRC)) try { map.getSource(QUALITY_SRC).setData(qualityFC); } catch (_) {}
     renderBadge();
     buildFrise();
-    if (map.getSource(TOP_SRC)) try { map.getSource(TOP_SRC).setData(degraded ? EMPTY_FC : topSpotsFC()); } catch (_) {}
     if (degraded) {
+      updateBestLayer();   // vide (pas de scores en repli obscurité) → pas de liseré
+      stopPulse();
       paintHour(0);
       // la grille AROME se précharge (ou l'API est momentanément indispo) → on réessaie.
       retryTimer = window.setTimeout(() => { if (active && viewNight === 0) loadData(); }, 90000);
     } else {
       cursor = defaultCursor();
-      applyCursor(cursor);
+      applyCursor(cursor);   // peint l'heure + peuple le liseré
+      if (bestCellsOn) startPulse();
     }
   }
 
@@ -502,7 +587,7 @@
   }
 
   // Nuit future : dataset synthétique « une heure » → réutilise tout le pipeline de
-  // rendu (buildQualityFC/paintHour/topSpotsFC/renderBadge) sans le dupliquer.
+  // rendu (buildQualityFC/paintHour/updateBestLayer/renderBadge) sans le dupliquer.
   function renderFutureNight(k) {
     const ngt = outlookData && outlookData.nights[k - 1];
     if (!ngt || !ngt.available) { viewNight = 0; renderTonight(); return; }
@@ -529,7 +614,8 @@
       slotsEl.appendChild(lab);
     }
     paintHour(0);
-    if (map.getSource(TOP_SRC)) try { map.getSource(TOP_SRC).setData(topSpotsFC()); } catch (_) {}
+    updateBestLayer();
+    if (bestCellsOn) startPulse(); else stopPulse();
   }
 
   // ── Calque satellite nuages (rail gauche) ────────────────────────────────────
@@ -543,7 +629,7 @@
           attribution: 'Nuages : EUMETSAT' });
       }
       if (!map.getLayer(SAT_LYR)) {
-        const before = map.getLayer(TOP_GLOW) ? TOP_GLOW : undefined;   // sous les top spots
+        const before = map.getLayer(BEST_GLOW) ? BEST_GLOW : undefined;   // sous le liseré
         try { map.addLayer({ id: SAT_LYR, type: 'raster', source: SAT_SRC, paint: { 'raster-opacity': 0.82 } }, before); } catch (_) {}
       } else {
         try { map.setLayoutProperty(SAT_LYR, 'visibility', 'visible'); } catch (_) {}
@@ -710,6 +796,7 @@
     controls.setAttribute('aria-hidden', 'false');
     if (topInfo) topInfo.setAttribute('aria-hidden', 'false');
     document.body.classList.add('stargaze-mode');
+    if (bestBtn) { bestBtn.classList.toggle('active', bestCellsOn); bestBtn.setAttribute('aria-pressed', bestCellsOn ? 'true' : 'false'); }
     setStargazeMapTint(true);
     if (ensureLayers()) { hideGrid(true); setLayersVisible(true); }
     else {
@@ -730,6 +817,7 @@
     if (!active) return;
     active = false;
     stop();
+    stopPulse();
     viewNight = 0;
     setSat(false);
     if (nightPrevBtn) nightPrevBtn.hidden = true;
@@ -745,7 +833,7 @@
     setStargazeMapTint(false);
     setLayersVisible(false);
     try { map.getSource(QUALITY_SRC) && map.getSource(QUALITY_SRC).setData(EMPTY_FC); } catch (_) {}
-    try { map.getSource(TOP_SRC) && map.getSource(TOP_SRC).setData(EMPTY_FC); } catch (_) {}
+    try { map.getSource(BEST_SRC) && map.getSource(BEST_SRC).setData(EMPTY_FC); } catch (_) {}
     if (layersReady) hideGrid(false);
     if (clickBound) {
       map.off('click', onSgTap);
@@ -846,6 +934,7 @@
   toggleBtn.addEventListener('click', () => { active ? deactivate() : activate(); });
   playBtn && playBtn.addEventListener('click', play);
   geoBtn && geoBtn.addEventListener('click', autourDeMoi);
+  bestBtn && bestBtn.addEventListener('click', () => setBestCells(!bestCellsOn));
   // Poignée de repli de la frise (réutilise le helper générique défini par chase.js).
   if (typeof window.setupFriseCollapse === 'function') {
     window.setupFriseCollapse(controls, document.getElementById('stargazeToggleBtn'), 'storm_stargaze_collapsed');
@@ -859,5 +948,5 @@
 
   window.toggleStargazeMode = () => { active ? deactivate() : activate(); };
   window.exitStargazeMode = () => { if (active) deactivate(); };
-  window.__stargazeV = '1.3.82';
+  window.__stargazeV = '1.3.83';
 })();

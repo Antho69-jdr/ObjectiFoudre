@@ -202,6 +202,7 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
   display: flex;
   flex: 0 0 auto;
   align-items: center;
+  justify-content: center;   /* centre le reliquat quand le rail atteint son max-width */
   gap: 8px;
   width: min(100%, 1120px);
   max-width: calc(100vw - 28px);
@@ -209,6 +210,10 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
   margin: 0 auto;
 }
 .stargaze-frise .sg-rail-wrap { flex: 1 1 auto; }
+/* Espaceur de centrage (item Trello « centrer la frise ») : même gabarit qu'un
+   bouton de frise, invisible → compense les 2 boutons de droite face au seul play
+   de gauche pour que le RAIL horaire tombe pile au centre de l'écran. */
+.sg-frise-spacer { flex: 0 0 auto; width: 40px; height: 40px; pointer-events: none; }
 .sg-frise-btn {
   flex: 0 0 auto !important;
   width: 40px !important; height: 40px !important;
@@ -244,7 +249,11 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
    et du mode chasse (track/fill/curseur/repères horaires), stylée par timeline.css
    et recolorée ambre via --tl-accent (body.stargaze-mode #stargazeSlots). --- */
 .sg-rail-wrap { min-width: 0; display: flex; align-items: center; }
-#stargazeSlots .timeline-rail { flex: 1 1 auto; min-width: 0; width: 100%; }
+/* touch-action:none (item Trello « drag tactile ») : le rail pilote le curseur via
+   des pointer events ; sans ça, au tactile le navigateur capte le geste comme un
+   scroll/pan et émet pointercancel → le glissement meurt. La frise de base pose ce
+   flag sur .timeline-slot-strip, jamais sur .timeline-rail → à rétablir ici. */
+#stargazeSlots .timeline-rail { flex: 1 1 auto; min-width: 0; width: 100%; touch-action: none; }
 /* heures de VRAIE nuit (sun < −18°) : trait ambre marqué (comme is-arome-loaded). */
 .stargaze-rail .timeline-hour-mark.sg-dark-hour .timeline-hour-line {
   background: rgba(var(--tl-accent), 0.95);
@@ -453,6 +462,7 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
     width: 38px !important; height: 40px !important;
     min-width: 38px !important; min-height: 40px !important; max-width: 38px !important; max-height: 40px !important;
   }
+  .sg-frise-spacer { width: 38px; }
   .stargaze-top-info { font-size: var(--fs-11); padding: 6px 11px; gap: 6px; overflow: hidden; }
   .sg-night { display: none; }   /* place réduite : on garde Lune + heure */
   /* Aurore : en étroit on ne garde que le niveau FORT (possible/probable, Kp ≥ 7) —
