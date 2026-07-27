@@ -149,16 +149,37 @@
   // ── marqueurs + calque ─────────────────────────────────────────────────────
   var markers = [], popup = null, visible = true, loaded = false, spotsData = [];
 
+  // Rose des vents : 8 branches (N NE E SE S SO O NO), cardinales plus longues.
+  // Géométrie calculée une fois (identique pour tous les spots), la couleur varie.
+  var _compassSpokes = (function () {
+    var s = '';
+    for (var i = 0; i < 8; i++) {
+      var a = i * 45 * Math.PI / 180, card = (i % 2 === 0);
+      var r1 = 6.5, r2 = card ? 14.5 : 11.0;
+      var x1 = (20 + r1 * Math.sin(a)).toFixed(1), y1 = (20 - r1 * Math.cos(a)).toFixed(1);
+      var x2 = (20 + r2 * Math.sin(a)).toFixed(1), y2 = (20 - r2 * Math.cos(a)).toFixed(1);
+      s += '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke-width="' + (card ? 1.7 : 1.1) + '"/>';
+    }
+    return s;
+  })();
+  function compassSVG(color) {
+    return '<svg viewBox="0 0 40 40" class="ofspot-compass" aria-hidden="true">' +
+      '<circle cx="20" cy="20" r="16" class="ofspot-compass-bg"/>' +
+      '<g class="ofspot-compass-spokes">' + _compassSpokes + '</g>' +
+      '<circle cx="20" cy="20" r="16" class="ofspot-compass-ring" style="stroke:' + color + '"/>' +
+      '<polygon points="20,2.5 17.3,7.6 22.7,7.6" class="ofspot-compass-n" style="fill:' + color + '"/>' +
+      '<circle cx="20" cy="20" r="2.3" style="fill:' + color + '"/>' +
+      '</svg>';
+  }
   function pinEl(spot) {
     var h = spot.horizon;
     var color = h ? scoreColor(h.openness) : COL.muted;
     var d = document.createElement('div');
     d.className = 'ofspot-pin';
-    d.style.setProperty('--pin', color);
     d.setAttribute('role', 'button');
     d.setAttribute('tabindex', '0');
     d.setAttribute('aria-label', 'Spot ' + spot.name + (h ? ', ouverture ' + Math.round(h.openness) + ' sur 100' : ''));
-    d.innerHTML = '<span class="ofspot-pin-dot"></span>';
+    d.innerHTML = compassSVG(color);
     return d;
   }
 
@@ -297,6 +318,17 @@
       pend.textContent = 'Champ de vision en cours de calcul…'; panelEl.appendChild(pend);
     }
     if (spot.notes) { var nt = document.createElement('div'); nt.className = 'ofspot-notes'; nt.textContent = spot.notes; panelEl.appendChild(nt); }
+    if (isAdmin()) {
+      var acts = document.createElement('div'); acts.className = 'ofspot-panel-admin';
+      var edit = document.createElement('button'); edit.type = 'button'; edit.className = 'ofspot-panel-abtn';
+      edit.textContent = 'Modifier';
+      edit.addEventListener('click', function () { openEditForm(spot); });
+      var del = document.createElement('button'); del.type = 'button'; del.className = 'ofspot-panel-abtn del';
+      del.textContent = 'Supprimer';
+      del.addEventListener('click', function () { deleteSpot(spot); });
+      acts.append(edit, del);
+      panelEl.appendChild(acts);
+    }
     panelEl.classList.add('show');
   }
 
@@ -310,7 +342,7 @@
       var e = pinEl(spot), lngLat = [spot.lon, spot.lat];
       e.addEventListener('click', function (ev) { ev.stopPropagation(); showVision(spot); });
       e.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); showVision(spot); } });
-      var mk = new maplibregl.Marker({ element: e, anchor: 'bottom' }).setLngLat(lngLat).addTo(map);
+      var mk = new maplibregl.Marker({ element: e, anchor: 'center' }).setLngLat(lngLat).addTo(map);
       // MapLibre force aria-label="Map marker" sur l'élément → on le rétablit après addTo
       var h = spot.horizon;
       e.setAttribute('aria-label', 'Spot ' + spot.name + (h ? ', ouverture ' + Math.round(h.openness) + ' sur 100' : ''));
@@ -523,6 +555,7 @@
 
   function deleteSpot(spot) {
     if (!confirm('Supprimer le spot « ' + spot.name + ' » ? Cette action est définitive.')) return;
+    clearVision();                 // ferme le panneau/cercle si ce spot était sélectionné
     moderate(spot.id, 'delete');   // moderate() rafraîchit table + marqueurs + toast
   }
 
@@ -685,6 +718,39 @@
     openAddForm(c, r);
   }
 
+  // ── géolocalisation : poser un spot à ma position ───────────────────────────
+  var geolocChip = null, geolocating = false;
+  var GEO_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/></svg>';
+  function ensureGeolocChip() {
+    if (geolocChip) return geolocChip;
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'ofspot-geoloc-chip';
+    b.innerHTML = GEO_SVG + '<span>Ma position</span>';
+    b.addEventListener('click', geolocateAndAdd);
+    document.body.appendChild(b); geolocChip = b; return b;
+  }
+  function showGeolocChip() { ensureGeolocChip().classList.add('show'); }
+  function hideGeolocChip() { if (geolocChip) geolocChip.classList.remove('show'); }
+  function geolocateAndAdd() {
+    if (!navigator.geolocation) { toast('Géolocalisation indisponible sur cet appareil.'); return; }
+    if (geolocating) return;
+    geolocating = true;
+    var chip = geolocChip; if (chip) { chip.classList.add('loading'); chip.disabled = true; }
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      geolocating = false; if (chip) { chip.classList.remove('loading'); chip.disabled = false; }
+      var lngLat = { lng: pos.coords.longitude, lat: pos.coords.latitude };
+      exitAddMode();
+      try { map.flyTo({ center: [lngLat.lng, lngLat.lat], zoom: Math.max(map.getZoom(), 16), duration: 800 }); } catch (e) {}
+      setPreview(lngLat.lng, lngLat.lat, 0);
+      openAddForm(lngLat, 0);
+    }, function (err) {
+      geolocating = false; if (chip) { chip.classList.remove('loading'); chip.disabled = false; }
+      var msg = (err && err.code === 1) ? 'Autorise la localisation pour poser un spot ici.'
+              : (err && err.code === 3) ? 'Localisation trop longue, réessaie.'
+              : 'Position indisponible.';
+      toast(msg, 4200);
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+  }
+
   function enterAddMode() {
     if (typeof map === 'undefined') return;
     addMode = true;
@@ -692,11 +758,13 @@
     map.getCanvas().style.cursor = 'crosshair';
     ensurePreviewLayers();
     map.on('mousedown', addPressStart); map.on('touchstart', addPressStart);
-    toast('Presse sur la carte pour poser le centre — maintiens et glisse pour régler le trou central.', 4600);
+    showGeolocChip();
+    toast('Presse sur la carte (maintiens + glisse pour le trou central) — ou utilise « Ma position ».', 5000);
   }
 
   function exitAddMode() {
     addMode = false;
+    hideGeolocChip();
     document.querySelectorAll('.spots-add-btn').forEach(function (b) { b.classList.remove('active'); b.setAttribute('title', 'Ajouter un spot'); });
     if (typeof map === 'undefined') return;
     map.getCanvas().style.cursor = '';
