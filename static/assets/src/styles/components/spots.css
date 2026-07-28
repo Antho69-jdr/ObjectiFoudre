@@ -273,8 +273,12 @@ body.mobile-ui .ofspot-modal-row .del { flex: 1 1 auto; }
 }
 
 /* Marqueurs de MES spots : liseré coloré selon le statut + pastille d'état.
-   Le contour visible du pin est le cercle .ofspot-compass-bg. */
-.ofspot-pin { position: relative; }
+   Le contour visible du pin est le cercle .ofspot-compass-bg.
+   ⚠️ NE PAS mettre `position: relative` : ça écrase `.maplibregl-marker{position:absolute}`
+   (même spécificité, chargé après) → les marqueurs repassent en flux normal, s'empilent
+   verticalement (+34px chacun) et se décalent au zoom. `absolute` sert aussi de contexte
+   de positionnement à la pastille (.ofspot-pin-badge). */
+.ofspot-pin { position: absolute; }
 .ofspot-pin.is-mine .ofspot-compass-bg { stroke: var(--ofs-approved); stroke-width: 2.4; }
 .ofspot-pin.is-private .ofspot-compass-bg { stroke: var(--ofs-private); stroke-width: 2.4; stroke-dasharray: 4 3; }
 .ofspot-pin.is-pending .ofspot-compass-bg { stroke: var(--ofs-pending); stroke-width: 2.4; }
