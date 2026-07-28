@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Confidentialité & données — ObjectiFoudre</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: #0b1119; color: #e6edf5;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.6; font-size: 16px;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 40px 22px 80px; }
+    a { color: #6cc7ec; }
+    h1 { font-size: 26px; margin: 0 0 4px; }
+    h2 { font-size: 18px; margin: 34px 0 8px; color: #bfe3f4; }
+    .meta { color: #8ba0b8; font-size: 13.5px; margin-bottom: 8px; }
+    p, li { color: #c9d6e4; }
+    ul { padding-left: 20px; }
+    li { margin: 4px 0; }
+    .card { background: #121b26; border: 1px solid #22303f; border-radius: 12px; padding: 14px 18px; margin: 14px 0; }
+    .back { display: inline-block; margin-bottom: 18px; font-size: 14px; color: #8ba0b8; text-decoration: none; }
+    .back:hover { color: #cdd7e4; }
+    strong { color: #eef4fb; }
+    footer { margin-top: 40px; color: #7c93ad; font-size: 13px; }
+    code { background: #0e151e; border: 1px solid #22303f; border-radius: 5px; padding: 1px 5px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="/">← Retour à l'application</a>
+    <h1>Confidentialité &amp; données personnelles</h1>
+    <p class="meta">ObjectiFoudre — application de chasse à l'orage (beta gratuite). Dernière mise à jour : 28 juillet 2026.</p>
+
+    <div class="card">
+      <strong>Responsable de traitement</strong> : Bruzzese Anthony.<br>
+      <strong>Contact</strong> : <a href="mailto:objectifoudre@outlook.com">objectifoudre@outlook.com</a>.<br>
+      ObjectiFoudre ne vend, ne loue et ne partage aucune donnée personnelle. Aucune publicité, aucun traceur publicitaire, aucun tiers commercial.
+    </div>
+
+    <h2>1. Quelles données, dans quel but ?</h2>
+    <ul>
+      <li><strong>Compte (facultatif)</strong> — Si tu te connectes avec Google, on reçoit ton <strong>adresse e-mail</strong> et ton <strong>nom</strong> (pour proposer un pseudo). Aucun mot de passe n'est stocké. But : t'identifier, mémoriser ton pseudo et tes préférences, et t'attribuer tes spots. <em>Base légale : exécution du service que tu demandes en créant un compte.</em></li>
+      <li><strong>Préférences</strong> — carte affichée au lancement, pseudo. Liées à ton compte.</li>
+      <li><strong>Spots de chasse</strong> — Si tu enregistres un spot <strong>public</strong>, ses coordonnées et ton pseudo (ou « anonyme ») sont visibles par les autres utilisateurs. Un spot est modéré avant publication.</li>
+      <li><strong>Mesure d'audience (anonyme, sans cookie)</strong> — Pour connaître le nombre de visiteurs, on calcule côté serveur un condensé (hash) quotidien à partir de ton adresse IP et de ton navigateur, avec un « sel » régénéré chaque jour puis supprimé. <strong>Ton IP n'est jamais conservée</strong> ; seuls des <strong>compteurs anonymes par jour</strong> sont gardés. Aucune identification, aucun suivi d'un jour à l'autre. <em>Cette mesure d'audience anonyme ne nécessite pas de consentement.</em></li>
+      <li><strong>Données météo / cartes</strong> — grilles publiques (Météo-France, IGN, ECMWF, EUMETSAT…). Aucune donnée personnelle.</li>
+    </ul>
+
+    <h2>2. Cookies &amp; stockage local</h2>
+    <p>Aucun cookie publicitaire ni de suivi. Si tu es connecté, un unique <strong>cookie de session</strong> (<code>objf_session</code>, technique, <code>httpOnly</code>) te maintient identifié — il est strictement nécessaire au fonctionnement du compte et ne requiert pas de consentement. Le navigateur peut aussi conserver localement de petites préférences d'affichage (ex. la carte au lancement).</p>
+
+    <h2>3. Durées de conservation</h2>
+    <ul>
+      <li><strong>Compte &amp; préférences</strong> : conservés tant que le compte existe ; supprimés à ta demande.</li>
+      <li><strong>Session</strong> : 60 jours maximum (renouvelable), ou jusqu'à la déconnexion.</li>
+      <li><strong>Mesure d'audience</strong> : compteurs anonymes par jour, conservés au plus 400 jours.</li>
+      <li><strong>Spots</strong> : tant que le spot existe ou jusqu'à sa suppression.</li>
+    </ul>
+
+    <h2>4. Hébergement &amp; sécurité</h2>
+    <p>L'application est hébergée sur une infrastructure cloud (Railway), derrière Cloudflare, en HTTPS. Les jetons de session sont stockés sous forme condensée (hachée) côté serveur. Les échanges transitent en chiffré.</p>
+
+    <h2>5. Tes droits (RGPD)</h2>
+    <p>Tu disposes des droits d'<strong>accès</strong>, de <strong>rectification</strong> (ton pseudo est modifiable à tout moment dans « Mon compte »), d'<strong>effacement</strong>, de <strong>portabilité</strong> et d'<strong>opposition</strong>.</p>
+    <ul>
+      <li><strong>Supprimer ton compte</strong> : bouton « Supprimer mon compte » dans « Mon compte » (efface immédiatement ton compte et tes sessions). Tes éventuels spots publics restent, dissociés de ton identité.</li>
+      <li>Pour toute demande : <a href="mailto:objectifoudre@outlook.com">objectifoudre@outlook.com</a>.</li>
+      <li>Tu peux aussi introduire une réclamation auprès de la <a href="https://www.cnil.fr" target="_blank" rel="noopener">CNIL</a>.</li>
+    </ul>
+
+    <footer>
+      ObjectiFoudre est un projet personnel en beta. Cette page pourra évoluer avec les fonctionnalités ; la date de mise à jour ci-dessus fait foi.
+    </footer>
+  </div>
+</body>
+</html>

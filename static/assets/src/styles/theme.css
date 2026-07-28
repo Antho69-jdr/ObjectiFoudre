@@ -126,6 +126,7 @@
    button.css → l'ordre + la specificite priment ; croix de fermeture en !important
    PORTEUR pour echapper a body.mobile-ui button{min-width:88px}. */
 @import "./components/spots.css";
+@import "./components/account.css";
 
 /* Component grid-cell-tooltip : bulle de survol des cellules (look + position
    absolue ; JS pose left/top inline + bascule is-visible). Tier 1 du retrait

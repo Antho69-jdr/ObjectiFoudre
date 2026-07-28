@@ -1,0 +1,94 @@
+/* ==========================================================================
+   COMPTE (« Système de compte ») — bouton rail + modale connexion/pseudo/préférences
+   ========================================================================== */
+#accountBtn.is-auth { color: #46c0e6; border-color: rgba(70, 192, 230, 0.5); }
+
+.account-modal {
+  position: fixed; inset: 0; z-index: 200;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(6, 10, 16, 0.62);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  padding: 16px;
+}
+.account-modal.show { display: flex; }
+.account-card {
+  position: relative; width: min(400px, 100%);
+  max-height: min(88vh, 660px); overflow-y: auto;
+  background: #121a25; color: #e9eff7;
+  border: 1px solid #22303f; border-radius: 16px;
+  padding: 20px 20px 16px;
+  box-shadow: 0 24px 60px -20px #000d;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.account-close {
+  position: absolute; top: 10px; right: 10px;
+  min-width: 0 !important; min-height: 0 !important;
+  width: 32px; height: 32px; display: grid; place-items: center;
+  background: transparent; border: none; color: #8ba0b8;
+  font-size: 24px; line-height: 1; border-radius: 8px; cursor: pointer; padding: 0;
+}
+.account-close:hover { background: #ffffff12; color: #e9eff7; }
+.account-title { font-size: 18px; font-weight: 800; padding-right: 30px; }
+.account-sub { font-size: 13px; color: #93a7bd; line-height: 1.45; }
+.account-who { display: flex; flex-direction: column; gap: 1px; padding: 4px 0 2px; }
+.account-who b { font-size: 15px; font-weight: 700; }
+.account-who small { font-size: 12px; color: #8ba0b8; }
+.account-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #7c93ad; margin-top: 6px; }
+.account-row { display: flex; gap: 8px; }
+.account-input {
+  flex: 1; font: inherit; font-size: 14px; color: #e9eff7;
+  background: #0e151e; border: 1px solid #22303f; border-radius: 9px; padding: 9px 11px;
+}
+.account-input:focus { outline: none; border-color: #46c0e6; }
+.account-err { font-size: 12px; color: #e8725a; }
+.account-err:empty { display: none; }
+
+/* Bouton « Se connecter avec Google » (charte Google : fond blanc). */
+.account-google {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; font: inherit; font-size: 14px; font-weight: 600;
+  background: #fff; color: #1f2937; border: 1px solid #dadce0; border-radius: 10px;
+  padding: 11px 14px; cursor: pointer; margin-top: 4px;
+}
+.account-google:hover { background: #f7f8fa; }
+.account-note { font-size: 13px; color: #8ba0b8; }
+
+/* Carte au lancement (segmenté). */
+.account-seg { display: flex; gap: 6px; }
+.account-seg-btn {
+  flex: 1; font: inherit; font-size: 12.5px; font-weight: 600; color: #cdd7e4;
+  background: #0e151e; border: 1px solid #22303f; border-radius: 9px; padding: 9px 6px; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.account-seg-btn:hover { border-color: rgba(70, 192, 230, 0.6); }
+.account-seg-btn.active { background: rgba(70, 192, 230, 0.16); border-color: #46c0e6; color: #eaf6fb; }
+
+.account-btn {
+  font: inherit; font-size: 13px; font-weight: 600; color: #06121a;
+  background: #46c0e6; border: 1px solid #46c0e6; border-radius: 9px; padding: 9px 13px; cursor: pointer;
+}
+.account-btn:hover { filter: brightness(1.06); }
+.account-btn:disabled { opacity: 0.5; cursor: default; }
+.account-btn.ghost { background: transparent; color: #cdd7e4; border-color: #22303f; }
+.account-btn.ghost:hover { border-color: #46c0e6; filter: none; }
+.account-btn.del { background: transparent; color: #e8725a; border-color: #e8725a55; }
+.account-btn.del:hover { border-color: #e8725a; background: #e8725a14; filter: none; }
+.account-actions { display: flex; gap: 8px; margin-top: 12px; }
+.account-actions .account-btn { flex: 1; }
+.account-privacy { display: inline-block; margin-top: 12px; font-size: 12px; color: #7c93ad; text-decoration: underline; }
+.account-privacy:hover { color: #cdd7e4; }
+
+.account-toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 12px);
+  z-index: 210; background: #121a25; color: #e9eff7; border: 1px solid #22303f;
+  border-radius: 10px; padding: 10px 16px; font-size: 13px; font-weight: 600;
+  box-shadow: 0 12px 30px -10px #000d; opacity: 0; pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.account-toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* Mobile : feuille du bas. */
+@media (max-width: 767px) {
+  .account-modal { align-items: flex-end; padding: 0; }
+  .account-card { width: 100%; border-radius: 16px 16px 0 0; max-height: 90vh; }
+}

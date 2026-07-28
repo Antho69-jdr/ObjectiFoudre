@@ -179,6 +179,25 @@ def create_spot(name: str, lon: float, lat: float, *, author_token: str = "",
         return spot
 
 
+def reassign_author(anon_token: str, account_id: str) -> int:
+    """Rattache les spots créés anonymement (author.id == anon_token, device localStorage)
+    à un COMPTE. Appelé à la connexion pour lier l'historique de l'appareil. Renvoie le
+    nombre de spots liés. Idempotent (re-rattacher ne fait rien de plus)."""
+    if not anon_token or not account_id:
+        return 0
+    with _lock:
+        spots = _load()
+        n = 0
+        for s in spots:
+            a = s.get("author") or {}
+            if a.get("kind") == "anon" and a.get("id") == anon_token:
+                s["author"] = {"kind": "account", "id": account_id}
+                n += 1
+        if n:
+            _save(spots)
+    return n
+
+
 def import_spots(items: list[dict], *, status: str = "approved", author_token: str = "import") -> dict:
     """Import en masse (admin) : bypass le rate-limit, collapse/tronque les notes, dédoublonne
     (bbox + <50 m via _validate_new). items = [{name, lon, lat, notes|note}]. Renvoie

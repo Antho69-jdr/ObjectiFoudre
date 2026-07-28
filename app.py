@@ -31,6 +31,7 @@ import threading
 import zipfile
 import time
 import unicodedata
+import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -48,7 +49,7 @@ from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -57,6 +58,7 @@ import weather_logic
 import stargaze  # mode « chasse d'étoile » : pollution lumineuse + astro
 import horizon  # « Mes spots » : horizon / champ de vision dégagé (topographie RGE ALTI)
 import spots  # « Mes spots » : store JSON des spots partagés + modération
+import accounts  # « Système de compte » : store SQLite (utilisateurs, sessions, préférences)
 import verification
 import learning
 try:
@@ -81,7 +83,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.92"
+APP_VERSION = "1.3.93"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15025,6 +15027,12 @@ def _server_telemetry_sync() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         out["users"] = {"error": str(exc)[:150]}
 
+    # Comptes (carte Trello « Système de compte »)
+    try:
+        out["accounts"] = accounts.stats()
+    except Exception as exc:  # noqa: BLE001
+        out["accounts"] = {"error": str(exc)[:150]}
+
     return out
 
 
@@ -15210,6 +15218,195 @@ async def analytics_hit(request: Request, pwa: int = Query(0)) -> dict[str, Any]
     ua = (request.headers.get("user-agent") or "")[:250]
     await asyncio.to_thread(_analytics_hit, ip, ua, bool(pwa))
     return {"ok": True}
+
+
+# ══ Système de compte (carte Trello) : Google OAuth + session + préférences ═══
+# MVP : auth Google (aucun mot de passe stocké), session par cookie httpOnly (jeton
+# opaque hashé en base, cf. accounts.py), pseudo + préférence « carte au lancement »,
+# rattachement des spots anonymes du device au compte. Store SQLite `accounts.db` (volume).
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID") or ""
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET") or ""
+_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+_GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+_SESSION_COOKIE = "objf_session"
+_OAUTH_STATE_COOKIE = "objf_oauth_state"
+
+
+@app.on_event("startup")
+async def _accounts_startup() -> None:
+    try:
+        await asyncio.to_thread(accounts.init_db)
+    except Exception:  # noqa: BLE001 - non bloquant : le reste de l'app tourne sans comptes
+        pass
+
+
+def _request_base_url(request: Request) -> str:
+    """URL publique (respecte le proxy Cloudflare/Railway ; override possible via env)."""
+    env = os.environ.get("OBJECTIFOUDRE_BASE_URL")
+    if env:
+        return env.rstrip("/")
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{proto}://{host}"
+
+
+def _account_cookie_secure(request: Request) -> bool:
+    return _request_base_url(request).lower().startswith("https")
+
+
+def _set_session_cookie(resp: Response, token: str, request: Request) -> None:
+    resp.set_cookie(_SESSION_COOKIE, token, max_age=accounts.SESSION_DAYS * 86400,
+                    httponly=True, secure=_account_cookie_secure(request), samesite="lax", path="/")
+
+
+def _clear_session_cookie(resp: Response) -> None:
+    resp.delete_cookie(_SESSION_COOKIE, path="/")
+
+
+async def _account_current_user(request: Request) -> dict[str, Any] | None:
+    token = request.cookies.get(_SESSION_COOKIE)
+    if not token:
+        return None
+    return await asyncio.to_thread(accounts.user_by_session, token)
+
+
+def _google_exchange_userinfo(code: str, redirect_uri: str) -> dict[str, Any]:
+    """Échange le code contre un access_token puis lit le profil OpenID (sub/email/name)."""
+    data = urllib.parse.urlencode({
+        "code": code, "client_id": GOOGLE_OAUTH_CLIENT_ID, "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
+        "redirect_uri": redirect_uri, "grant_type": "authorization_code",
+    }).encode("utf-8")
+    req = urllib.request.Request(_GOOGLE_TOKEN_URL, data=data,
+                                 headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        tok = json.loads(r.read().decode("utf-8"))
+    access = tok.get("access_token")
+    if not access:
+        raise RuntimeError("échange de code Google échoué")
+    ureq = urllib.request.Request(_GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access}"})
+    with urllib.request.urlopen(ureq, timeout=20) as r:
+        info = json.loads(r.read().decode("utf-8"))
+    return info if isinstance(info, dict) else {}
+
+
+@app.get("/api/auth/google/login")
+async def auth_google_login(request: Request) -> Response:
+    if not GOOGLE_OAUTH_CLIENT_ID:
+        return JSONResponse({"ok": False, "error": "Connexion Google non configurée."}, status_code=503)
+    state = secrets.token_urlsafe(24)
+    params = urllib.parse.urlencode({
+        "client_id": GOOGLE_OAUTH_CLIENT_ID,
+        "redirect_uri": _request_base_url(request) + "/api/auth/google/callback",
+        "response_type": "code", "scope": "openid email profile",
+        "state": state, "access_type": "online", "prompt": "select_account",
+    })
+    resp = RedirectResponse(_GOOGLE_AUTH_URL + "?" + params, status_code=302)
+    resp.set_cookie(_OAUTH_STATE_COOKIE, state, max_age=600, httponly=True,
+                    secure=_account_cookie_secure(request), samesite="lax", path="/")
+    return resp
+
+
+@app.get("/api/auth/google/callback")
+async def auth_google_callback(request: Request, code: str | None = Query(None),
+                               state: str | None = Query(None), error: str | None = Query(None)) -> Response:
+    base = _request_base_url(request)
+    saved = request.cookies.get(_OAUTH_STATE_COOKIE)
+    if error or not code or not state or not saved or not secrets.compare_digest(state, saved):
+        return RedirectResponse(base + "/?login=error", status_code=302)   # CSRF/annulation
+    try:
+        info = await asyncio.to_thread(_google_exchange_userinfo, code, base + "/api/auth/google/callback")
+        user = await asyncio.to_thread(accounts.upsert_google_user, str(info.get("sub") or ""),
+                                       info.get("email"), bool(info.get("email_verified")),
+                                       info.get("name") or info.get("given_name"))
+        token = await asyncio.to_thread(accounts.create_session, user["id"])
+    except Exception:  # noqa: BLE001 - échec réseau/Google/validation → retour propre
+        return RedirectResponse(base + "/?login=error", status_code=302)
+    resp = RedirectResponse(base + "/?login=ok", status_code=302)
+    _set_session_cookie(resp, token, request)
+    resp.delete_cookie(_OAUTH_STATE_COOKIE, path="/")
+    return resp
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(request: Request) -> Response:
+    token = request.cookies.get(_SESSION_COOKIE)
+    if token:
+        await asyncio.to_thread(accounts.delete_session, token)
+    resp = JSONResponse({"ok": True})
+    _clear_session_cookie(resp)
+    return resp
+
+
+@app.get("/api/account/me")
+async def account_me(request: Request) -> dict[str, Any]:
+    user = await _account_current_user(request)
+    return {"ok": True, "authenticated": bool(user), "google_configured": bool(GOOGLE_OAUTH_CLIENT_ID),
+            "user": accounts.private_view(user) if user else None}
+
+
+class AccountPseudoRequest(BaseModel):
+    pseudo: str = Field("", max_length=48)
+
+
+@app.post("/api/account/pseudo")
+async def account_set_pseudo(request: Request, payload: AccountPseudoRequest) -> Response:
+    user = await _account_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
+    try:
+        updated = await asyncio.to_thread(accounts.set_pseudo, user["id"], payload.pseudo)
+    except accounts.AccountError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, "user": accounts.private_view(updated)})
+
+
+class AccountPrefsRequest(BaseModel):
+    default_map: str | None = Field(None, max_length=20)
+
+
+@app.post("/api/account/prefs")
+async def account_set_prefs(request: Request, payload: AccountPrefsRequest) -> Response:
+    user = await _account_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
+    try:
+        updated = await asyncio.to_thread(accounts.set_prefs, user["id"], {"default_map": payload.default_map})
+    except accounts.AccountError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, "user": accounts.private_view(updated)})
+
+
+class AccountLinkRequest(BaseModel):
+    token: str = Field("", max_length=80)
+
+
+@app.post("/api/account/link-anon")
+async def account_link_anon(request: Request, payload: AccountLinkRequest) -> Response:
+    """Rattache les spots créés anonymement sur cet appareil (ofspot_token) au compte."""
+    user = await _account_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
+    linked = await asyncio.to_thread(spots.reassign_author, payload.token, user["id"])
+    return JSONResponse({"ok": True, "linked": linked})
+
+
+@app.delete("/api/account")
+async def account_delete(request: Request) -> Response:
+    """Suppression du compte (droit RGPD à l'effacement)."""
+    user = await _account_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
+    await asyncio.to_thread(accounts.delete_user, user["id"])
+    resp = JSONResponse({"ok": True})
+    _clear_session_cookie(resp)
+    return resp
+
+
+@app.get("/confidentialite")
+async def page_confidentialite() -> FileResponse:
+    """Page mentions/confidentialité (RGPD) — liée depuis la modale Compte."""
+    return FileResponse(str(STATIC_DIR / "confidentialite.html"), media_type="text/html; charset=utf-8")
 
 
 def _client_reports_path() -> Path:
