@@ -37,7 +37,7 @@ _NOTES_MAX = 280
 _DUP_RADIUS_M = 50.0            # deux spots à <50 m = doublon
 _RATE_MAX = 10                  # spots max par auteur…
 _RATE_WINDOW_S = 3600.0         # …par heure glissante
-_STATUSES = ("pending", "approved", "rejected")
+_STATUSES = ("pending", "approved", "rejected", "private")
 
 # signaux de spam simples (liens/markup) + petit blocklist grossier
 _SPAM_RE = re.compile(r"https?://|www\.|<[^>]+>|\[url|\bviagra\b|\bcasino\b|\bporn\b", re.I)
@@ -93,14 +93,31 @@ def _haversine_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
 
 
 # --- vue publique (champs sûrs seulement : pas de token auteur) --------------
+# `author_account_id` = id COMPTE de l'auteur (si compte), pour que app.py résolve le
+# pseudo public — app.py le retire de la réponse client après résolution.
 def _public_view(s: dict) -> dict:
+    author = s.get("author") or {}
     return {
         "id": s["id"], "name": s["name"], "lon": s["lon"], "lat": s["lat"],
         "notes": s.get("notes", ""), "created_utc": s.get("created_utc"),
         "inner_radius_m": s.get("inner_radius_m", 0),
         "horizon": s.get("horizon"),
-        "author_kind": (s.get("author") or {}).get("kind", "anon"),
+        "author_kind": author.get("kind", "anon"),
+        "author_account_id": author.get("id") if author.get("kind") == "account" else None,
     }
+
+
+def _owned_by(s: dict, account_id: str) -> bool:
+    a = s.get("author") or {}
+    return bool(account_id) and a.get("kind") == "account" and a.get("id") == account_id
+
+
+def _mine_view(s: dict) -> dict:
+    """Vue pour le PROPRIÉTAIRE : comme _public_view + le statut (privé/en attente/public)."""
+    v = _public_view(s)
+    v.pop("author_account_id", None)
+    v["status"] = s.get("status")
+    return v
 
 
 # --- validation automatique --------------------------------------------------
@@ -157,26 +174,76 @@ def _clean_inner_radius(v) -> float:
 
 
 def create_spot(name: str, lon: float, lat: float, *, author_token: str = "",
+                account_id: str = "", share: bool = False,
                 notes: str = "", inner_radius_m: float = 0.0, auto_approve: bool = False) -> dict:
-    """Crée un spot (statut `pending` par défaut). Lève SpotError si la validation auto
-    refuse. `auto_approve` réservé aux tests/admin ; en prod un spot passe par la revue."""
+    """Crée un spot. CONNECTÉ (`account_id`) → **privé** par défaut (collection perso,
+    visible de lui seul), ou `pending` si `share=True` (soumis à la modération publique).
+    ANONYME → `pending` (ou `approved` si `auto_approve`, réservé tests/admin). Lève
+    SpotError si la validation auto refuse."""
+    owner = account_id or author_token
     with _lock:
         spots = _load()
-        _rate_limit(spots, author_token)
-        cname, cnotes = _validate_new(name, lon, lat, notes, spots)
+        _rate_limit(spots, owner)
+        # Privé : dédoublonnage contre SES propres spots seulement (un privé peut coexister
+        # avec un spot public d'autrui). Public/anon : dédoublonnage global.
+        if account_id and not share:
+            dedup = [s for s in spots if _owned_by(s, account_id)]
+            status, author = "private", {"kind": "account", "id": account_id}
+        elif account_id:
+            dedup = spots
+            status, author = "pending", {"kind": "account", "id": account_id}
+        else:
+            dedup = spots
+            status = "approved" if auto_approve else "pending"
+            author = {"kind": "anon", "id": author_token or ""}
+        cname, cnotes = _validate_new(name, lon, lat, notes, dedup)
         spot = {
             "id": uuid.uuid4().hex[:12],
             "name": cname, "lon": round(float(lon), 6), "lat": round(float(lat), 6),
             "notes": cnotes, "inner_radius_m": _clean_inner_radius(inner_radius_m),
-            "status": "approved" if auto_approve else "pending",
-            "author": {"kind": "anon", "id": author_token or ""},  # → {kind:account,id} plus tard
-            "created_utc": _now_iso(), "moderated_utc": None,
+            "status": status,
+            "author": author,
+            "created_utc": _now_iso(), "moderated_utc": _now_iso() if status == "approved" else None,
             "horizon": None,   # attaché par app.py via horizon.py
             "flags": [],
         }
         spots.append(spot)
         _save(spots)
         return spot
+
+
+def list_mine(account_id: str) -> list[dict]:
+    """Tous les spots du compte (privés + en attente + publics), avec leur statut."""
+    if not account_id:
+        return []
+    with _lock:
+        return [_mine_view(s) for s in _load() if _owned_by(s, account_id)]
+
+
+def set_visibility(spot_id: str, account_id: str, make_public: bool) -> dict:
+    """Partage (privé → `pending`, re-modéré) ou retrait (pending/public → `private`) d'un
+    spot, par son PROPRIÉTAIRE uniquement."""
+    with _lock:
+        spots = _load()
+        for s in spots:
+            if s["id"] == spot_id and _owned_by(s, account_id):
+                s["status"] = "pending" if make_public else "private"
+                s["moderated_utc"] = None
+                _save(spots)
+                return _mine_view(s)
+        raise SpotError("Spot introuvable ou non autorisé.")
+
+
+def owner_delete(spot_id: str, account_id: str) -> bool:
+    """Suppression d'un spot par son propriétaire (compte)."""
+    with _lock:
+        spots = _load()
+        for i, s in enumerate(spots):
+            if s["id"] == spot_id and _owned_by(s, account_id):
+                spots.pop(i)
+                _save(spots)
+                return True
+        return False
 
 
 def reassign_author(anon_token: str, account_id: str) -> int:
@@ -272,15 +339,18 @@ def moderate(spot_id: str, action: str) -> dict:
 
 def update_spot(spot_id: str, *, name: str | None = None, notes: str | None = None,
                 lon: float | None = None, lat: float | None = None,
-                inner_radius_m: float | None = None) -> dict:
-    """Modifie un spot (admin). Champs None = inchangés. Si la position OU le rayon central
-    (donut) change, l'horizon est remis à None (recalcul déclenché par app.py)."""
+                inner_radius_m: float | None = None, owner_account_id: str = "") -> dict:
+    """Modifie un spot. Admin, OU le propriétaire si `owner_account_id` est fourni (garde de
+    propriété). Champs None = inchangés. Si la position OU le rayon central (donut) change,
+    l'horizon est remis à None (recalcul déclenché par app.py)."""
     with _lock:
         spots = _load()
         idx = next((i for i, s in enumerate(spots) if s["id"] == spot_id), None)
         if idx is None:
             raise SpotError("Spot introuvable.")
         s = spots[idx]
+        if owner_account_id and not _owned_by(s, owner_account_id):
+            raise SpotError("Spot introuvable ou non autorisé.")
         if name is not None:
             cname = _clean_text(name, _NAME_MAX, "Nom")
             if len(cname) < 2:
@@ -371,6 +441,36 @@ if __name__ == "__main__":
         check("rate-limit déclenché", False)
     except SpotError:
         check("rate-limit déclenché", True)
+
+    print("=== Mes spots perso + partage (Phase 2) ===")
+    p = create_spot("Coin secret", 3.5, 45.2, account_id="acct-A", notes="perso")
+    check("connecté → spot PRIVÉ", p["status"] == "private")
+    check("privé non exposé au public", all(x["id"] != p["id"] for x in list_public()))
+    mine = list_mine("acct-A")
+    check("list_mine voit mon privé (avec statut)", any(x["id"] == p["id"] and x["status"] == "private" for x in mine))
+    check("list_mine d'un autre compte ne le voit pas", all(x["id"] != p["id"] for x in list_mine("acct-B")))
+    p2 = create_spot("Autre coin", 3.6, 45.3, account_id="acct-A", share=True)
+    check("connecté + share → pending", p2["status"] == "pending")
+    sh = set_visibility(p["id"], "acct-A", True)
+    check("partage privé → pending", sh["status"] == "pending")
+    try:
+        set_visibility(p["id"], "acct-B", True); check("partage refusé si pas propriétaire", False)
+    except SpotError:
+        check("partage refusé si pas propriétaire", True)
+    moderate(p["id"], "approve")
+    check("partagé + approuvé → public", any(x["id"] == p["id"] for x in list_public()))
+    check("pseudo résoluble : author_account_id présent en interne",
+          any(x.get("author_account_id") == "acct-A" for x in [_public_view(z) for z in list_all() if z["id"] == p["id"]]))
+    un = set_visibility(p["id"], "acct-A", False)
+    check("retrait public → privé", un["status"] == "private" and all(x["id"] != p["id"] for x in list_public()))
+    up = update_spot(p2["id"], notes="maj perso", owner_account_id="acct-A")
+    check("propriétaire peut modifier son spot", up["notes"] == "maj perso")
+    try:
+        update_spot(p2["id"], notes="pirate", owner_account_id="acct-B"); check("modif refusée si pas propriétaire", False)
+    except SpotError:
+        check("modif refusée si pas propriétaire", True)
+    check("propriétaire supprime son spot", owner_delete(p["id"], "acct-A") and not owner_delete(p["id"], "acct-A"))
+    check("suppression refusée si pas propriétaire", not owner_delete(p2["id"], "acct-B"))
 
     shutil.rmtree(tmp, ignore_errors=True)
     print("\n" + ("✓ self-test OK" if ok else "✗ self-test ÉCHOUÉ"))

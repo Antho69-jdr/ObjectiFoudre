@@ -83,7 +83,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.93"
+APP_VERSION = "1.3.94"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4587,6 +4587,15 @@ class SpotCreateRequest(BaseModel):
     notes: str = Field("", max_length=300)
     inner_radius_m: float = Field(0.0, ge=0.0, le=300.0)
     author_token: str = Field("", max_length=64)
+    share: bool = Field(False)  # connecté : True = proposer au public (modération), False = spot perso privé
+
+
+class SpotOwnerUpdateRequest(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=80)
+    lon: float | None = Field(None, ge=-5.5, le=9.8)
+    lat: float | None = Field(None, ge=41.0, le=51.6)
+    notes: str | None = Field(None, max_length=300)
+    inner_radius_m: float | None = Field(None, ge=0.0, le=300.0)
 
 
 def _spot_compute_horizon(spot_id: str, lon: float, lat: float, inner_radius_m: float = 0.0) -> None:
@@ -4603,25 +4612,117 @@ def _spot_compute_horizon(spot_id: str, lon: float, lat: float, inner_radius_m: 
         pass
 
 
+def _enrich_public_pseudos(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ajoute `author_pseudo` (auteur = compte) sur chaque spot public et retire l'id de compte
+    interne. Spots anonymes → author_pseudo=None. Résolution des pseudos en un seul appel."""
+    ids = [s.get("author_account_id") for s in items if s.get("author_account_id")]
+    pmap = accounts.pseudos_for(ids) if ids else {}
+    for s in items:
+        aid = s.pop("author_account_id", None)
+        s["author_pseudo"] = pmap.get(aid) if aid else None
+    return items
+
+
 @app.get("/api/spots")
 async def api_spots_list() -> dict[str, Any]:
-    """Spots publics approuvés — alimente le calque des 3 cartes + la vue tableau."""
-    return {"ok": True, "spots": await asyncio.to_thread(spots.list_public)}
+    """Spots publics approuvés — alimente le calque des 3 cartes + la vue tableau.
+    Enrichi du pseudo de l'auteur (si le spot a été partagé par un compte)."""
+    pub = await asyncio.to_thread(spots.list_public)
+    return {"ok": True, "spots": await asyncio.to_thread(_enrich_public_pseudos, pub)}
 
 
 @app.post("/api/spots")
-async def api_spots_create(payload: SpotCreateRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
-    """Crée un spot : validation automatique → statut 'pending' (en attente de modération
-    manuelle ; jamais public sans revue). L'horizon est calculé en tâche de fond."""
+async def api_spots_create(payload: SpotCreateRequest, background_tasks: BackgroundTasks,
+                           request: Request) -> dict[str, Any]:
+    """Crée un spot.
+    - Connecté : spot **perso privé** par défaut (visible de toi seul) ; `share=true` le propose
+      au public → statut 'pending' (modération manuelle avant publication).
+    - Anonyme : statut 'pending' (jamais public sans revue).
+    L'horizon est calculé en tâche de fond."""
+    user = await _account_current_user(request)
     try:
-        spot = await asyncio.to_thread(
-            spots.create_spot, payload.name, payload.lon, payload.lat,
-            author_token=payload.author_token, notes=payload.notes, inner_radius_m=payload.inner_radius_m)
+        if user:
+            spot = await asyncio.to_thread(
+                spots.create_spot, payload.name, payload.lon, payload.lat,
+                account_id=user["id"], share=payload.share,
+                notes=payload.notes, inner_radius_m=payload.inner_radius_m)
+        else:
+            spot = await asyncio.to_thread(
+                spots.create_spot, payload.name, payload.lon, payload.lat,
+                author_token=payload.author_token, notes=payload.notes, inner_radius_m=payload.inner_radius_m)
     except spots.SpotError as exc:
         return {"ok": False, "error": str(exc)}
     background_tasks.add_task(_spot_compute_horizon, spot["id"], payload.lon, payload.lat, spot.get("inner_radius_m", 0))
     return {"ok": True, "spot": {k: spot[k] for k in
                                  ("id", "name", "lon", "lat", "notes", "status", "created_utc")}}
+
+
+@app.get("/api/spots/mine")
+async def api_spots_mine(request: Request) -> dict[str, Any]:
+    """Mes spots (perso privés + partagés) — connecté uniquement. Chaque spot porte son `status`
+    (private / pending / approved / rejected) pour piloter les actions du propriétaire."""
+    user = await _account_current_user(request)
+    if not user:
+        return {"ok": False, "error": "Connexion requise.", "spots": []}
+    return {"ok": True, "spots": await asyncio.to_thread(spots.list_mine, user["id"])}
+
+
+@app.post("/api/spots/{spot_id}/share")
+async def api_spots_share(spot_id: str, request: Request) -> dict[str, Any]:
+    """Propose mon spot perso au public → statut 'pending' (modération). Propriétaire requis."""
+    user = await _account_current_user(request)
+    if not user:
+        return {"ok": False, "error": "Connexion requise."}
+    try:
+        res = await asyncio.to_thread(spots.set_visibility, spot_id, user["id"], True)
+    except spots.SpotError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "spot": res}
+
+
+@app.post("/api/spots/{spot_id}/unshare")
+async def api_spots_unshare(spot_id: str, request: Request) -> dict[str, Any]:
+    """Retire mon spot du public / de la file de modération → redevient perso privé. Propriétaire requis."""
+    user = await _account_current_user(request)
+    if not user:
+        return {"ok": False, "error": "Connexion requise."}
+    try:
+        res = await asyncio.to_thread(spots.set_visibility, spot_id, user["id"], False)
+    except spots.SpotError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "spot": res}
+
+
+@app.post("/api/spots/{spot_id}/owner-update")
+async def api_spots_owner_update(spot_id: str, payload: SpotOwnerUpdateRequest,
+                                 background_tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
+    """Le propriétaire modifie son spot (nom, notes, position, donut). Le statut est conservé ;
+    l'horizon est recalculé uniquement si la position ou le donut change."""
+    user = await _account_current_user(request)
+    if not user:
+        return {"ok": False, "error": "Connexion requise."}
+    try:
+        updated = await asyncio.to_thread(
+            spots.update_spot, spot_id,
+            name=payload.name, notes=payload.notes, lon=payload.lon, lat=payload.lat,
+            inner_radius_m=payload.inner_radius_m, owner_account_id=user["id"])
+    except spots.SpotError as exc:
+        return {"ok": False, "error": str(exc)}
+    if updated.get("horizon") is None:
+        background_tasks.add_task(_spot_compute_horizon, updated["id"], updated["lon"], updated["lat"], updated.get("inner_radius_m", 0))
+    return {"ok": True, "spot": {k: updated[k] for k in ("id", "name", "lon", "lat", "notes", "status", "inner_radius_m")}}
+
+
+@app.delete("/api/spots/{spot_id}/owner")
+async def api_spots_owner_delete(spot_id: str, request: Request) -> dict[str, Any]:
+    """Le propriétaire supprime définitivement son spot (perso ou partagé). Propriétaire requis."""
+    user = await _account_current_user(request)
+    if not user:
+        return {"ok": False, "error": "Connexion requise."}
+    deleted = await asyncio.to_thread(spots.owner_delete, spot_id, user["id"])
+    if not deleted:
+        return {"ok": False, "error": "Spot introuvable ou non autorisé."}
+    return {"ok": True, "deleted": True}
 
 
 @app.get("/api/spots/pending")

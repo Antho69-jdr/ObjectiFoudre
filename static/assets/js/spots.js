@@ -147,7 +147,35 @@
   }
 
   // ── marqueurs + calque ─────────────────────────────────────────────────────
-  var markers = [], popup = null, visible = true, loaded = false, spotsData = [];
+  // spotsData = spots PUBLICS (calque commun + scoring orage + table « Publics »).
+  // mineData  = MES spots (connecté) : perso privés + partagés (avec `status`).
+  var markers = [], popup = null, visible = true, loaded = false, spotsData = [], mineData = [];
+  var account = { loggedIn: false };
+  var tableView = 'public';   // page tableau : 'public' | 'mine'
+
+  // Statut d'un spot possédé → libellé/couleur/aide (piloté les puces & actions propriétaire).
+  function statusMeta(st) {
+    return ({
+      private:  { label: 'Privé',         cls: 'private',  hint: 'Visible de toi seul.' },
+      pending:  { label: 'En validation', cls: 'pending',  hint: 'Proposé au public, en attente de modération.' },
+      approved: { label: 'Public',        cls: 'approved', hint: 'Visible par tout le monde.' },
+      rejected: { label: 'Refusé',        cls: 'rejected', hint: 'Non publié. Tu peux le reproposer.' },
+    })[st] || { label: '', cls: '', hint: '' };
+  }
+
+  // Liste fusionnée pour l'affichage/scoring : spots publics + MES spots (dédoublonnés par id ;
+  // ma version l'emporte et porte l'auteur=pseudo si le spot public m'appartient).
+  function renderList() {
+    var mineById = {};
+    mineData.forEach(function (s) { s._mine = true; mineById[s.id] = s; });
+    var out = [];
+    spotsData.forEach(function (s) {
+      if (mineById[s.id]) { if (s.author_pseudo) mineById[s.id].author_pseudo = s.author_pseudo; }
+      else out.push(s);
+    });
+    mineData.forEach(function (s) { out.push(s); });
+    return out;
+  }
 
   // Marqueur = rose des vents des DIRECTIONS DE PRÉDILECTION : chaque branche pointe
   // vers une des 8 directions (N NE E SE S SO O NO) ; sa LONGUEUR/opacité encode
@@ -462,9 +490,9 @@
     if (!cell || typeof map === 'undefined' || typeof map.getSource !== 'function') return;
     clearVision();   // une seule fiche à la fois (spot vs orage)
     ensureStormLayers();
-    var scored = [];
-    for (var i = 0; i < spotsData.length; i++) {
-      var r = scoreSpotForStorm(spotsData[i], cell);
+    var scored = [], pool = renderList();   // publics + mes spots (mes perso comptent aussi)
+    for (var i = 0; i < pool.length; i++) {
+      var r = scoreSpotForStorm(pool[i], cell);
       if (r && r.viable) scored.push(r);
     }
     scored.sort(function (a, b) { return b.score - a.score; });
@@ -492,6 +520,68 @@
     if (stormPanelEl) stormPanelEl.classList.remove('show');
   }
 
+  // ── actions propriétaire (mes spots) ───────────────────────────────────────
+  function jpost(path) {
+    return fetch(path, { method: 'POST', credentials: 'same-origin' })
+      .then(function (r) { return r.json().catch(function () { return { ok: false }; }); });
+  }
+
+  // Rafraîchit la carte + la fiche ouverte + la table après une action propriétaire.
+  function afterOwnerChange(keepId) {
+    return loadSpots().then(function () {
+      renderTable();
+      if (keepId) {
+        var next = mineData.concat(spotsData).filter(function (s) { return s.id === keepId; })[0];
+        if (next) { next._mine = mineData.some(function (m) { return m.id === keepId; }); showVision(next); }
+        else clearVision();
+      }
+    });
+  }
+
+  function ownerActions(spot) {
+    var wrap = document.createElement('div'); wrap.className = 'ofspot-owner';
+    var st = spot.status;
+    // Partager (perso/refusé) OU Rendre privé (en validation/public).
+    var shareBtn = document.createElement('button'); shareBtn.type = 'button'; shareBtn.className = 'ofspot-owner-btn primary';
+    if (st === 'private' || st === 'rejected') {
+      shareBtn.textContent = 'Proposer au public';
+      shareBtn.addEventListener('click', function () {
+        shareBtn.disabled = true;
+        jpost('/api/spots/' + spot.id + '/share').then(function (r) {
+          if (r && r.ok) { toast('Spot proposé — en attente de validation ✓', 4200); afterOwnerChange(spot.id); }
+          else { shareBtn.disabled = false; toast((r && r.error) || 'Échec du partage.'); }
+        });
+      });
+    } else {
+      shareBtn.textContent = (st === 'approved') ? 'Retirer du public' : 'Annuler la proposition';
+      shareBtn.addEventListener('click', function () {
+        shareBtn.disabled = true;
+        jpost('/api/spots/' + spot.id + '/unshare').then(function (r) {
+          if (r && r.ok) { toast('Spot redevenu privé ✓'); afterOwnerChange(spot.id); }
+          else { shareBtn.disabled = false; toast((r && r.error) || 'Échec.'); }
+        });
+      });
+    }
+    var edit = document.createElement('button'); edit.type = 'button'; edit.className = 'ofspot-owner-btn';
+    edit.textContent = 'Modifier';
+    edit.addEventListener('click', function () { openEditForm(spot, { owner: true }); });
+    var del = document.createElement('button'); del.type = 'button'; del.className = 'ofspot-owner-btn del';
+    del.textContent = 'Supprimer';
+    del.addEventListener('click', function () { ownerDeleteSpot(spot); });
+    wrap.append(shareBtn, edit, del);
+    return wrap;
+  }
+
+  function ownerDeleteSpot(spot) {
+    if (!confirm('Supprimer le spot « ' + spot.name + ' » ? Cette action est définitive.')) return;
+    fetch('/api/spots/' + spot.id + '/owner', { method: 'DELETE', credentials: 'same-origin' })
+      .then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
+      .then(function (r) {
+        if (r && r.ok) { clearVision(); toast('Spot supprimé ✓'); loadSpots().then(renderTable); }
+        else toast((r && r.error) || 'Échec de la suppression.');
+      }).catch(function () { toast('Réseau indisponible.'); });
+  }
+
   function showPanel(spot) {
     var h = spot.horizon || null;
     if (!panelEl) { panelEl = document.createElement('div'); panelEl.className = 'ofspot-panel'; panelEl.id = 'ofspotPanel'; document.body.appendChild(panelEl); }
@@ -507,6 +597,17 @@
       badge.textContent = Math.round(h.openness) + '/100 · ' + scoreLabel(h.openness); head.appendChild(badge);
     }
     panelEl.appendChild(head);
+    // Auteur (spot public d'un autre compte) ou statut (mon spot).
+    if (spot._mine) {
+      var sm = statusMeta(spot.status);
+      var chip = document.createElement('div'); chip.className = 'ofspot-status ofspot-status--' + sm.cls;
+      chip.innerHTML = '<b>' + sm.label + '</b><span>' + sm.hint + '</span>';
+      panelEl.appendChild(chip);
+    } else if (spot.author_pseudo) {
+      var by = document.createElement('div'); by.className = 'ofspot-author';
+      by.textContent = 'Proposé par ' + spot.author_pseudo;
+      panelEl.appendChild(by);
+    }
     if (h && h.azimuths) {
       var stats = document.createElement('div'); stats.className = 'ofspot-stats';
       stats.innerHTML = statCell('Altitude', Math.round(h.z0) + ' m') +
@@ -525,6 +626,7 @@
       pend.textContent = 'Champ de vision en cours de calcul…'; panelEl.appendChild(pend);
     }
     if (spot.notes) { var nt = document.createElement('div'); nt.className = 'ofspot-notes'; nt.textContent = spot.notes; panelEl.appendChild(nt); }
+    if (spot._mine) panelEl.appendChild(ownerActions(spot));
     if (isAdmin()) {
       var acts = document.createElement('div'); acts.className = 'ofspot-panel-admin';
       var edit = document.createElement('button'); edit.type = 'button'; edit.className = 'ofspot-panel-abtn';
@@ -549,10 +651,20 @@
       var e = pinEl(spot), lngLat = [spot.lon, spot.lat];
       e.addEventListener('click', function (ev) { ev.stopPropagation(); showVision(spot); });
       e.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); showVision(spot); } });
+      if (spot._mine) {
+        var sm = statusMeta(spot.status);
+        e.classList.add('is-mine', 'is-' + sm.cls);
+        e.setAttribute('data-status', spot.status || '');
+        if (spot.status && spot.status !== 'approved') {   // perso/en validation → pastille de statut
+          var dot = document.createElement('span'); dot.className = 'ofspot-pin-badge'; dot.setAttribute('aria-hidden', 'true');
+          dot.textContent = spot.status === 'private' ? '★' : (spot.status === 'pending' ? '⏳' : '⌀');
+          e.appendChild(dot);
+        }
+      }
       var mk = new maplibregl.Marker({ element: e, anchor: 'center' }).setLngLat(lngLat).addTo(map);
       // MapLibre force aria-label="Map marker" sur l'élément → on rétablit l'aria enrichi (avec directions)
-      e.setAttribute('aria-label', e._ofLabel || ('Spot ' + spot.name));
-      if (e._ofTitle) e.title = e._ofTitle;
+      e.setAttribute('aria-label', (e._ofLabel || ('Spot ' + spot.name)) + (spot._mine ? ' (mon spot — ' + statusMeta(spot.status).label + ')' : ''));
+      if (e._ofTitle) e.title = e._ofTitle + (spot._mine ? ' · ' + statusMeta(spot.status).label : '');
       e.setAttribute('data-spot-id', spot.id);
       markers.push(mk);
     });
@@ -564,10 +676,18 @@
   }
 
   function loadSpots() {
-    return fetch('/api/spots').then(function (r) { return r.json(); }).then(function (d) {
-      if (d && d.ok && Array.isArray(d.spots)) { loaded = true; spotsData = d.spots; render(d.spots); }
-      return d;
-    }).catch(function () {/* non-fatal */});
+    var pub = fetch('/api/spots').then(function (r) { return r.json(); }).catch(function () { return null; });
+    // Mes spots (privés + partagés) — 403/erreur si non connecté : silencieux, non bloquant.
+    var mine = fetch('/api/spots/mine', { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); }).catch(function () { return null; });
+    return Promise.all([pub, mine]).then(function (res) {
+      var dp = res[0], dm = res[1];
+      if (dp && dp.ok && Array.isArray(dp.spots)) { loaded = true; spotsData = dp.spots; }
+      account.loggedIn = !!(dm && dm.ok);
+      mineData = (dm && dm.ok && Array.isArray(dm.spots)) ? dm.spots : [];
+      render(renderList());
+      return dp;
+    });
   }
 
   // ── page « Mes spots » (onglet rail, style page Historique) ────────────────
@@ -701,31 +821,50 @@
   function renderTable() {
     var body = document.getElementById('ofspotTableBody');
     if (!body) return;
+    if (!account.loggedIn) tableView = 'public';
     body.innerHTML = '';
     renderModeration(body);
+
+    // Onglets Publics / Mes spots (uniquement connecté).
+    if (account.loggedIn) {
+      var tabs = document.createElement('div'); tabs.className = 'ofspot-tbl-tabs';
+      [['public', 'Publics', spotsData.length], ['mine', 'Mes spots', mineData.length]].forEach(function (t) {
+        var b = document.createElement('button'); b.type = 'button';
+        b.className = 'ofspot-tbl-tab' + (tableView === t[0] ? ' active' : '');
+        b.textContent = t[1] + ' (' + t[2] + ')';
+        b.addEventListener('click', function () { tableView = t[0]; renderTable(); });
+        tabs.appendChild(b);
+      });
+      body.appendChild(tabs);
+    }
+
+    var mine = tableView === 'mine';
+    var list = mine ? mineData : spotsData;
     var bar = document.createElement('div'); bar.className = 'ofspot-tbl-bar';
     var count = document.createElement('span'); count.className = 'ofspot-tbl-count';
-    count.textContent = spotsData.length + ' spot' + (spotsData.length > 1 ? 's' : '') + ' public' + (spotsData.length > 1 ? 's' : '');
+    count.textContent = list.length + ' spot' + (list.length > 1 ? 's' : '') + (mine ? '' : (' public' + (list.length > 1 ? 's' : '')));
     var addA = document.createElement('button'); addA.type = 'button'; addA.className = 'ofspot-tbl-add';
     addA.innerHTML = '<span class="plus" aria-hidden="true">+</span> Ajouter un spot';
     addA.addEventListener('click', function () { closeSpotsPage(); enterAddMode(); });
     bar.append(count, addA);
     body.appendChild(bar);
-    if (!spotsData.length) {
+    if (!list.length) {
       var empty = document.createElement('div'); empty.className = 'ofspot-empty';
-      empty.textContent = 'Aucun spot public pour l\'instant. Ajoute le tien !';
+      empty.textContent = mine ? 'Tu n\'as pas encore de spot. Ajoute-en un — il reste privé tant que tu ne le proposes pas.'
+                               : 'Aucun spot public pour l\'instant. Ajoute le tien !';
       body.appendChild(empty); return;
     }
     var grid = document.createElement('div'); grid.className = 'ofspot-tbl-grid';
-    spotsData.slice().sort(function (a, b) {
+    list.slice().sort(function (a, b) {
       return (b.horizon ? b.horizon.openness : -1) - (a.horizon ? a.horizon.openness : -1);
-    }).forEach(function (spot) { grid.appendChild(tableCard(spot)); });
+    }).forEach(function (spot) { grid.appendChild(tableCard(spot, mine)); });
     body.appendChild(grid);
   }
 
-  function tableCard(spot) {
+  function tableCard(spot, mine) {
+    if (mine) spot._mine = true;
     var h = spot.horizon;
-    var card = document.createElement('div'); card.className = 'ofspot-card';
+    var card = document.createElement('div'); card.className = 'ofspot-card' + (mine ? ' is-mine is-' + statusMeta(spot.status).cls : '');
     var main = document.createElement('button'); main.type = 'button'; main.className = 'ofspot-card-main';
     main.setAttribute('aria-label', 'Voir ' + spot.name + ' sur la carte');
     var ros = document.createElement('div'); ros.className = 'ofspot-card-ros';
@@ -739,6 +878,13 @@
         + '<span>' + Math.round(h.z0) + ' m</span><span>relief +' + (h.denivele_max_m || 0) + ' m</span>';
     } else { meta.textContent = 'horizon en calcul…'; }
     info.append(nm, meta);
+    if (mine) {
+      var sm = statusMeta(spot.status);
+      var sc = document.createElement('div'); sc.className = 'ofspot-card-status ofspot-status--' + sm.cls;
+      sc.textContent = sm.label; info.appendChild(sc);
+    } else if (spot.author_pseudo) {
+      var au = document.createElement('div'); au.className = 'ofspot-card-author'; au.textContent = 'par ' + spot.author_pseudo; info.appendChild(au);
+    }
     if (spot.notes) { var nt = document.createElement('div'); nt.className = 'ofspot-card-notes'; nt.textContent = spot.notes; info.appendChild(nt); }
     main.append(ros, info);
     main.addEventListener('click', function () {
@@ -746,7 +892,28 @@
       showVision(spot);   // dessine le cercle de vision sur la carte + panneau
     });
     card.appendChild(main);
-    if (isAdmin()) {
+    if (mine) {
+      var oa = document.createElement('div'); oa.className = 'ofspot-card-admin';
+      var st = spot.status;
+      var sBtn = document.createElement('button'); sBtn.type = 'button'; sBtn.className = 'ofspot-card-abtn share';
+      sBtn.textContent = (st === 'private' || st === 'rejected') ? 'Proposer' : (st === 'approved' ? 'Retirer' : 'Annuler');
+      sBtn.addEventListener('click', function (e) {
+        e.stopPropagation(); sBtn.disabled = true;
+        var pub = (st === 'private' || st === 'rejected');
+        jpost('/api/spots/' + spot.id + (pub ? '/share' : '/unshare')).then(function (r) {
+          if (r && r.ok) { toast(pub ? 'Spot proposé ✓' : 'Spot redevenu privé ✓'); loadSpots().then(renderTable); }
+          else { sBtn.disabled = false; toast((r && r.error) || 'Échec.'); }
+        });
+      });
+      var edit = document.createElement('button'); edit.type = 'button'; edit.className = 'ofspot-card-abtn';
+      edit.textContent = 'Modifier';
+      edit.addEventListener('click', function (e) { e.stopPropagation(); openEditForm(spot, { owner: true }); });
+      var del = document.createElement('button'); del.type = 'button'; del.className = 'ofspot-card-abtn del';
+      del.textContent = 'Supprimer';
+      del.addEventListener('click', function (e) { e.stopPropagation(); ownerDeleteSpot(spot); });
+      oa.append(sBtn, edit, del);
+      card.appendChild(oa);
+    } else if (isAdmin()) {
       var acts = document.createElement('div'); acts.className = 'ofspot-card-admin';
       var edit = document.createElement('button'); edit.type = 'button'; edit.className = 'ofspot-card-abtn';
       edit.textContent = 'Modifier';
@@ -766,7 +933,8 @@
     moderate(spot.id, 'delete');   // moderate() rafraîchit table + marqueurs + toast
   }
 
-  function openEditForm(spot) {
+  function openEditForm(spot, opts) {
+    var owner = !!(opts && opts.owner);   // propriétaire (mes spots) vs admin
     var back = document.createElement('div'); back.className = 'ofspot-modal-back';
     var modal = document.createElement('div'); modal.className = 'ofspot-modal';
     modal.innerHTML =
@@ -797,7 +965,7 @@
     back.addEventListener('click', function (e) { if (e.target === back) close(); });
     document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
     modal.querySelector('.cancel').addEventListener('click', close);
-    modal.querySelector('.del').addEventListener('click', function () { close(); deleteSpot(spot); });
+    modal.querySelector('.del').addEventListener('click', function () { close(); (owner ? ownerDeleteSpot : deleteSpot)(spot); });
     modal.querySelector('.save').addEventListener('click', function () {
       var name = modal.querySelector('.e-name').value.trim();
       var notes = modal.querySelector('.e-notes').value.trim();
@@ -806,12 +974,14 @@
       if (name.length < 2) { err.textContent = 'Nom : 2 caractères minimum.'; return; }
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) { err.textContent = 'Coordonnées invalides.'; return; }
       var btn = modal.querySelector('.save'); btn.disabled = true; btn.textContent = '…';
-      fetch('/api/spots/' + spot.id + '/update?secret=' + encodeURIComponent(adminSecret()), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      var url = owner ? ('/api/spots/' + spot.id + '/owner-update')
+                      : ('/api/spots/' + spot.id + '/update?secret=' + encodeURIComponent(adminSecret()));
+      fetch(url, {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name, notes: notes, lat: lat, lon: lon, inner_radius_m: Math.round(+innerEl.value || 0) }),
       }).then(function (r) { return r.ok ? r.json() : { ok: false }; })
         .then(function (res) {
-          if (res && res.ok) { close(); toast('Spot modifié ✓'); loadSpots().then(function () { renderTable(); }); }
+          if (res && res.ok) { close(); toast('Spot modifié ✓'); (owner ? afterOwnerChange(spot.id) : loadSpots().then(function () { renderTable(); })); }
           else { err.textContent = (res && res.error) || 'Échec de la modification.'; btn.disabled = false; btn.textContent = 'Enregistrer'; }
         }).catch(function () { err.textContent = 'Réseau indisponible.'; btn.disabled = false; btn.textContent = 'Enregistrer'; });
     });
@@ -1006,6 +1176,13 @@
   function openAddForm(lngLat, innerRadius) {
     innerRadius = Math.max(0, Math.min(MAX_INNER, Math.round(innerRadius || 0)));
     var form = document.createElement('div'); form.className = 'ofspot-form';
+    // Connecté : choix de visibilité (perso privé par défaut vs proposition publique modérée).
+    var visHtml = account.loggedIn ?
+      ('<div class="f-vis-lbl">Visibilité</div>' +
+       '<div class="ofspot-vis" role="group" aria-label="Visibilité du spot">' +
+       '<button type="button" class="ofspot-vis-btn active" data-share="0"><b>Privé</b><small>Pour toi seul</small></button>' +
+       '<button type="button" class="ofspot-vis-btn" data-share="1"><b>Public</b><small>Soumis à validation</small></button>' +
+       '</div>') : '';
     form.innerHTML =
       '<h4>Nouveau spot</h4>' +
       '<label>Nom<input type="text" maxlength="60" placeholder="Belvédère du…" class="f-name"></label>' +
@@ -1013,6 +1190,7 @@
       '<label class="f-inner-lbl">Trou central (donut) <span class="f-inner-val">' + innerRadius + ' m</span>' +
       '<input type="range" class="f-inner" min="0" max="' + MAX_INNER + '" step="1" value="' + innerRadius + '"></label>' +
       '<div class="f-inner-help">Contourne un obstacle central (chapelle, antenne…) : il est ignoré dans le trou.</div>' +
+      visHtml +
       '<div class="err" role="alert"></div>' +
       '<div class="row"><button type="button" class="cancel">Annuler</button><button type="button" class="save">Enregistrer</button></div>';
     if (!formPopup) formPopup = new maplibregl.Popup({ className: 'ofspot-popup', closeButton: true, closeOnClick: false, maxWidth: '260px', offset: 16 });
@@ -1025,16 +1203,31 @@
       setPreview(lngLat.lng, lngLat.lat, v);
     });
     setTimeout(function () { try { nameEl.focus(); } catch (e) {} }, 60);
+    // Sélecteur de visibilité (connecté).
+    var share = false;
+    var visBtns = form.querySelectorAll('.ofspot-vis-btn');
+    Array.prototype.forEach.call(visBtns, function (b) {
+      b.addEventListener('click', function () {
+        Array.prototype.forEach.call(visBtns, function (x) { x.classList.remove('active'); });
+        b.classList.add('active'); share = b.getAttribute('data-share') === '1';
+      });
+    });
     form.querySelector('.cancel').addEventListener('click', function () { formPopup.remove(); });
     form.querySelector('.save').addEventListener('click', function () {
       var name = nameEl.value.trim();
       if (name.length < 2) { errEl.textContent = 'Donne un nom (2 caractères minimum).'; nameEl.focus(); return; }
       var btn = form.querySelector('.save'); btn.disabled = true; btn.textContent = '…';
-      submitSpot({ name: name, lon: lngLat.lng, lat: lngLat.lat, notes: notesEl.value.trim(),
-                   inner_radius_m: Math.round(+innerEl.value || 0), author_token: clientToken() })
+      var payload = { name: name, lon: lngLat.lng, lat: lngLat.lat, notes: notesEl.value.trim(),
+                      inner_radius_m: Math.round(+innerEl.value || 0) };
+      if (account.loggedIn) payload.share = share; else payload.author_token = clientToken();
+      submitSpot(payload)
         .then(function (res) {
-          if (res && res.ok) { formPopup.remove(); toast('Merci ! Ton spot est en attente de validation.', 4200); }
-          else { errEl.textContent = (res && res.error) || 'Échec de l\'enregistrement.'; btn.disabled = false; btn.textContent = 'Enregistrer'; }
+          if (res && res.ok) {
+            formPopup.remove();
+            if (account.loggedIn) toast(share ? 'Spot proposé — en attente de validation ✓' : 'Spot enregistré dans « Mes spots » ✓', 4200);
+            else toast('Merci ! Ton spot est en attente de validation.', 4200);
+            loadSpots().then(function () { renderTable(); });
+          } else { errEl.textContent = (res && res.error) || 'Échec de l\'enregistrement.'; btn.disabled = false; btn.textContent = 'Enregistrer'; }
         })
         .catch(function () { errEl.textContent = 'Réseau indisponible, réessaie.'; btn.disabled = false; btn.textContent = 'Enregistrer'; });
     });

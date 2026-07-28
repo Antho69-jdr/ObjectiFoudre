@@ -166,6 +166,24 @@ def get_user(user_id: str) -> dict[str, Any] | None:
     return _row_to_user(row) if row else None
 
 
+def pseudos_for(user_ids: Any) -> dict[str, str]:
+    """Résolution par lot id→pseudo (pour afficher l'auteur des spots publics).
+    Ignore les ids inconnus/vides. Retourne {} si rien à résoudre."""
+    ids = [str(i) for i in (user_ids or []) if i]
+    ids = list(dict.fromkeys(ids))  # dédoublonne en conservant l'ordre
+    if not ids:
+        return {}
+    out: dict[str, str] = {}
+    with _db() as c:
+        # Découpe par paquets pour rester sous la limite de variables SQLite.
+        for i in range(0, len(ids), 400):
+            chunk = ids[i:i + 400]
+            ph = ",".join("?" * len(chunk))
+            for row in c.execute(f"SELECT id, pseudo FROM users WHERE id IN ({ph})", chunk):
+                out[row["id"]] = row["pseudo"]
+    return out
+
+
 def upsert_google_user(sub: str, email: str | None, email_verified: bool, name: str | None) -> dict[str, Any]:
     """Trouve le compte par `google_sub`, sinon le crée (pseudo dérivé du nom/e-mail,
     unicité garantie). Met à jour l'e-mail si Google le fournit."""
@@ -347,6 +365,10 @@ if __name__ == "__main__":
     sp2 = set_prefs(u1["id"], {"default_map": None})
     check("préférence réinitialisable (null)", "default_map" not in sp2["prefs"])
 
+    pmap = pseudos_for([u1["id"], u2["id"], "inconnu", ""])
+    check("pseudos_for résout les ids connus", pmap.get(u1["id"]) == "AlpineChaser" and u2["id"] in pmap)
+    check("pseudos_for ignore les ids inconnus/vides", "inconnu" not in pmap and "" not in pmap)
+    check("pseudos_for([]) → {}", pseudos_for([]) == {})
     check("vue publique = pseudo seul (pas d'e-mail)", "email" not in public_view(u1))
     check("vue privée = avec e-mail", private_view(get_user(u1["id"])).get("email") == "alice@example.com")
     st = stats()

@@ -20,6 +20,8 @@
       body: data ? JSON.stringify(data) : undefined }).then(function (r) { return r.json().catch(function () { return {}; }); });
   }
   function anonToken() { try { return localStorage.getItem('ofspot_token') || ''; } catch (e) { return ''; } }
+  // Rafraîchit le calque des spots (perso privés apparaissent/disparaissent selon la session).
+  function reloadSpots() { try { if (window.ObjectiFoudreSpots && window.ObjectiFoudreSpots.reload) window.ObjectiFoudreSpots.reload(); } catch (e) {} }
   function cacheMap(m) { try { if (m && m !== 'forecast') localStorage.setItem('objfDefaultMap', m); else localStorage.removeItem('objfDefaultMap'); } catch (e) {} }
 
   // ── Carte au lancement ─────────────────────────────────────────────────────
@@ -108,12 +110,12 @@
     var acts = el('div', 'account-actions');
     var out = el('button', 'account-btn ghost', 'Se déconnecter'); out.type = 'button';
     out.addEventListener('click', function () {
-      jsend('/api/auth/logout', 'POST').then(function () { state.user = null; cacheMap(null); refreshBtn(); render(); toast('Déconnecté'); });
+      jsend('/api/auth/logout', 'POST').then(function () { state.user = null; cacheMap(null); refreshBtn(); render(); reloadSpots(); toast('Déconnecté'); });
     });
     var del = el('button', 'account-btn del', 'Supprimer mon compte'); del.type = 'button';
     del.addEventListener('click', function () {
       if (!window.confirm('Supprimer définitivement ton compte ? (tes spots publics restent, dissociés)')) return;
-      jsend('/api/account', 'DELETE').then(function () { state.user = null; cacheMap(null); refreshBtn(); render(); toast('Compte supprimé'); });
+      jsend('/api/account', 'DELETE').then(function () { state.user = null; cacheMap(null); refreshBtn(); render(); reloadSpots(); toast('Compte supprimé'); });
     });
     acts.append(out, del); body.appendChild(acts);
     appendPrivacy();
@@ -160,7 +162,7 @@
       var tok = anonToken();
       var done = function () {
         try { history.replaceState(null, '', window.location.pathname); } catch (e) {}
-        loadMe().then(function () { open(); toast('Connecté ✓'); });
+        loadMe().then(function () { reloadSpots(); open(); toast('Connecté ✓'); });
       };
       if (tok) jsend('/api/account/link-anon', 'POST', { token: tok }).then(done, done);
       else done();

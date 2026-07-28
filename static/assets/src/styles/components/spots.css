@@ -262,3 +262,82 @@ body.mobile-ui .ofspot-modal-row .sp { display: none; }
 body.mobile-ui .ofspot-modal-row .save { order: -1; flex: 1 1 100%; }
 body.mobile-ui .ofspot-modal-row .cancel,
 body.mobile-ui .ofspot-modal-row .del { flex: 1 1 auto; }
+
+/* ============================================================================
+   « Mes spots » perso + partage (Phase 2) — statuts, marqueurs perso, actions
+   propriétaire, sélecteur de visibilité, onglets Publics / Mes spots.
+   Palette statut : privé=violet, en validation=ambre, public=vert, refusé=rouge.
+   ========================================================================== */
+:root {
+  --ofs-private: #a98bff; --ofs-pending: #e6b450; --ofs-approved: #5aab6b; --ofs-rejected: #e8725a;
+}
+
+/* Marqueurs de MES spots : liseré coloré selon le statut + pastille d'état.
+   Le contour visible du pin est le cercle .ofspot-compass-bg. */
+.ofspot-pin { position: relative; }
+.ofspot-pin.is-mine .ofspot-compass-bg { stroke: var(--ofs-approved); stroke-width: 2.4; }
+.ofspot-pin.is-private .ofspot-compass-bg { stroke: var(--ofs-private); stroke-width: 2.4; stroke-dasharray: 4 3; }
+.ofspot-pin.is-pending .ofspot-compass-bg { stroke: var(--ofs-pending); stroke-width: 2.4; }
+.ofspot-pin.is-rejected .ofspot-compass-bg { stroke: var(--ofs-rejected); stroke-width: 2.4; stroke-dasharray: 2 3; }
+.ofspot-pin-badge {
+  position: absolute; top: -3px; right: -3px; min-width: 15px; height: 15px; padding: 0 3px;
+  display: grid; place-items: center; font-size: 9px; line-height: 1; border-radius: 999px;
+  background: #0e1620; border: 1px solid #2a3745; color: #e9eff7; pointer-events: none;
+}
+.ofspot-pin.is-private .ofspot-pin-badge { color: var(--ofs-private); border-color: var(--ofs-private); }
+.ofspot-pin.is-pending .ofspot-pin-badge { color: var(--ofs-pending); border-color: var(--ofs-pending); }
+
+/* Puce de statut (panneau) + auteur. */
+.ofspot-status { display: flex; flex-direction: column; gap: 1px; margin: 0 0 8px; padding: 7px 10px; border-radius: 9px; border: 1px solid #22303f; background: #0e1620; }
+.ofspot-status b { font-size: 12px; font-weight: 700; }
+.ofspot-status span { font-size: 11px; color: #8ba0b8; line-height: 1.35; }
+.ofspot-status--private { border-color: color-mix(in srgb, var(--ofs-private) 45%, #22303f); }
+.ofspot-status--private b { color: var(--ofs-private); }
+.ofspot-status--pending { border-color: color-mix(in srgb, var(--ofs-pending) 45%, #22303f); }
+.ofspot-status--pending b { color: var(--ofs-pending); }
+.ofspot-status--approved { border-color: color-mix(in srgb, var(--ofs-approved) 45%, #22303f); }
+.ofspot-status--approved b { color: var(--ofs-approved); }
+.ofspot-status--rejected { border-color: color-mix(in srgb, var(--ofs-rejected) 45%, #22303f); }
+.ofspot-status--rejected b { color: var(--ofs-rejected); }
+.ofspot-author { font-size: 12px; color: #8ba0b8; margin: -2px 0 8px; }
+
+/* Actions propriétaire (panneau) : Proposer/Retirer · Modifier · Supprimer. */
+.ofspot-owner { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.ofspot-owner-btn { flex: 1 1 auto; font: inherit; font-size: 12.5px; font-weight: 600; border-radius: 8px; padding: 8px 10px; cursor: pointer; border: 1px solid #22303f; background: transparent; color: #e9eff7; }
+.ofspot-owner-btn:hover { border-color: #46c0e6; }
+.ofspot-owner-btn.primary { flex-basis: 100%; background: #46c0e6; color: #08222c; border-color: #46c0e6; }
+.ofspot-owner-btn.primary:hover { filter: brightness(1.06); }
+.ofspot-owner-btn.del { color: var(--ofs-rejected); border-color: color-mix(in srgb, var(--ofs-rejected) 40%, #22303f); }
+.ofspot-owner-btn.del:hover { border-color: var(--ofs-rejected); background: #e8725a14; }
+.ofspot-owner-btn:disabled { opacity: .5; cursor: default; }
+
+/* Sélecteur de visibilité (formulaire d'ajout, connecté). */
+.f-vis-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #7c93ad; margin: 8px 0 4px; }
+.ofspot-vis { display: flex; gap: 6px; }
+.ofspot-vis-btn { flex: 1; display: flex; flex-direction: column; gap: 1px; text-align: left; font: inherit; border-radius: 9px; padding: 7px 9px; cursor: pointer; border: 1px solid #22303f; background: #0e1620; color: #cdd7e4; transition: border-color .15s, background .15s; }
+.ofspot-vis-btn b { font-size: 12.5px; font-weight: 700; }
+.ofspot-vis-btn small { font-size: 10.5px; color: #8ba0b8; }
+.ofspot-vis-btn:hover { border-color: rgba(70, 192, 230, .6); }
+.ofspot-vis-btn.active { border-color: #46c0e6; background: rgba(70, 192, 230, .14); }
+.ofspot-vis-btn.active b { color: #eaf6fb; }
+
+/* Onglets Publics / Mes spots (page tableau). */
+.ofspot-tbl-tabs { display: flex; gap: 6px; margin: 0 0 14px; }
+.ofspot-tbl-tab { font: inherit; font-size: 13px; font-weight: 600; color: #8ba0b8; background: #0e1620; border: 1px solid #22303f; border-radius: 999px; padding: 7px 15px; cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
+.ofspot-tbl-tab:hover { color: #e9eff7; border-color: rgba(70, 192, 230, .6); }
+.ofspot-tbl-tab.active { color: #08222c; background: #46c0e6; border-color: #46c0e6; }
+
+/* Carte-spot possédée (tableau) : liseré de statut + puce + auteur. */
+.ofspot-card.is-mine { border-left-width: 3px; }
+.ofspot-card.is-private { border-left-color: var(--ofs-private); }
+.ofspot-card.is-pending { border-left-color: var(--ofs-pending); }
+.ofspot-card.is-approved { border-left-color: var(--ofs-approved); }
+.ofspot-card.is-rejected { border-left-color: var(--ofs-rejected); }
+.ofspot-card-status { align-self: flex-start; font-size: 10.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid #22303f; }
+.ofspot-status--private.ofspot-card-status { color: var(--ofs-private); }
+.ofspot-status--pending.ofspot-card-status { color: var(--ofs-pending); }
+.ofspot-status--approved.ofspot-card-status { color: var(--ofs-approved); }
+.ofspot-status--rejected.ofspot-card-status { color: var(--ofs-rejected); }
+.ofspot-card-author { font-size: 11.5px; color: #8ba0b8; }
+.ofspot-card-abtn.share { color: #46c0e6; border-color: color-mix(in srgb, #46c0e6 40%, #22303f); }
+.ofspot-card-abtn.share:hover { border-color: #46c0e6; }
