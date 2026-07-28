@@ -13,6 +13,7 @@ import multiprocessing
 import hashlib
 import hmac
 import http.client
+import html as html_lib
 import importlib
 import importlib.util
 import json
@@ -59,6 +60,7 @@ import stargaze  # mode « chasse d'étoile » : pollution lumineuse + astro
 import horizon  # « Mes spots » : horizon / champ de vision dégagé (topographie RGE ALTI)
 import spots  # « Mes spots » : store JSON des spots partagés + modération
 import accounts  # « Système de compte » : store SQLite (utilisateurs, sessions, préférences)
+import mailer  # « Système de compte » : envoi d'e-mails transactionnels (vérification, reset)
 import verification
 import learning
 try:
@@ -83,7 +85,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.94"
+APP_VERSION = "1.3.95"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15321,17 +15323,48 @@ async def analytics_hit(request: Request, pwa: int = Query(0)) -> dict[str, Any]
     return {"ok": True}
 
 
-# ══ Système de compte (carte Trello) : Google OAuth + session + préférences ═══
-# MVP : auth Google (aucun mot de passe stocké), session par cookie httpOnly (jeton
-# opaque hashé en base, cf. accounts.py), pseudo + préférence « carte au lancement »,
-# rattachement des spots anonymes du device au compte. Store SQLite `accounts.db` (volume).
+# ══ Système de compte (carte Trello) : OAuth multi-fournisseurs + e-mail/mot de passe ═══
+# Phase 3 : plusieurs fournisseurs OAuth (Google, Microsoft) + inscription e-mail/mot de
+# passe (vérification + reset par e-mail). Session par cookie httpOnly (jeton opaque hashé
+# en base, cf. accounts.py). Store SQLite `accounts.db` (volume). Envoi d'e-mails : mailer.py.
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID") or ""
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET") or ""
-_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-_GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+MICROSOFT_OAUTH_CLIENT_ID = os.environ.get("MICROSOFT_OAUTH_CLIENT_ID") or ""
+MICROSOFT_OAUTH_CLIENT_SECRET = os.environ.get("MICROSOFT_OAUTH_CLIENT_SECRET") or ""
 _SESSION_COOKIE = "objf_session"
 _OAUTH_STATE_COOKIE = "objf_oauth_state"
+
+# Registre des fournisseurs OAuth (flux Authorization Code identique, config par fournisseur).
+# `email_verified` : Google fournit le flag ; Microsoft → connexion OIDC de confiance.
+_OAUTH_PROVIDERS: dict[str, dict[str, Any]] = {
+    "google": {
+        "label": "Google",
+        "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "userinfo_url": "https://openidconnect.googleapis.com/v1/userinfo",
+        "scope": "openid email profile",
+        "client_id": GOOGLE_OAUTH_CLIENT_ID,
+        "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
+        "auth_extra": {"access_type": "online", "prompt": "select_account"},
+        "email_verified": lambda info: bool(info.get("email_verified")),
+    },
+    "microsoft": {
+        "label": "Microsoft",
+        "auth_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        "token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "userinfo_url": "https://graph.microsoft.com/oidc/userinfo",
+        "scope": "openid email profile",
+        "client_id": MICROSOFT_OAUTH_CLIENT_ID,
+        "client_secret": MICROSOFT_OAUTH_CLIENT_SECRET,
+        "auth_extra": {"prompt": "select_account"},
+        "email_verified": lambda info: True,
+    },
+}
+
+
+def _oauth_configured(provider: str) -> bool:
+    conf = _OAUTH_PROVIDERS.get(provider)
+    return bool(conf and conf["client_id"] and conf["client_secret"])
 
 
 @app.on_event("startup")
@@ -15372,61 +15405,252 @@ async def _account_current_user(request: Request) -> dict[str, Any] | None:
     return await asyncio.to_thread(accounts.user_by_session, token)
 
 
-def _google_exchange_userinfo(code: str, redirect_uri: str) -> dict[str, Any]:
+def _oauth_exchange_userinfo(provider: str, code: str, redirect_uri: str) -> dict[str, Any]:
     """Échange le code contre un access_token puis lit le profil OpenID (sub/email/name)."""
+    conf = _OAUTH_PROVIDERS[provider]
     data = urllib.parse.urlencode({
-        "code": code, "client_id": GOOGLE_OAUTH_CLIENT_ID, "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
+        "code": code, "client_id": conf["client_id"], "client_secret": conf["client_secret"],
         "redirect_uri": redirect_uri, "grant_type": "authorization_code",
     }).encode("utf-8")
-    req = urllib.request.Request(_GOOGLE_TOKEN_URL, data=data,
+    req = urllib.request.Request(conf["token_url"], data=data,
                                  headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=20) as r:
         tok = json.loads(r.read().decode("utf-8"))
     access = tok.get("access_token")
     if not access:
-        raise RuntimeError("échange de code Google échoué")
-    ureq = urllib.request.Request(_GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access}"})
+        raise RuntimeError(f"échange de code {provider} échoué")
+    ureq = urllib.request.Request(conf["userinfo_url"], headers={"Authorization": f"Bearer {access}"})
     with urllib.request.urlopen(ureq, timeout=20) as r:
         info = json.loads(r.read().decode("utf-8"))
     return info if isinstance(info, dict) else {}
 
 
-@app.get("/api/auth/google/login")
-async def auth_google_login(request: Request) -> Response:
-    if not GOOGLE_OAUTH_CLIENT_ID:
-        return JSONResponse({"ok": False, "error": "Connexion Google non configurée."}, status_code=503)
+@app.get("/api/auth/{provider}/login")
+async def auth_oauth_login(provider: str, request: Request) -> Response:
+    conf = _OAUTH_PROVIDERS.get(provider)
+    if conf is None:
+        return JSONResponse({"ok": False, "error": "Fournisseur inconnu."}, status_code=404)
+    if not _oauth_configured(provider):
+        return JSONResponse({"ok": False, "error": f"Connexion {conf['label']} non configurée."}, status_code=503)
     state = secrets.token_urlsafe(24)
-    params = urllib.parse.urlencode({
-        "client_id": GOOGLE_OAUTH_CLIENT_ID,
-        "redirect_uri": _request_base_url(request) + "/api/auth/google/callback",
-        "response_type": "code", "scope": "openid email profile",
-        "state": state, "access_type": "online", "prompt": "select_account",
-    })
-    resp = RedirectResponse(_GOOGLE_AUTH_URL + "?" + params, status_code=302)
-    resp.set_cookie(_OAUTH_STATE_COOKIE, state, max_age=600, httponly=True,
+    params = {
+        "client_id": conf["client_id"],
+        "redirect_uri": _request_base_url(request) + f"/api/auth/{provider}/callback",
+        "response_type": "code", "scope": conf["scope"], "state": state,
+    }
+    params.update(conf.get("auth_extra") or {})
+    resp = RedirectResponse(conf["auth_url"] + "?" + urllib.parse.urlencode(params), status_code=302)
+    # Le state est lié au fournisseur (défense supplémentaire contre le mélange de flux).
+    resp.set_cookie(_OAUTH_STATE_COOKIE, provider + ":" + state, max_age=600, httponly=True,
                     secure=_account_cookie_secure(request), samesite="lax", path="/")
     return resp
 
 
-@app.get("/api/auth/google/callback")
-async def auth_google_callback(request: Request, code: str | None = Query(None),
-                               state: str | None = Query(None), error: str | None = Query(None)) -> Response:
+@app.get("/api/auth/{provider}/callback")
+async def auth_oauth_callback(provider: str, request: Request, code: str | None = Query(None),
+                              state: str | None = Query(None), error: str | None = Query(None)) -> Response:
     base = _request_base_url(request)
-    saved = request.cookies.get(_OAUTH_STATE_COOKIE)
-    if error or not code or not state or not saved or not secrets.compare_digest(state, saved):
-        return RedirectResponse(base + "/?login=error", status_code=302)   # CSRF/annulation
+    conf = _OAUTH_PROVIDERS.get(provider)
+    saved = request.cookies.get(_OAUTH_STATE_COOKIE) or ""
+    expected = provider + ":" + (state or "")
+    if conf is None or error or not code or not state or not secrets.compare_digest(expected, saved):
+        return RedirectResponse(base + "/?login=error", status_code=302)   # CSRF/annulation/inconnu
     try:
-        info = await asyncio.to_thread(_google_exchange_userinfo, code, base + "/api/auth/google/callback")
-        user = await asyncio.to_thread(accounts.upsert_google_user, str(info.get("sub") or ""),
-                                       info.get("email"), bool(info.get("email_verified")),
-                                       info.get("name") or info.get("given_name"))
+        info = await asyncio.to_thread(_oauth_exchange_userinfo, provider, code, base + f"/api/auth/{provider}/callback")
+        email = info.get("email") or info.get("preferred_username")
+        ev = bool(conf["email_verified"](info))
+        user = await asyncio.to_thread(accounts.upsert_oauth_user, provider, str(info.get("sub") or ""),
+                                       email, ev, info.get("name") or info.get("given_name"))
         token = await asyncio.to_thread(accounts.create_session, user["id"])
-    except Exception:  # noqa: BLE001 - échec réseau/Google/validation → retour propre
+    except Exception:  # noqa: BLE001 - échec réseau/fournisseur/validation → retour propre
         return RedirectResponse(base + "/?login=error", status_code=302)
     resp = RedirectResponse(base + "/?login=ok", status_code=302)
     _set_session_cookie(resp, token, request)
     resp.delete_cookie(_OAUTH_STATE_COOKIE, path="/")
     return resp
+
+
+# ── Inscription / connexion par e-mail + mot de passe ────────────────────────
+_auth_hits: dict[str, list[float]] = {}
+_auth_hits_lock = threading.Lock()
+
+
+def _auth_rate_ok(bucket: str, max_n: int = 8, window_s: int = 600) -> bool:
+    """Anti-force-brute simple, en mémoire : max_n tentatives par fenêtre pour une clé (IP+action)."""
+    now = time.time()
+    with _auth_hits_lock:
+        hits = [t for t in _auth_hits.get(bucket, []) if now - t < window_s]
+        ok = len(hits) < max_n
+        if ok:
+            hits.append(now)
+        _auth_hits[bucket] = hits
+        if len(_auth_hits) > 5000:   # borne mémoire
+            for k in [k for k, v in _auth_hits.items() if not v or now - v[-1] > window_s][:2000]:
+                _auth_hits.pop(k, None)
+    return ok
+
+
+def _auth_ip(request: Request) -> str:
+    return (request.headers.get("cf-connecting-ip")
+            or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+            or (request.client.host if request.client else "?"))
+
+
+def _email_verify_content(pseudo: str, link: str) -> tuple[str, str, str]:
+    subject = "Confirme ton adresse — ObjectiFoudre"
+    text = (f"Salut {pseudo},\n\nConfirme ton adresse e-mail pour activer ton compte ObjectiFoudre :\n"
+            f"{link}\n\nCe lien expire dans 24 h. Si tu n'es pas à l'origine de cette demande, ignore cet e-mail.\n\n"
+            f"— ObjectiFoudre")
+    html = (f'<div style="font-family:system-ui,sans-serif;max-width:520px;margin:auto;color:#1f2937">'
+            f'<h2 style="color:#0b6">ObjectiFoudre ⚡</h2><p>Salut <b>{html_lib.escape(pseudo)}</b>,</p>'
+            f'<p>Confirme ton adresse e-mail pour activer ton compte :</p>'
+            f'<p><a href="{html_lib.escape(link)}" style="display:inline-block;background:#46c0e6;color:#062a35;'
+            f'padding:11px 18px;border-radius:9px;text-decoration:none;font-weight:600">Confirmer mon adresse</a></p>'
+            f'<p style="color:#6b7280;font-size:13px">Ce lien expire dans 24 h. Si tu n\'es pas à l\'origine de '
+            f'cette demande, ignore cet e-mail.</p></div>')
+    return subject, text, html
+
+
+def _email_reset_content(pseudo: str, link: str) -> tuple[str, str, str]:
+    subject = "Réinitialisation du mot de passe — ObjectiFoudre"
+    text = (f"Salut {pseudo},\n\nTu as demandé à réinitialiser ton mot de passe ObjectiFoudre :\n{link}\n\n"
+            f"Ce lien expire dans 1 h. Si tu n'es pas à l'origine de cette demande, ignore cet e-mail : "
+            f"ton mot de passe reste inchangé.\n\n— ObjectiFoudre")
+    html = (f'<div style="font-family:system-ui,sans-serif;max-width:520px;margin:auto;color:#1f2937">'
+            f'<h2 style="color:#0b6">ObjectiFoudre ⚡</h2><p>Salut <b>{html_lib.escape(pseudo)}</b>,</p>'
+            f'<p>Tu as demandé à réinitialiser ton mot de passe :</p>'
+            f'<p><a href="{html_lib.escape(link)}" style="display:inline-block;background:#46c0e6;color:#062a35;'
+            f'padding:11px 18px;border-radius:9px;text-decoration:none;font-weight:600">Choisir un nouveau mot de passe</a></p>'
+            f'<p style="color:#6b7280;font-size:13px">Ce lien expire dans 1 h. Si tu n\'es pas à l\'origine de cette '
+            f'demande, ignore cet e-mail.</p></div>')
+    return subject, text, html
+
+
+def _send_verify_email(request: Request, user: dict[str, Any]) -> bool:
+    token = accounts.issue_email_token(user["id"], "verify", user.get("email") or "")
+    link = _request_base_url(request) + "/api/auth/verify?token=" + urllib.parse.quote(token)
+    subject, text, html = _email_verify_content(user.get("pseudo") or "chasseur", link)
+    return mailer.send_email(user.get("email") or "", subject, text, html)
+
+
+class RegisterRequest(BaseModel):
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., max_length=200)
+    pseudo: str | None = Field(None, max_length=48)
+
+
+@app.post("/api/auth/register")
+async def auth_register(request: Request, payload: RegisterRequest) -> Response:
+    """Inscription e-mail/mot de passe → compte NON vérifié + e-mail de confirmation."""
+    if not _auth_rate_ok("register:" + _auth_ip(request)):
+        return JSONResponse({"ok": False, "error": "Trop de tentatives, réessaie plus tard."}, status_code=429)
+    try:
+        user = await asyncio.to_thread(accounts.register_local, payload.email, payload.password, payload.pseudo)
+    except accounts.AccountError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    sent = await asyncio.to_thread(_send_verify_email, request, user)
+    return JSONResponse({"ok": True, "email_sent": sent, "pending_verification": True})
+
+
+@app.get("/api/auth/verify")
+async def auth_verify(request: Request, token: str | None = Query(None)) -> Response:
+    """Lien de vérification d'e-mail → active le compte et ouvre une session."""
+    base = _request_base_url(request)
+    user = await asyncio.to_thread(accounts.verify_email_token, token or "")
+    if not user:
+        return RedirectResponse(base + "/?verified=error", status_code=302)
+    session = await asyncio.to_thread(accounts.create_session, user["id"])
+    resp = RedirectResponse(base + "/?verified=ok", status_code=302)
+    _set_session_cookie(resp, session, request)
+    return resp
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., max_length=200)
+
+
+@app.post("/api/auth/login")
+async def auth_login(request: Request, payload: LoginRequest) -> Response:
+    """Connexion e-mail/mot de passe (compte vérifié requis)."""
+    if not _auth_rate_ok("login:" + _auth_ip(request)):
+        return JSONResponse({"ok": False, "error": "Trop de tentatives, réessaie plus tard."}, status_code=429)
+    user = await asyncio.to_thread(accounts.authenticate_local, payload.email, payload.password)
+    if not user:
+        return JSONResponse({"ok": False, "error": "E-mail ou mot de passe incorrect."}, status_code=401)
+    if not user.get("email_verified"):
+        await asyncio.to_thread(_send_verify_email, request, user)   # renvoie un lien
+        return JSONResponse({"ok": False, "need_verification": True,
+                             "error": "Adresse non confirmée. On vient de te renvoyer un e-mail de confirmation."}, status_code=403)
+    session = await asyncio.to_thread(accounts.create_session, user["id"])
+    resp = JSONResponse({"ok": True, "user": accounts.private_view(user)})
+    _set_session_cookie(resp, session, request)
+    return resp
+
+
+class EmailOnlyRequest(BaseModel):
+    email: str = Field(..., max_length=254)
+
+
+@app.post("/api/auth/verify/resend")
+async def auth_verify_resend(request: Request, payload: EmailOnlyRequest) -> Response:
+    """Renvoi de l'e-mail de vérification (réponse toujours neutre → anti-énumération)."""
+    if _auth_rate_ok("resend:" + _auth_ip(request)):
+        user = await asyncio.to_thread(accounts.find_local_by_email, payload.email)
+        if user and not user.get("email_verified"):
+            await asyncio.to_thread(_send_verify_email, request, user)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/auth/password/forgot")
+async def auth_password_forgot(request: Request, payload: EmailOnlyRequest) -> Response:
+    """Demande de réinitialisation (réponse toujours neutre → n'expose pas les e-mails inscrits)."""
+    if _auth_rate_ok("forgot:" + _auth_ip(request)):
+        user = await asyncio.to_thread(accounts.find_local_by_email, payload.email)
+        if user and user.get("email"):
+            token = await asyncio.to_thread(accounts.issue_email_token, user["id"], "reset", user["email"])
+            link = _request_base_url(request) + "/?reset=" + urllib.parse.quote(token)
+            subject, text, html = _email_reset_content(user.get("pseudo") or "chasseur", link)
+            await asyncio.to_thread(mailer.send_email, user["email"], subject, text, html)
+    return JSONResponse({"ok": True})
+
+
+class ResetRequest(BaseModel):
+    token: str = Field(..., max_length=120)
+    password: str = Field(..., max_length=200)
+
+
+@app.post("/api/auth/password/reset")
+async def auth_password_reset(request: Request, payload: ResetRequest) -> Response:
+    """Applique un nouveau mot de passe via un lien de reset + ouvre une session."""
+    try:
+        user = await asyncio.to_thread(accounts.reset_password, payload.token, payload.password)
+    except accounts.AccountError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Lien invalide ou expiré."}, status_code=400)
+    session = await asyncio.to_thread(accounts.create_session, user["id"])
+    resp = JSONResponse({"ok": True, "user": accounts.private_view(user)})
+    _set_session_cookie(resp, session, request)
+    return resp
+
+
+class ChangePasswordRequest(BaseModel):
+    current: str = Field("", max_length=200)
+    new: str = Field(..., max_length=200)
+
+
+@app.post("/api/account/password")
+async def account_change_password(request: Request, payload: ChangePasswordRequest) -> Response:
+    """Change / définit le mot de passe d'un compte connecté (exige l'actuel s'il en a un)."""
+    user = await _account_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
+    try:
+        updated = await asyncio.to_thread(accounts.change_password, user["id"], payload.current, payload.new)
+    except accounts.AccountError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, "user": accounts.private_view(updated)})
 
 
 @app.post("/api/auth/logout")
@@ -15442,7 +15666,10 @@ async def auth_logout(request: Request) -> Response:
 @app.get("/api/account/me")
 async def account_me(request: Request) -> dict[str, Any]:
     user = await _account_current_user(request)
-    return {"ok": True, "authenticated": bool(user), "google_configured": bool(GOOGLE_OAUTH_CLIENT_ID),
+    oauth = {p: _oauth_configured(p) for p in _OAUTH_PROVIDERS}
+    return {"ok": True, "authenticated": bool(user),
+            "google_configured": oauth.get("google", False),   # compat front historique
+            "oauth": oauth, "email_enabled": mailer.configured(),
             "user": accounts.private_view(user) if user else None}
 
 

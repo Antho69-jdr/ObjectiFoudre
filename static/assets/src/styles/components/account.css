@@ -87,6 +87,34 @@
 }
 .account-toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* ── Phase 3 : OAuth multi-fournisseurs + e-mail/mot de passe ──────────────── */
+/* Boutons OAuth (charte : fond blanc, logo de marque). */
+.account-oauth {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; font: inherit; font-size: 14px; font-weight: 600;
+  background: #fff; color: #1f2937; border: 1px solid #dadce0; border-radius: 10px;
+  padding: 11px 14px; cursor: pointer; margin-top: 8px;
+}
+.account-oauth:hover { background: #f7f8fa; }
+.account-oauth svg { flex: none; }
+
+/* Séparateur « ou » entre OAuth et e-mail. */
+.account-sep { display: flex; align-items: center; text-align: center; color: #6b7c8f; font-size: 12px; margin: 14px 0 4px; }
+.account-sep::before, .account-sep::after { content: ""; flex: 1; height: 1px; background: #22303f; }
+.account-sep span { padding: 0 10px; }
+
+/* Formulaire e-mail/mot de passe. */
+.account-form { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.account-hint { font-size: 11.5px; color: #8ba0b8; }
+.account-info { color: #e6b450 !important; }          /* message d'info (pas une erreur) */
+.account-btn-full { width: 100%; }
+.account-btn.account-btn-full { margin-top: 2px; }
+.account-formfoot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.account-link { background: none; border: none; padding: 0; color: #7bb8d8; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; }
+.account-link:hover { color: #a9d6ee; }
+.account-pwbox { margin-top: 6px; }
+.account-methods { font-size: 11.5px; color: #7c93ad; margin-top: 12px; }
+
 /* Mobile : feuille du bas. */
 @media (max-width: 767px) {
   .account-modal { align-items: flex-end; padding: 0; }

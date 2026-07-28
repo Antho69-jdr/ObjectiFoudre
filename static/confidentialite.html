@@ -43,7 +43,7 @@
 
     <h2>1. Quelles données, dans quel but ?</h2>
     <ul>
-      <li><strong>Compte (facultatif)</strong> — Si tu te connectes avec Google, on reçoit ton <strong>adresse e-mail</strong> et ton <strong>nom</strong> (pour proposer un pseudo). Aucun mot de passe n'est stocké. But : t'identifier, mémoriser ton pseudo et tes préférences, et t'attribuer tes spots. <em>Base légale : exécution du service que tu demandes en créant un compte.</em></li>
+      <li><strong>Compte (facultatif)</strong> — Tu peux créer un compte de trois façons : <strong>Google</strong>, <strong>Microsoft</strong> (on reçoit alors ton <strong>adresse e-mail</strong> et ton <strong>nom</strong>, pour proposer un pseudo ; aucun mot de passe n'est échangé), ou <strong>e-mail + mot de passe</strong> (ton mot de passe est stocké <strong>haché</strong> — jamais en clair — et on t'envoie un e-mail de confirmation ; on n'utilise ton e-mail que pour confirmer ton adresse et, à ta demande, réinitialiser ton mot de passe). But : t'identifier, mémoriser ton pseudo et tes préférences, et t'attribuer tes spots. <em>Base légale : exécution du service que tu demandes en créant un compte.</em></li>
       <li><strong>Préférences</strong> — carte affichée au lancement, pseudo. Liées à ton compte.</li>
       <li><strong>Spots de chasse</strong> — Si tu enregistres un spot <strong>public</strong>, ses coordonnées et ton pseudo (ou « anonyme ») sont visibles par les autres utilisateurs. Un spot est modéré avant publication.</li>
       <li><strong>Mesure d'audience (anonyme, sans cookie)</strong> — Pour connaître le nombre de visiteurs, on calcule côté serveur un condensé (hash) quotidien à partir de ton adresse IP et de ton navigateur, avec un « sel » régénéré chaque jour puis supprimé. <strong>Ton IP n'est jamais conservée</strong> ; seuls des <strong>compteurs anonymes par jour</strong> sont gardés. Aucune identification, aucun suivi d'un jour à l'autre. <em>Cette mesure d'audience anonyme ne nécessite pas de consentement.</em></li>
@@ -62,7 +62,7 @@
     </ul>
 
     <h2>4. Hébergement &amp; sécurité</h2>
-    <p>L'application est hébergée sur une infrastructure cloud (Railway), derrière Cloudflare, en HTTPS. Les jetons de session sont stockés sous forme condensée (hachée) côté serveur. Les échanges transitent en chiffré.</p>
+    <p>L'application est hébergée sur une infrastructure cloud (Railway), derrière Cloudflare, en HTTPS. Les <strong>mots de passe</strong> et les <strong>jetons de session</strong> sont stockés sous forme <strong>condensée (hachée)</strong> côté serveur — jamais en clair. Les échanges transitent en chiffré. L'envoi des e-mails de confirmation et de réinitialisation passe par un prestataire technique d'e-mailing hébergé dans l'Union européenne, qui n'utilise ton adresse que pour acheminer ces messages.</p>
 
     <h2>5. Tes droits (RGPD)</h2>
     <p>Tu disposes des droits d'<strong>accès</strong>, de <strong>rectification</strong> (ton pseudo est modifiable à tout moment dans « Mon compte »), d'<strong>effacement</strong>, de <strong>portabilité</strong> et d'<strong>opposition</strong>.</p>
