@@ -81,7 +81,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.90"
+APP_VERSION = "1.3.92"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15019,6 +15019,12 @@ def _server_telemetry_sync() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         out["reports"] = {"error": str(exc)[:150]}
 
+    # Utilisateurs uniques (anonyme, carte Trello « nombre d'utilisateurs différents »)
+    try:
+        out["users"] = _analytics_summary()
+    except Exception as exc:  # noqa: BLE001
+        out["users"] = {"error": str(exc)[:150]}
+
     return out
 
 
@@ -15085,6 +15091,125 @@ _client_reports_lock = threading.Lock()
 _client_reports: list[dict[str, Any]] = []      # ancien → récent
 _client_reports_loaded = False
 _client_report_ip_hits: dict[str, list[float]] = {}
+
+
+# ── Analytics : VISITEURS UNIQUES par jour (COOKIELESS, RGPD-clean) ─────────────
+# AUCUN identifiant stocké sur l'appareil (hors champ de l'art. 82 → pas de
+# consentement requis). Le serveur compte via un HASH QUOTIDIEN SALÉ de (IP+User-Agent) :
+# le sel est régénéré CHAQUE JOUR puis jeté → le hash ne suit pas d'un jour à l'autre et
+# n'est pas réversible. L'IP n'est JAMAIS conservée ; l'historique ne garde que des
+# COMPTEURS ENTIERS par jour (données anonymes). → visiteurs uniques aujourd'hui / 7 j /
+# 30 j + installés PWA. (Le « nb d'utilisateurs distincts à vie » exigerait un traceur
+# persistant, donc du consentement : hors périmètre « clean ».)
+_analytics: dict[str, Any] | None = None
+_analytics_lock = threading.Lock()
+_ANALYTICS_KEEP_DAYS = 400          # rétention des compteurs quotidiens (anonymes)
+
+
+def _analytics_path() -> Path:
+    return OBJECTIFOUDRE_HISTORY_DIR / "analytics.json"
+
+
+def _analytics_load() -> dict[str, Any]:
+    global _analytics
+    if _analytics is not None:
+        return _analytics
+    st: dict[str, Any] = {"day": "", "salt": "", "seen": set(), "seen_pwa": set(), "daily": {}}
+    p = _analytics_path()
+    if p.exists():
+        try:
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                st["day"] = str(raw.get("day") or "")
+                st["salt"] = str(raw.get("salt") or "")
+                st["seen"] = set(raw.get("seen") or [])
+                st["seen_pwa"] = set(raw.get("seen_pwa") or [])
+                if isinstance(raw.get("daily"), dict):
+                    st["daily"] = {str(k): v for k, v in raw["daily"].items() if isinstance(v, dict)}
+        except (OSError, json.JSONDecodeError):
+            pass
+    _analytics = st
+    return st
+
+
+def _analytics_save() -> None:
+    st = _analytics or {}
+    p = _analytics_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"day": st.get("day", ""), "salt": st.get("salt", ""),
+               "seen": sorted(st.get("seen", ())), "seen_pwa": sorted(st.get("seen_pwa", ())),
+               "daily": st.get("daily", {}), "updated": int(time.time())}
+    with tempfile.NamedTemporaryFile("w", dir=p.parent, suffix=".tmp", delete=False, encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False)
+        tmp = fh.name
+    os.replace(tmp, p)
+
+
+def _analytics_rollover(st: dict[str, Any], day: str) -> None:
+    """Clôture le jour précédent (compteur entier) et repart avec un sel neuf."""
+    prev = st.get("day")
+    if prev and prev != day:
+        st["daily"][prev] = {"v": len(st.get("seen", ())), "p": len(st.get("seen_pwa", ()))}
+        keep = {(Date.today() - timedelta(days=i)).isoformat() for i in range(_ANALYTICS_KEEP_DAYS)}
+        st["daily"] = {k: v for k, v in st["daily"].items() if k in keep}
+    st["day"] = day
+    st["salt"] = os.urandom(16).hex()   # sel du jour → jeté au changement de jour
+    st["seen"] = set()
+    st["seen_pwa"] = set()
+
+
+def _analytics_hit(ip: str, ua: str, pwa: bool) -> None:
+    if not ip and not ua:
+        return
+    day = datetime.now(timezone.utc).date().isoformat()
+    with _analytics_lock:
+        st = _analytics_load()
+        if st.get("day") != day or not st.get("salt"):
+            _analytics_rollover(st, day)
+            _analytics_save()
+        h = hashlib.sha256((st["salt"] + "|" + ip + "|" + ua).encode("utf-8", "replace")).hexdigest()[:20]
+        changed = False
+        if h not in st["seen"]:
+            st["seen"].add(h)
+            changed = True
+        if pwa and h not in st["seen_pwa"]:
+            st["seen_pwa"].add(h)
+            changed = True
+        if changed:
+            _analytics_save()
+
+
+def _analytics_summary() -> dict[str, Any]:
+    with _analytics_lock:
+        st = _analytics_load()
+        today = datetime.now(timezone.utc).date().isoformat()
+        is_today = st.get("day") == today
+        tv = len(st.get("seen", ())) if is_today else 0
+        tp = len(st.get("seen_pwa", ())) if is_today else 0
+        daily = st.get("daily", {})
+        base = Date.fromisoformat(today)
+
+        def day_v(i: int) -> int:
+            return int((daily.get((base - timedelta(days=i)).isoformat()) or {}).get("v", 0))
+
+        v7 = tv + sum(day_v(i) for i in range(1, 7))
+        v30 = tv + sum(day_v(i) for i in range(1, 30))
+        peak = max([tv] + [day_v(i) for i in range(1, 30)])
+    return {"today": tv, "yesterday": day_v(1), "last_7d": v7, "last_30d": v30,
+            "avg_30d": round(v30 / 30), "peak_day": peak, "installed_today": tp}
+
+
+@app.post("/api/analytics/hit")
+async def analytics_hit(request: Request, pwa: int = Query(0)) -> dict[str, Any]:
+    """Ping COOKIELESS de mesure d'audience : compte les visiteurs uniques du jour via
+    un hash quotidien salé (IP+UA). Aucun identifiant sur l'appareil, aucune IP ni donnée
+    personnelle conservée (RGPD-clean, sans consentement)."""
+    ip = (request.headers.get("cf-connecting-ip")
+          or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+          or (request.client.host if request.client else ""))
+    ua = (request.headers.get("user-agent") or "")[:250]
+    await asyncio.to_thread(_analytics_hit, ip, ua, bool(pwa))
+    return {"ok": True}
 
 
 def _client_reports_path() -> Path:

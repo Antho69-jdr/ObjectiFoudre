@@ -88,6 +88,23 @@
   function render(d) {
     const cards = [];
 
+    // Audience (carte Trello « nombre d'utilisateurs différents ») — cookieless, RGPD-clean :
+    // visiteurs uniques par jour (un visiteur récurrent est compté une fois PAR jour).
+    const u = d.users || {};
+    if (u.error) {
+      cards.push(card('Audience', `<div class="mnt-err">${esc(u.error)}</div>`, 'bad'));
+    } else {
+      cards.push(card('Audience · visiteurs uniques', rows([
+        ["Aujourd'hui", u.today, 'mnt-strong'],
+        ['Hier', u.yesterday],
+        ['7 derniers jours', u.last_7d],
+        ['30 derniers jours', u.last_30d],
+        ['Moyenne / jour (30 j)', u.avg_30d],
+        ['Meilleur jour', u.peak_day],
+        ['Installés PWA (auj.)', u.installed_today],
+      ]), 'ok'));
+    }
+
     // Radar
     const rd = d.radar || {};
     const rLvl = rd.error ? 'bad' : freshLevel(rd.freshness_min, 12, 20);
