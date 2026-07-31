@@ -55,6 +55,7 @@
   const radarLayers = new Map();
   let visibleRadarKey = null;     // clé de la couche-frame radar actuellement visible
   let radarPaint = null;          // paint (couleur/opacité par bande) partagé par toutes les couches-frames
+  let radarHideRaf = 0;           // rAF : masque les anciennes couches APRÈS que la nouvelle soit peinte (anti-clignotement)
   let symbolAnchorId = null;   // 1er calque symbol du style : les couches chasse s'insèrent dessous
   let frRadarTimes = [];       // échéances mosaïque France dispo (ISO, ~2 h)
   let frBlend = { times: [], speed_kmh: 0, advected: false };  // nowcast par advection radar (0-30 min)
@@ -187,14 +188,24 @@
     return rec;
   }
 
+  // Montre la nouvelle frame IMMÉDIATEMENT ; les anciennes ne sont masquées qu'au PROCHAIN rAF
+  // (la nouvelle a alors été peinte) → jamais de trou entre les deux, donc plus de clignotement,
+  // même en accéléré. Au pire un chevauchement d'1 frame (imperceptible, isobandes ~superposées).
   function revealRadar(rec, key) {
     if (visibleRadarKey === key && map.getLayer(rec.layerId)) return;
     try { map.setLayoutProperty(rec.layerId, 'visibility', 'visible'); } catch (_) {}
-    if (visibleRadarKey && visibleRadarKey !== key) {
-      const prev = radarLayers.get(visibleRadarKey);
-      if (prev) { try { map.setLayoutProperty(prev.layerId, 'visibility', 'none'); } catch (_) {} }
-    }
     visibleRadarKey = key;
+    if (!radarHideRaf) radarHideRaf = requestAnimationFrame(hideStaleRadarLayers);
+  }
+
+  // Masque toutes les couches-frames sauf la courante (coalescé sur rAF).
+  function hideStaleRadarLayers() {
+    radarHideRaf = 0;
+    if (!active) return;
+    for (const [k, rec] of radarLayers) {
+      if (k === visibleRadarKey) continue;
+      try { if (map.getLayer(rec.layerId)) map.setLayoutProperty(rec.layerId, 'visibility', 'none'); } catch (_) {}
+    }
   }
 
   // Affiche la frame `fr` : INSTANTANÉ si sa couche existe (bascule de visibilité), sinon
@@ -229,6 +240,7 @@
 
   // Retire TOUTES les couches-frames radar (sortie du mode chasse).
   function clearRadarFrameLayers() {
+    if (radarHideRaf) { cancelAnimationFrame(radarHideRaf); radarHideRaf = 0; }
     for (const rec of radarLayers.values()) {
       try { if (map.getLayer(rec.layerId)) map.removeLayer(rec.layerId); } catch (_) {}
       try { if (map.getSource(rec.srcId)) map.removeSource(rec.srcId); } catch (_) {}
@@ -1393,5 +1405,5 @@
   window.setupFriseCollapse(controls, document.getElementById('chaseToggleBtn'), 'storm_chase_collapsed');
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.103';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.104';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
