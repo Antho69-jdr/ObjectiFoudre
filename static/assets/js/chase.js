@@ -50,14 +50,6 @@
   let shapeToken = 0;             // invalide un setData différé (fetch en cours au scrub)
   let cursorRaf = 0;              // rAF de coalescence des couches (scrub fluide)
   let cursorDirty = false;        // une frame reste à appliquer (dernière position demandée)
-  // Rendu radar SANS re-tessellation : UNE couche fill PAR frame, triangulée une seule fois,
-  // puis on bascule juste la VISIBILITÉ au changement d'horaire (instantané). clé frame → {srcId,layerId}.
-  const radarLayers = new Map();
-  let visibleRadarKey = null;     // clé de la couche-frame radar actuellement visible
-  let radarPaint = null;          // paint (couleur/opacité par bande) partagé par toutes les couches-frames
-  let radarHideRaf = 0;           // rAF : masque les anciennes couches APRÈS que la nouvelle soit peinte (anti-clignotement)
-  let prevRadarKey = null;        // frame précédente : gardée visible SOUS la nouvelle (comble le trou pendant le téléversement GPU)
-  let radarIdlePending = false;   // nettoyage final (ne garder que la courante) programmé sur 'idle'
   let symbolAnchorId = null;   // 1er calque symbol du style : les couches chasse s'insèrent dessous
   let frRadarTimes = [];       // échéances mosaïque France dispo (ISO, ~2 h)
   let frBlend = { times: [], speed_kmh: 0, advected: false };  // nowcast par advection radar (0-30 min)
@@ -104,18 +96,12 @@
   // sur toute la frise, (2) échéance courante des autres onglets. (Les tuiles radar sont
   // préchargées par MapLibre lui-même : couches par frame visibles à opacité 0.)
   async function runPrefetch(gen) {
-    // Toutes les frames de la frise → zones en cache + COUCHE-FRAME pré-créée (cachée), pour une
-    // révélation instantanée au scrub/lecture (triangulation payée une fois, ici, hors interaction).
+    // toutes les frames de la frise → FeatureCollections en cache JS (scrub instantané).
     for (const fr of frames.filter(isRadarLike)) {
       if (gen !== prefetchGen || !active) return;
-      const key = frameShapesKey(fr);
-      let fc = shapeCache.get(key);
-      if (!fc) {
-        try { fc = await fetchFrameShapes(fr); } catch (_) { fc = null; }
-        await new Promise((f) => setTimeout(f, 250));  // débit doux (serveur cache après 1er rendu)
-        if (gen !== prefetchGen || !active) return;
-      }
-      if (fc && layersReady) { try { ensureRadarFrameLayer(fr, fc); } catch (_) {} }
+      if (shapeCache.has(frameShapesKey(fr))) continue;
+      try { await fetchFrameShapes(fr); } catch (_) {}
+      await new Promise((f) => setTimeout(f, 250));  // débit doux (serveur cache après 1er rendu)
     }
   }
 
@@ -135,15 +121,21 @@
     if (!map.isStyleLoaded || !map.isStyleLoaded()) return false;
     const sym = ((map.getStyle() || {}).layers || []).find((l) => l.type === 'symbol');
     symbolAnchorId = sym ? sym.id : null;
-    // Paint partagé (couleur + opacité par bande `b`) réutilisé pour CHAQUE couche-frame radar.
-    const colorMatch = ['match', ['get', 'b']];
-    const opMatch = ['match', ['get', 'b']];
-    for (let b = 1; b <= RADAR_BAND_COLORS.length; b += 1) {
-      colorMatch.push(b, RADAR_BAND_COLORS[b - 1]);
-      opMatch.push(b, RADAR_BAND_OPACITY[b - 1]);
+    if (!map.getSource(RADAR_POLY_SRC)) {
+      const colorMatch = ['match', ['get', 'b']];
+      const opMatch = ['match', ['get', 'b']];
+      for (let b = 1; b <= RADAR_BAND_COLORS.length; b += 1) {
+        colorMatch.push(b, RADAR_BAND_COLORS[b - 1]);
+        opMatch.push(b, RADAR_BAND_OPACITY[b - 1]);
+      }
+      colorMatch.push('#3ca0ff'); opMatch.push(0.5);   // défaut
+      const before = (symbolAnchorId && map.getLayer(symbolAnchorId)) ? symbolAnchorId : undefined;
+      try {
+        map.addSource(RADAR_POLY_SRC, { type: 'geojson', data: EMPTY_FC });
+        map.addLayer({ id: RADAR_POLY_SRC + '-fill', type: 'fill', source: RADAR_POLY_SRC,
+          paint: { 'fill-color': colorMatch, 'fill-opacity': opMatch, 'fill-antialias': true } }, before);
+      } catch (_) {}
     }
-    colorMatch.push('#3ca0ff'); opMatch.push(0.5);   // défaut
-    radarPaint = { 'fill-color': colorMatch, 'fill-opacity': opMatch, 'fill-antialias': true };
     layersReady = true;
     return true;
   }
@@ -166,98 +158,16 @@
 
   // Pose la géométrie de la frame `fr` sur la source (immédiat si en cache, sinon fetch ;
   // `tok` invalide un setData différé quand l'utilisateur a bougé entre-temps).
-  function radarFrameIds(fr) {
-    const base = RADAR_POLY_SRC + '-' + frameShapesKey(fr).replace(/[^a-z0-9]/gi, '_');
-    return { srcId: base, layerId: base + '-fill' };
-  }
-
-  // Crée (si besoin) la couche fill de la frame : la géométrie est TRIANGULÉE ICI, une fois.
-  function ensureRadarFrameLayer(fr, fc) {
-    const key = frameShapesKey(fr);
-    const existing = radarLayers.get(key);
-    if (existing && map.getLayer(existing.layerId)) return existing;   // déjà là (et pas purgée par un reload de style)
-    const { srcId, layerId } = radarFrameIds(fr);
-    try {
-      if (!map.getSource(srcId)) map.addSource(srcId, { type: 'geojson', data: fc });
-      if (!map.getLayer(layerId)) {
-        const before = (symbolAnchorId && map.getLayer(symbolAnchorId)) ? symbolAnchorId : undefined;
-        map.addLayer({ id: layerId, type: 'fill', source: srcId,
-          layout: { visibility: 'none' }, paint: radarPaint }, before);
-      }
-    } catch (_) { return null; }
-    const rec = { srcId, layerId };
-    radarLayers.set(key, rec);
-    return rec;
-  }
-
-  // Anti-clignotement : révéler une couche cachée déclenche son téléversement GPU (~1+ frame) ;
-  // pendant ce temps elle est encore blanche. On garde donc la frame PRÉCÉDENTE (déjà peinte)
-  // visible SOUS la nouvelle → elle transparaît et comble le trou, quel que soit le délai de
-  // téléversement, même en enchaînant très vite. Les frames plus anciennes sont masquées de
-  // suite (rAF) pour borner le chevauchement à 2. Quand le rendu se stabilise ('idle'), on ne
-  // garde que la courante → rendu net à l'arrêt.
-  function revealRadar(rec, key) {
-    if (visibleRadarKey === key && map.getLayer(rec.layerId)) return;
-    try { map.setLayoutProperty(rec.layerId, 'visibility', 'visible'); } catch (_) {}
-    if (key !== visibleRadarKey) prevRadarKey = visibleRadarKey;   // l'ancienne (peinte) devient le filet de sécurité
-    visibleRadarKey = key;
-    if (!radarHideRaf) radarHideRaf = requestAnimationFrame(hideStaleRadarLayers);
-    if (!radarIdlePending) {
-      radarIdlePending = true;
-      map.once('idle', () => { radarIdlePending = false; if (!active) return; prevRadarKey = null; hideStaleRadarLayers(); });
-    }
-  }
-
-  // Masque toutes les couches-frames sauf la COURANTE et la PRÉCÉDENTE (filet anti-trou).
-  function hideStaleRadarLayers() {
-    radarHideRaf = 0;
-    if (!active) return;
-    for (const [k, rec] of radarLayers) {
-      if (k === visibleRadarKey || k === prevRadarKey) continue;
-      try { if (map.getLayer(rec.layerId)) map.setLayoutProperty(rec.layerId, 'visibility', 'none'); } catch (_) {}
-    }
-  }
-
-  // Affiche la frame `fr` : INSTANTANÉ si sa couche existe (bascule de visibilité), sinon
-  // charge ses zones (cache→immédiat, sinon fetch) PUIS l'affiche — en gardant la frame
-  // courante pendant l'attente. `tok` annule une révélation périmée si on a bougé au scrub.
-  function showRadarFrame(fr) {
-    const key = frameShapesKey(fr);
-    const rec = radarLayers.get(key);
-    if (rec && map.getLayer(rec.layerId)) { revealRadar(rec, key); return; }
-    const cached = shapeCache.get(key);
-    if (cached) { const r = ensureRadarFrameLayer(fr, cached); if (r) revealRadar(r, key); return; }
+  function applyRadarShapes(fr) {
     const tok = ++shapeToken;
+    const src = map.getSource(RADAR_POLY_SRC);
+    if (!src) return;
+    const cached = shapeCache.get(frameShapesKey(fr));
+    if (cached) { try { src.setData(cached); } catch (_) {} return; }
     fetchFrameShapes(fr).then((fc) => {
       if (tok !== shapeToken || !active) return;   // frame changée entre-temps → abandon
-      const r = ensureRadarFrameLayer(fr, fc);
-      if (r) revealRadar(r, key);
+      try { map.getSource(RADAR_POLY_SRC) && map.getSource(RADAR_POLY_SRC).setData(fc); } catch (_) {}
     }).catch(() => {});
-  }
-
-  // Purge les couches-frames absentes de la frise (réactualisation, changement de génération
-  // blend) → borne la mémoire GPU. Appelé après chaque (re)construction de la timeline.
-  function pruneRadarFrameLayers() {
-    const live = new Set(frames.filter(isRadarLike).map(frameShapesKey));
-    for (const [key, rec] of Array.from(radarLayers.entries())) {
-      if (live.has(key)) continue;
-      if (key === visibleRadarKey) visibleRadarKey = null;
-      try { if (map.getLayer(rec.layerId)) map.removeLayer(rec.layerId); } catch (_) {}
-      try { if (map.getSource(rec.srcId)) map.removeSource(rec.srcId); } catch (_) {}
-      radarLayers.delete(key);
-    }
-  }
-
-  // Retire TOUTES les couches-frames radar (sortie du mode chasse).
-  function clearRadarFrameLayers() {
-    if (radarHideRaf) { cancelAnimationFrame(radarHideRaf); radarHideRaf = 0; }
-    for (const rec of radarLayers.values()) {
-      try { if (map.getLayer(rec.layerId)) map.removeLayer(rec.layerId); } catch (_) {}
-      try { if (map.getSource(rec.srcId)) map.removeSource(rec.srcId); } catch (_) {}
-    }
-    radarLayers.clear();
-    visibleRadarKey = null;
-    prevRadarKey = null;
   }
 
   // ── Overlay CELLULES SUIVIES (moteur objets serveur) ──────────────────────────
@@ -595,7 +505,6 @@
     }
     out.sort((a, b) => a.epoch - b.epoch);
     frames = out;
-    if (layersReady) pruneRadarFrameLayers();   // retire les couches-frames sorties de la frise
   }
 
   function applyCursor() {
@@ -616,10 +525,10 @@
       if (isBlend) { activityEl.textContent = frBlend.advected ? ('extrapolé · ' + frBlend.speed_kmh + ' km/h') : 'obs. maintenue'; activityEl.className = 'chase-activity lvl-low'; }
       else { activityEl.textContent = 'MF 1 km'; activityEl.className = 'chase-activity lvl-low'; }
     }
-    // RADAR : simple bascule de visibilité (aucune re-triangulation) → SYNCHRONE, instantané,
-    // suit le doigt au scrub. Les overlays plus lourds (cellules + foudre, setData) restent
-    // coalescés sur rAF : on n'applique que la DERNIÈRE frame demandée, une fois par frame max.
-    showRadarFrame(fr);
+    // Couches LOURDES (3× setData → re-tessellation MapLibre) coalescées sur rAF : pendant un
+    // scrub (pointermove ~60/s), on n'applique QUE la dernière frame demandée, une fois par
+    // frame d'affichage max → plus de backlog du worker de tessellation. Le curseur/heure
+    // ci-dessus restent instantanés (retour visuel fluide).
     cursorDirty = true;
     if (!cursorRaf) cursorRaf = requestAnimationFrame(flushCursorLayers);
   }
@@ -630,6 +539,7 @@
     cursorDirty = false;
     const fr = frames[cursor];
     if (!fr) return;
+    applyRadarShapes(fr);     // pose les zones vectorielles de la frame (cache → immédiat)
     syncCellsOverlay();       // repositionne les cellules à l'heure de la frame (setData léger)
     syncLightningOverlay();   // refiltre les impacts sur [t−30 min, t] de la frame
     schedulePointForCurrent();
@@ -1333,8 +1243,8 @@
     setChaseMapTint(false);
     if (nowTimer) { window.clearInterval(nowTimer); nowTimer = null; }
     if (metaRunEl && savedMetaRun != null) { metaRunEl.textContent = savedMetaRun; savedMetaRun = null; }
-    // retirer toutes les couches-frames radar (libère la mémoire GPU hors mode chasse).
-    clearRadarFrameLayers();
+    // vider les zones radar vectorielles.
+    try { map.getSource(RADAR_POLY_SRC) && map.getSource(RADAR_POLY_SRC).setData(EMPTY_FC); } catch (_) {}
     shapeToken++;
     applyCellsVisibility();              // masque l'overlay cellules (active=false)
     applyLightningVisibility();          // masque l'overlay foudre (active=false)
@@ -1416,5 +1326,5 @@
   window.setupFriseCollapse(controls, document.getElementById('chaseToggleBtn'), 'storm_chase_collapsed');
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.105';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.106';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
