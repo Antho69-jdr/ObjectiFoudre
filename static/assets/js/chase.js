@@ -56,6 +56,8 @@
   let visibleRadarKey = null;     // clé de la couche-frame radar actuellement visible
   let radarPaint = null;          // paint (couleur/opacité par bande) partagé par toutes les couches-frames
   let radarHideRaf = 0;           // rAF : masque les anciennes couches APRÈS que la nouvelle soit peinte (anti-clignotement)
+  let prevRadarKey = null;        // frame précédente : gardée visible SOUS la nouvelle (comble le trou pendant le téléversement GPU)
+  let radarIdlePending = false;   // nettoyage final (ne garder que la courante) programmé sur 'idle'
   let symbolAnchorId = null;   // 1er calque symbol du style : les couches chasse s'insèrent dessous
   let frRadarTimes = [];       // échéances mosaïque France dispo (ISO, ~2 h)
   let frBlend = { times: [], speed_kmh: 0, advected: false };  // nowcast par advection radar (0-30 min)
@@ -188,22 +190,30 @@
     return rec;
   }
 
-  // Montre la nouvelle frame IMMÉDIATEMENT ; les anciennes ne sont masquées qu'au PROCHAIN rAF
-  // (la nouvelle a alors été peinte) → jamais de trou entre les deux, donc plus de clignotement,
-  // même en accéléré. Au pire un chevauchement d'1 frame (imperceptible, isobandes ~superposées).
+  // Anti-clignotement : révéler une couche cachée déclenche son téléversement GPU (~1+ frame) ;
+  // pendant ce temps elle est encore blanche. On garde donc la frame PRÉCÉDENTE (déjà peinte)
+  // visible SOUS la nouvelle → elle transparaît et comble le trou, quel que soit le délai de
+  // téléversement, même en enchaînant très vite. Les frames plus anciennes sont masquées de
+  // suite (rAF) pour borner le chevauchement à 2. Quand le rendu se stabilise ('idle'), on ne
+  // garde que la courante → rendu net à l'arrêt.
   function revealRadar(rec, key) {
     if (visibleRadarKey === key && map.getLayer(rec.layerId)) return;
     try { map.setLayoutProperty(rec.layerId, 'visibility', 'visible'); } catch (_) {}
+    if (key !== visibleRadarKey) prevRadarKey = visibleRadarKey;   // l'ancienne (peinte) devient le filet de sécurité
     visibleRadarKey = key;
     if (!radarHideRaf) radarHideRaf = requestAnimationFrame(hideStaleRadarLayers);
+    if (!radarIdlePending) {
+      radarIdlePending = true;
+      map.once('idle', () => { radarIdlePending = false; if (!active) return; prevRadarKey = null; hideStaleRadarLayers(); });
+    }
   }
 
-  // Masque toutes les couches-frames sauf la courante (coalescé sur rAF).
+  // Masque toutes les couches-frames sauf la COURANTE et la PRÉCÉDENTE (filet anti-trou).
   function hideStaleRadarLayers() {
     radarHideRaf = 0;
     if (!active) return;
     for (const [k, rec] of radarLayers) {
-      if (k === visibleRadarKey) continue;
+      if (k === visibleRadarKey || k === prevRadarKey) continue;
       try { if (map.getLayer(rec.layerId)) map.setLayoutProperty(rec.layerId, 'visibility', 'none'); } catch (_) {}
     }
   }
@@ -247,6 +257,7 @@
     }
     radarLayers.clear();
     visibleRadarKey = null;
+    prevRadarKey = null;
   }
 
   // ── Overlay CELLULES SUIVIES (moteur objets serveur) ──────────────────────────
@@ -1405,5 +1416,5 @@
   window.setupFriseCollapse(controls, document.getElementById('chaseToggleBtn'), 'storm_chase_collapsed');
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.104';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.105';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
