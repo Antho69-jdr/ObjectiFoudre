@@ -157,6 +157,19 @@
     if (opts.isSubscribed) { off = el('button', 'account-btn ghost', 'Désactiver'); off.type = 'button'; actions.appendChild(off); }
     wrap.appendChild(actions);
 
+    if (opts.isSubscribed) {
+      var test = el('button', 'account-link', 'Envoyer une notification de test'); test.type = 'button';
+      test.addEventListener('click', function () {
+        test.disabled = true;
+        ctx.jsend('/api/push/test', 'POST').then(function (r) {
+          test.disabled = false;
+          if (r && r.ok && r.sent > 0) toast('Notification de test envoyée ✓');
+          else toast((r && r.error) || 'Aucun appareil n\'a reçu le test.', 3200);
+        }, function () { test.disabled = false; toast('Échec de l\'envoi du test.'); });
+      });
+      wrap.appendChild(test);
+    }
+
     function resetSave() { save.disabled = false; save.textContent = opts.isSubscribed ? 'Mettre à jour' : 'Activer les alertes'; }
 
     save.addEventListener('click', function () {

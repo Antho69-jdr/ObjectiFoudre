@@ -1,16 +1,16 @@
-const CACHE_NAME = 'objectifoudre-v1.3.99';
+const CACHE_NAME = 'objectifoudre-v1.3.100';
 const ASSETS = [
   '/',
   '/manifest.webmanifest',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
-  '/static/logo-splash.png?v=1.3.99',
-  '/assets/vendor/maplibre/maplibre-gl.js?v=1.3.99',
-  '/assets/vendor/maplibre/maplibre-gl.css?v=1.3.99',
-  '/assets/vendor/carto/dark-matter-style.json?v=1.3.99',
-  '/manifest.webmanifest?v=1.3.99',
-  '/assets/dist/theme.css?v=1.3.99',
-  '/assets/dist/app.js?v=1.3.99'
+  '/static/logo-splash.png?v=1.3.100',
+  '/assets/vendor/maplibre/maplibre-gl.js?v=1.3.100',
+  '/assets/vendor/maplibre/maplibre-gl.css?v=1.3.100',
+  '/assets/vendor/carto/dark-matter-style.json?v=1.3.100',
+  '/manifest.webmanifest?v=1.3.100',
+  '/assets/dist/theme.css?v=1.3.100',
+  '/assets/dist/app.js?v=1.3.100'
 ];
 
 self.addEventListener('install', (event) => {

@@ -111,6 +111,15 @@ def valid_department_codes() -> set[str]:
     return {d["code"] for d in _load_departments()}
 
 
+def department_name(code: str) -> str | None:
+    """Nom du département depuis son code (ex. '69' → 'Rhône'), ou None si inconnu."""
+    code = str(code or "").strip().upper()
+    for d in _load_departments():
+        if d["code"] == code:
+            return d["nom"]
+    return None
+
+
 # ── Configuration VAPID ──────────────────────────────────────────────────────
 def _vapid_public() -> str:
     return (os.environ.get("OBJECTIFOUDRE_VAPID_PUBLIC_KEY") or "").strip()
@@ -139,23 +148,15 @@ _vapid_obj = None  # instance py-vapid mise en cache (construite depuis la clé 
 
 
 def _build_vapid():
-    """Construit une instance py-vapid depuis la clé privée brute base64url (32 octets).
-    Passe par `cryptography` (dépendance de pywebpush) pour être indépendant des variantes
-    d'API de py-vapid selon les versions. Lève si les libs/clé manquent."""
+    """Construit une instance py-vapid depuis la clé privée brute base64url (32 octets)
+    via `Vapid01.from_raw` (la clé publique est dérivée automatiquement). Lève si lib/clé manquent."""
     global _vapid_obj
     if _vapid_obj is not None:
         return _vapid_obj
-    import base64
-    from cryptography.hazmat.primitives.asymmetric import ec
     from py_vapid import Vapid01
     raw = _vapid_private()
-    raw_bytes = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
-    priv = ec.derive_private_key(int.from_bytes(raw_bytes, "big"), ec.SECP256R1())
-    v = Vapid01()
-    v.private_key = priv
-    v.public_key = priv.public_key()
-    _vapid_obj = v
-    return v
+    _vapid_obj = Vapid01.from_raw(raw.encode("utf-8") if isinstance(raw, str) else raw)
+    return _vapid_obj
 
 
 def send_web_push(subscription: dict[str, Any], payload: dict[str, Any], ttl: int = 1800) -> tuple[str, str]:

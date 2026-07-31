@@ -6,3 +6,4 @@ h5py>=3.11
 pyproj>=3.6
 Pillow>=10.0
 numpy>=1.26
+pywebpush==2.3.0

@@ -687,6 +687,17 @@ def push_subscribers_for_dept(dept: str) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def push_send_targets_for_user(user_id: str) -> list[dict[str, Any]]:
+    """[test] Abonnements d'un utilisateur AVEC les clés (id, endpoint, p256dh, auth), pour lui
+    envoyer une notification de test sur ses propres appareils."""
+    if not user_id:
+        return []
+    with _db() as c:
+        rows = c.execute(
+            "SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?", (user_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
 def watched_departments() -> set[str]:
     """[job] Départements suivis par au moins un abonné (borne le calcul du job d'alerte)."""
     with _db() as c:

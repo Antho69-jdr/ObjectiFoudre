@@ -86,7 +86,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.99"
+APP_VERSION = "1.3.100"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15139,7 +15139,8 @@ def _server_telemetry_sync() -> dict[str, Any]:
 
     # Alertes orage / Web Push (Phase 4)
     try:
-        out["push"] = {**accounts.push_stats(), "vapid_configured": push.push_configured()}
+        out["push"] = {**accounts.push_stats(), "vapid_configured": push.push_configured(),
+                       "alerts_enabled": OBJECTIFOUDRE_PUSH_ALERTS, "last_scan": dict(_push_alert_stats)}
     except Exception as exc:  # noqa: BLE001
         out["push"] = {"error": str(exc)[:150]}
 
@@ -15213,6 +15214,14 @@ async def server_accounts_delete(id: str = Query(..., min_length=1)) -> dict[str
     if not deleted:
         raise HTTPException(status_code=404, detail="Compte introuvable.")
     return {"ok": True, "deleted": id}
+
+
+@app.post("/api/server/push/scan", dependencies=[Depends(_admin_secret_dep)])
+async def server_push_scan() -> dict[str, Any]:
+    """[admin] Déclenche un scan d'alertes orage immédiat (hors cadence de la boucle) et renvoie
+    les compteurs. Le cooldown par département reste appliqué (pas de double envoi)."""
+    stats = await asyncio.to_thread(_scan_push_alerts)
+    return {"ok": True, "scan": stats}
 
 
 # ── RAPPORTS DE BUGS / PLANTAGES (page maintenance, incrément 3) ─────────────────
@@ -15826,6 +15835,29 @@ async def push_unsubscribe(request: Request, payload: PushUnsubscribeRequest) ->
         return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
     removed = await asyncio.to_thread(accounts.delete_push_subscription, user["id"], (payload.endpoint or "").strip())
     return JSONResponse({"ok": True, "removed": removed})
+
+
+@app.post("/api/push/test")
+async def push_test(request: Request) -> Response:
+    """Envoie une notification de test aux appareils de l'utilisateur connecté (validation de bout en bout)."""
+    user = await _account_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
+    if not push.push_configured():
+        return JSONResponse({"ok": False, "error": "Notifications non configurées côté serveur."}, status_code=503)
+    targets = await asyncio.to_thread(accounts.push_send_targets_for_user, user["id"])
+    if not targets:
+        return JSONResponse({"ok": False, "error": "Aucun appareil abonné sur ce compte."}, status_code=400)
+    payload = {"title": "🔔 ObjectiFoudre — test d'alerte",
+               "body": "Tes notifications d'orage fonctionnent bien 🌩️", "url": "/", "tag": "objf-test"}
+    sent = purged = 0
+    for sub in targets:
+        status, _detail = await asyncio.to_thread(push.send_web_push, sub, payload)
+        if status == "ok":
+            await asyncio.to_thread(accounts.mark_push_ok, sub["id"]); sent += 1
+        elif status == "gone":
+            await asyncio.to_thread(accounts.mark_push_failure, sub["id"], True); purged += 1
+    return JSONResponse({"ok": True, "sent": sent, "purged": purged})
 
 
 @app.get("/confidentialite")
@@ -18658,6 +18690,128 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
         _fr_cells.update(time=times[-1], cells=out[:40], updated_at=time.time(), li_at=li_at)
 
 
+# ── ALERTES ORAGE PAR DÉPARTEMENT (Web Push, Phase 4) ────────────────────────────
+# Boucle serveur qui croise les cellules convectives SUIVIES (_fr_cells, déjà filtrées
+# « exposition » : cœur rouge, ou orange + foudre) avec les départements suivis par les
+# abonnés. Une cellule alerte un département si son cœur y est (en cours) OU si sa
+# trajectoire extrapolée (future +10/+20/+30) y entre (en approche). Anti-spam : un seul
+# envoi par département par fenêtre de cooldown. Endpoints morts (404/410) purgés.
+OBJECTIFOUDRE_PUSH_ALERTS = _env_flag("OBJECTIFOUDRE_PUSH_ALERTS", True)
+OBJECTIFOUDRE_PUSH_ALERT_INTERVAL_SECONDS = _env_int("OBJECTIFOUDRE_PUSH_ALERT_INTERVAL_SECONDS", 150, min_value=30)
+OBJECTIFOUDRE_PUSH_ALERT_COOLDOWN_SECONDS = _env_int("OBJECTIFOUDRE_PUSH_ALERT_COOLDOWN_SECONDS", 2700, min_value=300)
+OBJECTIFOUDRE_PUSH_ALERT_MAX_STALE_SECONDS = _env_int("OBJECTIFOUDRE_PUSH_ALERT_MAX_STALE_SECONDS", 1800, min_value=300)
+
+_push_alert_stop = threading.Event()
+_push_alert_thread: threading.Thread | None = None
+_push_alert_lock = threading.Lock()
+_push_alert_last: dict[str, float] = {}        # code dépt → epoch du dernier envoi (cooldown)
+_push_alert_stats: dict[str, Any] = {}         # dernier scan (pour la télémétrie admin)
+
+_CARDINALS = ("nord", "nord-est", "est", "sud-est", "sud", "sud-ouest", "ouest", "nord-ouest")
+
+
+def _bearing_to_cardinal(deg: Any) -> str | None:
+    try:
+        return _CARDINALS[int((float(deg) % 360) / 45 + 0.5) % 8]
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_push_alert_payload(dept_code: str, cells: list[dict[str, Any]], now: bool) -> dict[str, Any]:
+    """Construit le contenu de la notification pour un département (agrège ses cellules)."""
+    name = push.department_name(dept_code) or dept_code
+    strongest = max(cells, key=lambda c: (c.get("peak_dbz") or 0, c.get("flashes_10min") or 0))
+    lightning = any((c.get("flashes_10min") or 0) > 0 for c in cells)
+    n = len(cells)
+    if now:
+        title = f"⛈️ Orage sur {name} ({dept_code})"
+        parts = ["Cellule orageuse active" if n == 1 else f"{n} cellules orageuses actives"]
+    else:
+        title = f"🌩️ Orage en approche — {name} ({dept_code})"
+        parts = ["Une cellule orageuse se dirige vers ton secteur"]
+    if lightning:
+        parts.append("foudre en cours")
+    spd, brg = strongest.get("speed_kmh"), _bearing_to_cardinal(strongest.get("bearing"))
+    if spd and spd >= 5 and brg:
+        parts.append(f"déplacement vers le {brg} à {spd} km/h")
+    return {"title": title, "body": ", ".join(parts) + ".", "url": "/", "tag": f"storm-{dept_code}", "dept": dept_code}
+
+
+def _scan_push_alerts() -> dict[str, Any]:
+    """Un passage de scan : cellules → départements affectés → envoi aux abonnés (avec cooldown).
+    Renvoie des compteurs. Ne lève pas de façon fatale (chaque envoi est isolé)."""
+    if not push.push_configured():
+        return {"skipped": "vapid_not_configured"}
+    watched = accounts.watched_departments()
+    if not watched:
+        return {"skipped": "no_subscribers", "cells": 0}
+    with _fr_cells_lock:
+        cells = list(_fr_cells.get("cells") or [])
+        fresh = _fr_cells.get("updated_at")
+    if not cells:
+        return {"cells": 0, "sent": 0}
+    if fresh and (time.time() - float(fresh)) > OBJECTIFOUDRE_PUSH_ALERT_MAX_STALE_SECONDS:
+        return {"cells": len(cells), "sent": 0, "stale": True}
+    # département → {cells: [...], now: bool}
+    affected: dict[str, dict[str, Any]] = {}
+    for c in cells:
+        cur = push.department_at(c.get("lon"), c.get("lat"))
+        depts_now = {cur} if cur else set()
+        depts_future = set()
+        for pt in (c.get("future") or []):
+            d = push.department_at(pt[0], pt[1]) if len(pt) >= 2 else None
+            if d:
+                depts_future.add(d)
+        for d in (depts_now | depts_future) & watched:
+            entry = affected.setdefault(d, {"cells": [], "now": False})
+            entry["cells"].append(c)
+            if d in depts_now:
+                entry["now"] = True
+    now_epoch = time.time()
+    sent = purged = failed = skipped_cd = 0
+    for dept, info in affected.items():
+        with _push_alert_lock:
+            if now_epoch - _push_alert_last.get(dept, 0.0) < OBJECTIFOUDRE_PUSH_ALERT_COOLDOWN_SECONDS:
+                skipped_cd += 1
+                continue
+            _push_alert_last[dept] = now_epoch
+        payload = _build_push_alert_payload(dept, info["cells"], info["now"])
+        for sub in accounts.push_subscribers_for_dept(dept):
+            status, _detail = push.send_web_push(sub, payload)
+            if status == "ok":
+                accounts.mark_push_ok(sub["id"]); sent += 1
+            elif status == "gone":
+                accounts.mark_push_failure(sub["id"], gone=True); purged += 1
+            else:
+                accounts.mark_push_failure(sub["id"]); failed += 1
+    stats = {"at": now_epoch, "cells": len(cells), "departments_affected": len(affected),
+             "sent": sent, "purged": purged, "failed": failed, "cooldown_skipped": skipped_cd}
+    _push_alert_stats.clear(); _push_alert_stats.update(stats)
+    return stats
+
+
+def _push_alert_loop() -> None:
+    _push_alert_stop.wait(150)   # laisser le démarrage + le tracker radar se remplir
+    while not _push_alert_stop.is_set():
+        try:
+            _scan_push_alerts()
+        except Exception:
+            logging.getLogger("objectifoudre").exception("push alert scan failed")
+        _push_alert_stop.wait(OBJECTIFOUDRE_PUSH_ALERT_INTERVAL_SECONDS)
+
+
+def _start_push_alert_thread() -> None:
+    global _push_alert_thread
+    if not OBJECTIFOUDRE_PUSH_ALERTS:
+        return
+    with _push_alert_lock:
+        if _push_alert_thread is not None and _push_alert_thread.is_alive():
+            return
+        _push_alert_stop.clear()
+        _push_alert_thread = threading.Thread(target=_push_alert_loop, daemon=True, name="objectifoudre-push-alerts")
+        _push_alert_thread.start()
+
+
 # ── FOUDRE LIVE (MTG-LI) : impacts en quasi temps réel pour le mode chasse ───────
 # Réutilise le Data Store EUMETSAT du pipeline différé (collection LI Lightning Flashes,
 # produits full-disk de 10 min) mais EN DIRECT : mesuré, un produit couvrant [T, T+10] est
@@ -18977,6 +19131,7 @@ def _startup_fr_radar() -> None:
     _start_fr_radar_thread()
     _start_li_live_thread()   # foudre live MTG-LI (no-op si identifiants EUMETSAT absents)
     _start_ram_cache_purge_thread()   # anti-OOM : purge périodique du cache RAM
+    _start_push_alert_thread()   # alertes orage par département (no-op sans clés VAPID)
 
 
 @app.on_event("shutdown")
