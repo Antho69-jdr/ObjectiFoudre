@@ -61,6 +61,7 @@ import horizon  # « Mes spots » : horizon / champ de vision dégagé (topograp
 import spots  # « Mes spots » : store JSON des spots partagés + modération
 import accounts  # « Système de compte » : store SQLite (utilisateurs, sessions, préférences)
 import mailer  # « Système de compte » : envoi d'e-mails transactionnels (vérification, reset)
+import push  # « Alertes orage » (Phase 4) : Web Push (VAPID) + géométrie des départements
 import verification
 import learning
 try:
@@ -85,7 +86,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.98"
+APP_VERSION = "1.3.99"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15136,6 +15137,12 @@ def _server_telemetry_sync() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         out["accounts"] = {"error": str(exc)[:150]}
 
+    # Alertes orage / Web Push (Phase 4)
+    try:
+        out["push"] = {**accounts.push_stats(), "vapid_configured": push.push_configured()}
+    except Exception as exc:  # noqa: BLE001
+        out["push"] = {"error": str(exc)[:150]}
+
     return out
 
 
@@ -15747,6 +15754,78 @@ async def account_delete(request: Request) -> Response:
     resp = JSONResponse({"ok": True})
     _clear_session_cookie(resp)
     return resp
+
+
+# ── ALERTES ORAGE PAR DÉPARTEMENT (Web Push, Phase 4) ────────────────────────
+# Abonnement réservé aux comptes (compte obligatoire). La clé publique VAPID et la liste
+# des départements sont publiques (nécessaires avant connexion pour préparer l'UI).
+class PushKeys(BaseModel):
+    p256dh: str = Field("", max_length=200)
+    auth: str = Field("", max_length=100)
+
+
+class PushSubscribeRequest(BaseModel):
+    endpoint: str = Field("", max_length=1000)
+    keys: PushKeys = Field(default_factory=PushKeys)
+    departments: list[str] = Field(default_factory=list, max_length=110)
+
+
+class PushUnsubscribeRequest(BaseModel):
+    endpoint: str = Field("", max_length=1000)
+
+
+@app.get("/api/push/vapid-public-key")
+async def push_vapid_public_key() -> dict[str, Any]:
+    """Clé publique VAPID (applicationServerKey) pour l'abonnement navigateur. Publique."""
+    return {"ok": True, "key": push.vapid_public_key(), "configured": push.push_configured()}
+
+
+@app.get("/api/push/departments")
+async def push_departments() -> dict[str, Any]:
+    """Liste [{code, nom}] des départements sélectionnables (métropole + Corse). Publique."""
+    return {"ok": True, "departments": push.list_departments()}
+
+
+@app.get("/api/push/me")
+async def push_me(request: Request) -> Response:
+    """Abonnements push (appareils) de l'utilisateur connecté + leurs départements."""
+    user = await _account_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
+    subs = await asyncio.to_thread(accounts.push_subscriptions_for_user, user["id"])
+    return JSONResponse({"ok": True, "configured": push.push_configured(), "subscriptions": subs})
+
+
+@app.post("/api/push/subscribe")
+async def push_subscribe(request: Request, payload: PushSubscribeRequest) -> Response:
+    """Enregistre (ou met à jour) l'abonnement push de cet appareil + les départements suivis."""
+    user = await _account_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
+    endpoint = (payload.endpoint or "").strip()
+    if not endpoint or not payload.keys.p256dh or not payload.keys.auth:
+        return JSONResponse({"ok": False, "error": "Abonnement push incomplet."}, status_code=400)
+    valid = push.valid_department_codes()
+    depts = [d for d in ({str(x).strip().upper() for x in payload.departments}) if d in valid]
+    if not depts:
+        return JSONResponse({"ok": False, "error": "Choisis au moins un département valide."}, status_code=400)
+    try:
+        saved = await asyncio.to_thread(
+            accounts.save_push_subscription, user["id"], endpoint,
+            payload.keys.p256dh, payload.keys.auth, depts, request.headers.get("user-agent"))
+    except accounts.AccountError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, "subscription": saved})
+
+
+@app.post("/api/push/unsubscribe")
+async def push_unsubscribe(request: Request, payload: PushUnsubscribeRequest) -> Response:
+    """Désinscription push de cet appareil (par endpoint), restreinte au propriétaire."""
+    user = await _account_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
+    removed = await asyncio.to_thread(accounts.delete_push_subscription, user["id"], (payload.endpoint or "").strip())
+    return JSONResponse({"ok": True, "removed": removed})
 
 
 @app.get("/confidentialite")

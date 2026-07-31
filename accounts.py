@@ -120,6 +120,28 @@ def init_db() -> None:
                 expires_utc TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_email_tokens_user ON email_tokens (user_id, kind);
+            -- Phase 4 : abonnements Web Push (alertes orage). Compte obligatoire →
+            -- FK vers users avec suppression en cascade (droit RGPD à l'effacement).
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id           TEXT PRIMARY KEY,
+                user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                endpoint     TEXT NOT NULL UNIQUE,
+                p256dh       TEXT NOT NULL,
+                auth         TEXT NOT NULL,
+                created_utc  TEXT NOT NULL,
+                updated_utc  TEXT NOT NULL,
+                last_ok_utc  TEXT,
+                fail_count   INTEGER NOT NULL DEFAULT 0,
+                ua           TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions (user_id);
+            -- Départements suivis par un abonnement (normalisé pour la requête "abonnés du dépt X").
+            CREATE TABLE IF NOT EXISTS push_departments (
+                subscription_id TEXT NOT NULL REFERENCES push_subscriptions(id) ON DELETE CASCADE,
+                dept            TEXT NOT NULL,
+                PRIMARY KEY (subscription_id, dept)
+            );
+            CREATE INDEX IF NOT EXISTS idx_push_dept ON push_departments (dept);
             """
         )
         # Migration douce : colonne password_hash (ajoutée si absente).
@@ -583,6 +605,124 @@ def purge_expired_sessions() -> int:
     return cur.rowcount
 
 
+# ── Notifications push (abonnements Web Push, Phase 4) ───────────────────────
+def _clean_departments(raw: Any) -> list[str]:
+    """Normalise/dédoublonne une liste de codes département en conservant l'ordre (ex. ['69','01','2A'])."""
+    out: list[str] = []
+    for d in (raw or []):
+        code = str(d).strip().upper()
+        if code and code not in out:
+            out.append(code)
+    return out
+
+
+def _depts_of(c: sqlite3.Connection, sub_id: str) -> list[str]:
+    return [r["dept"] for r in c.execute(
+        "SELECT dept FROM push_departments WHERE subscription_id = ? ORDER BY dept", (sub_id,)).fetchall()]
+
+
+def save_push_subscription(user_id: str, endpoint: str, p256dh: str, auth: str,
+                           departments: Any, ua: str | None = None) -> dict[str, Any]:
+    """Crée ou met à jour (par endpoint) un abonnement push et REMPLACE ses départements suivis.
+    L'endpoint push d'un appareil est unique et stable → sert de clé d'upsert (ré-abonnement propre)."""
+    endpoint = str(endpoint or "").strip()
+    if not (user_id and endpoint and p256dh and auth):
+        raise AccountError("Abonnement push incomplet.")
+    depts = _clean_departments(departments)
+    now = _now_iso()
+    ua_val = (str(ua or "")[:200]) or None
+    with _lock, _db() as c:
+        row = c.execute("SELECT id FROM push_subscriptions WHERE endpoint = ?", (endpoint,)).fetchone()
+        if row is None:
+            sub_id = secrets.token_hex(8)
+            c.execute(
+                "INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_utc, updated_utc, ua) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (sub_id, user_id, endpoint, p256dh, auth, now, now, ua_val),
+            )
+        else:
+            sub_id = row["id"]
+            c.execute(
+                "UPDATE push_subscriptions SET user_id=?, p256dh=?, auth=?, updated_utc=?, fail_count=0, ua=? WHERE id=?",
+                (user_id, p256dh, auth, now, ua_val, sub_id),
+            )
+        c.execute("DELETE FROM push_departments WHERE subscription_id = ?", (sub_id,))
+        for d in depts:
+            c.execute("INSERT OR IGNORE INTO push_departments (subscription_id, dept) VALUES (?,?)", (sub_id, d))
+    return {"id": sub_id, "endpoint": endpoint, "departments": depts}
+
+
+def push_subscriptions_for_user(user_id: str) -> list[dict[str, Any]]:
+    """Abonnements (appareils) d'un utilisateur + leurs départements, pour l'écran de gestion."""
+    if not user_id:
+        return []
+    with _db() as c:
+        rows = c.execute(
+            "SELECT id, endpoint, created_utc, updated_utc, ua FROM push_subscriptions "
+            "WHERE user_id = ? ORDER BY created_utc", (user_id,)).fetchall()
+        return [{"id": r["id"], "endpoint": r["endpoint"], "created_utc": r["created_utc"],
+                 "updated_utc": r["updated_utc"], "ua": r["ua"], "departments": _depts_of(c, r["id"])}
+                for r in rows]
+
+
+def delete_push_subscription(user_id: str, endpoint: str) -> bool:
+    """Désinscription d'un appareil (par endpoint), restreinte à son propriétaire."""
+    if not (user_id and endpoint):
+        return False
+    with _lock, _db() as c:
+        cur = c.execute("DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?",
+                        (user_id, str(endpoint).strip()))
+    return cur.rowcount > 0
+
+
+def push_subscribers_for_dept(dept: str) -> list[dict[str, Any]]:
+    """[job] Tous les abonnements suivant un département donné (id, user_id, endpoint, clés) pour l'envoi."""
+    dept = str(dept or "").strip().upper()
+    if not dept:
+        return []
+    with _db() as c:
+        rows = c.execute(
+            "SELECT s.id, s.user_id, s.endpoint, s.p256dh, s.auth FROM push_departments d "
+            "JOIN push_subscriptions s ON s.id = d.subscription_id WHERE d.dept = ?", (dept,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def watched_departments() -> set[str]:
+    """[job] Départements suivis par au moins un abonné (borne le calcul du job d'alerte)."""
+    with _db() as c:
+        return {r["dept"] for r in c.execute("SELECT DISTINCT dept FROM push_departments").fetchall()}
+
+
+def mark_push_ok(subscription_id: str) -> None:
+    with _lock, _db() as c:
+        c.execute("UPDATE push_subscriptions SET last_ok_utc = ?, fail_count = 0 WHERE id = ?",
+                  (_now_iso(), subscription_id))
+
+
+def mark_push_failure(subscription_id: str, gone: bool = False, max_fail: int = 8) -> bool:
+    """Enregistre un échec d'envoi. Supprime l'abonnement si l'endpoint est mort (410/404 → gone=True)
+    ou après trop d'échecs consécutifs. Renvoie True si l'abonnement a été supprimé."""
+    with _lock, _db() as c:
+        if gone:
+            c.execute("DELETE FROM push_subscriptions WHERE id = ?", (subscription_id,))
+            return True
+        c.execute("UPDATE push_subscriptions SET fail_count = fail_count + 1 WHERE id = ?", (subscription_id,))
+        row = c.execute("SELECT fail_count FROM push_subscriptions WHERE id = ?", (subscription_id,)).fetchone()
+        if row and row["fail_count"] >= max_fail:
+            c.execute("DELETE FROM push_subscriptions WHERE id = ?", (subscription_id,))
+            return True
+    return False
+
+
+def push_stats() -> dict[str, Any]:
+    """Compteurs pour la télémétrie admin (abonnements push)."""
+    with _db() as c:
+        subs = c.execute("SELECT COUNT(*) AS n FROM push_subscriptions").fetchone()["n"]
+        users = c.execute("SELECT COUNT(DISTINCT user_id) AS n FROM push_subscriptions").fetchone()["n"]
+        depts = c.execute("SELECT COUNT(DISTINCT dept) AS n FROM push_departments").fetchone()["n"]
+    return {"subscriptions": subs, "users": users, "departments_watched": depts}
+
+
 def stats() -> dict[str, Any]:
     """Compteurs pour la télémétrie admin (répartition par moyen de connexion)."""
     with _db() as c:
@@ -734,6 +874,22 @@ if __name__ == "__main__":
     # google : u1, u2 (=2) · microsoft : u1, um2 (=2) · password : carol, bob (≥2)
     check("stats providers", st["google"] == 2 and st["microsoft"] == 2 and st["password"] >= 2)
     check("delete_user (RGPD) purge identités", delete_user(u1["id"]) and list_providers(u1["id"]) == [])
+
+    # ── Push (Phase 4) : abonnements Web Push ──
+    sub = save_push_subscription(u2["id"], "https://push.example/ep1", "p256key", "authkey", ["69", "01", "69"])
+    check("save_push_subscription dédoublonne les dépts", sub["departments"] == ["69", "01"])
+    check("push_subscriptions_for_user", len(push_subscriptions_for_user(u2["id"])) == 1)
+    check("watched_departments", watched_departments() == {"69", "01"})
+    check("push_subscribers_for_dept(69)", len(push_subscribers_for_dept("69")) == 1)
+    save_push_subscription(u2["id"], "https://push.example/ep1", "p256key", "authkey", ["34"])
+    check("upsert par endpoint (pas de doublon d'appareil)", len(push_subscriptions_for_user(u2["id"])) == 1)
+    check("dépts remplacés au ré-abonnement", watched_departments() == {"34"})
+    check("push_stats", push_stats()["subscriptions"] == 1 and push_stats()["users"] == 1)
+    check("mark_push_failure(gone) supprime l'abonnement", mark_push_failure(sub["id"], gone=True) is True)
+    check("abonnement supprimé", push_subscriptions_for_user(u2["id"]) == [])
+    save_push_subscription(u2["id"], "https://push.example/ep2", "k", "a", ["75"])
+    delete_user(u2["id"])
+    check("push : cascade RGPD à la suppression du compte", push_subscribers_for_dept("75") == [])
 
     print(f"\n{ok['n'] - ok['fail']}/{ok['n']} OK" + ("" if ok["fail"] == 0 else f" — {ok['fail']} ÉCHEC(S)"))
     raise SystemExit(1 if ok["fail"] else 0)
