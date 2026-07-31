@@ -86,7 +86,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.101"
+APP_VERSION = "1.3.102"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -17859,7 +17859,7 @@ def _fr_radar_shapes_features(rgba) -> list:
     ISOBANDES NON CHEVAUCHANTES : la bande k est percée des zones ≥ k+1 (mêmes anneaux lissés
     → frontières qui coïncident exactement, ni trou ni recouvrement) → une opacité uniforme
     par bande sans empilement de fills. Anneaux : marching squares → Douglas-Peucker →
-    Chaikin ×1 (lissage léger ; ×2 auparavant, allégé v1.3.101 pour la perf de la carte radar
+    Chaikin ×1 (lissage léger ; ×2 auparavant, allégé v1.3.102 pour la perf de la carte radar
     — ~-49 % de sommets, re-tessellation MapLibre 2× plus légère). Grille ½ résolution."""
     import numpy as np
     band = _fr_radar_rgba_to_band(rgba).astype(np.float32)[::2, ::2]
@@ -17905,7 +17905,7 @@ def _fr_radar_shapes_features(rgba) -> list:
             dp = _fr_ring_dp(ring, 1.25)
             if len(dp) < 3:
                 continue
-            sm = _fr_ring_chaikin(dp, 1)   # v1.3.101 : ×2 → ×1 (perf radar : ~-49 % de sommets, moins de lag)
+            sm = _fr_ring_chaikin(dp, 1)   # v1.3.102 : ×2 → ×1 (perf radar : ~-49 % de sommets, moins de lag)
             xs = [p[0] for p in dp]; ys = [p[1] for p in dp]
             cxr = sum(xs) / len(xs); cyr = sum(ys) / len(ys)
             # point de test INTÉRIEUR = 1er sommet tiré de 40 % vers le centroïde (les cœurs

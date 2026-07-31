@@ -48,6 +48,8 @@
   let playTimer = null;
   const shapeCache = new Map();   // clé frame → FeatureCollection (zones vectorielles)
   let shapeToken = 0;             // invalide un setData différé (fetch en cours au scrub)
+  let cursorRaf = 0;              // rAF de coalescence des couches (scrub fluide)
+  let cursorDirty = false;        // une frame reste à appliquer (dernière position demandée)
   let symbolAnchorId = null;   // 1er calque symbol du style : les couches chasse s'insèrent dessous
   let frRadarTimes = [];       // échéances mosaïque France dispo (ISO, ~2 h)
   let frBlend = { times: [], speed_kmh: 0, advected: false };  // nowcast par advection radar (0-30 min)
@@ -517,15 +519,29 @@
       timeLabel.classList.toggle('is-future', isBlend);
     }
     updateActive();
-    applyRadarShapes(fr);     // pose les zones vectorielles de la frame (cache → immédiat)
-    syncCellsOverlay();       // repositionne les cellules à l'heure de la frame (setData léger)
-    syncLightningOverlay();   // refiltre les impacts sur [t−30 min, t] de la frame
     // badge : « MF 1 km » (observé) / « extrapolé · N km/h » (advection réelle) /
     // « obs. maintenue » (persistance, mouvement non fiable → comblement du trou).
     if (activityEl) {
       if (isBlend) { activityEl.textContent = frBlend.advected ? ('extrapolé · ' + frBlend.speed_kmh + ' km/h') : 'obs. maintenue'; activityEl.className = 'chase-activity lvl-low'; }
       else { activityEl.textContent = 'MF 1 km'; activityEl.className = 'chase-activity lvl-low'; }
     }
+    // Couches LOURDES (3× setData → re-tessellation MapLibre) coalescées sur rAF : pendant un
+    // scrub (pointermove ~60/s), on n'applique QUE la dernière frame demandée, une fois par
+    // frame d'affichage max → plus de backlog du worker de tessellation. Le curseur/heure
+    // ci-dessus restent instantanés (retour visuel fluide).
+    cursorDirty = true;
+    if (!cursorRaf) cursorRaf = requestAnimationFrame(flushCursorLayers);
+  }
+
+  function flushCursorLayers() {
+    cursorRaf = 0;
+    if (!cursorDirty || !active || !layersReady || !frames.length) return;
+    cursorDirty = false;
+    const fr = frames[cursor];
+    if (!fr) return;
+    applyRadarShapes(fr);     // pose les zones vectorielles de la frame (cache → immédiat)
+    syncCellsOverlay();       // repositionne les cellules à l'heure de la frame (setData léger)
+    syncLightningOverlay();   // refiltre les impacts sur [t−30 min, t] de la frame
     schedulePointForCurrent();
   }
 
@@ -1310,5 +1326,5 @@
   window.setupFriseCollapse(controls, document.getElementById('chaseToggleBtn'), 'storm_chase_collapsed');
 
   window.toggleChaseMode = () => { active ? deactivate() : activate(); };
-  window.__chaseV = '1.3.101';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
+  window.__chaseV = '1.3.102';   // marqueur : vérifier que CE chase.js est servi (piège cache SW)
 })();
