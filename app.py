@@ -85,7 +85,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.97"
+APP_VERSION = "1.3.98"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15188,6 +15188,24 @@ async def server_logs(limit: int = Query(200, ge=1, le=800),
         items = [e for e in items if e["level"] in ("WARNING", "ERROR", "CRITICAL")]
     items = items[-limit:]
     return {"ok": True, "count": len(items), "logs": items}
+
+
+@app.get("/api/server/accounts", dependencies=[Depends(_admin_secret_dep)])
+async def server_accounts() -> dict[str, Any]:
+    """[admin] Liste des comptes (id, e-mail, pseudo, moyens de connexion, sessions) pour
+    la modération/nettoyage. Admin-only (secret serveur). Ne renvoie aucun secret ni hash."""
+    users = await asyncio.to_thread(accounts.admin_list)
+    return {"ok": True, "count": len(users), "accounts": users}
+
+
+@app.post("/api/server/accounts/delete", dependencies=[Depends(_admin_secret_dep)])
+async def server_accounts_delete(id: str = Query(..., min_length=1)) -> dict[str, Any]:
+    """[admin] Supprime définitivement un compte par id (sessions/identités/jetons en cascade).
+    Action irréversible : réservée à l'outillage de nettoyage, protégée par le secret serveur."""
+    deleted = await asyncio.to_thread(accounts.delete_user, id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Compte introuvable.")
+    return {"ok": True, "deleted": id}
 
 
 # ── RAPPORTS DE BUGS / PLANTAGES (page maintenance, incrément 3) ─────────────────

@@ -596,6 +596,33 @@ def stats() -> dict[str, Any]:
             "by_provider": by_provider, "password": password, "verified": verified, "active_sessions": sess}
 
 
+def admin_list() -> list[dict[str, Any]]:
+    """[admin] Liste complète des comptes pour la modération/nettoyage (JAMAIS exposée au public).
+    Renvoie id, e-mail, pseudo, date, statut de vérif, moyens de connexion et nb de sessions actives."""
+    now = _now_iso()
+    with _db() as c:
+        rows = c.execute("SELECT * FROM users ORDER BY created_utc").fetchall()
+        provs: dict[str, list[str]] = {}
+        for r in c.execute("SELECT user_id, provider FROM identities ORDER BY created_utc").fetchall():
+            provs.setdefault(r["user_id"], []).append(r["provider"])
+        sess: dict[str, int] = {}
+        for r in c.execute(
+            "SELECT user_id, COUNT(*) AS n FROM sessions WHERE expires_utc > ? GROUP BY user_id", (now,)
+        ).fetchall():
+            sess[r["user_id"]] = r["n"]
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        u = _row_to_user(row)
+        out.append({
+            "id": u["id"], "email": u["email"], "pseudo": u["pseudo"],
+            "email_verified": u["email_verified"], "has_password": u["has_password"],
+            "providers": provs.get(u["id"], []),
+            "created_utc": u["created_utc"], "updated_utc": u["updated_utc"],
+            "active_sessions": sess.get(u["id"], 0),
+        })
+    return out
+
+
 # ── Self-test ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import tempfile
