@@ -52,3 +52,36 @@ self.addEventListener('fetch', (event) => {
     }
   })());
 });
+
+// ── Notifications push (alertes orage par département, Phase 4) ───────────────
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; }
+  catch (_) { try { data = { body: event.data.text() }; } catch (__) { data = {}; } }
+  const title = data.title || 'ObjectiFoudre — alerte orage';
+  const options = {
+    body: data.body || 'Activité orageuse détectée sur ton secteur.',
+    icon: data.icon || '/static/icons/icon-192.png',
+    badge: '/static/icons/icon-192.png',
+    tag: data.tag || 'objf-storm',
+    renotify: !!data.tag,
+    data: { url: data.url || '/' },
+    vibrate: [80, 40, 80]
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of all) {
+      if ('focus' in client) {
+        try { if ('navigate' in client) await client.navigate(target); } catch (_) {}
+        return client.focus();
+      }
+    }
+    if (self.clients.openWindow) return self.clients.openWindow(target);
+  })());
+});

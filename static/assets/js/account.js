@@ -238,6 +238,13 @@
     });
     body.appendChild(seg);
 
+    // Alertes orage par département (Web Push) — module dédié push-alerts.js
+    try {
+      if (window.ObjectiFoudrePush) {
+        window.ObjectiFoudrePush.renderSection(body, { el: el, jget: jget, jsend: jsend, toast: toast, esc: esc });
+      }
+    } catch (e) {}
+
     // Sécurité : mot de passe (définir/changer) — pliable
     if (state.emailEnabled) {
       body.appendChild(el('label', 'account-label', 'Mot de passe'));
