@@ -330,12 +330,19 @@ function renderPredictionPageResult(result) {
       predictionPageSubtitle.textContent = result?.ok
         ? `Tendance ECMWF · maille ${reso} · pic d'instabilité du jour · ${activeDateLabel}`
         : `Tendance ECMWF (maille ${reso}) · ${activeDateLabel}`;
+    } else if (activeDay && predictionDayIsEcmwfSlots(activeDay)) {
+      // J+2/J+3 : ECMWF multi-créneaux 3-horaires (remplace ARPEGE ; jour self-contained).
+      const reso = (activeDay.meta || {}).resolution_label || '0,25° (~28 km)';
+      const dateText = (typeof formatTimelineDateLabel === 'function' ? formatTimelineDateLabel(predictionDayKey(activeDay)) : predictionDayKey(activeDay));
+      predictionPageSubtitle.textContent = result?.ok
+        ? 'ECMWF · maille ' + reso + ' · créneaux 3 h · ' + dateText
+        : 'En attente de la grille ECMWF · ' + dateText;
     } else {
       const dateText = period.key === 'day'
         ? predictionWindowDateLabel(activeDay || getCurrentDay())
         : (typeof formatTimelineDateLabel === 'function' ? formatTimelineDateLabel(predictionDayKey(activeDay || getCurrentDay())) : predictionDayKey(activeDay || getCurrentDay()));
       const periodText = period.key === 'day' ? 'fenêtre 08h-08h' : 'grilles ' + period.rangeLabel;
-      const modelText = predictionDateOffset(predictionSelectedDate || predictionTodayIso()) >= 3 ? 'ARPEGE France' : 'AROME France';
+      const modelText = 'AROME France';
       predictionPageSubtitle.textContent = result?.ok
         ? 'Image générée depuis la ' + periodText + ' ' + modelText + ' en cache · ' + dateText
         : 'En attente des grilles ' + modelText + ' · ' + dateText;

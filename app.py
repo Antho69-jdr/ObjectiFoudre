@@ -86,7 +86,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.108"
+APP_VERSION = "1.3.109"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -17989,8 +17989,8 @@ def _fr_radar_shapes_features(rgba) -> list:
     ISOBANDES NON CHEVAUCHANTES : la bande k est percée des zones ≥ k+1 (mêmes anneaux lissés
     → frontières qui coïncident exactement, ni trou ni recouvrement) → une opacité uniforme
     par bande sans empilement de fills. Anneaux : marching squares → Douglas-Peucker →
-    Chaikin ×2 (≈ B-spline quadratique, beau lissé). Brièvement passé à ×1 (v1.3.108) pour la
-    perf, puis restauré à ×2 (v1.3.108) une fois le rendu radar en couches-frames (le nombre de
+    Chaikin ×2 (≈ B-spline quadratique, beau lissé). Brièvement passé à ×1 (v1.3.109) pour la
+    perf, puis restauré à ×2 (v1.3.109) une fois le rendu radar en couches-frames (le nombre de
     sommets ne pèse plus sur la fluidité : chaque frame n'est triangulée qu'une fois). Grille ½ résolution."""
     import numpy as np
     band = _fr_radar_rgba_to_band(rgba).astype(np.float32)[::2, ::2]
@@ -18036,7 +18036,7 @@ def _fr_radar_shapes_features(rgba) -> list:
             dp = _fr_ring_dp(ring, 1.25)
             if len(dp) < 3:
                 continue
-            sm = _fr_ring_chaikin(dp, 2)   # v1.3.108 : ×2 restauré (beau lissé) — la perf ne dépend plus des sommets
+            sm = _fr_ring_chaikin(dp, 2)   # v1.3.109 : ×2 restauré (beau lissé) — la perf ne dépend plus des sommets
             xs = [p[0] for p in dp]; ys = [p[1] for p in dp]
             cxr = sum(xs) / len(xs); cyr = sum(ys) / len(ys)
             # point de test INTÉRIEUR = 1er sommet tiré de 40 % vers le centroïde (les cœurs

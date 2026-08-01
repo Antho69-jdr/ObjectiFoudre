@@ -10,7 +10,7 @@ function collectPredictionDailyCells(day = getCurrentDay(), periodKey = 'day') {
   slots.forEach((slot) => {
     const hour = Number(String(slot.slot_key || '').replace('h', ''));
     (slot.cells || []).forEach((cell) => {
-      if (cell?.source_provider !== 'meteofrance_arome_grib') return;
+      if (cell?.source_provider !== 'meteofrance_arome_grib' && cell?.source_provider !== PREDICTION_ECMWF_SLOTS_PROVIDER) return;
       const lat = Number(cell.lat);
       const lon = Number(cell.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
@@ -1035,7 +1035,7 @@ function generatePredictionPageImage(day = getCurrentDay(), periodKey = selected
   }
   const cells = smoothPredictionCells(collectPredictionDailyCells(day, period.key));
   if (!cells.length) {
-    return { ok: false, status, periodStatus, periodKey: period.key, message: 'Aucune cellule AROME France exploitable pour ' + period.label.toLowerCase() + '.' };
+    return { ok: false, status, periodStatus, periodKey: period.key, message: 'Aucune cellule exploitable pour ' + period.label.toLowerCase() + '.' };
   }
   const dataUrl = drawPredictionImage(day, cells, period.key);
   const analysisHtml = predictionBuildAnalysisHtml(day, cells, period.key);

@@ -73,6 +73,19 @@ function predictionDayIsTrend(day) {
   return Array.isArray(slot?.cells) && slot.cells.some((cell) => cell?.source_provider === PREDICTION_TREND_PROVIDER);
 }
 
+// Jour ECMWF MULTI-CRÉNEAUX (J+2/J+3) : cellules ecmwf_ifs, PAS tendance. Self-contained
+// (ses ~8 créneaux 3-h sont sur sa propre date, pas de fenêtre 08h-08h ni de tail nocturne).
+function predictionDayIsEcmwfSlots(day) {
+  if (!day || day.__trend) return false;
+  const slot = Array.isArray(day.slots) ? day.slots[0] : null;
+  return Array.isArray(slot?.cells) && slot.cells.some((cell) => cell?.source_provider === PREDICTION_ECMWF_SLOTS_PROVIDER);
+}
+
+function predictionDayActualSlotKeys(day) {
+  const slots = Array.isArray(day?.slots) ? day.slots : [];
+  return slots.map((slot) => slot?.slot_key).filter(Boolean);
+}
+
 function predictionActiveDay() {
   if (!predictionSelectedDate) return null;
   return PREDICTION_DAY_STORE.get(predictionSelectedDate) || null;
@@ -340,7 +353,8 @@ function predictionDayByKey(dayKey, preferredDay = getCurrentDay()) {
 
 function predictionSlotHasAromeCells(slot) {
   return Array.isArray(slot?.cells)
-    && slot.cells.some((cell) => cell?.source_provider === 'meteofrance_arome_grib');
+    && slot.cells.some((cell) => cell?.source_provider === 'meteofrance_arome_grib'
+      || cell?.source_provider === PREDICTION_ECMWF_SLOTS_PROVIDER);
 }
 
 function predictionSlotFromDay(dayKey, slotKey, preferredDay = getCurrentDay()) {
@@ -352,6 +366,13 @@ function predictionSlotFromDay(dayKey, slotKey, preferredDay = getCurrentDay()) 
 }
 
 function predictionLoadedSlots(day = getCurrentDay()) {
+  if (predictionDayIsEcmwfSlots(day)) {
+    // Jour ECMWF self-contained : ses créneaux sont directement dans day.slots (sur sa date).
+    const key = normalizeDateIso(predictionDayKey(day));
+    return (Array.isArray(day?.slots) ? day.slots : [])
+      .filter(predictionSlotHasAromeCells)
+      .map((slot) => ({ ...slot, prediction_day_key: key, prediction_window_key: key + ':' + slot.slot_key }));
+  }
   return predictionAllDaySlotKeys()
     .map((slotKey) => {
       const hour = predictionSlotHour(slotKey);
@@ -395,6 +416,11 @@ function predictionNextTailAvailable(day = getCurrentDay()) {
 }
 
 function predictionRequiredSlotKeys(slotKeys, day = getCurrentDay()) {
+  if (predictionDayIsEcmwfSlots(day)) {
+    // ECMWF multi-créneaux : n'exiger que les créneaux RÉELLEMENT fournis (≈8, pas 24 horaires).
+    const actual = new Set(predictionDayActualSlotKeys(day));
+    return slotKeys.filter((key) => actual.has(key));
+  }
   if (predictionNextTailAvailable(day)) return slotKeys;
   return slotKeys.filter((key) => predictionSlotHour(key) >= PREDICTION_DAY_START_HOUR);
 }
