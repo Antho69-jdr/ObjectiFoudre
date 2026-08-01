@@ -209,21 +209,24 @@
   }
   // Rose des vents = anneau « vue visible » SEUL (item Trello, choix Anthony 2026-08-01 :
   // remplace totalement les anciennes flèches de prédilection, qui pouvaient se contredire
-  // avec l'anneau — plus lisible/représentatif de la zone). Couronne de 16 secteurs (22,5°)
-  // colorés par l'OUVERTURE de l'horizon : vert = dégagé (on voit loin), rouge = bouché
-  // (relief/obstruction proche). Donnée = spot.horizon.azimuths[].horizon_deg (audit LiDAR).
-  function openColor(op) {          // 0 (bouché) → 1 (dégagé) : rouge → vert
-    var t = Math.max(0, Math.min(1, op));
-    return 'hsl(' + (8 + 132 * t).toFixed(0) + ' 70% 50%)';
+  // avec l'anneau — plus lisible/représentatif de la zone). Couronne de 16 secteurs (22,5°) :
+  // VERT = horizon dégagé (on voit loin) ; plus c'est bouché (relief/obstruction proche), plus
+  // le secteur s'EFFACE (absence de couleur, on voit le disque sombre — choix Anthony, remplace
+  // l'ancien rouge). Donnée = spot.horizon.azimuths[].horizon_deg (audit LiDAR).
+  var RING_GREEN = 'hsl(140 68% 47%)';
+  function openAlpha(op) {          // opacité du secteur = ouverture (bouché → transparent)
+    return Math.max(0, Math.min(1, op));
   }
-  function ringSectors(h) {         // 16 secteurs : ouverture moyenne de l'horizon
+  function ringSectors(h) {         // 16 secteurs : ouverture moyenne + obstacle proche
     if (!h || !h.azimuths || !h.azimuths.length) return null;
-    var K = 16, step = 22.5, MAXDEG = 18, out = [];
+    var K = 16, step = 22.5, MAXDEG = 18, BLOCK = 2, NEAR_KM = 5, out = [];
     for (var k = 0; k < K; k++) {
       var c = k * step;
       var vals = h.azimuths.filter(function (a) { return Math.abs(((a.az - c + 180) % 360) - 180) <= step / 2; });
       var m = vals.length ? vals.reduce(function (s, a) { return s + (a.horizon_deg || 0); }, 0) / vals.length : 0;
-      out.push({ c: c, op: Math.max(0, Math.min(1, 1 - m / MAXDEG)) });
+      // secteur bouché de PRÈS : un obstacle réel (horizon ≥ BLOCK°) à moins de 5 km (choix Anthony → noir).
+      var near = vals.some(function (a) { return (a.horizon_deg || 0) >= BLOCK && a.dist_km != null && a.dist_km < NEAR_KM; });
+      out.push({ c: c, op: Math.max(0, Math.min(1, 1 - m / MAXDEG)), near: near });
     }
     return out;
   }
@@ -233,13 +236,17 @@
     if (!secs) return '';
     // Couronne épaisse (l'anneau EST la rose maintenant → il occupe le disque, trou central
     // pour le moyeu). Fin liseré sombre entre secteurs pour garder les 16 directions lisibles.
+    // 3 états : NOIR = obstacle à < 5 km (« positif ») ; VERT (opacité = ouverture) = dégagé ;
+    // transparent = bouché au loin (absence de couleur).
     var rIn = 6.6, rOut = 16.4, half = 11.25, segs = '';
     for (var i = 0; i < secs.length; i++) {
       var s = secs[i], a0 = s.c - half, a1 = s.c + half;
       var o0 = ringPt(rOut, a0), o1 = ringPt(rOut, a1), i1 = ringPt(rIn, a1), i0 = ringPt(rIn, a0);
+      var fill = s.near ? '#000000' : RING_GREEN;
+      var op = s.near ? 0.92 : openAlpha(s.op);
       segs += '<path d="M' + o0[0] + ' ' + o0[1] + ' A' + rOut + ' ' + rOut + ' 0 0 1 ' + o1[0] + ' ' + o1[1] +
-        ' L' + i1[0] + ' ' + i1[1] + ' A' + rIn + ' ' + rIn + ' 0 0 0 ' + i0[0] + ' ' + i0[1] + ' Z" fill="' + openColor(s.op) +
-        '" stroke="#0e1620" stroke-width="0.35"/>';
+        ' L' + i1[0] + ' ' + i1[1] + ' A' + rIn + ' ' + rIn + ' 0 0 0 ' + i0[0] + ' ' + i0[1] + ' Z" fill="' + fill +
+        '" stroke="#0e1620" stroke-width="0.35" opacity="' + op.toFixed(2) + '"/>';
     }
     return '<g class="ofspot-compass-ring" opacity="0.95">' + segs + '</g>';
   }
