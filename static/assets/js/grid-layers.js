@@ -225,6 +225,32 @@ function ensureGridScaffolding() {
       'line-opacity': 0,
     },
   });
+  // « Meilleures cellules » (item Trello) : même rendu que la carte du mode étoile —
+  // liseré ambre PULSATILE (halo large flou + trait net) qui souligne les cellules les
+  // mieux notées du créneau, PLUS l'intérieur rempli (item #5). Overlay AU-DESSUS de la
+  // grille (populé/animé par grid.js, vide + masqué par défaut). Piloté par bestCellsMode.
+  if (!map.getSource('grid-best')) ensureSource('grid-best', EMPTY_FEATURE_COLLECTION);
+  tryAddLayer('grid-best-fill', {
+    id: 'grid-best-fill',
+    type: 'fill',
+    source: 'grid-best',
+    layout: { visibility: 'none' },
+    paint: { 'fill-color': '#f5b942', 'fill-opacity': 0.18, 'fill-antialias': false },
+  });
+  tryAddLayer('grid-best-glow', {
+    id: 'grid-best-glow',
+    type: 'line',
+    source: 'grid-best',
+    layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'none' },
+    paint: { 'line-color': '#f5b942', 'line-width': 9, 'line-blur': 6, 'line-opacity': 0.5 },
+  });
+  tryAddLayer('grid-best-line', {
+    id: 'grid-best-line',
+    type: 'line',
+    source: 'grid-best',
+    layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'none' },
+    paint: { 'line-color': '#ffe9b0', 'line-width': 2.4, 'line-opacity': 0.95 },
+  });
   bindGridHandlersOnce();
   const ok = Boolean(map.getSource('grid') && map.getSource('grid-outline') && map.getLayer('grid-fill') && map.getLayer('grid-outline'));
   debugLog('ensureGridScaffolding:done', { ok, hasGridSource: !!map.getSource('grid'), hasOutlineSource: !!map.getSource('grid-outline'), hasFillLayer: !!map.getLayer('grid-fill'), hasOutlineLayer: !!map.getLayer('grid-outline') });
@@ -303,6 +329,8 @@ function clearGridLayers() {
   const outlineSource = map.getSource('grid-outline');
   if (gridSource) gridSource.setData(EMPTY_FEATURE_COLLECTION);
   if (outlineSource) outlineSource.setData(EMPTY_FEATURE_COLLECTION);
+  const bestSource = map.getSource('grid-best');
+  if (bestSource) bestSource.setData(EMPTY_FEATURE_COLLECTION);
   resetGridStableState();
   setGridFillFactor(1);
   updateHighlight();

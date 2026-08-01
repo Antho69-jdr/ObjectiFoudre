@@ -32,6 +32,9 @@ body.spots-open .spots-rail,
 body.history-open .spots-rail { display: none; }
 .spots-rail .grid-focus-btn:hover { background: rgba(70, 192, 230, 0.12); border-color: rgba(70, 192, 230, 0.5); color: #fff; }
 .spots-rail .grid-focus-btn.active { background: rgba(70, 192, 230, 0.18); border-color: rgba(70, 192, 230, 0.6); color: #fff; }
+/* Meilleures cellules : teinte AMBRE (cohérente avec l'overlay ambre pulsatile), pas cyan. */
+.spots-rail .best-cells-rail-btn:hover { background: rgba(245, 185, 66, 0.14); border-color: rgba(245, 185, 66, 0.5); color: #ffe9b0; }
+.spots-rail .best-cells-rail-btn.active { background: rgba(245, 185, 66, 0.2); border-color: rgba(245, 185, 66, 0.66); color: #ffe9b0; }
 body.mobile-ui .spots-rail { left: 10px; }
 
 /* ── Fiche (popup MapLibre) ────────────────────────────────────────────── */

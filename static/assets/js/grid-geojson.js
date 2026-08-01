@@ -6,7 +6,7 @@
 
     function buildSlotGeoJSON(slot, cells) {
       const safeCells = Array.isArray(cells) ? cells : [];
-      const cacheKey = `${selectedColorMetric}|${bestCellsMode ? 'best' : 'all'}|${safeCells.length}`;
+      const cacheKey = `${selectedColorMetric}|${safeCells.length}`;
       if (slot && typeof slot === 'object') {
         const cached = slotGeoJSONCache.get(slot);
         if (cached && cached.cells === safeCells && cached.cacheKey === cacheKey) return cached.geojson;
@@ -85,11 +85,12 @@
     function cellToFeature(cell, bestZones, entering = null, clipToFrance = false) {
       const baseOpacity = opacityFromScoreGlobal(cell.trigger_score);
       const isBest = bestZones.has(cell.zone);
+      // Le mode « meilleures cellules » n'estompe plus le reste : il souligne désormais
+      // les meilleures cellules avec l'overlay ambre pulsatile (cf. grid.js). La grille
+      // garde donc son opacité normale quel que soit le mode.
       const fillOpacity = entering
         ? Math.max(0, Math.min(1, entering.opacity))
-        : (bestCellsMode && !cell.is_loader
-            ? (isBest ? Math.min(0.5, Math.max(baseOpacity, 0.42)) : Math.max(0.06, baseOpacity * 0.22))
-            : baseOpacity);
+        : baseOpacity;
       const fillMetric = getCellMetricValue(cell);
       const fillColor = getCellFillColor(cell);
       const latOffset = entering ? entering.latOffset : 0;

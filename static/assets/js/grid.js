@@ -7,19 +7,91 @@
     function updateBestCellsButton() {
       if (!bestCellsBtn) return;
       bestCellsBtn.classList.toggle('active', bestCellsMode);
+      bestCellsBtn.setAttribute('aria-pressed', bestCellsMode ? 'true' : 'false');
+    }
+
+    // ── « Meilleures cellules » : overlay façon carte du mode étoile ────────────
+    // Reprend le rendu du mode chasse d'étoiles : liseré ambre PULSATILE (halo large
+    // flou + trait net) qui souligne les cellules les mieux notées du créneau affiché,
+    // PLUS l'intérieur rempli (item #5). Sélection : cellules à ≤ BEST_REL_DROP pts du
+    // meilleur trigger_score du créneau (et ≥ BEST_MIN_ABS), dédoublonnées spatialement,
+    // plafonnées à BEST_MAX. Remplace l'ancien mode « on estompe le reste ».
+    const BEST_LAYERS = ['grid-best-fill', 'grid-best-glow', 'grid-best-line'];
+    const BEST_MIN_ABS = 20;      // ne jamais souligner une cellule sous ce score
+    const BEST_REL_DROP = 15;     // on garde les cellules à moins de 15 pts du meilleur
+    const BEST_SEP_DEG = 0.33;    // dédoublonnage spatial (spots distincts) ≈ 35 km
+    const BEST_MAX = 12;          // nb max de cellules soulignées
+
+    function computeBestCellsFC(cells) {
+      if (!Array.isArray(cells) || !cells.length) return EMPTY_FEATURE_COLLECTION;
+      let mx = 0;
+      for (const c of cells) { const s = Number(c?.trigger_score || 0); if (s > mx) mx = s; }
+      const floor = Math.max(BEST_MIN_ABS, mx - BEST_REL_DROP);
+      const cand = cells
+        .filter((c) => c && !c.is_loader && Number(c.trigger_score || 0) >= floor)
+        .map((c) => ({ c, s: Number(c.trigger_score || 0), lat: Number(c.lat), lon: Number(c.lon) }))
+        .sort((a, b) => b.s - a.s);
+      if (!cand.length) return EMPTY_FEATURE_COLLECTION;
+      const clip = typeof shouldUseFranceGridClip === 'function' ? shouldUseFranceGridClip(cells) : false;
+      const picks = [];
+      for (const cd of cand) {
+        const cl = Math.cos(cd.lat * Math.PI / 180);
+        if (picks.some((p) => Math.abs(p.lat - cd.lat) < BEST_SEP_DEG && Math.abs(p.lon - cd.lon) * cl < BEST_SEP_DEG)) continue;
+        picks.push(cd);
+        if (picks.length >= BEST_MAX) break;
+      }
+      const feats = [];
+      for (const p of picks) {
+        const cell = p.c;
+        const h = Number(cell.cell_height_deg) / 2;
+        const w = Number(cell.cell_width_deg) / 2;
+        const geom = typeof getCellGeometry === 'function'
+          ? getCellGeometry(cell, p.lon - w, p.lat - h, p.lon + w, p.lat + h, clip)
+          : null;
+        if (geom) feats.push({ type: 'Feature', properties: { zone: cell.zone, score: p.s }, geometry: geom });
+      }
+      return { type: 'FeatureCollection', features: feats };
+    }
+
+    // Liseré PULSATILE : bat opacité/épaisseur en sinus (~1,4 s), throttlé ~22 fps.
+    let bestPulseRAF = null, bestPulseLast = 0;
+    function bestPulseTick(t) {
+      if (!bestCellsMode) { bestPulseRAF = null; return; }
+      if (t - bestPulseLast >= 45) {
+        bestPulseLast = t;
+        const k = 0.5 + 0.5 * Math.sin(t / 1000 * 2.2);
+        try {
+          if (map.getLayer('grid-best-glow')) {
+            map.setPaintProperty('grid-best-glow', 'line-opacity', 0.24 + 0.44 * k);
+            map.setPaintProperty('grid-best-glow', 'line-width', 6.5 + 6.5 * k);
+          }
+          if (map.getLayer('grid-best-line')) map.setPaintProperty('grid-best-line', 'line-opacity', 0.68 + 0.32 * k);
+          if (map.getLayer('grid-best-fill')) map.setPaintProperty('grid-best-fill', 'fill-opacity', 0.12 + 0.14 * k);
+        } catch (_) {}
+      }
+      bestPulseRAF = requestAnimationFrame(bestPulseTick);
+    }
+    function startBestPulse() { if (bestPulseRAF == null) { bestPulseLast = 0; bestPulseRAF = requestAnimationFrame(bestPulseTick); } }
+    function stopBestPulse() { if (bestPulseRAF != null) { cancelAnimationFrame(bestPulseRAF); bestPulseRAF = null; } }
+
+    // (Re)peuple l'overlay pour le créneau courant + gère visibilité/pulsation.
+    function updateBestCellsOverlay() {
+      if (!map || !map.getSource || !map.getSource('grid-best')) return;
+      const slot = getCurrentSlot();
+      const cells = Array.isArray(slot?.cells) ? slot.cells : [];
+      const fc = bestCellsMode ? computeBestCellsFC(cells) : EMPTY_FEATURE_COLLECTION;
+      try { map.getSource('grid-best').setData(fc); } catch (_) {}
+      const visible = bestCellsMode && fc.features.length > 0;
+      BEST_LAYERS.forEach((id) => {
+        if (map.getLayer(id)) { try { map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none'); } catch (_) {} }
+      });
+      if (visible) startBestPulse(); else stopBestPulse();
     }
 
     function applyBestCellsModeToCurrentMap() {
-      const slot = getCurrentSlot();
-      const cells = slot?.cells || [];
-      if (!map.isStyleLoaded() || !ensureGridScaffolding() || !map.getSource('grid') || !cells.length) {
-        updateBestCellsButton();
-        return;
-      }
-      addLayers(buildSlotGeoJSON(slot, cells), cells);
-      applyGridLinesVisibility();
-      updateHighlight();
       updateBestCellsButton();
+      if (!map.isStyleLoaded() || !ensureGridScaffolding()) return;
+      updateBestCellsOverlay();
     }
 
     function toggleBestCellsMode() {
@@ -90,6 +162,7 @@
       if (!selection.dayKey || !selection.slotKey || !renderableSlots.length) {
         clearGridRevealFailsafe();
         removeLayers(true);
+        updateBestCellsOverlay();   // rien à souligner → masque l'overlay + stoppe le pulse
         if (typeof updateGridSourceBadge === 'function') updateGridSourceBadge();
         return;
       }
@@ -105,6 +178,7 @@
         if (!shouldKeepPreviousAromeGrid) {
           removeLayers(true);
         }
+        updateBestCellsOverlay();   // rien à souligner → masque l'overlay + stoppe le pulse
         if (typeof updateGridSourceBadge === 'function') updateGridSourceBadge();
         return;
       }
@@ -145,6 +219,8 @@
         removeLoaderLayers();
         updateHighlight();
       }
+
+      updateBestCellsOverlay();   // suit le créneau affiché si le mode est actif
 
       if (typeof updateMetaLine === 'function') updateMetaLine();
       else if (typeof updateGridSourceBadge === 'function') updateGridSourceBadge();
