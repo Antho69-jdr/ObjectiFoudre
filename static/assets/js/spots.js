@@ -207,9 +207,41 @@
     if (best >= 0 && !g.some(function (x) { return x; })) g[best] = true;   // au moins la meilleure
     return g;
   }
-  // Rose des vents SIMPLE : on ne dessine QUE les flèches vertes (directions de
-  // prédilection) sur disque sombre → contraste maximal, la direction saute aux yeux.
-  // Carte orientée nord → haut = N. Diagonales presque aussi longues que les cardinales.
+  // Anneau « vue visible » (item Trello) : rim coloré par l'OUVERTURE de l'horizon dans
+  // chaque secteur (16 secteurs de 22,5°). Vert = horizon dégagé (on voit loin), rouge =
+  // bouché (relief/obstruction proche). Vient EN PLUS des branches vertes (directions de
+  // prédilection). Même donnée que la rosace détaillée : spot.horizon.azimuths[].horizon_deg.
+  function openColor(op) {          // 0 (bouché) → 1 (dégagé) : rouge → vert
+    var t = Math.max(0, Math.min(1, op));
+    return 'hsl(' + (8 + 132 * t).toFixed(0) + ' 70% 50%)';
+  }
+  function ringSectors(h) {         // 16 secteurs : ouverture moyenne de l'horizon
+    if (!h || !h.azimuths || !h.azimuths.length) return null;
+    var K = 16, step = 22.5, MAXDEG = 18, out = [];
+    for (var k = 0; k < K; k++) {
+      var c = k * step;
+      var vals = h.azimuths.filter(function (a) { return Math.abs(((a.az - c + 180) % 360) - 180) <= step / 2; });
+      var m = vals.length ? vals.reduce(function (s, a) { return s + (a.horizon_deg || 0); }, 0) / vals.length : 0;
+      out.push({ c: c, op: Math.max(0, Math.min(1, 1 - m / MAXDEG)) });
+    }
+    return out;
+  }
+  function ringPt(r, deg) { var a = (deg - 90) * Math.PI / 180; return [(20 + r * Math.cos(a)).toFixed(2), (20 + r * Math.sin(a)).toFixed(2)]; }
+  function visionRingSVG(h) {
+    var secs = ringSectors(h);
+    if (!secs) return '';
+    var rIn = 13.7, rOut = 16.4, half = 11.25, segs = '';
+    for (var i = 0; i < secs.length; i++) {
+      var s = secs[i], a0 = s.c - half, a1 = s.c + half;
+      var o0 = ringPt(rOut, a0), o1 = ringPt(rOut, a1), i1 = ringPt(rIn, a1), i0 = ringPt(rIn, a0);
+      segs += '<path d="M' + o0[0] + ' ' + o0[1] + ' A' + rOut + ' ' + rOut + ' 0 0 1 ' + o1[0] + ' ' + o1[1] +
+        ' L' + i1[0] + ' ' + i1[1] + ' A' + rIn + ' ' + rIn + ' 0 0 0 ' + i0[0] + ' ' + i0[1] + ' Z" fill="' + openColor(s.op) + '"/>';
+    }
+    return '<g class="ofspot-compass-ring" opacity="0.92">' + segs + '</g>';
+  }
+
+  // Rose des vents : anneau « vue visible » coloré (ouverture par secteur) + flèches vertes
+  // des directions de prédilection PAR-DESSUS. Disque sombre → contraste. Nord = haut.
   function compassSVG(spot) {
     var green = dirGreen(dirRatios(spot.horizon)), arrows = '';
     for (var i = 0; i < 8; i++) {
@@ -224,6 +256,7 @@
     }
     return '<svg viewBox="0 0 40 40" class="ofspot-compass" aria-hidden="true">' +
       '<circle cx="20" cy="20" r="16.5" class="ofspot-compass-bg"/>' +
+      visionRingSVG(spot.horizon) +
       arrows +
       '<circle cx="20" cy="20" r="2.3" class="ofspot-compass-hub"/>' +
       '</svg>';

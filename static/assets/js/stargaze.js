@@ -1010,9 +1010,25 @@
   if (layersPanel) {
     const parent = document.getElementById('sgLayerCloud');
     const subs = document.getElementById('sgLayerSubs');
-    parent && parent.addEventListener('click', () => {
+    const chev = parent && parent.querySelector('.sg-layer-chev');
+    // Chevron : ouvre/ferme la sous-liste (basses/moyennes/hautes) SANS toucher aux couches.
+    const toggleSubs = (e) => {
+      if (e) e.stopPropagation();
       const open = subs && subs.classList.toggle('open');
       parent.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    chev && chev.addEventListener('click', toggleSubs);
+    // « Nébulosité » (reste de la ligne) : coche/décoche les 3 couches nuages D'UN COUP
+    // (item Trello). Coché si au moins une est active → un clic les éteint toutes ; sinon
+    // les allume toutes. On déplie pour montrer le résultat.
+    parent && parent.addEventListener('click', () => {
+      const target = !(layerSel.cloudLo || layerSel.cloudMi || layerSel.cloudHi);
+      layerSel.cloudLo = target; layerSel.cloudMi = target; layerSel.cloudHi = target;
+      if (subs && !subs.classList.contains('open')) {
+        subs.classList.add('open');
+        parent.setAttribute('aria-expanded', 'true');
+      }
+      applyLayers();
     });
     const bind = (id, key) => { const el = document.getElementById(id); el && el.addEventListener('click', () => toggleLayer(key)); };
     bind('sgLayerCloudLo', 'cloudLo');
