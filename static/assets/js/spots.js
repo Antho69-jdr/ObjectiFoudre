@@ -207,10 +207,11 @@
     if (best >= 0 && !g.some(function (x) { return x; })) g[best] = true;   // au moins la meilleure
     return g;
   }
-  // Anneau « vue visible » (item Trello) : rim coloré par l'OUVERTURE de l'horizon dans
-  // chaque secteur (16 secteurs de 22,5°). Vert = horizon dégagé (on voit loin), rouge =
-  // bouché (relief/obstruction proche). Vient EN PLUS des branches vertes (directions de
-  // prédilection). Même donnée que la rosace détaillée : spot.horizon.azimuths[].horizon_deg.
+  // Rose des vents = anneau « vue visible » SEUL (item Trello, choix Anthony 2026-08-01 :
+  // remplace totalement les anciennes flèches de prédilection, qui pouvaient se contredire
+  // avec l'anneau — plus lisible/représentatif de la zone). Couronne de 16 secteurs (22,5°)
+  // colorés par l'OUVERTURE de l'horizon : vert = dégagé (on voit loin), rouge = bouché
+  // (relief/obstruction proche). Donnée = spot.horizon.azimuths[].horizon_deg (audit LiDAR).
   function openColor(op) {          // 0 (bouché) → 1 (dégagé) : rouge → vert
     var t = Math.max(0, Math.min(1, op));
     return 'hsl(' + (8 + 132 * t).toFixed(0) + ' 70% 50%)';
@@ -230,34 +231,26 @@
   function visionRingSVG(h) {
     var secs = ringSectors(h);
     if (!secs) return '';
-    var rIn = 13.7, rOut = 16.4, half = 11.25, segs = '';
+    // Couronne épaisse (l'anneau EST la rose maintenant → il occupe le disque, trou central
+    // pour le moyeu). Fin liseré sombre entre secteurs pour garder les 16 directions lisibles.
+    var rIn = 6.6, rOut = 16.4, half = 11.25, segs = '';
     for (var i = 0; i < secs.length; i++) {
       var s = secs[i], a0 = s.c - half, a1 = s.c + half;
       var o0 = ringPt(rOut, a0), o1 = ringPt(rOut, a1), i1 = ringPt(rIn, a1), i0 = ringPt(rIn, a0);
       segs += '<path d="M' + o0[0] + ' ' + o0[1] + ' A' + rOut + ' ' + rOut + ' 0 0 1 ' + o1[0] + ' ' + o1[1] +
-        ' L' + i1[0] + ' ' + i1[1] + ' A' + rIn + ' ' + rIn + ' 0 0 0 ' + i0[0] + ' ' + i0[1] + ' Z" fill="' + openColor(s.op) + '"/>';
+        ' L' + i1[0] + ' ' + i1[1] + ' A' + rIn + ' ' + rIn + ' 0 0 0 ' + i0[0] + ' ' + i0[1] + ' Z" fill="' + openColor(s.op) +
+        '" stroke="#0e1620" stroke-width="0.35"/>';
     }
-    return '<g class="ofspot-compass-ring" opacity="0.92">' + segs + '</g>';
+    return '<g class="ofspot-compass-ring" opacity="0.95">' + segs + '</g>';
   }
 
-  // Rose des vents : anneau « vue visible » coloré (ouverture par secteur) + flèches vertes
-  // des directions de prédilection PAR-DESSUS. Disque sombre → contraste. Nord = haut.
+  // Rose des vents = disque sombre + couronne « vue visible » colorée (ouverture par secteur)
+  // + moyeu. Les anciennes flèches de prédilection sont retirées (choix Anthony) : l'anneau
+  // seul représente la zone, sans se contredire avec des flèches. Nord = haut.
   function compassSVG(spot) {
-    var green = dirGreen(dirRatios(spot.horizon)), arrows = '';
-    for (var i = 0; i < 8; i++) {
-      if (!green[i]) continue;       // directions ordinaires : non dessinées
-      var a = _DIRS8[i] * Math.PI / 180, card = (i % 2 === 0);
-      var R = card ? 15.5 : 13.5, w = card ? 2.7 : 2.3;
-      var ux = Math.sin(a), uy = -Math.cos(a), px = -uy, py = ux;
-      var tip = (20 + R * ux).toFixed(1) + ',' + (20 + R * uy).toFixed(1);
-      var bl = (20 + w * px).toFixed(1) + ',' + (20 + w * py).toFixed(1);
-      var br = (20 - w * px).toFixed(1) + ',' + (20 - w * py).toFixed(1);
-      arrows += '<polygon points="' + tip + ' ' + bl + ' ' + br + '" fill="' + _CDIR_GOOD + '"/>';
-    }
     return '<svg viewBox="0 0 40 40" class="ofspot-compass" aria-hidden="true">' +
       '<circle cx="20" cy="20" r="16.5" class="ofspot-compass-bg"/>' +
       visionRingSVG(spot.horizon) +
-      arrows +
       '<circle cx="20" cy="20" r="2.3" class="ofspot-compass-hub"/>' +
       '</svg>';
   }
