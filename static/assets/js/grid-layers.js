@@ -234,13 +234,17 @@ function ensureGridScaffolding() {
     id: 'grid-best-fill',
     type: 'fill',
     source: 'grid-best',
+    filter: ['!=', ['geometry-type'], 'LineString'],   // polygones (intérieur rempli) uniquement
     layout: { visibility: 'none' },
     paint: { 'fill-color': '#f5b942', 'fill-opacity': 0.18, 'fill-antialias': false },
   });
+  // Halo + trait : SEULEMENT sur les LineString de périmètre de l'amas (pas les bords des
+  // polygones → aucun quadrillage interne).
   tryAddLayer('grid-best-glow', {
     id: 'grid-best-glow',
     type: 'line',
     source: 'grid-best',
+    filter: ['==', ['geometry-type'], 'LineString'],
     layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'none' },
     paint: { 'line-color': '#f5b942', 'line-width': 9, 'line-blur': 6, 'line-opacity': 0.5 },
   });
@@ -248,6 +252,7 @@ function ensureGridScaffolding() {
     id: 'grid-best-line',
     type: 'line',
     source: 'grid-best',
+    filter: ['==', ['geometry-type'], 'LineString'],
     layout: { 'line-join': 'round', 'line-cap': 'round', visibility: 'none' },
     paint: { 'line-color': '#ffe9b0', 'line-width': 2.4, 'line-opacity': 0.95 },
   });

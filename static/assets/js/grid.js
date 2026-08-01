@@ -11,44 +11,56 @@
     }
 
     // ── « Meilleures cellules » : overlay façon carte du mode étoile ────────────
-    // Reprend le rendu du mode chasse d'étoiles : liseré ambre PULSATILE (halo large
-    // flou + trait net) qui souligne les cellules les mieux notées du créneau affiché,
-    // PLUS l'intérieur rempli (item #5). Sélection : cellules à ≤ BEST_REL_DROP pts du
-    // meilleur trigger_score du créneau (et ≥ BEST_MIN_ABS), dédoublonnées spatialement,
-    // plafonnées à BEST_MAX. Remplace l'ancien mode « on estompe le reste ».
+    // Reprend le rendu du mode chasse d'étoiles : liseré ambre PULSATILE (halo large flou
+    // + trait net) + intérieur rempli (item #5). Souligne TOUT l'amas orageux contigu des
+    // cellules les mieux notées du créneau (à ≤ BEST_REL_DROP pts du meilleur trigger_score
+    // et ≥ BEST_MIN_ABS) : intérieur rempli fondu en un bloc, liseré sur le PÉRIMÈTRE
+    // seulement (pas de quadrillage). Remplace l'ancien mode « on estompe le reste ».
     const BEST_LAYERS = ['grid-best-fill', 'grid-best-glow', 'grid-best-line'];
     const BEST_MIN_ABS = 20;      // ne jamais souligner une cellule sous ce score
     const BEST_REL_DROP = 15;     // on garde les cellules à moins de 15 pts du meilleur
-    const BEST_SEP_DEG = 0.33;    // dédoublonnage spatial (spots distincts) ≈ 35 km
-    const BEST_MAX = 12;          // nb max de cellules soulignées
 
-    function computeBestCellsFC(cells) {
-      if (!Array.isArray(cells) || !cells.length) return EMPTY_FEATURE_COLLECTION;
+    // Toutes les cellules « chaudes » du créneau : à ≤ BEST_REL_DROP pts du meilleur
+    // trigger_score et ≥ BEST_MIN_ABS. On ne dédoublonne PLUS : on veut voir TOUT
+    // l'amas orageux contigu (choix Anthony), pas un point par spot.
+    function selectBestCells(cells) {
       let mx = 0;
       for (const c of cells) { const s = Number(c?.trigger_score || 0); if (s > mx) mx = s; }
       const floor = Math.max(BEST_MIN_ABS, mx - BEST_REL_DROP);
-      const cand = cells
-        .filter((c) => c && !c.is_loader && Number(c.trigger_score || 0) >= floor)
-        .map((c) => ({ c, s: Number(c.trigger_score || 0), lat: Number(c.lat), lon: Number(c.lon) }))
-        .sort((a, b) => b.s - a.s);
-      if (!cand.length) return EMPTY_FEATURE_COLLECTION;
+      return cells.filter((c) => c && !c.is_loader && Number(c.trigger_score || 0) >= floor);
+    }
+
+    // FeatureCollection de l'overlay : intérieur REMPLI (un polygone par cellule chaude,
+    // rognés à la France → ils se fondent en un bloc) + liseré seulement sur le PÉRIMÈTRE
+    // de l'amas (les arêtes partagées entre deux cellules chaudes sont supprimées → pas de
+    // quadrillage interne). Les polygones alimentent grid-best-fill ; les LineString de
+    // périmètre alimentent grid-best-glow/-line (filtrés par type de géométrie).
+    function computeBestCellsFC(cells) {
+      if (!Array.isArray(cells) || !cells.length) return EMPTY_FEATURE_COLLECTION;
+      const hot = selectBestCells(cells);
+      if (!hot.length) return EMPTY_FEATURE_COLLECTION;
       const clip = typeof shouldUseFranceGridClip === 'function' ? shouldUseFranceGridClip(cells) : false;
-      const picks = [];
-      for (const cd of cand) {
-        const cl = Math.cos(cd.lat * Math.PI / 180);
-        if (picks.some((p) => Math.abs(p.lat - cd.lat) < BEST_SEP_DEG && Math.abs(p.lon - cd.lon) * cl < BEST_SEP_DEG)) continue;
-        picks.push(cd);
-        if (picks.length >= BEST_MAX) break;
-      }
+      const cw = Number(hot[0].cell_width_deg) || 0.1;
+      const ch = Number(hot[0].cell_height_deg) || 0.1;
+      const idx = (lat, lon) => Math.round(lat / ch) + ':' + Math.round(lon / cw);
+      const present = new Set(hot.map((c) => idx(Number(c.lat), Number(c.lon))));
       const feats = [];
-      for (const p of picks) {
-        const cell = p.c;
-        const h = Number(cell.cell_height_deg) / 2;
-        const w = Number(cell.cell_width_deg) / 2;
+      for (const cell of hot) {
+        const lat = Number(cell.lat), lon = Number(cell.lon);
+        const w = Number(cell.cell_width_deg) / 2, h = Number(cell.cell_height_deg) / 2;
+        // intérieur rempli (géométrie rognée, comme la grille)
         const geom = typeof getCellGeometry === 'function'
-          ? getCellGeometry(cell, p.lon - w, p.lat - h, p.lon + w, p.lat + h, clip)
+          ? getCellGeometry(cell, lon - w, lat - h, lon + w, lat + h, clip)
           : null;
-        if (geom) feats.push({ type: 'Feature', properties: { zone: cell.zone, score: p.s }, geometry: geom });
+        if (geom) feats.push({ type: 'Feature', properties: { kind: 'fill', zone: cell.zone }, geometry: geom });
+        // arêtes de périmètre : seulement les côtés SANS voisin chaud
+        const gi = Math.round(lat / ch), gj = Math.round(lon / cw);
+        const edges = [];
+        if (!present.has((gi) + ':' + (gj + 1))) edges.push([[lon + w, lat - h], [lon + w, lat + h]]);   // est
+        if (!present.has((gi) + ':' + (gj - 1))) edges.push([[lon - w, lat - h], [lon - w, lat + h]]);   // ouest
+        if (!present.has((gi + 1) + ':' + (gj))) edges.push([[lon - w, lat + h], [lon + w, lat + h]]);   // nord
+        if (!present.has((gi - 1) + ':' + (gj))) edges.push([[lon - w, lat - h], [lon + w, lat - h]]);   // sud
+        for (const e of edges) feats.push({ type: 'Feature', properties: { kind: 'edge' }, geometry: { type: 'LineString', coordinates: e } });
       }
       return { type: 'FeatureCollection', features: feats };
     }
