@@ -20,10 +20,12 @@ let currentPredictionPageResult = null;
 // La page ne dépend plus de la date de la grille de base. Elle a son propre store de
 // jours hydratés (AROME/ARPEGE horaire J0→J+3 via day-cache ; ECMWF tendance J+4→J+10
 // via trend-day). Le rendu reste les « zones lissées », y compris pour ECMWF.
-const PREDICTION_TREND_MIN_OFFSET = 4;   // J+4 et au-delà = tendance ECMWF (quotidienne ;
-                                         // ARPEGE ~+102 h ne couvre pas l'après-midi de J+4)
+const PREDICTION_ECMWF_MIN_OFFSET = 2;   // J+2 et au-delà = ECMWF (J+2/J+3 multi-créneaux 3-h ;
+                                         // J+4+ tendance quotidienne). Remplace ARPEGE.
+const PREDICTION_TREND_MIN_OFFSET = 4;   // J+4 et au-delà = tendance ECMWF 1-point/jour
 const PREDICTION_MAX_OFFSET = 10;        // J+10
 const PREDICTION_TREND_PROVIDER = 'ecmwf_ifs_trend';
+const PREDICTION_ECMWF_SLOTS_PROVIDER = 'ecmwf_ifs';   // J+2/J+3 multi-créneaux (≠ tendance)
 const PREDICTION_DAY_STORE = new Map();  // dateIso -> objet jour (hydraté pour cette page)
 const PREDICTION_DAY_PENDING = new Map(); // dateIso -> Promise (déduplication fetch)
 let predictionSelectedDate = null;       // dateIso affichée (indépendante de la grille)
@@ -41,6 +43,12 @@ function predictionDateOffset(dateIso) {
 
 function predictionDateIsTrend(dateIso) {
   return predictionDateOffset(dateIso) >= PREDICTION_TREND_MIN_OFFSET;
+}
+
+// J+2+ : servi par ECMWF (endpoint trend-day). J+2/J+3 = multi-créneaux (jours normaux),
+// J+4+ = tendance 1-point. NB : « uses ECMWF » (fetch) ≠ « is trend » (UI 1-point).
+function predictionDateUsesEcmwf(dateIso) {
+  return predictionDateOffset(dateIso) >= PREDICTION_ECMWF_MIN_OFFSET;
 }
 
 function predictionSelectableDates() {
@@ -150,7 +158,7 @@ async function predictionFetchTrendDay(dateIso) {
     const data = await response.json().catch(() => ({}));
     const day = data?.payload?.days?.[0];
     if (!data?.ok || !day) return null;
-    day.__trend = true;
+    day.__trend = predictionDateIsTrend(iso);   // 1-point trend UNIQUEMENT J+4+ ; J+2/J+3 = jours multi-créneaux
     day.meta = data.payload.meta || {};
     day.trend_step_hours = data.step_hours;
     PREDICTION_DAY_STORE.set(iso, day);
@@ -167,10 +175,10 @@ async function predictionEnsureDay(dateIso) {
   if (PREDICTION_DAY_STORE.has(iso)) return PREDICTION_DAY_STORE.get(iso);
   if (PREDICTION_DAY_PENDING.has(iso)) return PREDICTION_DAY_PENDING.get(iso);
   const task = (async () => {
-    if (predictionDateIsTrend(iso)) return predictionFetchTrendDay(iso);
+    if (predictionDateUsesEcmwf(iso)) return predictionFetchTrendDay(iso);   // J+2/J+3 multi-créneaux ou J+4+ tendance
     const day = await predictionFetchHourlyDay(iso);
     const nextIso = predictionDateAddDays(iso, 1);
-    if (!predictionDateIsTrend(nextIso) && predictionDateOffset(nextIso) <= PREDICTION_MAX_OFFSET
+    if (!predictionDateUsesEcmwf(nextIso) && predictionDateOffset(nextIso) <= PREDICTION_MAX_OFFSET
       && !PREDICTION_DAY_STORE.has(nextIso) && !PREDICTION_DAY_PENDING.has(nextIso)) {
       await predictionFetchHourlyDay(nextIso);
     }

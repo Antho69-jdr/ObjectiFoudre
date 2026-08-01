@@ -265,10 +265,10 @@ OBJECTIFOUDRE_CACHE_CLEANUP_INTERVAL_SECONDS = _env_int("OBJECTIFOUDRE_CACHE_CLE
 OBJECTIFOUDRE_DISK_CACHE_MAX_MB = _env_int("OBJECTIFOUDRE_DISK_CACHE_MAX_MB", 3072, min_value=256)
 # J-1 n'est PLUS préchargé : il est servi à la demande depuis l'archive (history/),
 # ce qui évite de recalculer/garder en RAM une grille déjà persistée durablement.
-OBJECTIFOUDRE_AUTO_PRELOAD_DAYS = os.environ.get("OBJECTIFOUDRE_AUTO_PRELOAD_DAYS", "today,tomorrow,day_after_tomorrow")
-# Jours préchargés via ARPEGE. J+2 est inclus car le run AROME (~+51 h) ne couvre que
-# le DÉBUT de J+2 → ARPEGE complète l'après-midi/soirée de J+2, puis J+3/J+4. Vide = off.
-OBJECTIFOUDRE_AUTO_PRELOAD_ARPEGE_DAYS = os.environ.get("OBJECTIFOUDRE_AUTO_PRELOAD_ARPEGE_DAYS", "j+2,j+3")
+# AROME ne sert plus que J0/J+1 (grille de base). J+2/J+3 = ECMWF multi-créneaux (à la demande),
+# J+4+ = tendance ECMWF → plus d'ARPEGE dans la carte Prévision (choix Anthony 2026-08-01).
+OBJECTIFOUDRE_AUTO_PRELOAD_DAYS = os.environ.get("OBJECTIFOUDRE_AUTO_PRELOAD_DAYS", "today,tomorrow")
+OBJECTIFOUDRE_AUTO_PRELOAD_ARPEGE_DAYS = os.environ.get("OBJECTIFOUDRE_AUTO_PRELOAD_ARPEGE_DAYS", "")
 # Nb de PROCESSUS pour matérialiser les 24 créneaux d'un jour en parallèle (chaque
 # processus a son propre GIL → vrai parallélisme sur le scoring Python pur). Défaut 1 =
 # séquentiel (comportement historique, Render inchangé). En local, mettre p.ex. 6.
@@ -299,6 +299,8 @@ ECMWF_TREND_FIELD_MAP = {
 ECMWF_TREND_WIND_COMPONENTS = ("10u", "10v")
 ECMWF_TREND_CACHE_TTL_SECONDS = int(os.environ.get("OBJECTIFOUDRE_ECMWF_TREND_CACHE_TTL_SECONDS", "43200"))  # 12 h
 ECMWF_TREND_MODEL_NAME = "ecmwf_ifs_trend"
+ECMWF_SLOTS_MODEL_NAME = "ecmwf_ifs"   # J+2/J+3 multi-créneaux 3-h (≠ tendance 1-point J+4+)
+ECMWF_SLOTS_DAYS_AHEAD = (2, 3)        # jours servis en ECMWF multi-créneaux (ex-ARPEGE)
 OBJECTIFOUDRE_AUTO_PRELOAD_GRID = os.environ.get("OBJECTIFOUDRE_AROME_GRID") or None
 OBJECTIFOUDRE_ENABLE_LEGACY_OPEN_METEO = _env_flag("OBJECTIFOUDRE_ENABLE_LEGACY_OPEN_METEO", False)
 OBJECTIFOUDRE_ENABLE_LEGACY_LOCAL_AROME = _env_flag("OBJECTIFOUDRE_ENABLE_LEGACY_LOCAL_AROME", False)
@@ -386,23 +388,16 @@ def _nwp_model_context(model: str | None):
 
 
 def _nwp_models_for_date(target_date: Date, today: Date | None = None) -> list[str]:
-    """Modèles applicables pour une date, par ordre de préférence. AROME est préféré
-    là où il a des données ; le run AROME (~+51 h) ne couvre que le DÉBUT de J+2 →
-    ARPEGE prend le relais pour la fin de J+2 (et J+3). J+4+ = [] : géré par le
-    sous-système tendance ECMWF (carte Prévision), pas par la grille de base — ARPEGE
-    (~+102 h) n'atteint pas l'après-midi de J+4. Le service essaie les modèles dans
-    l'ordre et garde le premier qui a le créneau en cache (relais créneau par créneau)."""
+    """Modèles de la GRILLE DE BASE pour une date. AROME couvre J0/J+1 (run ~+51 h).
+    J+2 et au-delà = [] : servis par le sous-système ECMWF de la carte Prévision — J+2/J+3
+    en ECMWF multi-créneaux 3-h (remplace ARPEGE, choix Anthony 2026-08-01), J+4+ en tendance
+    quotidienne. Le service essaie les modèles dans l'ordre et garde le 1er créneau en cache."""
     today_date = today or datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
     offset_days = (target_date - today_date).days
     arome_max = int(_nwp_model_spec("arome").get("max_days_ahead") or 2)
-    arpege_max = int(_nwp_model_spec("arpege").get("max_days_ahead") or 4)
     if offset_days < arome_max:
         return ["arome"]                       # J-1, J0, J+1 : AROME couvre toute la journée
-    if offset_days == arome_max:
-        return ["arome", "arpege"]             # J+2 : AROME jusqu'à l'horizon, puis ARPEGE
-    if offset_days <= arpege_max:
-        return ["arpege"]                       # J+3, J+4 : ARPEGE
-    return []                                   # au-delà : ECMWF (sous-système tendance)
+    return []                                   # J+2+ : sous-système ECMWF (multi-créneaux ou tendance)
 
 
 def _nwp_model_for_date(target_date: Date, today: Date | None = None) -> str:
@@ -9570,6 +9565,138 @@ def _ecmwf_build_trend_day_sync(target_date: Date, run_date: Date, run_hour: int
     return copy.deepcopy(result)
 
 
+def _ecmwf_day_steps(run_date: Date, run_hour: int, target_date: Date) -> list[tuple[int, datetime, datetime]]:
+    """Pas 3-horaires ECMWF (open data, jusqu'à 144 h) dont l'instant valide tombe dans le
+    jour LOCAL (Europe/Paris) demandé → ~8 créneaux/jour pour J+2/J+3. Renvoie (step_h, valid_utc, slot_local)."""
+    tz = ZoneInfo("Europe/Paris")
+    run_dt = datetime.combine(run_date, Time(hour=run_hour), tzinfo=timezone.utc)
+    out: list[tuple[int, datetime, datetime]] = []
+    for step in range(0, 145, 3):
+        valid_utc = run_dt + timedelta(hours=step)
+        local = valid_utc.astimezone(tz)
+        if local.date() == target_date:
+            out.append((step, valid_utc, local))
+    return out
+
+
+def _ecmwf_build_day_slots_sync(target_date: Date, run_date: Date, run_hour: int) -> dict[str, Any]:
+    """Grille ECMWF d'un jour en MULTI-PAS (créneaux 3-horaires) pour J+2/J+3, en remplacement
+    d'ARPEGE. Même assemblage/scoring que AROME/ARPEGE ; chaque point porte des tableaux `hourly`
+    de N créneaux → group_for_output produit N slots (≈ 8/jour)."""
+    cache_key = _ecmwf_trend_day_cache_key(run_date, run_hour, target_date) + ":slots3h"
+    cached = _get_cached_value(cache_key, ttl=ECMWF_TREND_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return copy.deepcopy(cached["payload"])
+    persistent = _read_meteofrance_local_persistent_cache("ecmwf-day-slots", cache_key, ECMWF_TREND_CACHE_TTL_SECONDS)
+    if persistent is not None and isinstance(persistent.get("payload"), dict):
+        _set_cached_value(cache_key, persistent["payload"])
+        return copy.deepcopy(persistent["payload"])
+
+    steps = _ecmwf_day_steps(run_date, run_hour, target_date)
+    if not steps:
+        return {"ok": False, "status": 400, "message": f"Aucun pas ECMWF dans le jour {target_date.isoformat()}."}
+    points = _build_meteofrance_france_grid_points()
+    indices_cache: dict[str, Any] = {}
+    per_step: list[tuple[datetime, dict[str, dict[str, float]]]] = []
+    for step_hours, _valid_utc, slot_local in steps:
+        messages = _ecmwf_fetch_index(run_date, run_hour, step_hours)
+        if messages is None:
+            continue
+        fv: dict[str, dict[str, float]] = {}
+        for field, param in ECMWF_TREND_FIELD_MAP.items():
+            values = _ecmwf_sample_param(run_date, run_hour, step_hours, messages, param, field, points, indices_cache)
+            if values:
+                fv[field] = values
+        u_vals = _ecmwf_sample_param(run_date, run_hour, step_hours, messages, ECMWF_TREND_WIND_COMPONENTS[0], "wind_u_10m", points, indices_cache)
+        v_vals = _ecmwf_sample_param(run_date, run_hour, step_hours, messages, ECMWF_TREND_WIND_COMPONENTS[1], "wind_v_10m", points, indices_cache)
+        if u_vals and v_vals:
+            speed: dict[str, float] = {}
+            direction: dict[str, float] = {}
+            for zone, u in u_vals.items():
+                v = v_vals.get(zone)
+                if u is None or v is None:
+                    continue
+                speed[zone] = round(math.hypot(float(u), float(v)), 3)
+                direction[zone] = round((math.degrees(math.atan2(-float(u), -float(v))) + 360.0) % 360.0, 1)
+            if speed:
+                fv["wind_speed_10m"] = speed
+                fv["wind_direction_10m"] = direction
+        if "cape" in fv:
+            per_step.append((slot_local, fv))
+    if not per_step:
+        return {"ok": False, "status": 502, "message": f"CAPE ECMWF illisible pour {target_date.isoformat()}."}
+
+    all_fields: set[str] = set()
+    for _, fv in per_step:
+        all_fields.update(fv.keys())
+    grid_locations = []
+    for point in points:
+        zone = point.zone
+        h: dict[str, list[Any]] = {k: [] for k in (
+            "time", "cape", "precipitable_water", "shortwave_radiation", "precipitation_rate",
+            "temperature_2m", "dew_point_2m", "convective_inhibition", "relative_humidity_2m",
+            "vapour_pressure_deficit", "wet_bulb_temperature_2m", "cloud_cover_low", "cloud_cover_mid",
+            "cloud_cover_high", "boundary_layer_height", "wind_gusts_10m", "wind_speed_10m",
+            "wind_direction_10m", "wind_direction_10m_available")}
+        for slot_local, fv in per_step:
+            temp_c = fv.get("temperature_2m", {}).get(zone)
+            dewpoint_c = fv.get("dew_point_2m", {}).get(zone)
+            rh2m = _relative_humidity_from_dewpoint_c(temp_c, dewpoint_c)
+            wind_speed = fv.get("wind_speed_10m", {}).get(zone)
+            wind_dir = fv.get("wind_direction_10m", {}).get(zone)
+            h["time"].append(slot_local.isoformat())
+            h["cape"].append(fv.get("cape", {}).get(zone) or 0.0)
+            h["precipitable_water"].append(fv.get("precipitable_water", {}).get(zone))
+            h["shortwave_radiation"].append(None)
+            h["precipitation_rate"].append(None)
+            h["temperature_2m"].append(temp_c if temp_c is not None else 0.0)
+            h["dew_point_2m"].append(dewpoint_c if dewpoint_c is not None else 0.0)
+            h["convective_inhibition"].append(None)
+            h["relative_humidity_2m"].append(rh2m if rh2m is not None else 0.0)
+            h["vapour_pressure_deficit"].append(_vapour_pressure_deficit_kpa(float(temp_c or 0.0), float(dewpoint_c or 0.0)))
+            h["wet_bulb_temperature_2m"].append(_wet_bulb_stull_c(float(temp_c or 0.0), float(rh2m or 0.0)))
+            h["cloud_cover_low"].append(None)
+            h["cloud_cover_mid"].append(None)
+            h["cloud_cover_high"].append(None)
+            h["boundary_layer_height"].append(None)
+            h["wind_gusts_10m"].append(fv.get("wind_gusts_10m", {}).get(zone) or 0.0)
+            h["wind_speed_10m"].append(wind_speed if wind_speed is not None else 0.0)
+            h["wind_direction_10m"].append(wind_dir if wind_dir is not None else 0.0)
+            h["wind_direction_10m_available"].append(wind_speed is not None and wind_dir is not None)
+        grid_locations.append({"hourly": h, "models": ECMWF_SLOTS_MODEL_NAME})
+
+    rows = rows_for_grid_locations(points, grid_locations)
+    payload = group_for_output(
+        rows, METEOFRANCE_FRANCE_GRID_CENTER_LAT, METEOFRANCE_FRANCE_GRID_CENTER_LON,
+        METEOFRANCE_FRANCE_GRID_LABEL, target_date=target_date, model_name=ECMWF_SLOTS_MODEL_NAME)
+    for day in payload.get("days", []):
+        for slot in day.get("slots", []):
+            slot["grid_scope"] = "france"
+            slot["france_grid"] = True
+            for cell in slot.get("cells", []):
+                cell["source_provider"] = ECMWF_SLOTS_MODEL_NAME
+                cell["source_label"] = "ECMWF IFS 0,25°"
+    run_iso = datetime.combine(run_date, Time(hour=run_hour), tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    meta = dict(payload.get("meta") or {})
+    meta.update({
+        "provider": ECMWF_SLOTS_MODEL_NAME, "source_provider": ECMWF_SLOTS_MODEL_NAME,
+        "source_label": "ECMWF IFS 0,25°", "nwp_model": "ecmwf", "nwp_model_label": "ECMWF",
+        "trend": False, "attribution": ECMWF_TREND_ATTRIBUTION, "grid_scope": "france", "france_grid": True,
+        "ecmwf_run_reference_time": run_iso, "resolution_label": "0,25° (~28 km)",
+        "slots_3h": True, "fields_available": sorted(all_fields),
+    })
+    payload["meta"] = meta
+    result = _project_grib_result_for_render({"ok": True, "payload": payload})
+    result.update({
+        "ok": True, "status": 200, "date": target_date.isoformat(),
+        "run_reference_time": run_iso, "slot_count": len(per_step),
+        "message": f"ECMWF {target_date.isoformat()} : {len(per_step)} créneaux 3-horaires, {len(points)} cellules.",
+    })
+    _set_cached_value(cache_key, result)
+    _write_meteofrance_local_persistent_cache("ecmwf-day-slots", cache_key, result)
+    return copy.deepcopy(result)
+
+
 def _ecmwf_trend_dates(reference_date: Date | None = None) -> list[Date]:
     today = reference_date or datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
     return [today + timedelta(days=offset) for offset in ECMWF_TREND_DAYS_AHEAD]
@@ -16446,20 +16573,23 @@ async def ecmwf_trend_status() -> dict[str, Any]:
 
 @app.post("/api/ecmwf/trend-day")
 async def ecmwf_trend_day(payload: EcmwfTrendDayRequest) -> dict[str, Any]:
-    """Grille tendance ECMWF d'un jour (J+5 → J+10), scorée et projetée « render ».
-    Construit à la demande puis mise en cache pour la durée de vie du run."""
+    """Grille ECMWF d'un jour. J+2/J+3 : MULTI-CRÉNEAUX 3-horaires (8 slots, remplace ARPEGE).
+    J+4 → J+10 : tendance quotidienne (1 pic). Construite à la demande puis mise en cache."""
     today = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
     offset = (payload.date - today).days
-    if offset < min(ECMWF_TREND_DAYS_AHEAD) or offset > max(ECMWF_TREND_DAYS_AHEAD):
+    lo, hi = min(ECMWF_SLOTS_DAYS_AHEAD), max(ECMWF_TREND_DAYS_AHEAD)
+    if offset < lo or offset > hi:
         return {
             "ok": False,
             "status": 400,
-            "message": f"La tendance ECMWF couvre J+{min(ECMWF_TREND_DAYS_AHEAD)} → J+{max(ECMWF_TREND_DAYS_AHEAD)}. Sélection : {payload.date.isoformat()}.",
+            "message": f"L'ECMWF couvre J+{lo} → J+{hi}. Sélection : {payload.date.isoformat()}.",
         }
     run = await asyncio.to_thread(_ecmwf_latest_trend_run, today)
     if run is None:
         return {"ok": False, "status": 503, "message": "Aucun run ECMWF open data disponible."}
     run_date, run_hour = run
+    if offset in ECMWF_SLOTS_DAYS_AHEAD:
+        return await asyncio.to_thread(_ecmwf_build_day_slots_sync, payload.date, run_date, run_hour)
     return await asyncio.to_thread(_ecmwf_build_trend_day_sync, payload.date, run_date, run_hour)
 
 
