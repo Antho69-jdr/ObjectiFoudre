@@ -800,7 +800,7 @@
     if (!(i >= 0) || !data.cells[i]) return;
     if (typeof pointInFranceGridMask === 'function' && e.lngLat && !pointInFranceGridMask(e.lngLat.lng, e.lngLat.lat)) return;
     const c = data.cells[i];
-    openDome(i, 'Point d\'observation', `${Number(c.lat).toFixed(2)}, ${Number(c.lon).toFixed(2)} · ${sgHourLabel()}`);
+    openDome(i, 'Point d\'observation', `${Number(c.lat).toFixed(2)}, ${Number(c.lon).toFixed(2)}`);
     if (sgIsTouch()) onSgLeave();   // referme le tooltip tactile
   }
 
@@ -971,6 +971,7 @@
       + '<button class="sg-dome-close" type="button" aria-label="Fermer">✕</button></div>'
       + '<div class="sg-dome-wrap"><svg class="sg-dome-svg" id="sgDomeSvg" viewBox="0 0 460 250" role="img" aria-label="Dôme des conditions d\'observation"></svg>'
       + '<div class="sg-dome-verdict"><div class="sg-dome-score" id="sgDomeScore">—</div><div class="sg-dome-scorelbl" id="sgDomeScoreLbl">observation</div></div></div>'
+      + '<div class="sg-dome-frise" id="sgDomeFrise" role="slider" aria-label="Heure de la nuit" style="display:none"></div>'
       + '<div class="sg-dome-legend">'
       + '<div class="sg-dome-leg full"><div class="sg-dome-legh"><span class="sg-dome-dot moon"></span><span class="sg-dome-legt">Lune</span><span class="sg-dome-legv" id="sgDomeMoonPct">—</span></div><div class="sg-dome-moonline" id="sgDomeMoonLine"></div></div>'
       + '<div class="sg-dome-leg"><div class="sg-dome-legh"><span class="sg-dome-dot cloud"></span><span class="sg-dome-legt">Nébulosité</span></div><div class="sg-dome-bars" id="sgDomeCloud"></div></div>'
@@ -986,8 +987,48 @@
       score: ov.querySelector('#sgDomeScore'), scoreLbl: ov.querySelector('#sgDomeScoreLbl'),
       moonPct: ov.querySelector('#sgDomeMoonPct'), moonLine: ov.querySelector('#sgDomeMoonLine'),
       cloud: ov.querySelector('#sgDomeCloud'), bortle: ov.querySelector('#sgDomeBortle'), pollFill: ov.querySelector('#sgDomePollFill'),
+      frise: ov.querySelector('#sgDomeFrise'),
     };
     return sgDomeEls;
+  }
+
+  // Mini-frise dans la modale : scruter les heures de la nuit sans la fermer.
+  function buildDomeFrise() {
+    const e = ensureDomeModal(), f = e.frise;
+    f.innerHTML = '';
+    if (!hours || hours.length < 2) { f.style.display = 'none'; return; }
+    f.style.display = '';
+    const track = document.createElement('div'); track.className = 'sg-dome-frise-track';
+    const prog = document.createElement('div'); prog.className = 'sg-dome-frise-prog';
+    const thumb = document.createElement('div'); thumb.className = 'sg-dome-frise-thumb';
+    track.appendChild(prog); track.appendChild(thumb); f.appendChild(track);
+    const labs = document.createElement('div'); labs.className = 'sg-dome-frise-labs';
+    hours.forEach((h) => {
+      const s = document.createElement('span'); s.className = 'sg-dome-frise-lab';
+      s.textContent = fmtHM(h.iso).slice(0, 2) + 'h';
+      labs.appendChild(s);
+    });
+    f.appendChild(labs);
+    e._friseTrack = track; e._friseProg = prog; e._friseThumb = thumb;
+    const pickIdx = (clientX) => {
+      const r = track.getBoundingClientRect();
+      const frac = Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width)));
+      return Math.round(frac * (hours.length - 1));
+    };
+    let dragging = false;
+    track.addEventListener('pointerdown', (ev) => { dragging = true; try { track.setPointerCapture(ev.pointerId); } catch (_) {} if (typeof stop === 'function') stop(); applyCursor(pickIdx(ev.clientX)); });
+    track.addEventListener('pointermove', (ev) => { if (dragging) applyCursor(pickIdx(ev.clientX)); });
+    const end = () => { dragging = false; };
+    track.addEventListener('pointerup', end); track.addEventListener('pointercancel', end);
+    updateDomeFriseActive();
+  }
+  function updateDomeFriseActive() {
+    const e = sgDomeEls; if (!e || !e._friseTrack || !hours.length) return;
+    const frac = (hours.length > 1) ? (cursor / (hours.length - 1)) : 0;
+    e._friseProg.style.width = (frac * 100).toFixed(1) + '%';
+    e._friseThumb.style.left = (frac * 100).toFixed(1) + '%';
+    const labs = e.frise.querySelectorAll('.sg-dome-frise-lab');
+    for (let k = 0; k < labs.length; k++) labs[k].classList.toggle('active', k === cursor);
   }
 
   function paintDome(d) {
@@ -1009,6 +1050,7 @@
     const lbl = ['—', 'Excellent', 'Très bon', 'Rural', 'Périurbain', 'Banlieue', 'Urbain', 'Ville'][Math.min(7, Math.round(d.poll / 14) + 1)];
     e.bortle.textContent = `Bortle ${lvl} · ${lbl}`;
     e.pollFill.style.width = d.poll + '%';
+    updateDomeFriseActive();
   }
 
   function sgDomeIsOpen() { return !!(sgDomeEls && sgDomeEls.ov.classList.contains('open')); }
@@ -1017,11 +1059,19 @@
     if (!data || !data.cells || !data.cells[i]) return;
     sgDomeCurrent = { i, title, sub };
     paintDome(sgDomeData(i, title, sub));
+    buildDomeFrise();
     const e = ensureDomeModal();
     e.ov.classList.add('open'); e.ov.setAttribute('aria-hidden', 'false');
   }
-  // Re-rendu quand on change d'heure avec la modale ouverte.
-  function refreshDomeIfOpen() { if (sgDomeIsOpen() && sgDomeCurrent) paintDome(sgDomeData(sgDomeCurrent.i, sgDomeCurrent.title, sgDomeCurrent.sub)); }
+  // Re-rendu quand on change d'heure avec la modale ouverte (coalescé en rAF pour un scrub fluide).
+  let sgDomeRaf = null;
+  function refreshDomeIfOpen() {
+    if (!sgDomeIsOpen() || !sgDomeCurrent || sgDomeRaf) return;
+    sgDomeRaf = requestAnimationFrame(() => {
+      sgDomeRaf = null;
+      if (sgDomeIsOpen() && sgDomeCurrent) paintDome(sgDomeData(sgDomeCurrent.i, sgDomeCurrent.title, sgDomeCurrent.sub));
+    });
+  }
 
   // Cellule la plus proche d'un point (pour un spot).
   function sgNearestCell(lat, lon) {
@@ -1039,7 +1089,7 @@
     if (!active || !spot) return false;
     const i = sgNearestCell(Number(spot.lat), Number(spot.lon));
     if (i < 0) return false;
-    openDome(i, spot.name || 'Spot', sgHourLabel());
+    openDome(i, spot.name || 'Spot', 'Spot de chasse');
     return true;
   }
 

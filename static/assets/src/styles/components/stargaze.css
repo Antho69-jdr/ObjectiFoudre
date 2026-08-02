@@ -584,4 +584,13 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 .sg-dome-bar .v { width: 34px; text-align: right; font-variant-numeric: tabular-nums; color: #9fb0c8; }
 .sg-dome-amber { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #eaf0fb; font-weight: 600; }
 .sg-dome-amber #sgDomeBortle { white-space: nowrap; }
-@media (max-width: 767px) { .sg-dome { max-width: 100%; } .sg-dome-legend { grid-template-columns: 1fr; } }
+/* Mini-frise : scruter les heures de la nuit sans fermer la modale. */
+.sg-dome-frise { padding: 6px 18px 10px; }
+.sg-dome-frise-track { position: relative; height: 18px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
+.sg-dome-frise-track::before { content: ""; position: absolute; left: 0; right: 0; height: 4px; border-radius: 3px; background: rgba(255, 255, 255, 0.09); }
+.sg-dome-frise-prog { position: absolute; left: 0; height: 4px; border-radius: 3px; background: linear-gradient(90deg, #f4b942, #e2892f); pointer-events: none; }
+.sg-dome-frise-thumb { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; background: #f4d06a; border: 2px solid #0e1524; transform: translate(-50%, -50%); box-shadow: 0 0 0 3px rgba(244, 185, 66, 0.18); pointer-events: none; }
+.sg-dome-frise-labs { display: flex; justify-content: space-between; padding: 5px 1px 0; }
+.sg-dome-frise-lab { font-size: 10px; color: #6c7d97; font-variant-numeric: tabular-nums; transition: color 0.12s; }
+.sg-dome-frise-lab.active { color: #f4d06a; font-weight: 700; }
+@media (max-width: 767px) { .sg-dome { max-width: 100%; } .sg-dome-legend { grid-template-columns: 1fr; } .sg-dome-frise-lab { font-size: 9px; } }
