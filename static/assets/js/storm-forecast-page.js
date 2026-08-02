@@ -687,9 +687,38 @@ function highlightPredictionDateChip() {
   }
 }
 
+// ── Auto-rafraîchissement : tant qu'un jour n'est pas prêt (grilles AROME en cours de
+// matérialisation côté serveur), on re-sonde périodiquement et on ré-affiche dès que ça se
+// remplit — sans que l'utilisateur ait à recharger. Le compteur « X/24 » monte en direct.
+const PREDICTION_POLL_MS = 30000;   // 30 s
+const PREDICTION_POLL_MAX = 60;     // ~30 min puis arrêt
+let predictionPollTimer = null, predictionPollCount = 0;
+function clearPredictionPollTimer() { if (predictionPollTimer) { clearTimeout(predictionPollTimer); predictionPollTimer = null; } }
+function clearPredictionPoll() { clearPredictionPollTimer(); predictionPollCount = 0; }
+function predictionPageOpen() { return predictionPage?.getAttribute('aria-hidden') === 'false'; }
+function schedulePredictionPoll(dateIso) {
+  clearPredictionPollTimer();
+  if (predictionPollCount >= PREDICTION_POLL_MAX) return;
+  predictionPollTimer = setTimeout(() => predictionPollTick(dateIso), PREDICTION_POLL_MS);
+}
+async function predictionPollTick(dateIso) {
+  predictionPollTimer = null;
+  if (!predictionPageOpen() || predictionSelectedDate !== dateIso) return;   // page fermée / date changée
+  predictionPollCount += 1;
+  try { await predictionRefetchDay(dateIso); } catch (_) {}
+  if (!predictionPageOpen() || predictionSelectedDate !== dateIso) return;
+  const day = predictionActiveDay();
+  const result = day
+    ? ensurePredictionPageImage(day, { periodKey: selectedPredictionPeriodKey })
+    : { ok: false, periodKey: selectedPredictionPeriodKey, message: 'Grille indisponible pour ce jour : aucune donnée en cache serveur.' };
+  renderPredictionPageResult(result);
+  if (!result || result.ok !== true) schedulePredictionPoll(dateIso); else clearPredictionPoll();
+}
+
 async function renderActivePrediction() {
   const dateIso = predictionSelectedDate;
   if (!dateIso) return;
+  clearPredictionPoll();   // nouvelle action utilisateur → on repart propre
   const isTrend = predictionDateIsTrend(dateIso);
   if (isTrend && selectedPredictionPeriodKey !== 'day') {
     selectedPredictionPeriodKey = 'day';
@@ -709,9 +738,12 @@ async function renderActivePrediction() {
         ? 'Tendance ECMWF indisponible pour ce jour (run open data pas encore publié).'
         : 'Grille indisponible pour ce jour : aucune donnée en cache serveur.',
     });
+    schedulePredictionPoll(dateIso);   // le serveur peut recevoir la grille sous peu
     return;
   }
-  renderPredictionPageResult(ensurePredictionPageImage(day, { periodKey: selectedPredictionPeriodKey }));
+  const result = ensurePredictionPageImage(day, { periodKey: selectedPredictionPeriodKey });
+  renderPredictionPageResult(result);
+  if (!result || result.ok !== true) schedulePredictionPoll(dateIso);   // pas encore prêt → on re-sonde
 }
 
 async function selectPredictionDate(dateIso) {
@@ -798,6 +830,7 @@ async function openPredictionPage(initialDate = null) {
 function closePredictionPage() {
   if (!predictionPage) return;
   predictionPage.setAttribute('aria-hidden', 'true');
+  clearPredictionPoll();
   hidePredictionHover();
 }
 

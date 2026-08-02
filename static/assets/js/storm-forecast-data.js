@@ -205,6 +205,21 @@ async function predictionEnsureDay(dateIso) {
   }
 }
 
+// Re-fetch FRAIS d'un jour (invalide le cache mémoire) — pour l'auto-rafraîchissement de la
+// page prévision tant que les grilles AROME se matérialisent côté serveur. Pour un jour
+// horaire, invalide AUSSI le lendemain (la fenêtre 08h-08h tire ses heures 0-7h de là).
+async function predictionRefetchDay(dateIso) {
+  const iso = normalizeDateIso(dateIso);
+  PREDICTION_DAY_STORE.delete(iso);
+  PREDICTION_DAY_PENDING.delete(iso);
+  if (!predictionDateUsesEcmwf(iso)) {
+    const nextIso = predictionDateAddDays(iso, 1);
+    PREDICTION_DAY_STORE.delete(nextIso);
+    PREDICTION_DAY_PENDING.delete(nextIso);
+  }
+  return predictionEnsureDay(iso);
+}
+
 // Rampe « radar / chaleur » sur fond ink : la France sombre s'allume par foyers,
 // du calme (ink ≈ fond) au cyan/vert/ambre/rouge/magasin. Cohérent avec le radar
 // de chargement. NB : la légende du tiroir (forecast-scales.css .legend-gradient)

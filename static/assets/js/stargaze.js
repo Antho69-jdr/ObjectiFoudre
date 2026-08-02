@@ -957,8 +957,14 @@
     const up = alt > 0;
     const fade = Math.max(0, Math.min(1, alt / 4));   // fondu doux sur les 4 premiers degrés
     const waning = (m.age_days != null) ? (m.age_days > 14.77) : false;
-    const riseMs = m.moonrise_utc ? Date.parse(m.moonrise_utc) : null;
-    const setMs = m.moonset_utc ? Date.parse(m.moonset_utc) : null;
+    let riseMs = m.moonrise_utc ? Date.parse(m.moonrise_utc) : null;
+    let setMs = m.moonset_utc ? Date.parse(m.moonset_utc) : null;
+    // Si UNE seule borne est connue (l'autre tombe hors de la fenêtre de scan, ex. la Lune se
+    // couche après midi le lendemain → moonset_utc absent), on estime l'autre avec la durée
+    // moyenne de présence (~12,4 h). Sinon la Lune restait bloquée au zénith (deg=90).
+    const MOON_UP_MS = 12.4 * 3600 * 1000;
+    if (riseMs && !setMs) setMs = riseMs + MOON_UP_MS;
+    else if (setMs && !riseMs) riseMs = setMs - MOON_UP_MS;
     const t0 = (hours[h0] && hours[h0].iso) ? Date.parse(hours[h0].iso) : Date.now();
     const t1 = (hours[h1] && hours[h1].iso) ? Date.parse(hours[h1].iso) : t0;
     const nowMs = lerp(t0, t1);
