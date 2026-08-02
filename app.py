@@ -86,7 +86,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.114"
+APP_VERSION = "1.3.115"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4263,7 +4263,22 @@ def _stargaze_tonight() -> dict[str, Any]:
     darkness_arr = [int(darkgrid[i]["darkness"]) for i in range(n)]
     zone_index = {str(points[i].zone): i for i in range(n)}
 
-    moon = stargaze.moon_phase(now)
+    moon = dict(stargaze.moon_phase(now))
+    # Lever/coucher de la Lune pour CETTE nuit (modale « dôme céleste ») : scan 24 h à partir
+    # de midi local → capture le lever du soir ET le coucher du matin (après minuit). Au centre
+    # France (écart < 1 min sur le territoire). Silencieux si la Lune ne franchit pas l'horizon.
+    try:
+        _scan0 = (now.astimezone(ZoneInfo("Europe/Paris"))
+                  .replace(hour=12, minute=0, second=0, microsecond=0)
+                  .astimezone(timezone.utc))
+        _mr, _ms = stargaze._crossings(
+            lambda t: stargaze._moon_alt_deg(t, METEOFRANCE_FRANCE_GRID_CENTER_LAT, METEOFRANCE_FRANCE_GRID_CENTER_LON),
+            _scan0, stargaze._MOON_RISESET_ALT)
+        moon["moonrise_utc"] = _mr.strftime("%Y-%m-%dT%H:%MZ") if _mr else None
+        moon["moonset_utc"] = _ms.strftime("%Y-%m-%dT%H:%MZ") if _ms else None
+    except Exception:
+        moon["moonrise_utc"] = moon.get("moonrise_utc")
+        moon["moonset_utc"] = moon.get("moonset_utc")
     md = float(moon["darkness"])
     night = stargaze.astronomical_night(now, METEOFRANCE_FRANCE_GRID_CENTER_LAT,
                                         METEOFRANCE_FRANCE_GRID_CENTER_LON)

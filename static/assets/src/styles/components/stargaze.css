@@ -536,3 +536,52 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
   }
   .stargaze-overlay.collapsed { transform: translateY(calc(100% + 8px)); }
 }
+
+/* ── Modale « dôme céleste » (clic cellule / spot) ─────────────────────────── */
+.sg-dome-ov {
+  position: fixed; inset: 0; z-index: 60; display: none;
+  align-items: center; justify-content: center; padding: 20px 14px;
+  background: rgba(4, 7, 14, 0.62); backdrop-filter: blur(3px);
+}
+.sg-dome-ov.open { display: flex; }
+.sg-dome {
+  width: 100%; max-width: 470px;
+  background: rgba(14, 21, 36, 0.94); border: 1px solid #22304a; border-radius: 20px;
+  box-shadow: 0 30px 80px -30px #000c, 0 2px 0 0 rgba(255, 255, 255, 0.03) inset;
+  overflow: hidden; color: #eaf0fb;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.sg-dome-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 15px 16px 10px; }
+.sg-dome-eyebrow { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #6c7d97; font-weight: 600; margin: 0 0 3px; }
+.sg-dome-title { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.sg-dome-sub { font-size: 12px; color: #9fb0c8; margin: 3px 0 0; }
+.sg-dome-close { flex: none; width: 30px; height: 30px; border-radius: 9px; border: 1px solid #22304a; background: transparent; color: #9fb0c8; cursor: pointer; font-size: 15px; line-height: 1; display: grid; place-items: center; transition: 0.15s; }
+.sg-dome-close:hover { background: rgba(255, 255, 255, 0.05); color: #eaf0fb; }
+.sg-dome-close:focus-visible { outline: 2px solid #f4b942; outline-offset: 2px; }
+.sg-dome-wrap { position: relative; padding: 2px 12px 4px; }
+.sg-dome-svg { display: block; width: 100%; height: auto; }
+.sg-dome-verdict { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); text-align: center; pointer-events: none; }
+.sg-dome-score { font-size: 25px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.sg-dome-scorelbl { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #9fb0c8; margin-top: 3px; }
+.sg-dome-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #1a2438; border-top: 1px solid #22304a; }
+.sg-dome-leg { background: #0e1524; padding: 11px 15px; display: flex; flex-direction: column; gap: 7px; }
+.sg-dome-leg.full { grid-column: 1 / -1; }
+.sg-dome-legh { display: flex; align-items: center; gap: 8px; }
+.sg-dome-dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+.sg-dome-dot.moon { background: radial-gradient(circle at 35% 30%, #e6ecf4, #8492a6); }
+.sg-dome-dot.cloud { background: #8b96a8; }
+.sg-dome-dot.amber { background: radial-gradient(circle at 40% 35%, #f4b942, #e2892f); }
+.sg-dome-legt { font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+.sg-dome-legv { font-size: 12px; color: #9fb0c8; margin-left: auto; font-variant-numeric: tabular-nums; }
+.sg-dome-moonline { font-size: 11.5px; color: #9fb0c8; display: flex; gap: 13px; flex-wrap: wrap; }
+.sg-dome-moonline b { color: #eaf0fb; font-weight: 600; }
+.sg-dome-bars { display: flex; flex-direction: column; gap: 5px; }
+.sg-dome-bar { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #9fb0c8; }
+.sg-dome-bar .k { width: 56px; flex: none; color: #6c7d97; }
+.sg-dome-track { flex: 1; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.sg-dome-fill { display: block; height: 100%; border-radius: 3px; background: #8b96a8; }
+.sg-dome-fill.amber { background: linear-gradient(90deg, #f4b942, #e2892f); }
+.sg-dome-bar .v { width: 34px; text-align: right; font-variant-numeric: tabular-nums; color: #9fb0c8; }
+.sg-dome-amber { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #eaf0fb; font-weight: 600; }
+.sg-dome-amber #sgDomeBortle { white-space: nowrap; }
+@media (max-width: 767px) { .sg-dome { max-width: 100%; } .sg-dome-legend { grid-template-columns: 1fr; } }

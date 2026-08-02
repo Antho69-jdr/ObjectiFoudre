@@ -501,6 +501,7 @@
     updateBestLayer();   // le liseré « meilleures cellules » suit le créneau affiché
     updateCursorUI();
     updateHourBadge();
+    refreshDomeIfOpen();  // la modale « dôme » suit le créneau si elle est ouverte
   }
 
   function play() {
@@ -789,13 +790,18 @@
   // Mobile/tablette : TAP sur une cellule → tooltip (le survol n'existe pas au tactile).
   // Le popup de clic .stargaze-popup est RETIRÉ (item Trello UI/UX) : l'info de cellule
   // passe UNIQUEMENT par le tooltip .grid-cell-tooltip (survol desktop / tap tactile).
+  // Clic sur une cellule (desktop OU tactile) → modale « dôme céleste ».
   function onSgTap(e) {
-    if (!sgIsTouch() || !data) return;
-    const box = [[e.point.x - 12, e.point.y - 12], [e.point.x + 12, e.point.y + 12]];
+    if (!data) return;
+    const box = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
     let feats = [];
     try { feats = map.queryRenderedFeatures(box, { layers: [QUALITY_LYR] }); } catch (_) {}
     const i = feats.length ? Number(feats[0].properties.idx) : -1;
-    if (i >= 0) showSgTip(i, e.point); else onSgLeave();
+    if (!(i >= 0) || !data.cells[i]) return;
+    if (typeof pointInFranceGridMask === 'function' && e.lngLat && !pointInFranceGridMask(e.lngLat.lng, e.lngLat.lat)) return;
+    const c = data.cells[i];
+    openDome(i, 'Point d\'observation', `${Number(c.lat).toFixed(2)}, ${Number(c.lon).toFixed(2)} · ${sgHourLabel()}`);
+    if (sgIsTouch()) onSgLeave();   // referme le tooltip tactile
   }
 
   // ── Autour de moi ────────────────────────────────────────────────────────
@@ -854,6 +860,189 @@
   }
 
   // ── Activation / désactivation ───────────────────────────────────────────
+  // ── Modale « dôme céleste » (clic cellule / spot) ───────────────────────────
+  // Voûte en demi-cercles empilés : pollution lumineuse (ambre, ras d'horizon), 3 voiles de
+  // nébulosité (gris), Lune argentée (au-dessus des nuages, masquée si sous l'horizon).
+  // Mockup validé par Anthony (Artifact). Données réelles : darkness / cloud_low|mid|high /
+  // scores / moon (illumination + moonrise/set) + hours[cursor].moon_alt.
+  const DM_NS = 'http://www.w3.org/2000/svg';
+  const DM_CX = 230, DM_CY = 205, DM_R = 188, DM_R_POLL = 58, DM_MOON_R = 174;
+  const DM_BANDS = { low: [58, 92], mid: [92, 124], high: [124, 156] };
+  function dmPt(deg, r) { const a = deg * Math.PI / 180; return [DM_CX - r * Math.cos(a), DM_CY - r * Math.sin(a)]; }
+  function dmArc(a0, a1, r) { const p0 = dmPt(a0, r), p1 = dmPt(a1, r); const large = (a1 - a0) > 180 ? 1 : 0; return `M ${p0[0].toFixed(2)} ${p0[1].toFixed(2)} A ${r} ${r} 0 ${large} 1 ${p1[0].toFixed(2)} ${p1[1].toFixed(2)}`; }
+  function dmBand(rIn, rOut) {
+    const oo0 = dmPt(0, rOut), oo1 = dmPt(180, rOut), ii1 = dmPt(180, rIn), ii0 = dmPt(0, rIn);
+    return `M ${oo0[0].toFixed(2)} ${oo0[1].toFixed(2)} A ${rOut} ${rOut} 0 0 1 ${oo1[0].toFixed(2)} ${oo1[1].toFixed(2)}`
+      + ` L ${ii1[0].toFixed(2)} ${ii1[1].toFixed(2)} A ${rIn} ${rIn} 0 0 0 ${ii0[0].toFixed(2)} ${ii0[1].toFixed(2)} Z`;
+  }
+  function dmEl(t, a) { const e = document.createElementNS(DM_NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; }
+
+  function renderDome(svg, d) {
+    svg.innerHTML = '';
+    const pollTop = DM_R_POLL + (d.poll / 100) * (DM_R - DM_R_POLL);
+    const defs = dmEl('defs', {});
+    defs.innerHTML =
+      `<clipPath id="sgDomeClip"><path d="${dmBand(0, DM_R)} M 0 0"/></clipPath>`
+      + `<radialGradient id="sgSky" cx="50%" cy="100%" r="100%"><stop offset="0%" stop-color="#16223c"/><stop offset="55%" stop-color="#0d1526"/><stop offset="100%" stop-color="#0a0f1c"/></radialGradient>`
+      + `<radialGradient id="sgPoll" gradientUnits="userSpaceOnUse" cx="${DM_CX}" cy="${DM_CY}" r="${pollTop.toFixed(1)}"><stop offset="0%" stop-color="#f7c35a"/><stop offset="52%" stop-color="#eda13a"/><stop offset="82%" stop-color="#e2892f"/><stop offset="100%" stop-color="#e2892f" stop-opacity="0"/></radialGradient>`
+      + `<radialGradient id="sgMoonG" cx="38%" cy="32%" r="72%"><stop offset="0%" stop-color="#e6ecf4"/><stop offset="55%" stop-color="#c7d1de"/><stop offset="100%" stop-color="#8492a6"/></radialGradient>`
+      + `<filter id="sgSoft" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="2.4"/></filter>`
+      + `<filter id="sgSoft2" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4.5"/></filter>`;
+    svg.appendChild(defs);
+    const g = dmEl('g', { 'clip-path': 'url(#sgDomeClip)' });
+    svg.appendChild(g);
+    g.appendChild(dmEl('path', { d: dmBand(0, DM_R), fill: 'url(#sgSky)' }));
+    // étoiles atténuées par la couverture nuageuse totale
+    const cover = Math.min(1, (d.cloud.low + d.cloud.mid + d.cloud.high) / 160);
+    const starG = dmEl('g', { opacity: (0.9 - 0.72 * cover).toFixed(2) });
+    let seed = 7; const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+    for (let s = 0; s < 70; s++) {
+      const deg = 6 + rnd() * 168, rr = DM_R_POLL + rnd() * (DM_R - DM_R_POLL - 6), p = dmPt(deg, rr);
+      starG.appendChild(dmEl('circle', { cx: p[0].toFixed(1), cy: p[1].toFixed(1), r: (rnd() * 1.1 + 0.35).toFixed(2), fill: '#cfe0ff', opacity: (0.3 + rnd() * 0.6).toFixed(2) }));
+    }
+    g.appendChild(starG);
+    // pollution lumineuse (cercle égal, transparente)
+    g.appendChild(dmEl('path', { d: dmBand(0, pollTop), fill: 'url(#sgPoll)', opacity: (0.2 + 0.34 * d.poll / 100).toFixed(2), filter: 'url(#sgSoft)' }));
+    // 3 voiles de nébulosité
+    for (const key of ['low', 'mid', 'high']) {
+      const b = DM_BANDS[key], frac = d.cloud[key] / 100;
+      g.appendChild(dmEl('path', { d: dmBand(b[0], b[1]), fill: '#8b96a8', opacity: (0.06 + 0.72 * frac).toFixed(2) }));
+      g.appendChild(dmEl('path', { d: dmArc(0, 180, b[1]), fill: 'none', stroke: '#0a0f1c', 'stroke-width': 1, opacity: 0.5 }));
+    }
+    // arc de la Lune (masqué si sous l'horizon)
+    if (d.moon.up) g.appendChild(dmEl('path', { d: dmArc(6, 174, DM_MOON_R), fill: 'none', stroke: '#93a2ba', 'stroke-width': 1.3, 'stroke-dasharray': '2 5', opacity: 0.42 }));
+    // horizon + repères E/O
+    const hL = dmPt(0, DM_R)[0], hR = dmPt(180, DM_R)[0];
+    svg.appendChild(dmEl('line', { x1: hL, y1: DM_CY, x2: hR, y2: DM_CY, stroke: '#22304a', 'stroke-width': 1.5 }));
+    svg.appendChild(dmEl('line', { x1: hL, y1: DM_CY, x2: hR, y2: DM_CY, stroke: '#f4b94222', 'stroke-width': 6 }));
+    const tE = dmEl('text', { x: hL + 2, y: DM_CY + 16, fill: '#6c7d97', 'font-size': 11, 'font-weight': 600 }); tE.textContent = 'E'; svg.appendChild(tE);
+    const tO = dmEl('text', { x: hR - 12, y: DM_CY + 16, fill: '#6c7d97', 'font-size': 11, 'font-weight': 600 }); tO.textContent = 'O'; svg.appendChild(tO);
+    // Lune : dessinée SEULEMENT si au-dessus de l'horizon
+    if (d.moon.up) {
+      const mp = dmPt(d.moon.deg, DM_MOON_R), mx = mp[0], my = mp[1], mr = 13;
+      svg.appendChild(dmEl('circle', { cx: mx, cy: my, r: mr + 7, fill: '#c7d1de', opacity: 0.11, filter: 'url(#sgSoft2)' }));
+      svg.appendChild(dmEl('circle', { cx: mx, cy: my, r: mr, fill: 'url(#sgMoonG)', stroke: '#dbe3ee', 'stroke-width': 0.6 }));
+      const off = (1 - d.moon.illum) * 2 * mr * (d.moon.waning ? -1 : 1);
+      const md = dmEl('defs', {}); md.innerHTML = `<clipPath id="sgMClip"><circle cx="${mx}" cy="${my}" r="${mr}"/></clipPath>`; svg.appendChild(md);
+      svg.appendChild(dmEl('circle', { cx: mx + off, cy: my, r: mr, fill: '#0c1322', opacity: 0.82, 'clip-path': 'url(#sgMClip)' }));
+      const cg = dmEl('g', { 'clip-path': 'url(#sgMClip)', opacity: 0.35 });
+      cg.appendChild(dmEl('circle', { cx: mx - 4, cy: my - 3, r: 2.4, fill: '#93a2ba' }));
+      cg.appendChild(dmEl('circle', { cx: mx + 3, cy: my + 4, r: 1.7, fill: '#93a2ba' }));
+      cg.appendChild(dmEl('circle', { cx: mx + 5, cy: my - 4, r: 1.1, fill: '#93a2ba' }));
+      svg.appendChild(cg);
+    }
+  }
+
+  // Construit l'objet data du dôme pour la cellule i au créneau courant.
+  function sgDomeData(i, title, sub) {
+    const cl = (key) => (data[key] && data[key][cursor] && data[key][cursor][i] != null) ? Math.round(data[key][cursor][i]) : 0;
+    const score = (data.scores && data.scores[cursor] && data.scores[cursor][i] != null) ? Math.round(data.scores[cursor][i]) : null;
+    const m = data.moon || {}, h = hours[cursor] || {};
+    const up = (h.moon_alt != null) ? (h.moon_alt > 0) : false;
+    const waning = (m.age_days != null) ? (m.age_days > 14.77) : false;
+    const riseMs = m.moonrise_utc ? Date.parse(m.moonrise_utc) : null;
+    const setMs = m.moonset_utc ? Date.parse(m.moonset_utc) : null;
+    const nowMs = h.iso ? Date.parse(h.iso) : Date.now();
+    let deg = 90;
+    if (riseMs && setMs && setMs > riseMs) { const f = Math.max(0, Math.min(1, (nowMs - riseMs) / (setMs - riseMs))); deg = 6 + f * 168; }
+    return {
+      title, sub,
+      poll: Math.max(0, Math.min(100, 100 - (data.darkness ? (data.darkness[i] || 0) : 0))),
+      cloud: { low: cl('cloud_low'), mid: cl('cloud_mid'), high: cl('cloud_high') },
+      score, scoreLabel: (score != null ? verdict(score) : '—'),
+      moon: {
+        illum: (m.illumination != null ? m.illumination : 0), name: (m.phase_name || '—'),
+        up, waning, deg,
+        rise: (m.moonrise_utc ? fmtHMz(m.moonrise_utc) : '—'),
+        set: (m.moonset_utc ? fmtHMz(m.moonset_utc) : '—'),
+      },
+    };
+  }
+
+  let sgDomeEls = null, sgDomeCurrent = null;
+  function ensureDomeModal() {
+    if (sgDomeEls) return sgDomeEls;
+    const ov = document.createElement('div');
+    ov.className = 'sg-dome-ov'; ov.setAttribute('aria-hidden', 'true');
+    ov.innerHTML =
+      '<div class="sg-dome" role="dialog" aria-label="Conditions d\'observation" aria-modal="true">'
+      + '<div class="sg-dome-head"><div><p class="sg-dome-eyebrow">Chasse d\'étoiles · cette nuit</p>'
+      + '<h2 class="sg-dome-title" id="sgDomeTitle">—</h2><p class="sg-dome-sub" id="sgDomeSub"></p></div>'
+      + '<button class="sg-dome-close" type="button" aria-label="Fermer">✕</button></div>'
+      + '<div class="sg-dome-wrap"><svg class="sg-dome-svg" id="sgDomeSvg" viewBox="0 0 460 250" role="img" aria-label="Dôme des conditions d\'observation"></svg>'
+      + '<div class="sg-dome-verdict"><div class="sg-dome-score" id="sgDomeScore">—</div><div class="sg-dome-scorelbl" id="sgDomeScoreLbl">observation</div></div></div>'
+      + '<div class="sg-dome-legend">'
+      + '<div class="sg-dome-leg full"><div class="sg-dome-legh"><span class="sg-dome-dot moon"></span><span class="sg-dome-legt">Lune</span><span class="sg-dome-legv" id="sgDomeMoonPct">—</span></div><div class="sg-dome-moonline" id="sgDomeMoonLine"></div></div>'
+      + '<div class="sg-dome-leg"><div class="sg-dome-legh"><span class="sg-dome-dot cloud"></span><span class="sg-dome-legt">Nébulosité</span></div><div class="sg-dome-bars" id="sgDomeCloud"></div></div>'
+      + '<div class="sg-dome-leg"><div class="sg-dome-legh"><span class="sg-dome-dot amber"></span><span class="sg-dome-legt">Pollution lumineuse</span></div>'
+      + '<div class="sg-dome-amber"><span id="sgDomeBortle"></span><span class="sg-dome-track"><span class="sg-dome-fill amber" id="sgDomePollFill"></span></span></div></div>'
+      + '</div></div>';
+    document.body.appendChild(ov);
+    const close = () => closeDome();
+    ov.querySelector('.sg-dome-close').addEventListener('click', close);
+    ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+    sgDomeEls = {
+      ov, svg: ov.querySelector('#sgDomeSvg'), title: ov.querySelector('#sgDomeTitle'), sub: ov.querySelector('#sgDomeSub'),
+      score: ov.querySelector('#sgDomeScore'), scoreLbl: ov.querySelector('#sgDomeScoreLbl'),
+      moonPct: ov.querySelector('#sgDomeMoonPct'), moonLine: ov.querySelector('#sgDomeMoonLine'),
+      cloud: ov.querySelector('#sgDomeCloud'), bortle: ov.querySelector('#sgDomeBortle'), pollFill: ov.querySelector('#sgDomePollFill'),
+    };
+    return sgDomeEls;
+  }
+
+  function paintDome(d) {
+    const e = ensureDomeModal();
+    e.title.textContent = d.title; e.sub.textContent = d.sub || '';
+    renderDome(e.svg, d);
+    e.score.textContent = (d.score != null ? d.score : '—');
+    e.score.style.color = (d.score == null) ? '#9fb0c8' : (d.score >= 55 ? '#7ee0a6' : d.score >= 35 ? '#f4d06a' : '#e8896a');
+    e.scoreLbl.textContent = d.scoreLabel;
+    e.moonPct.textContent = `${Math.round(d.moon.illum * 100)}% · ${d.moon.name}`;
+    e.moonLine.innerHTML = `<span>Levée <b>${d.moon.rise}</b></span><span>Coucher <b>${d.moon.set}</b></span><span><b>${d.moon.up ? 'au-dessus' : 'sous'} l'horizon</b></span>`;
+    e.cloud.innerHTML = '';
+    [['Basse', 'low'], ['Moyenne', 'mid'], ['Haute', 'high']].forEach(([lbl, k]) => {
+      const row = document.createElement('div'); row.className = 'sg-dome-bar';
+      row.innerHTML = `<span class="k">${lbl}</span><span class="sg-dome-track"><span class="sg-dome-fill" style="width:${d.cloud[k]}%"></span></span><span class="v">${d.cloud[k]}%</span>`;
+      e.cloud.appendChild(row);
+    });
+    const lvl = Math.min(8, Math.round(d.poll / 13) + 1);
+    const lbl = ['—', 'Excellent', 'Très bon', 'Rural', 'Périurbain', 'Banlieue', 'Urbain', 'Ville'][Math.min(7, Math.round(d.poll / 14) + 1)];
+    e.bortle.textContent = `Bortle ${lvl} · ${lbl}`;
+    e.pollFill.style.width = d.poll + '%';
+  }
+
+  function sgDomeIsOpen() { return !!(sgDomeEls && sgDomeEls.ov.classList.contains('open')); }
+  function closeDome() { if (sgDomeEls) { sgDomeEls.ov.classList.remove('open'); sgDomeEls.ov.setAttribute('aria-hidden', 'true'); } sgDomeCurrent = null; }
+  function openDome(i, title, sub) {
+    if (!data || !data.cells || !data.cells[i]) return;
+    sgDomeCurrent = { i, title, sub };
+    paintDome(sgDomeData(i, title, sub));
+    const e = ensureDomeModal();
+    e.ov.classList.add('open'); e.ov.setAttribute('aria-hidden', 'false');
+  }
+  // Re-rendu quand on change d'heure avec la modale ouverte.
+  function refreshDomeIfOpen() { if (sgDomeIsOpen() && sgDomeCurrent) paintDome(sgDomeData(sgDomeCurrent.i, sgDomeCurrent.title, sgDomeCurrent.sub)); }
+
+  // Cellule la plus proche d'un point (pour un spot).
+  function sgNearestCell(lat, lon) {
+    if (!data || !data.cells) return -1;
+    const cl = Math.cos(lat * Math.PI / 180); let best = -1, bd = Infinity;
+    for (let i = 0; i < data.cells.length; i++) {
+      const dx = (data.cells[i].lon - lon) * cl, dy = data.cells[i].lat - lat, dd = dx * dx + dy * dy;
+      if (dd < bd) { bd = dd; best = i; }
+    }
+    return best;
+  }
+  function sgHourLabel() { const h = hours[cursor]; return h ? ('créneau ' + fmtHM(h.iso)) : ''; }
+  // Ouvre la modale pour un SPOT (hook appelé par spots.js en mode étoile). Renvoie true si géré.
+  function openDomeForSpot(spot) {
+    if (!active || !spot) return false;
+    const i = sgNearestCell(Number(spot.lat), Number(spot.lon));
+    if (i < 0) return false;
+    openDome(i, spot.name || 'Spot', sgHourLabel());
+    return true;
+  }
+
   async function activate() {
     if (active) return;
     // exclusion mutuelle avec le mode chasse
@@ -879,6 +1068,7 @@
       map.on('mouseleave', QUALITY_LYR, onSgLeave);
       clickBound = true;
     }
+    window.sgOnSpotClick = openDomeForSpot;   // clic spot → dôme (intercepté par spots.js)
     await loadData();
   }
 
@@ -911,6 +1101,7 @@
       map.off('mouseleave', QUALITY_LYR, onSgLeave);
       clickBound = false;
     }
+    window.sgOnSpotClick = null; closeDome();
     onSgLeave();
     if (popup) { popup.remove(); }
     if (userMarker) { userMarker.remove(); userMarker = null; }
@@ -1041,9 +1232,10 @@
   if (typeof window.setupFriseCollapse === 'function') {
     window.setupFriseCollapse(controls, document.getElementById('stargazeToggleBtn'), 'storm_stargaze_collapsed');
   }
-  // Échap : ferme d'abord l'agenda s'il est ouvert, sinon quitte le mode.
+  // Échap : ferme d'abord la modale « dôme », puis l'agenda, sinon quitte le mode.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !active) return;
+    if (sgDomeIsOpen()) { closeDome(); return; }
     if (agendaOpenState()) { hideAgenda(); return; }
     deactivate();
   });

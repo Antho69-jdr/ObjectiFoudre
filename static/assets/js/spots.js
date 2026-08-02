@@ -682,8 +682,9 @@
     spots.forEach(function (spot) {
       if (typeof spot.lon !== 'number' || typeof spot.lat !== 'number') return;
       var e = pinEl(spot), lngLat = [spot.lon, spot.lat];
-      e.addEventListener('click', function (ev) { ev.stopPropagation(); showVision(spot); });
-      e.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); showVision(spot); } });
+      // En mode étoile, le clic d'un spot ouvre la modale « dôme céleste » (hook stargaze.js).
+      e.addEventListener('click', function (ev) { ev.stopPropagation(); if (typeof window.sgOnSpotClick === 'function' && window.sgOnSpotClick(spot)) return; showVision(spot); });
+      e.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); if (typeof window.sgOnSpotClick === 'function' && window.sgOnSpotClick(spot)) return; showVision(spot); } });
       if (spot._mine) {
         var sm = statusMeta(spot.status);
         e.classList.add('is-mine', 'is-' + sm.cls);
