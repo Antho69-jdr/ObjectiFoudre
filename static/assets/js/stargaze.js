@@ -501,7 +501,8 @@
     updateBestLayer();   // le liseré « meilleures cellules » suit le créneau affiché
     updateCursorUI();
     updateHourBadge();
-    refreshDomeIfOpen();  // la modale « dôme » suit le créneau si elle est ouverte
+    // NB : la modale « dôme » a son PROPRE curseur (domeFrac) → la carte ne bouge pas quand on
+    // scrube la mini-frise, et inversement (choix Anthony).
   }
 
   function play() {
@@ -909,42 +910,60 @@
       g.appendChild(dmEl('path', { d: dmBand(b[0], b[1]), fill: '#8b96a8', opacity: (0.06 + 0.72 * frac).toFixed(2) }));
       g.appendChild(dmEl('path', { d: dmArc(0, 180, b[1]), fill: 'none', stroke: '#0a0f1c', 'stroke-width': 1, opacity: 0.5 }));
     }
-    // arc de la Lune (masqué si sous l'horizon)
-    if (d.moon.up) g.appendChild(dmEl('path', { d: dmArc(6, 174, DM_MOON_R), fill: 'none', stroke: '#93a2ba', 'stroke-width': 1.3, 'stroke-dasharray': '2 5', opacity: 0.42 }));
+    // arc de la Lune (fondu près de l'horizon ; masqué si sous l'horizon)
+    const mf = d.moon.up ? (d.moon.fade != null ? d.moon.fade : 1) : 0;
+    if (mf > 0.01) g.appendChild(dmEl('path', { d: dmArc(6, 174, DM_MOON_R), fill: 'none', stroke: '#93a2ba', 'stroke-width': 1.3, 'stroke-dasharray': '2 5', opacity: (0.42 * mf).toFixed(2) }));
     // horizon + repères E/O
     const hL = dmPt(0, DM_R)[0], hR = dmPt(180, DM_R)[0];
     svg.appendChild(dmEl('line', { x1: hL, y1: DM_CY, x2: hR, y2: DM_CY, stroke: '#22304a', 'stroke-width': 1.5 }));
     svg.appendChild(dmEl('line', { x1: hL, y1: DM_CY, x2: hR, y2: DM_CY, stroke: '#f4b94222', 'stroke-width': 6 }));
     const tE = dmEl('text', { x: hL + 2, y: DM_CY + 16, fill: '#6c7d97', 'font-size': 11, 'font-weight': 600 }); tE.textContent = 'E'; svg.appendChild(tE);
     const tO = dmEl('text', { x: hR - 12, y: DM_CY + 16, fill: '#6c7d97', 'font-size': 11, 'font-weight': 600 }); tO.textContent = 'O'; svg.appendChild(tO);
-    // Lune : dessinée SEULEMENT si au-dessus de l'horizon
-    if (d.moon.up) {
+    // Lune : au-dessus de l'horizon, fondue à l'apparition/disparition (groupe opacité = mf).
+    if (mf > 0.01) {
       const mp = dmPt(d.moon.deg, DM_MOON_R), mx = mp[0], my = mp[1], mr = 13;
-      svg.appendChild(dmEl('circle', { cx: mx, cy: my, r: mr + 7, fill: '#c7d1de', opacity: 0.11, filter: 'url(#sgSoft2)' }));
-      svg.appendChild(dmEl('circle', { cx: mx, cy: my, r: mr, fill: 'url(#sgMoonG)', stroke: '#dbe3ee', 'stroke-width': 0.6 }));
-      const off = (1 - d.moon.illum) * 2 * mr * (d.moon.waning ? -1 : 1);
       const md = dmEl('defs', {}); md.innerHTML = `<clipPath id="sgMClip"><circle cx="${mx}" cy="${my}" r="${mr}"/></clipPath>`; svg.appendChild(md);
-      svg.appendChild(dmEl('circle', { cx: mx + off, cy: my, r: mr, fill: '#0c1322', opacity: 0.82, 'clip-path': 'url(#sgMClip)' }));
+      const mg = dmEl('g', { opacity: mf.toFixed(2) });
+      mg.appendChild(dmEl('circle', { cx: mx, cy: my, r: mr + 7, fill: '#c7d1de', opacity: 0.11, filter: 'url(#sgSoft2)' }));
+      mg.appendChild(dmEl('circle', { cx: mx, cy: my, r: mr, fill: 'url(#sgMoonG)', stroke: '#dbe3ee', 'stroke-width': 0.6 }));
+      const off = (1 - d.moon.illum) * 2 * mr * (d.moon.waning ? -1 : 1);
+      mg.appendChild(dmEl('circle', { cx: mx + off, cy: my, r: mr, fill: '#0c1322', opacity: 0.82, 'clip-path': 'url(#sgMClip)' }));
       const cg = dmEl('g', { 'clip-path': 'url(#sgMClip)', opacity: 0.35 });
       cg.appendChild(dmEl('circle', { cx: mx - 4, cy: my - 3, r: 2.4, fill: '#93a2ba' }));
       cg.appendChild(dmEl('circle', { cx: mx + 3, cy: my + 4, r: 1.7, fill: '#93a2ba' }));
       cg.appendChild(dmEl('circle', { cx: mx + 5, cy: my - 4, r: 1.1, fill: '#93a2ba' }));
-      svg.appendChild(cg);
+      mg.appendChild(cg);
+      svg.appendChild(mg);
     }
   }
 
-  // Construit l'objet data du dôme pour la cellule i au créneau courant.
+  // Construit l'objet data du dôme pour la cellule i, INTERPOLÉ à la position continue
+  // `domeFrac` (entre deux créneaux) → la lune glisse, les voiles se transforment, le score
+  // évolue en douceur au scrub. Le curseur du dôme est INDÉPENDANT de la carte (cursor).
   function sgDomeData(i, title, sub) {
-    const cl = (key) => (data[key] && data[key][cursor] && data[key][cursor][i] != null) ? Math.round(data[key][cursor][i]) : 0;
-    const score = (data.scores && data.scores[cursor] && data.scores[cursor][i] != null) ? Math.round(data.scores[cursor][i]) : null;
-    const m = data.moon || {}, h = hours[cursor] || {};
-    const up = (h.moon_alt != null) ? (h.moon_alt > 0) : false;
+    const n = hours.length || 1;
+    const h0 = Math.max(0, Math.min(n - 1, Math.floor(domeFrac)));
+    const h1 = Math.min(n - 1, h0 + 1);
+    const f = domeFrac - h0;
+    const lerp = (a, b) => a + (b - a) * f;
+    const clAt = (key, hh) => (data[key] && data[key][hh] && data[key][hh][i] != null) ? data[key][hh][i] : 0;
+    const cl = (key) => Math.round(lerp(clAt(key, h0), clAt(key, h1)));
+    const scAt = (hh) => (data.scores && data.scores[hh] && data.scores[hh][i] != null) ? data.scores[hh][i] : null;
+    const s0 = scAt(h0), s1 = scAt(h1);
+    const score = (s0 != null && s1 != null) ? Math.round(lerp(s0, s1)) : (s0 != null ? s0 : (s1 != null ? s1 : null));
+    const m = data.moon || {};
+    const altAt = (hh) => (hours[hh] && hours[hh].moon_alt != null) ? hours[hh].moon_alt : -90;
+    const alt = lerp(altAt(h0), altAt(h1));
+    const up = alt > 0;
+    const fade = Math.max(0, Math.min(1, alt / 4));   // fondu doux sur les 4 premiers degrés
     const waning = (m.age_days != null) ? (m.age_days > 14.77) : false;
     const riseMs = m.moonrise_utc ? Date.parse(m.moonrise_utc) : null;
     const setMs = m.moonset_utc ? Date.parse(m.moonset_utc) : null;
-    const nowMs = h.iso ? Date.parse(h.iso) : Date.now();
+    const t0 = (hours[h0] && hours[h0].iso) ? Date.parse(hours[h0].iso) : Date.now();
+    const t1 = (hours[h1] && hours[h1].iso) ? Date.parse(hours[h1].iso) : t0;
+    const nowMs = lerp(t0, t1);
     let deg = 90;
-    if (riseMs && setMs && setMs > riseMs) { const f = Math.max(0, Math.min(1, (nowMs - riseMs) / (setMs - riseMs))); deg = 6 + f * 168; }
+    if (riseMs && setMs && setMs > riseMs) { const fr = Math.max(0, Math.min(1, (nowMs - riseMs) / (setMs - riseMs))); deg = 6 + fr * 168; }
     return {
       title, sub,
       poll: Math.max(0, Math.min(100, 100 - (data.darkness ? (data.darkness[i] || 0) : 0))),
@@ -952,14 +971,14 @@
       score, scoreLabel: (score != null ? verdict(score) : '—'),
       moon: {
         illum: (m.illumination != null ? m.illumination : 0), name: (m.phase_name || '—'),
-        up, waning, deg,
+        up, fade, waning, deg,
         rise: (m.moonrise_utc ? fmtHMz(m.moonrise_utc) : '—'),
         set: (m.moonset_utc ? fmtHMz(m.moonset_utc) : '—'),
       },
     };
   }
 
-  let sgDomeEls = null, sgDomeCurrent = null;
+  let sgDomeEls = null, sgDomeCurrent = null, domeFrac = 0;
   function ensureDomeModal() {
     if (sgDomeEls) return sgDomeEls;
     const ov = document.createElement('div');
@@ -1010,25 +1029,26 @@
     });
     f.appendChild(labs);
     e._friseTrack = track; e._friseProg = prog; e._friseThumb = thumb;
-    const pickIdx = (clientX) => {
+    const fracFromX = (clientX) => {
       const r = track.getBoundingClientRect();
-      const frac = Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width)));
-      return Math.round(frac * (hours.length - 1));
+      const p = Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width)));
+      return p * (hours.length - 1);
     };
-    let dragging = false;
-    track.addEventListener('pointerdown', (ev) => { dragging = true; try { track.setPointerCapture(ev.pointerId); } catch (_) {} if (typeof stop === 'function') stop(); applyCursor(pickIdx(ev.clientX)); });
-    track.addEventListener('pointermove', (ev) => { if (dragging) applyCursor(pickIdx(ev.clientX)); });
-    const end = () => { dragging = false; };
-    track.addEventListener('pointerup', end); track.addEventListener('pointercancel', end);
+    let dragging = false, moved = false;
+    track.addEventListener('pointerdown', (ev) => { dragging = true; moved = false; try { track.setPointerCapture(ev.pointerId); } catch (_) {} });
+    track.addEventListener('pointermove', (ev) => { if (!dragging) return; moved = true; setDomeFrac(fracFromX(ev.clientX), false); });
+    const end = (ev) => { if (!dragging) return; dragging = false; if (!moved) setDomeFrac(fracFromX(ev.clientX), true); };   // tap = transition animée
+    track.addEventListener('pointerup', end); track.addEventListener('pointercancel', () => { dragging = false; });
     updateDomeFriseActive();
   }
   function updateDomeFriseActive() {
     const e = sgDomeEls; if (!e || !e._friseTrack || !hours.length) return;
-    const frac = (hours.length > 1) ? (cursor / (hours.length - 1)) : 0;
+    const frac = domeFrac / Math.max(1, hours.length - 1);
     e._friseProg.style.width = (frac * 100).toFixed(1) + '%';
     e._friseThumb.style.left = (frac * 100).toFixed(1) + '%';
+    const active = Math.round(domeFrac);
     const labs = e.frise.querySelectorAll('.sg-dome-frise-lab');
-    for (let k = 0; k < labs.length; k++) labs[k].classList.toggle('active', k === cursor);
+    for (let k = 0; k < labs.length; k++) labs[k].classList.toggle('active', k === active);
   }
 
   function paintDome(d) {
@@ -1058,19 +1078,37 @@
   function openDome(i, title, sub) {
     if (!data || !data.cells || !data.cells[i]) return;
     sgDomeCurrent = { i, title, sub };
+    domeFrac = cursor;                 // démarre à l'heure affichée sur la carte, puis INDÉPENDANT
+    if (sgDomeTweenRaf) { cancelAnimationFrame(sgDomeTweenRaf); sgDomeTweenRaf = null; }
     paintDome(sgDomeData(i, title, sub));
     buildDomeFrise();
     const e = ensureDomeModal();
     e.ov.classList.add('open'); e.ov.setAttribute('aria-hidden', 'false');
   }
-  // Re-rendu quand on change d'heure avec la modale ouverte (coalescé en rAF pour un scrub fluide).
-  let sgDomeRaf = null;
-  function refreshDomeIfOpen() {
+  // Re-rendu du dôme (coalescé en rAF pour un scrub fluide). N'affecte PAS la carte (curseur indépendant).
+  let sgDomeRaf = null, sgDomeTweenRaf = null;
+  function repaintDome() {
     if (!sgDomeIsOpen() || !sgDomeCurrent || sgDomeRaf) return;
     sgDomeRaf = requestAnimationFrame(() => {
       sgDomeRaf = null;
       if (sgDomeIsOpen() && sgDomeCurrent) paintDome(sgDomeData(sgDomeCurrent.i, sgDomeCurrent.title, sgDomeCurrent.sub));
     });
+  }
+  // Positionne le curseur du dôme (fractionnaire). animate=true → transition douce (tap).
+  function setDomeFrac(f, animate) {
+    const max = Math.max(0, hours.length - 1);
+    f = Math.max(0, Math.min(max, f));
+    if (sgDomeTweenRaf) { cancelAnimationFrame(sgDomeTweenRaf); sgDomeTweenRaf = null; }
+    if (!animate) { domeFrac = f; repaintDome(); return; }
+    const from = domeFrac, to = f, dur = 420, t0 = performance.now();
+    const ease = (x) => 1 - Math.pow(1 - x, 3);
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / dur);
+      domeFrac = from + (to - from) * ease(k);
+      if (sgDomeIsOpen() && sgDomeCurrent) paintDome(sgDomeData(sgDomeCurrent.i, sgDomeCurrent.title, sgDomeCurrent.sub));
+      if (k < 1) sgDomeTweenRaf = requestAnimationFrame(step); else { sgDomeTweenRaf = null; domeFrac = to; }
+    };
+    sgDomeTweenRaf = requestAnimationFrame(step);
   }
 
   // Cellule la plus proche d'un point (pour un spot).
@@ -1083,7 +1121,6 @@
     }
     return best;
   }
-  function sgHourLabel() { const h = hours[cursor]; return h ? ('créneau ' + fmtHM(h.iso)) : ''; }
   // Ouvre la modale pour un SPOT (hook appelé par spots.js en mode étoile). Renvoie true si géré.
   function openDomeForSpot(spot) {
     if (!active || !spot) return false;
