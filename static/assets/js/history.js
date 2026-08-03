@@ -34,8 +34,15 @@
 
   let historyDate = null;
   let slotFrames = [];       // [{ hour, colors:[...] }] par créneau
-  let cellEls = [];          // <rect> des cellules
-  let curColors = [];        // couleurs appliquées (diff pour limiter les écritures DOM)
+  // Cellules rendues sur un <canvas> (2636 rects SVG = trop lent à re-rastériser
+  // par frame). Le canvas est posé SOUS le SVG (masque + frontières + foudre) et
+  // calé au pixel sur sa boîte ; chacun sur sa propre couche → seul le canvas se
+  // repeint par frame (fillRect en diff), les frontières restent en cache.
+  let cellCanvas = null;     // <canvas> des cellules (sous le SVG)
+  let cellCtx = null;        // contexte 2D
+  let cellGeom = [];         // [{ x, y, w, h }] en unités viewBox
+  let cellRectPx = [];       // rects arrondis en pixels du backing (tuilage net, sans couture)
+  let curColors = [];        // couleurs appliquées (diff pour ne repeindre que ce qui change)
   let flashLayer = null;     // <g> des impacts
   let projection = null;     // buildGifFranceProjection(...)
   let frameIndex = 0;
@@ -66,6 +73,7 @@
     const p = frameEl && frameEl.closest('.prediction-map-panel'); if (p) p.classList.remove('prediction-scanning');
     if (controlsEl) controlsEl.hidden = true;
     if (frameEl) frameEl.hidden = true;
+    if (cellCanvas) cellCanvas.style.display = 'none';
     if (emptyHintEl) { emptyHintEl.hidden = false; emptyHintEl.textContent = message; }
   }
 
@@ -334,6 +342,72 @@
     return d;
   }
 
+  // --- Canvas des cellules (perf) : posé sous le SVG, calé sur sa boîte --------------
+  function ensureCellCanvas() {
+    if (cellCanvas || !frameEl || !frameEl.parentElement) return cellCanvas;
+    const panel = frameEl.parentElement;
+    cellCanvas = document.createElement('canvas');
+    cellCanvas.className = 'history-cell-canvas';
+    const st = cellCanvas.style;
+    st.position = 'absolute'; st.pointerEvents = 'none'; st.zIndex = '0';
+    st.transform = 'translateZ(0)'; st.display = 'none';
+    panel.insertBefore(cellCanvas, frameEl); // AVANT le SVG (donc dessous)
+    // SVG (masque + frontières + foudre) au-dessus, fond transparent, sur SA propre
+    // couche de compositing → n'est plus re-rastérisé quand les cellules changent.
+    frameEl.style.position = 'relative';
+    frameEl.style.zIndex = '1';
+    frameEl.style.transform = 'translateZ(0)';
+    frameEl.style.background = 'transparent';
+    if (typeof ResizeObserver !== 'undefined') {
+      try { new ResizeObserver(() => syncCellCanvas()).observe(panel); } catch (_) {}
+    }
+    window.addEventListener('resize', syncCellCanvas);
+    return cellCanvas;
+  }
+
+  // Cale le canvas sur la boîte (carrée) du SVG et pré-calcule les rects en pixels du
+  // backing (bords arrondis à l'entier → tuilage net sans couture, comme optimizeSpeed).
+  function syncCellCanvas() {
+    if (!cellCanvas || !frameEl || !frameEl.parentElement) return;
+    const panel = frameEl.parentElement;
+    const s = frameEl.getBoundingClientRect();
+    if (s.width < 1) return;
+    const p = panel.getBoundingClientRect();
+    const pcs = getComputedStyle(panel);
+    const bl = parseFloat(pcs.borderLeftWidth) || 0; // le top/left absolu est relatif au
+    const bt = parseFloat(pcs.borderTopWidth) || 0;  // padding-box → on retire la bordure
+    const dpr = window.devicePixelRatio || 1;
+    cellCanvas.style.left = (s.left - p.left - bl) + 'px';
+    cellCanvas.style.top = (s.top - p.top - bt) + 'px';
+    cellCanvas.style.width = s.width + 'px';
+    cellCanvas.style.height = s.height + 'px';
+    const bw = Math.max(1, Math.round(s.width * dpr));
+    const bh = Math.max(1, Math.round(s.height * dpr));
+    cellCanvas.width = bw; cellCanvas.height = bh;
+    const sx = bw / VB, sy = bh / VB;
+    cellRectPx = cellGeom.map((g) => {
+      const x0 = Math.round(g.x * sx), y0 = Math.round(g.y * sy);
+      const x1 = Math.round((g.x + g.w) * sx), y1 = Math.round((g.y + g.h) * sy);
+      return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
+    });
+    cellCtx = cellCanvas.getContext('2d');
+    redrawAllCells();
+  }
+
+  // Repeint tout le canvas (fond + toutes les cellules selon curColors). Utilisé au
+  // (re)calage/redimensionnement ; l'animation, elle, ne repeint que les cellules qui changent.
+  function redrawAllCells() {
+    if (!cellCtx || !cellCanvas) return;
+    cellCtx.setTransform(1, 0, 0, 1, 0, 0);
+    cellCtx.fillStyle = '#070f1c';
+    cellCtx.fillRect(0, 0, cellCanvas.width, cellCanvas.height);
+    for (let k = 0; k < cellRectPx.length; k += 1) {
+      cellCtx.fillStyle = curColors[k] || '#070f1c';
+      const r = cellRectPx[k];
+      cellCtx.fillRect(r.x, r.y, r.w, r.h);
+    }
+  }
+
   // Construit le SVG (DOM) une fois pour la journée + retourne les couleurs par créneau.
   function buildSvg(day) {
     if (!frameEl || typeof buildGifFranceProjection !== 'function') return null;
@@ -395,26 +469,14 @@
     frameEl.setAttribute('viewBox', `0 0 ${VB} ${VB}`);
     frameEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
-    const bg = document.createElementNS(SVGNS, 'rect');
-    bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
-    bg.setAttribute('width', String(VB)); bg.setAttribute('height', String(VB));
-    bg.setAttribute('fill', '#070f1c');
-    frameEl.appendChild(bg);
-
-    const cellsG = document.createElementNS(SVGNS, 'g');
-    cellsG.setAttribute('shape-rendering', 'optimizeSpeed'); // pas d'anti-aliasing -> bien plus rapide
-    cellEls = geom.map((g) => {
-      const r = document.createElementNS(SVGNS, 'rect');
-      r.setAttribute('x', g.x.toFixed(1));
-      r.setAttribute('y', g.y.toFixed(1));
-      r.setAttribute('width', g.w.toFixed(1));
-      r.setAttribute('height', g.h.toFixed(1));
-      r.setAttribute('fill', baseColor);
-      cellsG.appendChild(r);
-      return r;
-    });
-    frameEl.appendChild(cellsG);
+    // Cellules : rendues sur le <canvas> sous le SVG (perf). Le SVG reste transparent
+    // au fond (le canvas fournit fond + cellules) et ne porte plus que masque +
+    // frontières + foudre. Le masque « hors-France » couvre le débord des cellules.
+    ensureCellCanvas();
+    cellGeom = geom;
     curColors = new Array(n).fill(baseColor);
+    syncCellCanvas();
+    if (cellCanvas) cellCanvas.style.display = '';
 
     // Masque « hors-France » : un seul path statique (rectangle troué de la France,
     // fill-rule evenodd) rempli du fond, posé SUR les cellules → couvre les carrés
@@ -498,6 +560,7 @@
   function showHistoryScanning() {
     renderHistoryScope();
     if (frameEl) frameEl.hidden = false;
+    if (cellCanvas) cellCanvas.style.display = 'none'; // échafaudage = SVG opaque seul
     if (emptyHintEl) emptyHintEl.hidden = true;
     const p = historyPanel(); if (p) p.classList.add('prediction-scanning');
   }
@@ -544,6 +607,7 @@
     if (controlsEl) controlsEl.hidden = false;
     if (emptyHintEl) emptyHintEl.hidden = true;
     if (frameEl) frameEl.hidden = false;
+    if (cellCanvas) { cellCanvas.style.display = ''; syncCellCanvas(); }
     if (titleEl) titleEl.textContent = 'Historique · animation 24 h';
     if (subtitleEl) {
       const fps = (1000 / FRAME_MS).toFixed(1);
@@ -558,10 +622,16 @@
     if (!slotFrames.length) return;
     frameIndex = ((index % slotFrames.length) + slotFrames.length) % slotFrames.length;
     const colors = slotFrames[frameIndex].colors;
-    for (let k = 0; k < cellEls.length; k += 1) {
-      if (colors[k] !== curColors[k]) {
-        cellEls[k].setAttribute('fill', colors[k]);
-        curColors[k] = colors[k];
+    // Ne repeindre QUE les cellules qui changent (diff) directement sur le canvas.
+    if (cellCtx) {
+      cellCtx.setTransform(1, 0, 0, 1, 0, 0);
+      for (let k = 0; k < cellRectPx.length; k += 1) {
+        if (colors[k] !== curColors[k]) {
+          cellCtx.fillStyle = colors[k];
+          const r = cellRectPx[k];
+          cellCtx.fillRect(r.x, r.y, r.w, r.h);
+          curColors[k] = colors[k];
+        }
       }
     }
     renderFlashHour(slotFrames[frameIndex].hour);
@@ -893,26 +963,29 @@
     flashBtn.setAttribute('aria-pressed', showFlashes ? 'true' : 'false');
   }
 
-  // Export PNG (rasterise le SVG de l'heure courante, France entière).
+  // Export PNG de l'heure courante (France entière) : cellules (canvas) + par-dessus le
+  // SVG (masque + frontières + foudre), recomposés à la résolution du viewBox.
   function downloadCurrent() {
     if (!frameEl || !slotFrames.length) return;
+    const out = document.createElement('canvas');
+    out.width = VB; out.height = VB;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#070f1c';
+    ctx.fillRect(0, 0, VB, VB);
+    if (cellCanvas) ctx.drawImage(cellCanvas, 0, 0, VB, VB); // cellules (remises à l'échelle VB)
     const clone = frameEl.cloneNode(true);
     clone.setAttribute('viewBox', `0 0 ${VB} ${VB}`);
     clone.setAttribute('width', String(VB));
     clone.setAttribute('height', String(VB));
+    clone.style.background = 'transparent';
     const xml = new XMLSerializer().serializeToString(clone);
     const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
     const img = new Image();
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = VB; canvas.height = VB;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#070f1c';
-      ctx.fillRect(0, 0, VB, VB);
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, VB, VB); // masque + frontières + foudre par-dessus
       URL.revokeObjectURL(url);
       const link = document.createElement('a');
-      link.href = canvas.toDataURL('image/png');
+      link.href = out.toDataURL('image/png');
       const h = String(slotFrames[frameIndex].hour).padStart(2, '0');
       link.download = `objectifoudre-historique-${historyDate || ''}-${h}h.png`;
       link.click();
