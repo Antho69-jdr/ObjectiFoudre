@@ -250,17 +250,23 @@
     return d;
   }
 
-  // Frontières INTERNES de départements seulement : on retire les points qui longent une
-  // frontière de région/pays (déjà tracée, plus nettement, par la couche régions) → UNE
-  // SEULE ligne par frontière, plus de « double trait ». Régions et départements venant de
-  // 2 GeoJSON IGN simplifiés différents (limites partagées non coïncidentes au pixel), on
-  // teste la proximité — eps en unités du viewBox — de chaque point de département aux
-  // segments de région, via une grille spatiale (O(1) par point). Trace en sous-lignes
-  // ouvertes (pas d'anneaux fermés) coupées dès qu'on approche une frontière de région.
-  // NB step=1 IMPÉRATIF : chaque limite interne est tracée par les 2 départements
-  // voisins ; leurs sommets ne coïncident (→ trait unique) qu'en pleine résolution.
-  // Décimer (step>1) échantillonne des points différents de part et d'autre → double
-  // trait « biscornu ». Les régions sont propres pour la même raison (step 1).
+  // Frontières INTERNES de départements seulement : le long des limites de région/pays
+  // (déjà tracées, plus nettement, par la couche régions), la limite de département
+  // coïncidente est retirée → UNE SEULE ligne par frontière (plus de « double trait »).
+  // Régions et départements venant de 2 GeoJSON IGN simplifiés différents (limites
+  // partagées non coïncidentes au pixel), on teste la proximité (eps, unités viewBox) de
+  // chaque point dept aux segments de région via une grille spatiale (O(1)/point, build).
+  //
+  // Finesse aux JONCTIONS : une limite interne qui vient buter sur une frontière de région
+  // (jonction en T) ne doit PAS s'arrêter avant de la toucher. On ne coupe donc que les
+  // points « intérieurs » d'un segment coïncident (leurs 2 voisins sont aussi proches) ;
+  // les points de transition (un voisin est loin) sont GARDÉS et ACCROCHÉS exactement sur
+  // le point le plus proche de la frontière de région → la limite touche pile la région.
+  //
+  // NB step=1 IMPÉRATIF : chaque limite interne est tracée par les 2 départements voisins ;
+  // leurs sommets ne coïncident (→ trait unique) qu'en pleine résolution. Décimer (step>1)
+  // échantillonne des points différents de part et d'autre → double trait « biscornu ».
+  // Les régions sont propres pour la même raison (step 1).
   function deptInteriorPath(deptRings, regionRings, proj, step = 1, eps = 6) {
     if (!Array.isArray(regionRings) || !regionRings.length) return ringsToPath(deptRings, proj, step);
     const cell = Math.max(4, eps);
@@ -286,34 +292,42 @@
       }
     }
     const eps2 = eps * eps;
-    const d2ToSeg = (px, py, ax, ay, bx, by) => {
-      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
-      let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
-      t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const ex = px - (ax + t * dx), ey = py - (ay + t * dy);
-      return ex * ex + ey * ey;
-    };
-    const nearRegion = (px, py) => {
+    // Point le plus proche sur une frontière de région (dans eps), sinon null.
+    const snapToRegion = (px, py) => {
       const gx = Math.floor(px / cell), gy = Math.floor(py / cell);
+      let best = eps2, bx = null, by = null;
       for (let ox = -1; ox <= 1; ox += 1) {
         for (let oy = -1; oy <= 1; oy += 1) {
           const a = grid.get(key(gx + ox, gy + oy)); if (!a) continue;
-          for (const s of a) if (d2ToSeg(px, py, s[0], s[1], s[2], s[3]) <= eps2) return true;
+          for (const s of a) {
+            const dx = s[2] - s[0], dy = s[3] - s[1], l2 = dx * dx + dy * dy;
+            let t = l2 ? ((px - s[0]) * dx + (py - s[1]) * dy) / l2 : 0;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            const cx = s[0] + t * dx, cy = s[1] + t * dy, ex = px - cx, ey = py - cy, dd = ex * ex + ey * ey;
+            if (dd <= best) { best = dd; bx = cx; by = cy; }
+          }
         }
       }
-      return false;
+      return bx == null ? null : { x: bx, y: by };
     };
     let d = '';
     for (const ring of deptRings) {
       if (!Array.isArray(ring) || ring.length < 2) continue;
-      const last = ring.length - 1;
+      const pts = [];
+      for (let j = 0; j < ring.length; j += step) {
+        const p = proj.project(Number(ring[j][0]), Number(ring[j][1]));
+        if (p) pts.push(p);
+      }
+      const n = pts.length;
+      if (n < 2) continue;
+      const sn = pts.map((p) => snapToRegion(p.x, p.y)); // null = loin d'une région
       let started = false;
-      for (let j = 0; j <= last; j += step) {
-        const k = j > last ? last : j;
-        const p = proj.project(Number(ring[k][0]), Number(ring[k][1]));
-        if (!p) continue;
-        if (nearRegion(p.x, p.y)) { started = false; continue; }
-        d += (started ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+      for (let i = 0; i < n; i += 1) {
+        const near = !!sn[i];
+        const transition = near && ((i > 0 && !sn[i - 1]) || (i < n - 1 && !sn[i + 1]));
+        if (near && !transition) { started = false; continue; } // intérieur d'un segment coïncident → retiré
+        const c = transition ? sn[i] : pts[i]; // jonction → accrochée pile sur la région
+        d += (started ? 'L' : 'M') + c.x.toFixed(1) + ' ' + c.y.toFixed(1);
         started = true;
       }
     }
