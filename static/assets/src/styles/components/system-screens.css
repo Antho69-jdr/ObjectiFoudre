@@ -14,7 +14,11 @@
 .app-loader {
   position: absolute;
   inset: 0;
-  z-index: 40;
+  /* Couche la plus haute du scale (cf. tokens « carte → loader ») : le splash doit
+     masquer TOUT le chrome carte pendant le chargement. La valeur brute 40 le
+     laissait sous l'horloge (z 42) et le rail (z 41 en responsive) → ils
+     transperçaient le splash. On repasse sur le token dédié. */
+  z-index: var(--z-loader);
   display: grid;
   place-items: center;
   background: radial-gradient(circle at 50% 35%, rgba(12, 74, 110, 0.22), transparent 42%), #070d18;
