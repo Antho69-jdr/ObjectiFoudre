@@ -186,25 +186,42 @@ function improveCartoVectorReadability() {
     setMapPaintIfLayer(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 8.5, 0, 11, 0.35]);
   });
 
-  // Petites routes, voies de service, chemins, rampes mineures : masqués (clutter).
-  [
-    'tunnel_minor_fill',
-    'tunnel_service_fill',
-    'tunnel_path',
-    'road_minor_fill',
-    'road_service_fill',
-    'road_path',
-    'bridge_minor_fill',
-    'bridge_service_fill',
-    'bridge_path',
-    'tunnel_minor_case',
-    'tunnel_service_case',
-    'road_minor_case',
-    'road_service_case',
-    'bridge_minor_case',
-    'bridge_service_case'
-  ].forEach((id) => {
+  // Petites voies (petites routes, dessertes, chemins/sentiers) : rallumées au fort
+  // zoom, masquées en vue large. L'opacité est pilotée par le zoom (→ 0 de loin), donc
+  // la carte reste épurée à l'échelle région et le réseau fin se dévoile quand on
+  // s'approche d'un spot (souvent posé sur un chemin/une desserte). Palette ardoise,
+  // sobre. Les *_case des dessertes restent masqués (trait plein `fill` seul suffit).
+
+  // Chemins + sentiers (path + track) : pointillés, les plus discrets.
+  ['road_path', 'tunnel_path', 'bridge_path'].forEach((id) => {
+    setMapLayoutIfLayer(id, 'visibility', 'visible');
+    setMapPaintIfLayer(id, 'line-color', 'rgba(120, 140, 166, 1)');
+    setMapPaintIfLayer(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 13, 0, 14, 0.45, 16, 0.68]);
+    setMapPaintIfLayer(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 14, 0.6, 16, 1.3, 18, 2.8]);
+    setMapPaintIfLayer(id, 'line-dasharray', { stops: [[14, [2, 1.5]], [18, [3, 2.2]]] });
+  });
+
+  // Dessertes / accès (service) : trait plein fin (le contour `case` reste masqué).
+  ['road_service_fill', 'tunnel_service_fill', 'bridge_service_fill'].forEach((id) => {
+    setMapLayoutIfLayer(id, 'visibility', 'visible');
+    setMapPaintIfLayer(id, 'line-color', 'rgba(92, 112, 140, 1)');
+    setMapPaintIfLayer(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 13, 0, 14, 0.4, 16, 0.6]);
+    setMapPaintIfLayer(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 14, 0.5, 16, 1.6, 18, 3.4]);
+  });
+  ['road_service_case', 'tunnel_service_case', 'bridge_service_case'].forEach((id) => {
     setMapLayoutIfLayer(id, 'visibility', 'none');
+  });
+
+  // Petites routes / rues (minor) : trait plein ardoise clair + fin contour discret.
+  ['road_minor_fill', 'tunnel_minor_fill', 'bridge_minor_fill'].forEach((id) => {
+    setMapLayoutIfLayer(id, 'visibility', 'visible');
+    setMapPaintIfLayer(id, 'line-color', 'rgba(104, 126, 156, 1)');
+    setMapPaintIfLayer(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 11.5, 0, 13, 0.45, 15, 0.7]);
+    setMapPaintIfLayer(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 12, 0.4, 14, 1.1, 16, 2.6, 18, 5]);
+  });
+  ['road_minor_case', 'tunnel_minor_case', 'bridge_minor_case'].forEach((id) => {
+    setMapLayoutIfLayer(id, 'visibility', 'visible');
+    setMapPaintIfLayer(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 12, 0, 13.5, 0.3]);
   });
 
   // Noms de routes : on masque les petites, et on garde les grands axes discrets.
