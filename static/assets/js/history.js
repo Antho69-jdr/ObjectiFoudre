@@ -41,8 +41,7 @@
   let cellCanvas = null;     // <canvas> des cellules (sous le SVG)
   let cellCtx = null;        // contexte 2D
   let cellGeom = [];         // [{ x, y, w, h }] en unités viewBox
-  let cellRectPx = [];       // rects arrondis en pixels du backing (tuilage net, sans couture)
-  let curColors = [];        // couleurs appliquées (diff pour ne repeindre que ce qui change)
+  let curColors = [];        // couleurs des cellules à l'heure courante
   let flashLayer = null;     // <g> des impacts
   let projection = null;     // buildGifFranceProjection(...)
   let frameIndex = 0;
@@ -381,30 +380,29 @@
     cellCanvas.style.top = (s.top - p.top - bt) + 'px';
     cellCanvas.style.width = s.width + 'px';
     cellCanvas.style.height = s.height + 'px';
-    const bw = Math.max(1, Math.round(s.width * dpr));
-    const bh = Math.max(1, Math.round(s.height * dpr));
-    cellCanvas.width = bw; cellCanvas.height = bh;
-    const sx = bw / VB, sy = bh / VB;
-    cellRectPx = cellGeom.map((g) => {
-      const x0 = Math.round(g.x * sx), y0 = Math.round(g.y * sy);
-      const x1 = Math.round((g.x + g.w) * sx), y1 = Math.round((g.y + g.h) * sy);
-      return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
-    });
+    cellCanvas.width = Math.max(1, Math.round(s.width * dpr));
+    cellCanvas.height = Math.max(1, Math.round(s.height * dpr));
     cellCtx = cellCanvas.getContext('2d');
     redrawAllCells();
   }
 
-  // Repeint tout le canvas (fond + toutes les cellules selon curColors). Utilisé au
-  // (re)calage/redimensionnement ; l'animation, elle, ne repeint que les cellules qui changent.
+  // Repeint tout le canvas (fond + cellules) EN SUIVANT le zoom/pan courant (vb) : le
+  // transform mappe les coords viewBox → pixels du backing, exactement comme le viewBox
+  // du SVG → cellules et frontières restent alignées à tout niveau de zoom. Redraw complet
+  // à chaque frame/zoom/pan : sur canvas c'est ~1-3 ms (vs re-rastériser 2636 rects SVG).
   function redrawAllCells() {
-    if (!cellCtx || !cellCanvas) return;
+    if (!cellCtx || !cellCanvas || !cellGeom.length) return;
+    const bw = cellCanvas.width, bh = cellCanvas.height;
     cellCtx.setTransform(1, 0, 0, 1, 0, 0);
     cellCtx.fillStyle = '#070f1c';
-    cellCtx.fillRect(0, 0, cellCanvas.width, cellCanvas.height);
-    for (let k = 0; k < cellRectPx.length; k += 1) {
+    cellCtx.fillRect(0, 0, bw, bh);
+    const sx = bw / vb.w, sy = bh / vb.h;
+    cellCtx.setTransform(sx, 0, 0, sy, -vb.x * sx, -vb.y * sy);
+    const inf = 0.6 / sx; // léger débord (~0,6 px) pour éviter les coutures entre cellules
+    for (let k = 0; k < cellGeom.length; k += 1) {
       cellCtx.fillStyle = curColors[k] || '#070f1c';
-      const r = cellRectPx[k];
-      cellCtx.fillRect(r.x, r.y, r.w, r.h);
+      const g = cellGeom[k];
+      cellCtx.fillRect(g.x, g.y, g.w + inf, g.h + inf);
     }
   }
 
@@ -621,19 +619,8 @@
   function showHour(index) {
     if (!slotFrames.length) return;
     frameIndex = ((index % slotFrames.length) + slotFrames.length) % slotFrames.length;
-    const colors = slotFrames[frameIndex].colors;
-    // Ne repeindre QUE les cellules qui changent (diff) directement sur le canvas.
-    if (cellCtx) {
-      cellCtx.setTransform(1, 0, 0, 1, 0, 0);
-      for (let k = 0; k < cellRectPx.length; k += 1) {
-        if (colors[k] !== curColors[k]) {
-          cellCtx.fillStyle = colors[k];
-          const r = cellRectPx[k];
-          cellCtx.fillRect(r.x, r.y, r.w, r.h);
-          curColors[k] = colors[k];
-        }
-      }
-    }
+    curColors = slotFrames[frameIndex].colors;
+    redrawAllCells(); // repeint le canvas avec le zoom/pan courant
     renderFlashHour(slotFrames[frameIndex].hour);
     if (scrubber) scrubber.value = String(frameIndex);
     if (hourLabel) hourLabel.textContent = hourText(slotFrames[frameIndex].hour);
@@ -1008,6 +995,7 @@
 
   function applyViewBox() {
     if (frameEl) frameEl.setAttribute('viewBox', `${vb.x.toFixed(2)} ${vb.y.toFixed(2)} ${vb.w.toFixed(2)} ${vb.h.toFixed(2)}`);
+    redrawAllCells(); // les cellules (canvas) suivent le même zoom/pan que les frontières (SVG)
   }
   function resetZoom() {
     vb.x = 0; vb.y = 0; vb.w = VB; vb.h = VB;
