@@ -300,7 +300,11 @@
     const deptRings = (typeof FRANCE_DEPARTMENT_RINGS !== 'undefined' && Array.isArray(FRANCE_DEPARTMENT_RINGS)) ? FRANCE_DEPARTMENT_RINGS
       : ((typeof FRANCE_GRID_CLIP_RINGS !== 'undefined' && Array.isArray(FRANCE_GRID_CLIP_RINGS)) ? FRANCE_GRID_CLIP_RINGS : []);
     const regionRings = (typeof franceRegionRings === 'function') ? franceRegionRings() : [];
-    const deptData = deptRings.length ? ringsToPath(deptRings, proj, 2) : '';
+    // Départements décimés plus fort (step 3) : ils sont désormais en pointillés fins
+    // subordonnés → la finesse n'est pas nécessaire, et on allège les tracés (build +
+    // fill-rate mobile). Régions en pleine résolution (step 1) : ce sont les traits
+    // « hero » qui portent le contour du pays et des régions.
+    const deptData = deptRings.length ? ringsToPath(deptRings, proj, 3) : '';
     const regionData = regionRings.length ? ringsToPath(regionRings, proj, 1) : '';
 
     while (frameEl.firstChild) frameEl.removeChild(frameEl.firstChild);
@@ -334,37 +338,43 @@
     // contrairement au clip sur 2636 rects que l'on évite).
     const clipRings = (typeof FRANCE_GRID_CLIP_RINGS !== 'undefined' && Array.isArray(FRANCE_GRID_CLIP_RINGS) && FRANCE_GRID_CLIP_RINGS.length)
       ? FRANCE_GRID_CLIP_RINGS : regionRings;
-    const franceOutline = (clipRings && clipRings.length) ? ringsToPath(clipRings, proj, 1) : '';
+    const franceOutline = (clipRings && clipRings.length) ? ringsToPath(clipRings, proj, 2) : '';
     if (franceOutline) {
       const mask = document.createElementNS(SVGNS, 'path');
       mask.setAttribute('d', `M0 0 H${VB} V${VB} H0 Z ${franceOutline}`);
       mask.setAttribute('fill', '#070f1c');
       mask.setAttribute('fill-rule', 'evenodd');
       mask.setAttribute('pointer-events', 'none');
-      mask.setAttribute('shape-rendering', 'geometricPrecision');
+      // optimizeSpeed : ce grand fill plein écran (troué France) est re-rastérisé à
+      // chaque frame ; couper l'anti-aliasing économise beaucoup de fill-rate sur mobile.
+      // Le léger crénelage du littoral est masqué par le trait de région lissé posé dessus.
+      mask.setAttribute('shape-rendering', 'optimizeSpeed');
       frameEl.appendChild(mask);
     }
 
-    const addBorderPath = (d, stroke, width) => {
+    const addBorderPath = (d, stroke, width, dash) => {
       if (!d) return;
       const p = document.createElementNS(SVGNS, 'path');
       p.setAttribute('d', d);
       p.setAttribute('fill', 'none');
       p.setAttribute('stroke', stroke);
       p.setAttribute('stroke-width', String(width));
+      if (dash) p.setAttribute('stroke-dasharray', dash);
       p.setAttribute('vector-effect', 'non-scaling-stroke');
       p.setAttribute('stroke-linejoin', 'round');
       p.setAttribute('stroke-linecap', 'round');
       p.setAttribute('pointer-events', 'none');
       frameEl.appendChild(p);
     };
-    // Casing cartographique (choix V1, 2026-07-19) : halo sombre SOUS chaque trait
-    // cyan → frontières lisibles sur les cellules claires (jaune/orange), identité
-    // cyan intacte sur l'ink. Ordre : halo dépt < cyan dépt < halo région < cyan région.
-    addBorderPath(deptData, 'rgba(2,6,23,0.72)', 1.7);
-    addBorderPath(deptData, 'rgba(125,211,252,0.42)', 0.62);  // départements (dessous, cyan discret)
-    addBorderPath(regionData, 'rgba(2,6,23,0.72)', 2.8);
-    addBorderPath(regionData, 'rgba(125,211,252,0.72)', 1.3); // régions (dessus, cyan net = niveau pays)
+    // Frontières calées sur la carte de base (pas de « double trait ») : régions et
+    // départements viennent de 2 GeoJSON IGN simplifiés DIFFÉRENTS → leurs limites
+    // partagées ne coïncident pas au pixel. En trait plein des deux côtés, le dept
+    // doublait la région. Fix : départements en POINTILLÉS fins subordonnés (sans
+    // casing), régions en trait plein cyan + casing sombre (frontière « hero »).
+    // Ordre : dept dessous < halo région < cyan région.
+    addBorderPath(deptData, 'rgba(120,145,175,0.55)', 0.75, '2.2 2.2');
+    addBorderPath(regionData, 'rgba(2,6,23,0.72)', 2.2);
+    addBorderPath(regionData, 'rgba(125,211,252,0.72)', 1.2);
 
     flashLayer = document.createElementNS(SVGNS, 'g');
     frameEl.appendChild(flashLayer);
@@ -381,19 +391,24 @@
     const deptRings = (typeof FRANCE_DEPARTMENT_RINGS !== 'undefined' && Array.isArray(FRANCE_DEPARTMENT_RINGS)) ? FRANCE_DEPARTMENT_RINGS : [];
     const regionData = (regionRings && regionRings.length) ? ringsToPath(regionRings, proj, 1) : '';
     if (!regionData) return false;
-    const deptData = deptRings.length ? ringsToPath(deptRings, proj, 2) : '';
+    const deptData = deptRings.length ? ringsToPath(deptRings, proj, 3) : '';
     while (frameEl.firstChild) frameEl.removeChild(frameEl.firstChild);
     frameEl.setAttribute('viewBox', `0 0 ${VB} ${VB}`);
     frameEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     const mk = (tag, attrs) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
     frameEl.appendChild(mk('rect', { x: 0, y: 0, width: VB, height: VB, fill: '#070f1c' }));
     frameEl.appendChild(mk('path', { d: regionData, fill: '#091321' }));
-    const border = (d, stroke, w) => { if (!d) return; frameEl.appendChild(mk('path', { d, fill: 'none', stroke, 'stroke-width': String(w), 'vector-effect': 'non-scaling-stroke', 'stroke-linejoin': 'round' })); };
-    // Même casing que buildSvg → aucun saut de style de contours à l'hydratation.
-    border(deptData, 'rgba(2,6,23,0.72)', 1.7);
-    border(deptData, 'rgba(125,211,252,0.42)', 0.62);
-    border(regionData, 'rgba(2,6,23,0.72)', 2.8);
-    border(regionData, 'rgba(125,211,252,0.72)', 1.3);
+    const border = (d, stroke, w, dash) => {
+      if (!d) return;
+      const a = { d, fill: 'none', stroke, 'stroke-width': String(w), 'vector-effect': 'non-scaling-stroke', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' };
+      if (dash) a['stroke-dasharray'] = dash;
+      frameEl.appendChild(mk('path', a));
+    };
+    // Mêmes contours que buildSvg → aucun saut de style à l'hydratation (dépt pointillés
+    // subordonnés, régions plein cyan + casing ; plus de double frontière).
+    border(deptData, 'rgba(120,145,175,0.55)', 0.75, '2.2 2.2');
+    border(regionData, 'rgba(2,6,23,0.72)', 2.2);
+    border(regionData, 'rgba(125,211,252,0.72)', 1.2);
     return true;
   }
   function historyPanel() { return frameEl && frameEl.closest('.prediction-map-panel'); }
