@@ -51,6 +51,8 @@
   let shapeToken = 0;             // invalide un setData différé (fetch en cours au scrub)
   let cursorRaf = 0;              // rAF de coalescence des couches (scrub fluide)
   let cursorDirty = false;        // une frame reste à appliquer (dernière position demandée)
+  let radarSyncRaf = 0;           // rAF qui cale le radar sur l'apparition des cellules (setData)
+  let radarSyncFr = null;         // dernière frame radar à afficher (coalescée)
   // Rendu radar SANS re-tessellation : UNE couche fill PAR frame, triangulée une seule fois,
   // puis on bascule juste la VISIBILITÉ au changement d'horaire (instantané). clé frame → {srcId,layerId}.
   let visibleRadarKey = null;     // frame actuellement opaque (feature-state on)
@@ -624,11 +626,22 @@
     cursorDirty = false;
     const fr = frames[cursor];
     if (!fr) return;
-    // MÊME tick pour les trois → aucune couche en avance/retard sur les autres.
-    showRadarFrame(fr);       // radar : bascule de visibilité de la frame (aucune re-triangulation)
-    syncCellsOverlay();       // cellules + macarons repositionnés à l'heure de la frame (setData léger)
+    // Cellules + macarons + foudre : setData → le rendu arrive ~1 frame plus tard (parse
+    // async côté worker MapLibre).
+    syncCellsOverlay();       // cellules + macarons repositionnés à l'heure de la frame
     syncLightningOverlay();   // impacts foudre refiltrés sur [t−30 min, t] de la frame
     schedulePointForCurrent();
+    // Radar : la bascule feature-state est INSTANTANÉE → il prenait 1 frame d'avance sur les
+    // cellules au scroll rapide (macaron en retard sur la cellule radar). On le décale d'un
+    // rAF pour le caler sur l'apparition des cellules → les 3 couches apparaissent ENSEMBLE.
+    // Coalescé (dernière frame demandée) : le radar reste fluide, jamais figé.
+    radarSyncFr = fr;
+    if (!radarSyncRaf) {
+      radarSyncRaf = requestAnimationFrame(() => {
+        radarSyncRaf = 0;
+        if (active && radarSyncFr) showRadarFrame(radarSyncFr);
+      });
+    }
   }
 
   function liveIndex() {
