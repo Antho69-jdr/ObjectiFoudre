@@ -86,7 +86,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.128"
+APP_VERSION = "1.3.129"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -18053,6 +18053,84 @@ def _fr_clamp_hole_inside(hole, outer, eps: float = 0.5):
     return out if len(out) >= 3 else None
 
 
+def _fr_bands_shapely(per_band, hh, ww):
+    """Reconstruit les isobandes par DIFFÉRENCE géométrique (GEOS/shapely), robuste :
+    region[k] = {champ ≥ k−0,5} = union(contours extérieurs) − union(vrais trous) ; la bande
+    AFFICHÉE k = region[k] − region[k+1] (l'anneau entre deux niveaux). Chaque anneau lissé
+    (Chaikin) est nettoyé (buffer(0)/make_valid) et les booléens GEOS produisent des polygones
+    TOUJOURS valides → fini les trous invalides et les triangles earcut parasites (bug
+    v1.3.127/129). Renvoie None si shapely n'est pas disponible → repli sur la construction
+    manuelle historique de l'appelant."""
+    try:
+        from shapely.geometry import Polygon as ShPoly
+        from shapely.ops import unary_union
+        from shapely.validation import make_valid
+    except Exception:
+        return None
+
+    def poly_px(ring_px):
+        try:
+            p = ShPoly(ring_px)
+            if not p.is_valid:
+                p = p.buffer(0)
+            return p if (p is not None and not p.is_empty and p.is_valid and p.area > 0) else None
+        except Exception:
+            return None
+
+    def polys_of(geom):
+        gt = getattr(geom, "geom_type", "")
+        if gt == "Polygon":
+            return [geom]
+        if gt in ("MultiPolygon", "GeometryCollection"):
+            return [g for g in geom.geoms if g.geom_type == "Polygon" and not g.is_empty]
+        return []
+
+    def to_lonlat(coords):
+        out = []
+        for x, y in coords:
+            lon, lat = _fr_cells_px_to_lonlat(y - 1.0, x - 1.0, hh, ww)
+            out.append([round(lon, 4), round(lat, 4)])
+        return out
+
+    region: dict = {}
+    for k, rings in per_band.items():
+        outers = [p for p in (poly_px(o["sm"]) for o in rings["outers"]) if p is not None]
+        if not outers:
+            continue
+        geom = unary_union(outers)
+        holes = [p for p in (poly_px(h["sm"]) for h in rings["holes"]) if p is not None]
+        if holes:
+            try:
+                geom = geom.difference(unary_union(holes))
+            except Exception:
+                pass
+        if not geom.is_valid:
+            geom = make_valid(geom)
+        if not geom.is_empty:
+            region[k] = geom
+
+    feats = []
+    for k in sorted(region.keys()):
+        band = region[k]
+        nxt = region.get(k + 1)
+        if nxt is not None and not nxt.is_empty:
+            try:
+                band = band.difference(nxt)
+            except Exception:
+                pass
+            if not band.is_valid:
+                band = make_valid(band)
+        for g in polys_of(band):
+            if g.area < 1.0:                       # micro-sliver de la différence → ignoré
+                continue
+            coords = [to_lonlat(g.exterior.coords)]
+            for interior in g.interiors:
+                coords.append(to_lonlat(interior.coords))
+            feats.append({"type": "Feature", "properties": {"b": k},
+                          "geometry": {"type": "Polygon", "coordinates": coords}})
+    return feats
+
+
 def _fr_radar_shapes_features(rgba) -> list:
     """ZONES VECTORIELLES du radar (v1.3.41, demande Anthony : « bords lisses ET nets ») :
     le raster plafonnait à ~1,15 km/px (pixellisé en nearest, flou en linear) → on sert la
@@ -18118,6 +18196,12 @@ def _fr_radar_shapes_features(rgba) -> list:
             (outers if area < 0 else holes).append(entry)
         if outers or holes:
             per_band[k] = {"outers": outers, "holes": holes}
+
+    # Chemin robuste (shapely) : bandes par différence géométrique → polygones toujours
+    # valides. Repli sur la construction manuelle ci-dessous si shapely est indisponible.
+    feats = _fr_bands_shapely(per_band, hh, ww)
+    if feats is not None:
+        return feats
 
     feats = []
     for k, rings in per_band.items():
