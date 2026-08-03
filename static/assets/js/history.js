@@ -257,7 +257,11 @@
   // teste la proximité — eps en unités du viewBox — de chaque point de département aux
   // segments de région, via une grille spatiale (O(1) par point). Trace en sous-lignes
   // ouvertes (pas d'anneaux fermés) coupées dès qu'on approche une frontière de région.
-  function deptInteriorPath(deptRings, regionRings, proj, step = 3, eps = 6) {
+  // NB step=1 IMPÉRATIF : chaque limite interne est tracée par les 2 départements
+  // voisins ; leurs sommets ne coïncident (→ trait unique) qu'en pleine résolution.
+  // Décimer (step>1) échantillonne des points différents de part et d'autre → double
+  // trait « biscornu ». Les régions sont propres pour la même raison (step 1).
+  function deptInteriorPath(deptRings, regionRings, proj, step = 1, eps = 6) {
     if (!Array.isArray(regionRings) || !regionRings.length) return ringsToPath(deptRings, proj, step);
     const cell = Math.max(4, eps);
     const grid = new Map();
@@ -367,10 +371,10 @@
       : ((typeof FRANCE_GRID_CLIP_RINGS !== 'undefined' && Array.isArray(FRANCE_GRID_CLIP_RINGS)) ? FRANCE_GRID_CLIP_RINGS : []);
     const regionRings = (typeof franceRegionRings === 'function') ? franceRegionRings() : [];
     // Départements : SEULEMENT leurs frontières internes (deptInteriorPath retire les
-    // limites qui longent une région/le pays) → une seule ligne par frontière. Step 3
-    // (allège build + fill-rate mobile). Régions en pleine résolution (step 1) : traits
-    // « hero » qui portent le contour du pays et des régions, tracés une seule fois.
-    const deptData = deptRings.length ? deptInteriorPath(deptRings, regionRings, proj, 3, 6) : '';
+    // limites qui longent une région/le pays) → une seule ligne par frontière. Step 1
+    // obligatoire (voir deptInteriorPath) sinon les limites inter-départements doublent.
+    // Régions aussi en step 1 : traits « hero » (contour pays + régions), tracés une fois.
+    const deptData = deptRings.length ? deptInteriorPath(deptRings, regionRings, proj, 1, 6) : '';
     const regionData = regionRings.length ? ringsToPath(regionRings, proj, 1) : '';
 
     while (frameEl.firstChild) frameEl.removeChild(frameEl.firstChild);
@@ -456,7 +460,7 @@
     const deptRings = (typeof FRANCE_DEPARTMENT_RINGS !== 'undefined' && Array.isArray(FRANCE_DEPARTMENT_RINGS)) ? FRANCE_DEPARTMENT_RINGS : [];
     const regionData = (regionRings && regionRings.length) ? ringsToPath(regionRings, proj, 1) : '';
     if (!regionData) return false;
-    const deptData = deptRings.length ? deptInteriorPath(deptRings, regionRings, proj, 3, 6) : '';
+    const deptData = deptRings.length ? deptInteriorPath(deptRings, regionRings, proj, 1, 6) : '';
     while (frameEl.firstChild) frameEl.removeChild(frameEl.firstChild);
     frameEl.setAttribute('viewBox', `0 0 ${VB} ${VB}`);
     frameEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
