@@ -250,6 +250,72 @@
     return d;
   }
 
+  // Frontières INTERNES de départements seulement : on retire les points qui longent une
+  // frontière de région/pays (déjà tracée, plus nettement, par la couche régions) → UNE
+  // SEULE ligne par frontière, plus de « double trait ». Régions et départements venant de
+  // 2 GeoJSON IGN simplifiés différents (limites partagées non coïncidentes au pixel), on
+  // teste la proximité — eps en unités du viewBox — de chaque point de département aux
+  // segments de région, via une grille spatiale (O(1) par point). Trace en sous-lignes
+  // ouvertes (pas d'anneaux fermés) coupées dès qu'on approche une frontière de région.
+  function deptInteriorPath(deptRings, regionRings, proj, step = 3, eps = 6) {
+    if (!Array.isArray(regionRings) || !regionRings.length) return ringsToPath(deptRings, proj, step);
+    const cell = Math.max(4, eps);
+    const grid = new Map();
+    const key = (gx, gy) => gx + ',' + gy;
+    const addSeg = (ax, ay, bx, by) => {
+      const minx = Math.min(ax, bx) - eps, maxx = Math.max(ax, bx) + eps;
+      const miny = Math.min(ay, by) - eps, maxy = Math.max(ay, by) + eps;
+      for (let gx = Math.floor(minx / cell); gx <= Math.floor(maxx / cell); gx += 1) {
+        for (let gy = Math.floor(miny / cell); gy <= Math.floor(maxy / cell); gy += 1) {
+          const k = key(gx, gy); let a = grid.get(k); if (!a) grid.set(k, a = []); a.push([ax, ay, bx, by]);
+        }
+      }
+    };
+    for (const ring of regionRings) {
+      if (!Array.isArray(ring) || ring.length < 2) continue;
+      let prev = null;
+      for (let j = 0; j < ring.length; j += 1) {
+        const p = proj.project(Number(ring[j][0]), Number(ring[j][1]));
+        if (!p) continue;
+        if (prev) addSeg(prev.x, prev.y, p.x, p.y);
+        prev = p;
+      }
+    }
+    const eps2 = eps * eps;
+    const d2ToSeg = (px, py, ax, ay, bx, by) => {
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+      let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const ex = px - (ax + t * dx), ey = py - (ay + t * dy);
+      return ex * ex + ey * ey;
+    };
+    const nearRegion = (px, py) => {
+      const gx = Math.floor(px / cell), gy = Math.floor(py / cell);
+      for (let ox = -1; ox <= 1; ox += 1) {
+        for (let oy = -1; oy <= 1; oy += 1) {
+          const a = grid.get(key(gx + ox, gy + oy)); if (!a) continue;
+          for (const s of a) if (d2ToSeg(px, py, s[0], s[1], s[2], s[3]) <= eps2) return true;
+        }
+      }
+      return false;
+    };
+    let d = '';
+    for (const ring of deptRings) {
+      if (!Array.isArray(ring) || ring.length < 2) continue;
+      const last = ring.length - 1;
+      let started = false;
+      for (let j = 0; j <= last; j += step) {
+        const k = j > last ? last : j;
+        const p = proj.project(Number(ring[k][0]), Number(ring[k][1]));
+        if (!p) continue;
+        if (nearRegion(p.x, p.y)) { started = false; continue; }
+        d += (started ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+        started = true;
+      }
+    }
+    return d;
+  }
+
   // Construit le SVG (DOM) une fois pour la journée + retourne les couleurs par créneau.
   function buildSvg(day) {
     if (!frameEl || typeof buildGifFranceProjection !== 'function') return null;
@@ -300,11 +366,11 @@
     const deptRings = (typeof FRANCE_DEPARTMENT_RINGS !== 'undefined' && Array.isArray(FRANCE_DEPARTMENT_RINGS)) ? FRANCE_DEPARTMENT_RINGS
       : ((typeof FRANCE_GRID_CLIP_RINGS !== 'undefined' && Array.isArray(FRANCE_GRID_CLIP_RINGS)) ? FRANCE_GRID_CLIP_RINGS : []);
     const regionRings = (typeof franceRegionRings === 'function') ? franceRegionRings() : [];
-    // Départements décimés plus fort (step 3) : ils sont désormais en pointillés fins
-    // subordonnés → la finesse n'est pas nécessaire, et on allège les tracés (build +
-    // fill-rate mobile). Régions en pleine résolution (step 1) : ce sont les traits
-    // « hero » qui portent le contour du pays et des régions.
-    const deptData = deptRings.length ? ringsToPath(deptRings, proj, 3) : '';
+    // Départements : SEULEMENT leurs frontières internes (deptInteriorPath retire les
+    // limites qui longent une région/le pays) → une seule ligne par frontière. Step 3
+    // (allège build + fill-rate mobile). Régions en pleine résolution (step 1) : traits
+    // « hero » qui portent le contour du pays et des régions, tracés une seule fois.
+    const deptData = deptRings.length ? deptInteriorPath(deptRings, regionRings, proj, 3, 6) : '';
     const regionData = regionRings.length ? ringsToPath(regionRings, proj, 1) : '';
 
     while (frameEl.firstChild) frameEl.removeChild(frameEl.firstChild);
@@ -366,13 +432,12 @@
       p.setAttribute('pointer-events', 'none');
       frameEl.appendChild(p);
     };
-    // Frontières calées sur la carte de base (pas de « double trait ») : régions et
-    // départements viennent de 2 GeoJSON IGN simplifiés DIFFÉRENTS → leurs limites
-    // partagées ne coïncident pas au pixel. En trait plein des deux côtés, le dept
-    // doublait la région. Fix : départements en POINTILLÉS fins subordonnés (sans
-    // casing), régions en trait plein cyan + casing sombre (frontière « hero »).
+    // UNE SEULE ligne par frontière (plus de « double trait ») : deptData ne contient
+    // que les limites INTERNES de départements ; les limites région/pays sont tracées
+    // uniquement par la couche régions. Départements en trait plein fin subordonné,
+    // régions en trait plein cyan + casing sombre (frontière « hero »).
     // Ordre : dept dessous < halo région < cyan région.
-    addBorderPath(deptData, 'rgba(120,145,175,0.55)', 0.75, '2.2 2.2');
+    addBorderPath(deptData, 'rgba(120,145,175,0.5)', 0.9);
     addBorderPath(regionData, 'rgba(2,6,23,0.72)', 2.2);
     addBorderPath(regionData, 'rgba(125,211,252,0.72)', 1.2);
 
@@ -391,7 +456,7 @@
     const deptRings = (typeof FRANCE_DEPARTMENT_RINGS !== 'undefined' && Array.isArray(FRANCE_DEPARTMENT_RINGS)) ? FRANCE_DEPARTMENT_RINGS : [];
     const regionData = (regionRings && regionRings.length) ? ringsToPath(regionRings, proj, 1) : '';
     if (!regionData) return false;
-    const deptData = deptRings.length ? ringsToPath(deptRings, proj, 3) : '';
+    const deptData = deptRings.length ? deptInteriorPath(deptRings, regionRings, proj, 3, 6) : '';
     while (frameEl.firstChild) frameEl.removeChild(frameEl.firstChild);
     frameEl.setAttribute('viewBox', `0 0 ${VB} ${VB}`);
     frameEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -404,9 +469,9 @@
       if (dash) a['stroke-dasharray'] = dash;
       frameEl.appendChild(mk('path', a));
     };
-    // Mêmes contours que buildSvg → aucun saut de style à l'hydratation (dépt pointillés
-    // subordonnés, régions plein cyan + casing ; plus de double frontière).
-    border(deptData, 'rgba(120,145,175,0.55)', 0.75, '2.2 2.2');
+    // Mêmes contours que buildSvg → aucun saut de style à l'hydratation (dépt internes
+    // seuls en trait plein fin, régions plein cyan + casing ; une seule ligne/frontière).
+    border(deptData, 'rgba(120,145,175,0.5)', 0.9);
     border(regionData, 'rgba(2,6,23,0.72)', 2.2);
     border(regionData, 'rgba(125,211,252,0.72)', 1.2);
     return true;
