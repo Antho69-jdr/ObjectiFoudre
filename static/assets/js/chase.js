@@ -609,10 +609,11 @@
       if (isBlend) { activityEl.textContent = frBlend.advected ? ('extrapolé · ' + frBlend.speed_kmh + ' km/h') : 'obs. maintenue'; activityEl.className = 'chase-activity lvl-low'; }
       else { activityEl.textContent = 'MF 1 km'; activityEl.className = 'chase-activity lvl-low'; }
     }
-    // RADAR : simple bascule de visibilité (aucune re-triangulation) → SYNCHRONE, instantané,
-    // suit le doigt au scrub. Les overlays plus lourds (cellules + foudre, setData) restent
-    // coalescés sur rAF : on n'applique que la DERNIÈRE frame demandée, une fois par frame max.
-    showRadarFrame(fr);
+    // Les 3 couches (radar + cellules/macarons + foudre) sont appliquées ENSEMBLE dans le
+    // même rAF (flushCursorLayers) → synchronisation PARFAITE au scrub et à la lecture. Le
+    // radar était basculé ici de façon synchrone (1 tick d'avance sur cellules/foudre, d'où
+    // le désync visible) ; il rejoint désormais le même tick. Coalescé : seule la DERNIÈRE
+    // frame demandée est appliquée, une fois par frame d'affichage max.
     cursorDirty = true;
     if (!cursorRaf) cursorRaf = requestAnimationFrame(flushCursorLayers);
   }
@@ -623,8 +624,10 @@
     cursorDirty = false;
     const fr = frames[cursor];
     if (!fr) return;
-    syncCellsOverlay();       // repositionne les cellules à l'heure de la frame (setData léger)
-    syncLightningOverlay();   // refiltre les impacts sur [t−30 min, t] de la frame
+    // MÊME tick pour les trois → aucune couche en avance/retard sur les autres.
+    showRadarFrame(fr);       // radar : bascule de visibilité de la frame (aucune re-triangulation)
+    syncCellsOverlay();       // cellules + macarons repositionnés à l'heure de la frame (setData léger)
+    syncLightningOverlay();   // impacts foudre refiltrés sur [t−30 min, t] de la frame
     schedulePointForCurrent();
   }
 
