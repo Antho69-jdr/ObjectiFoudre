@@ -86,7 +86,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.126"
+APP_VERSION = "1.3.127"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -18000,6 +18000,59 @@ def _fr_ring_dp(ring, eps: float):
     return a[:-1] + b[:-1]
 
 
+def _fr_pt_in_ring(px, py, ring) -> bool:
+    c = False
+    n = len(ring)
+    for i in range(n):
+        x0, y0 = ring[i]; x1, y1 = ring[(i + 1) % n]
+        if (y0 > py) != (y1 > py) and px < (x1 - x0) * (py - y0) / ((y1 - y0) or 1e-9) + x0:
+            c = not c
+    return c
+
+
+def _fr_nearest_on_ring(px, py, ring):
+    bx = by = 0.0; bd = 1e30
+    n = len(ring)
+    for i in range(n):
+        x0, y0 = ring[i]; x1, y1 = ring[(i + 1) % n]
+        dx = x1 - x0; dy = y1 - y0; l2 = dx * dx + dy * dy
+        t = ((px - x0) * dx + (py - y0) * dy) / l2 if l2 else 0.0
+        t = 0.0 if t < 0 else 1.0 if t > 1 else t
+        cx = x0 + t * dx; cy = y0 + t * dy
+        d = (px - cx) ** 2 + (py - cy) ** 2
+        if d < bd:
+            bd = d; bx = cx; by = cy
+    return bx, by
+
+
+def _fr_clamp_hole_inside(hole, outer, eps: float = 0.5):
+    """Ramène à l'intérieur du contour `outer` les sommets d'un trou qui en débordent.
+    Bug d'affichage radar (v1.3.127) : le trou d'une bande k = le contour de la bande k+1,
+    lissé INDÉPENDAMMENT → il déborde du contour extérieur de la bande k aux forts gradients
+    (bande k = fin liseré). Polygone invalide → earcut remplit le trou par-dessus le cœur
+    orageux (les fameux triangles bleu clair). ~25-30 % des trous étaient concernés.
+    Correctif : sommet dehors → projeté sur le bord + poussé de `eps` px vers l'intérieur
+    (normale intérieure, secours vers le centroïde du trou) ; si toujours dehors, sommet
+    supprimé. Vérifié sur données réelles : 0 débordement résiduel, aucun trou perdu."""
+    if all(_fr_pt_in_ring(x, y, outer) for (x, y) in hole):
+        return hole
+    cx = sum(p[0] for p in hole) / len(hole)
+    cy = sum(p[1] for p in hole) / len(hole)
+    out = []
+    for (x, y) in hole:
+        if _fr_pt_in_ring(x, y, outer):
+            out.append((x, y)); continue
+        nx, ny = _fr_nearest_on_ring(x, y, outer)
+        vx = nx - x; vy = ny - y; vl = (vx * vx + vy * vy) ** 0.5 or 1.0
+        p = (nx + vx / vl * eps, ny + vy / vl * eps)      # normale intérieure
+        if not _fr_pt_in_ring(p[0], p[1], outer):
+            dxc = cx - nx; dyc = cy - ny; dl = (dxc * dxc + dyc * dyc) ** 0.5 or 1.0
+            p = (nx + dxc / dl * eps, ny + dyc / dl * eps)  # secours : vers le centroïde
+        if _fr_pt_in_ring(p[0], p[1], outer):
+            out.append(p)                                  # sinon on retire le sommet
+    return out if len(out) >= 3 else None
+
+
 def _fr_radar_shapes_features(rgba) -> list:
     """ZONES VECTORIELLES du radar (v1.3.41, demande Anthony : « bords lisses ET nets ») :
     le raster plafonnait à ~1,15 km/px (pixellisé en nearest, flou en linear) → on sert la
@@ -18080,7 +18133,12 @@ def _fr_radar_shapes_features(rgba) -> list:
                     continue                       # bbox pas contenue → pas dedans
                 px, py = h["test"]
                 if inside(px, py, outer["dp"]):
-                    ring_holes.append(ring_lonlat(h["sm"]))
+                    # Le trou (contour bande k+1) peut déborder du contour extérieur (bande k)
+                    # après lissage indépendant → on le rogne pour qu'il reste dedans, sinon
+                    # earcut remplit le trou par-dessus le cœur orageux (triangles bleu clair).
+                    hsm = _fr_clamp_hole_inside(h["sm"], outer["sm"])
+                    if hsm:
+                        ring_holes.append(ring_lonlat(hsm))
             feats.append({
                 "type": "Feature",
                 "properties": {"b": k},
