@@ -60,6 +60,7 @@ import stargaze  # mode « chasse d'étoile » : pollution lumineuse + astro
 import horizon  # « Mes spots » : horizon / champ de vision dégagé (topographie RGE ALTI)
 import spots  # « Mes spots » : store JSON des spots partagés + modération
 import accounts  # « Système de compte » : store SQLite (utilisateurs, sessions, préférences)
+import forum  # « Forum » : store SQLite (catégories thématiques → sujets → messages)
 import mailer  # « Système de compte » : envoi d'e-mails transactionnels (vérification, reset)
 import push  # « Alertes orage » (Phase 4) : Web Push (VAPID) + géométrie des départements
 import verification
@@ -86,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.132"
+APP_VERSION = "1.3.133"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4810,6 +4811,201 @@ async def api_spots_recompute(background_tasks: BackgroundTasks, secret: str | N
         horizon.clear_cached(s["lon"], s["lat"])
         background_tasks.add_task(_spot_compute_horizon, s["id"], s["lon"], s["lat"], s.get("inner_radius_m", 0))
     return {"ok": True, "recomputing": len(all_spots)}
+
+
+# ============================================================================
+#  FORUM communautaire (catégories thématiques → sujets → messages)
+#  Store SQLite isolé (forum.py). Auth = session compte (poster = connecté) ;
+#  lecture publique. Modération admin via le secret serveur (comme spots).
+# ============================================================================
+class ForumTopicCreate(BaseModel):
+    category_id: str = Field(..., min_length=1, max_length=32)
+    title: str = Field(..., min_length=1, max_length=300)
+    body: str = Field(..., min_length=1, max_length=8000)
+
+
+class ForumReplyCreate(BaseModel):
+    body: str = Field(..., min_length=1, max_length=8000)
+
+
+def _forum_moderator_pseudos() -> set[str]:
+    """Pseudos (minuscules) marqués « Modérateur » — via env, séparés par virgule.
+    Cosmétique : n'accorde AUCUN droit (la modération réelle passe par le secret admin)."""
+    raw = os.environ.get("OBJECTIFOUDRE_FORUM_MODERATORS", "")
+    return {p.strip().lower() for p in raw.split(",") if p.strip()}
+
+
+async def _forum_resolve_authors(author_ids: Any) -> dict[str, dict[str, Any]]:
+    """id compte → {pseudo, is_moderator}. Un auteur supprimé reste affichable (pseudo neutre)."""
+    ids = [str(i) for i in (author_ids or []) if i]
+    pseudos = await asyncio.to_thread(accounts.pseudos_for, ids) if ids else {}
+    mods = _forum_moderator_pseudos()
+    out: dict[str, dict[str, Any]] = {}
+    for i in set(ids):
+        pseudo = pseudos.get(i)
+        out[i] = {"pseudo": pseudo or "Compte supprimé",
+                  "is_moderator": bool(pseudo) and pseudo.lower() in mods}
+    return out
+
+
+@app.get("/api/forum/categories")
+async def api_forum_categories(request: Request) -> dict[str, Any]:
+    """Thèmes du forum + compteurs + dernier posteur (pseudo résolu). Lecture publique."""
+    cats = await asyncio.to_thread(forum.list_categories)
+    authors = await _forum_resolve_authors([c.get("last_author_id") for c in cats])
+    user = await _account_current_user(request)
+    out = []
+    for c in cats:
+        last = None
+        if c.get("last_author_id") and c.get("last_post_utc"):
+            last = {"pseudo": authors.get(c["last_author_id"], {}).get("pseudo"),
+                    "when": c["last_post_utc"]}
+        out.append({
+            "id": c["id"], "emoji": c["emoji"], "name": c["name"], "description": c["description"],
+            "tint": c["tint"], "topic_count": c["topic_count"], "message_count": c["message_count"],
+            "last": last,
+        })
+    return {"ok": True, "categories": out, "me": ({"pseudo": user["pseudo"]} if user else None)}
+
+
+@app.get("/api/forum/recent")
+async def api_forum_recent(limit: int = Query(8, ge=1, le=30)) -> dict[str, Any]:
+    """Derniers messages tous thèmes (fil d'activité de l'accueil). Lecture publique."""
+    items = await asyncio.to_thread(forum.recent_activity, limit)
+    authors = await _forum_resolve_authors([i["author_id"] for i in items])
+    return {"ok": True, "items": [{
+        "topic_id": i["topic_id"], "topic_title": i["topic_title"], "category_id": i["category_id"],
+        "is_op": i["is_op"], "when": i["created_utc"],
+        "author": authors.get(i["author_id"], {"pseudo": "Compte supprimé"}),
+    } for i in items]}
+
+
+@app.get("/api/forum/category/{category_id}/topics")
+async def api_forum_topics(category_id: str, request: Request) -> dict[str, Any]:
+    """Sujets d'un thème (épinglés d'abord). Lecture publique."""
+    cat = await asyncio.to_thread(forum.get_category, category_id)
+    if not cat:
+        return {"ok": False, "error": "Thème inconnu."}
+    try:
+        topics = await asyncio.to_thread(forum.list_topics, category_id)
+    except forum.ForumError as exc:
+        return {"ok": False, "error": str(exc)}
+    ids = [t["author_id"] for t in topics] + [t["last_author_id"] for t in topics]
+    authors = await _forum_resolve_authors(ids)
+    user = await _account_current_user(request)
+    return {"ok": True, "category": cat, "topics": [{
+        "id": t["id"], "title": t["title"], "created_utc": t["created_utc"],
+        "last_post_utc": t["last_post_utc"], "reply_count": t["reply_count"],
+        "view_count": t["view_count"], "pinned": t["pinned"], "locked": t["locked"],
+        "author": authors.get(t["author_id"], {"pseudo": "Compte supprimé"}),
+        "last_author": authors.get(t["last_author_id"], {"pseudo": "Compte supprimé"}),
+    } for t in topics], "me": ({"pseudo": user["pseudo"]} if user else None)}
+
+
+@app.get("/api/forum/topic/{topic_id}")
+async def api_forum_topic(topic_id: str, request: Request) -> dict[str, Any]:
+    """Un sujet + ses messages (auteur résolu, likes du visiteur marqués). Lecture publique."""
+    topic = await asyncio.to_thread(forum.get_topic, topic_id, bump_view=True)
+    if not topic:
+        return {"ok": False, "error": "Sujet introuvable."}
+    cat = await asyncio.to_thread(forum.get_category, topic["category_id"])
+    user = await _account_current_user(request)
+    viewer_id = user["id"] if user else ""
+    posts = topic["posts"]
+    authors = await _forum_resolve_authors([p["author_id"] for p in posts] + [topic["author_id"]])
+    liked = await asyncio.to_thread(forum.liked_post_ids, viewer_id, [p["id"] for p in posts])
+    op_author = topic["author_id"]
+    return {"ok": True, "me": ({"pseudo": user["pseudo"]} if user else None),
+            "category": {"id": cat["id"], "name": cat["name"], "emoji": cat["emoji"], "tint": cat["tint"]} if cat else None,
+            "topic": {
+                "id": topic["id"], "title": topic["title"], "created_utc": topic["created_utc"],
+                "last_post_utc": topic["last_post_utc"], "reply_count": topic["reply_count"],
+                "view_count": topic["view_count"], "pinned": topic["pinned"], "locked": topic["locked"],
+            },
+            "posts": [{
+                "id": p["id"], "body": p["body"], "created_utc": p["created_utc"],
+                "is_op": p["is_op"], "like_count": p["like_count"],
+                "author": authors.get(p["author_id"], {"pseudo": "Compte supprimé"}),
+                "is_op_author": p["author_id"] == op_author,
+                "liked": p["id"] in liked,
+                "mine": bool(viewer_id) and p["author_id"] == viewer_id,
+            } for p in posts]}
+
+
+@app.post("/api/forum/topic")
+async def api_forum_create_topic(payload: ForumTopicCreate, request: Request) -> dict[str, Any]:
+    """Crée un sujet (+ message d'origine). Connexion requise."""
+    user = await _account_current_user(request)
+    if not user:
+        return {"ok": False, "error": "Connexion requise pour publier."}
+    try:
+        res = await asyncio.to_thread(forum.create_topic, user["id"],
+                                      payload.category_id, payload.title, payload.body)
+    except forum.ForumError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "topic_id": res["topic_id"]}
+
+
+@app.post("/api/forum/topic/{topic_id}/reply")
+async def api_forum_reply(topic_id: str, payload: ForumReplyCreate, request: Request) -> dict[str, Any]:
+    """Répond à un sujet. Connexion requise."""
+    user = await _account_current_user(request)
+    if not user:
+        return {"ok": False, "error": "Connexion requise pour répondre."}
+    try:
+        res = await asyncio.to_thread(forum.create_post, user["id"], topic_id, payload.body)
+    except forum.ForumError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "post_id": res["post_id"]}
+
+
+@app.post("/api/forum/post/{post_id}/like")
+async def api_forum_like(post_id: str, request: Request) -> dict[str, Any]:
+    """Bascule le « j'aime » du visiteur sur un message. Connexion requise."""
+    user = await _account_current_user(request)
+    if not user:
+        return {"ok": False, "error": "Connexion requise."}
+    try:
+        res = await asyncio.to_thread(forum.toggle_like, post_id, user["id"])
+    except forum.ForumError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, **res}
+
+
+@app.delete("/api/forum/post/{post_id}")
+async def api_forum_delete_post(post_id: str, request: Request) -> dict[str, Any]:
+    """L'auteur supprime son message (supprimer le message d'origine masque le sujet)."""
+    user = await _account_current_user(request)
+    if not user:
+        return {"ok": False, "error": "Connexion requise."}
+    try:
+        res = await asyncio.to_thread(forum.delete_post, post_id, user["id"])
+    except forum.ForumError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, **res}
+
+
+@app.post("/api/forum/topic/{topic_id}/moderate")
+async def api_forum_moderate_topic(topic_id: str, action: str = Query(...),
+                                   secret: str | None = Query(None)) -> dict[str, Any]:
+    """[admin] Modère un sujet : action ∈ {pin, unpin, lock, unlock, hide}."""
+    _validate_server_admin_secret(secret or "")
+    try:
+        res = await asyncio.to_thread(forum.moderate_topic, topic_id, action)
+    except forum.ForumError as exc:
+        return {"ok": False, "error": str(exc)}
+    return res
+
+
+@app.post("/api/forum/post/{post_id}/hide")
+async def api_forum_hide_post(post_id: str, secret: str | None = Query(None)) -> dict[str, Any]:
+    """[admin] Masque un message."""
+    _validate_server_admin_secret(secret or "")
+    try:
+        res = await asyncio.to_thread(forum.moderate_post_hide, post_id)
+    except forum.ForumError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, **res}
 
 
 def _get_meteofrance_grib_national_field_cache_payload(field_cache_key: str) -> tuple[dict[str, Any] | None, str | None, float | None]:
@@ -15551,6 +15747,10 @@ async def _accounts_startup() -> None:
     try:
         await asyncio.to_thread(accounts.init_db)
     except Exception:  # noqa: BLE001 - non bloquant : le reste de l'app tourne sans comptes
+        pass
+    try:
+        await asyncio.to_thread(forum.init_db)
+    except Exception:  # noqa: BLE001 - non bloquant : l'app tourne sans forum
         pass
 
 

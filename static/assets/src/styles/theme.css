@@ -128,6 +128,11 @@
 @import "./components/spots.css";
 @import "./components/account.css";
 
+/* Component forum : corps de la page Forum communautaire (par themes). Reutilise
+   la coquille .prediction-page ; scope .forum-page. Charge APRES button.css →
+   les petits controles (0,2,x) battent la tactile body.mobile-ui button (0,1,1). */
+@import "./components/forum-page.css";
+
 /* Component grid-cell-tooltip : bulle de survol des cellules (look + position
    absolue ; JS pose left/top inline + bascule is-visible). Tier 1 du retrait
    legacy. 0 !important ; legacy purge de components.css. */
