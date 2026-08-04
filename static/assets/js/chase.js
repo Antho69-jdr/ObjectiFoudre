@@ -169,9 +169,22 @@
     const key = frameShapesKey(fr);
     const hit = shapeCache.get(key);
     if (hit) return hit;
+    // Cache PERSISTANT (IndexedDB) : une frame observée pour un `time` est immuable → elle
+    // survit aux rechargements et aux déploiements Railway (plus de re-préchargement complet
+    // du radar). La clé intègre déjà la génération (g/blendGen) → jamais de donnée périmée.
+    if (typeof window.idbGetRadarFrame === 'function') {
+      try {
+        const cached = await window.idbGetRadarFrame(key);
+        if (cached && cached.features) {
+          if (!shapeCache.has(key)) shapeCache.set(key, cached);
+          return shapeCache.get(key);
+        }
+      } catch (_) {}
+    }
     const fc = await (await fetch(frameShapesUrl(fr), { cache: 'force-cache' })).json();
     shapeCache.set(key, fc);
-    // purge : ne garder que les frames encore dans la frise (+ générations blend courantes).
+    if (typeof window.idbPutRadarFrame === 'function') { try { window.idbPutRadarFrame(key, fc); } catch (_) {} }
+    // purge MÉMOIRE : ne garder que les frames encore dans la frise (+ générations blend courantes).
     if (shapeCache.size > 64) {
       const live = new Set(frames.filter(isRadarLike).map(frameShapesKey));
       for (const k of Array.from(shapeCache.keys())) if (!live.has(k)) shapeCache.delete(k);

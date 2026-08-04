@@ -10,8 +10,11 @@
    ========================================================================== */
 
 /* ── Marqueurs ─────────────────────────────────────────────────────────── */
-/* Marqueur = rose des vents (8 directions) centrée sur le point, teintée par l'ouverture. */
-.ofspot-pin { width: 34px; height: 34px; cursor: pointer; }
+/* Marqueur = rose des vents (8 directions) centrée sur le point, teintée par l'ouverture.
+   Icône volontairement compacte (moins intrusive sur la carte), et RÉDUITE sur petit
+   écran via media query — l'app est toujours en `mobile-ui`, donc le vrai critère
+   « téléphone » passe par la largeur réelle (demande Anthony : plus petit surtout mobile). */
+.ofspot-pin { width: 30px; height: 30px; cursor: pointer; }
 .ofspot-compass { width: 100%; height: 100%; display: block; filter: drop-shadow(0 2px 3px #000a); }
 .ofspot-compass-bg { fill: #0e1620; opacity: .95; stroke: #2a3745; stroke-width: 1; }
 .ofspot-compass-hub { fill: #e9eff7; }
@@ -19,6 +22,10 @@
 .ofspot-pin:hover .ofspot-compass { filter: drop-shadow(0 3px 6px #000c); }
 .ofspot-pin:focus-visible { outline: none; }
 .ofspot-pin:focus-visible .ofspot-compass-ring { stroke-width: 3.4; }
+/* Petit écran (téléphone) : icône nettement plus compacte (le badge suit plus bas). */
+@media (max-width: 640px) {
+  .ofspot-pin { width: 24px; height: 24px; }
+}
 
 /* ── Rail GAUCHE « Mes spots » (même forme que les rails de calques chasse/étoile) ── */
 .spots-rail {
@@ -293,6 +300,10 @@ body.mobile-ui .ofspot-modal-row .del { flex: 1 1 auto; }
 }
 .ofspot-pin.is-private .ofspot-pin-badge { color: var(--ofs-private); border-color: var(--ofs-private); }
 .ofspot-pin.is-pending .ofspot-pin-badge { color: var(--ofs-pending); border-color: var(--ofs-pending); }
+/* Petit écran : badge réduit pour rester proportionné à l'icône compacte (24px). */
+@media (max-width: 640px) {
+  .ofspot-pin-badge { top: -2px; right: -2px; min-width: 12px; height: 12px; padding: 0 2px; font-size: 8px; }
+}
 
 /* Puce de statut (panneau) + auteur. */
 .ofspot-status { display: flex; flex-direction: column; gap: 1px; margin: 0 0 8px; padding: 7px 10px; border-radius: 9px; border: 1px solid #22303f; background: #0e1620; }

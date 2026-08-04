@@ -85,3 +85,71 @@ function schedulePrune() {
     } catch (_) {}
   }, 4000);
 }
+
+// ── Cache IndexedDB des FRAMES RADAR (isobandes GeoJSON) ──────────────────────
+// DB SÉPARÉE (ne pas toucher au store des grilles : bumper la version de leur DB les
+// effacerait). Une frame OBSERVÉE pour un `time` est immuable → le cache reste valide à
+// vie ; au rechargement / après un déploiement Railway, le radar se réaffiche instantanément
+// sans re-télécharger toutes les frames (le blend est versionné via sa clé blendGen/&g).
+// Clé = frameShapesKey de chase.js. Best-effort. Pont window.* fait dans main.js.
+const RDB_NAME = 'objectifoudre-radar';
+const RSTORE = 'frames';
+const R_MAX = 48; // borne du store (largement au-delà de la frise ~18-30 frames)
+let rdbPromise = null;
+function openRadarDb() {
+  if (rdbPromise) return rdbPromise;
+  rdbPromise = new Promise((resolve) => {
+    try {
+      if (!('indexedDB' in window)) { resolve(null); return; }
+      const req = indexedDB.open(RDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        try { const db = req.result; if (!db.objectStoreNames.contains(RSTORE)) db.createObjectStore(RSTORE); } catch (_) {}
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    } catch (_) { resolve(null); }
+  });
+  return rdbPromise;
+}
+
+export async function idbGetRadarFrame(key) {
+  const db = await openRadarDb();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const rq = db.transaction(RSTORE, 'readonly').objectStore(RSTORE).get(key);
+      rq.onsuccess = () => resolve(rq.result ? rq.result.fc : null);
+      rq.onerror = () => resolve(null);
+    } catch (_) { resolve(null); }
+  });
+}
+
+export async function idbPutRadarFrame(key, fc) {
+  const db = await openRadarDb();
+  if (!db) return;
+  try { db.transaction(RSTORE, 'readwrite').objectStore(RSTORE).put({ storedAt: Date.now(), fc }, key); } catch (_) {}
+  scheduleRadarPrune();
+}
+
+let rPruneTimer = null;
+function scheduleRadarPrune() {
+  if (rPruneTimer) return;
+  rPruneTimer = setTimeout(async () => {
+    rPruneTimer = null;
+    const db = await openRadarDb();
+    if (!db) return;
+    try {
+      const store = db.transaction(RSTORE, 'readonly').objectStore(RSTORE);
+      const keysReq = store.getAllKeys();
+      keysReq.onsuccess = () => {
+        const keys = (keysReq.result || []).map(String);
+        if (keys.length <= R_MAX) return;
+        // Clés ~ "r:gN:<iso>" / "bK:gN:<iso>" : le tri lexical ≈ ordre temporel (par
+        // préfixe) → on drope les plus anciennes pour borner le store.
+        const drop = keys.sort().slice(0, keys.length - R_MAX);
+        try { const rw = db.transaction(RSTORE, 'readwrite').objectStore(RSTORE); drop.forEach((k) => rw.delete(k)); } catch (_) {}
+      };
+    } catch (_) {}
+  }, 4000);
+}
