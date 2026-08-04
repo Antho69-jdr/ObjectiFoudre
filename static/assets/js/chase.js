@@ -91,12 +91,18 @@
   // contenu différent → la génération versionne la clé de cache ET l'URL (cache-buster),
   // sinon la géométrie d'origine reste affichée jusqu'au F5 (bug vécu sur les textures).
   let blendGen = 0;
+  // Version de l'ALGORITHME de génération des isobandes (côté serveur). L'URL observée est
+  // « figée » (?time=) et fetchée en force-cache → quand l'algo géométrie change (ex :
+  // reconstruction par différence shapely v1.3.129), le même `time` produit une géométrie
+  // DIFFÉRENTE mais le navigateur resservait l'ancienne (buggée, triangles/coupures) jusqu'au
+  // F5. Ce jeton versionne l'URL ET la clé de cache → bump = cache-bust propre. (2 = shapely.)
+  const SHAPES_GEN = 2;
   function frameShapesUrl(fr) {
     return fr.kind === 'blend'
-      ? '/api/radar/fr/blend/shapes?time=' + encodeURIComponent(fr.iso) + '&v=' + blendGen
-      : '/api/radar/fr/shapes?time=' + encodeURIComponent(fr.iso);
+      ? '/api/radar/fr/blend/shapes?time=' + encodeURIComponent(fr.iso) + '&v=' + blendGen + '&g=' + SHAPES_GEN
+      : '/api/radar/fr/shapes?time=' + encodeURIComponent(fr.iso) + '&g=' + SHAPES_GEN;
   }
-  function frameShapesKey(fr) { return (fr.kind === 'blend' ? 'b' + blendGen + ':' : 'r:') + fr.iso; }
+  function frameShapesKey(fr) { return (fr.kind === 'blend' ? 'b' + blendGen + ':' : 'r:') + 'g' + SHAPES_GEN + ':' + fr.iso; }
   // « observé/extrapolé » = radar réel OU frame advectée (blend) : mêmes domaine, palette et
   // rendu (par frame).
   function isRadarLike(fr) { return fr && (fr.kind === 'radar' || fr.kind === 'blend'); }
