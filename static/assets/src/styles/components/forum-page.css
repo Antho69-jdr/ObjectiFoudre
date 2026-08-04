@@ -12,6 +12,30 @@
 /* Corps propre : le forum N'UTILISE PAS .prediction-page-body (grille 2-colonnes
    carte+panneau des pages prévision/historique). Simple flux vertical scrollable,
    2e rangée de .prediction-page-shell (min-height:0 → défile dans la coquille). */
+/* ============================================================================
+   PLEIN ÉCRAN : la coquille partagée .prediction-page-shell plafonne à
+   1220×880 → trop petite sur grand écran. Le forum occupe TOUT le viewport ;
+   le contenu (en-tête + corps) reste dans une colonne de lecture centrée.
+   .forum-page .prediction-page-shell (0,2,0) bat la base (0,1,0) et la règle
+   mobile body.mobile-ui .prediction-page-shell (0,2,0, importée avant → ordre).
+   ============================================================================ */
+.forum-page { padding: 0; }
+.forum-page .prediction-page-shell {
+  width: 100vw;
+  height: 100vh;
+  height: 100svh;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  padding: 16px clamp(16px, 4vw, 48px);
+}
+.forum-page .prediction-page-header,
+.forum-page-body > * {
+  width: 100%;
+  max-width: 1040px;
+  margin-inline: auto;
+}
+
 .forum-page-body {
   min-height: 0;
   overflow-y: auto;
@@ -43,6 +67,26 @@
   gap: 6px;
 }
 .forum-crumbs button:hover { color: var(--accent); }
+/* Bouton « Retour » (remonte d'un niveau) — pilule verre en tête du fil d'ariane. */
+.forum-crumbs .forum-back {
+  min-width: 0;
+  min-height: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px 5px 9px;
+  margin-right: 4px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast), background var(--dur-fast);
+}
+.forum-crumbs .forum-back:hover { color: var(--text); border-color: var(--border-strong); background: var(--surface-3); }
+.forum-crumbs .forum-back__chevron { font-size: 15px; line-height: 1; margin-top: -1px; }
 .forum-crumbs .forum-crumb-sep { opacity: .5; }
 .forum-crumbs .forum-crumb-here {
   color: var(--text);

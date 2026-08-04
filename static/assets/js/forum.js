@@ -20,6 +20,7 @@
   var me = null;            // {pseudo} si connecté, sinon null
   var currentCat = null;    // catégorie ouverte
   var currentTopicId = null;
+  var currentView = 'home'; // 'home' | 'cat' | 'thread' (pour le bouton Retour)
 
   // ---- Utilitaires ---------------------------------------------------------
   function escapeHtml(s) {
@@ -93,7 +94,9 @@
   // ---- Fil d'ariane --------------------------------------------------------
   function setCrumbs(items) {
     crumbsEl.hidden = false;
-    crumbsEl.innerHTML = items.map(function (it, i) {
+    var back = '<button class="forum-back" data-back="1" aria-label="Revenir à la page précédente">'
+      + '<span class="forum-back__chevron" aria-hidden="true">‹</span> Retour</button>';
+    crumbsEl.innerHTML = back + items.map(function (it, i) {
       var sep = i > 0 ? '<span class="forum-crumb-sep">›</span>' : '';
       if (it.here) return sep + '<span class="forum-crumb-here">' + escapeHtml(it.here) + '</span>';
       var attr = it.go === 'cat'
@@ -124,7 +127,7 @@
   }
 
   function renderHome() {
-    currentCat = null; currentTopicId = null;
+    currentCat = null; currentTopicId = null; currentView = 'home';
     crumbsEl.hidden = true;
     var cats = categories.map(function (c) {
       var last = c.last
@@ -152,7 +155,7 @@
 
   // ---- Vue : liste de sujets ----------------------------------------------
   function renderCategory(cat, topics) {
-    currentCat = cat; currentTopicId = null;
+    currentCat = cat; currentTopicId = null; currentView = 'cat';
     setCrumbs([{ label: 'Forum', go: 'home' }, { here: cat.name }]);
     var rows = topics.length ? topics.map(function (t) {
       var flag = t.pinned ? '📌' : (t.locked ? '🔒' : '');
@@ -196,7 +199,7 @@
   // ---- Vue : fil de discussion --------------------------------------------
   function renderThread(data) {
     var t = data.topic;
-    currentTopicId = t.id;
+    currentTopicId = t.id; currentView = 'thread';
     var cat = data.category || currentCat || { name: 'Forum', id: null };
     if (data.category) currentCat = (currentCat && currentCat.id === data.category.id) ? currentCat : data.category;
     setCrumbs([{ label: 'Forum', go: 'home' }, { label: cat.name, go: 'cat', catId: cat.id }, { here: t.title }]);
@@ -291,6 +294,12 @@
     });
   }
 
+  function goBack() {
+    // Remonte d'un niveau : discussion → thème → accueil.
+    if (currentView === 'thread') { currentCat ? openCategory(currentCat.id) : loadHome(); }
+    else { loadHome(); }
+  }
+
   // ---- Actions -------------------------------------------------------------
   function submitNewTopic() {
     var titleEl = document.getElementById('forumNtTitle');
@@ -358,12 +367,13 @@
   // ---- Délégation clics / soumissions --------------------------------------
   page.addEventListener('click', function (e) {
     if (e.target === page) { closeForum(); return; }
-    var el = e.target.closest('[data-cat],[data-thread],[data-crumb-go],[data-crumb-cat],'
+    var el = e.target.closest('[data-back],[data-cat],[data-thread],[data-crumb-go],[data-crumb-cat],'
       + '[data-newtopic-toggle],[data-newtopic-cancel],[data-like],[data-del],[data-reply],'
       + '[data-login],[data-mod-topic],[data-hide]');
     if (!el) return;
     var d = el.dataset;
-    if (d.cat != null) { openCategory(d.cat); }
+    if (d.back != null) { goBack(); }
+    else if (d.cat != null) { openCategory(d.cat); }
     else if (d.thread != null) { openThread(d.thread); }
     else if (d.crumbGo != null) { loadHome(); }
     else if (d.crumbCat != null) { openCategory(d.crumbCat); }
