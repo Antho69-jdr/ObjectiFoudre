@@ -297,6 +297,29 @@ def pseudos_for(user_ids: Any) -> dict[str, str]:
     return out
 
 
+def avatars_for(user_ids: Any) -> dict[str, str]:
+    """Résolution par lot id→avatar (preset choisi dans prefs). Ignore les comptes
+    sans avatar (→ initiales côté client). Pour afficher l'avatar des auteurs du forum."""
+    ids = [str(i) for i in (user_ids or []) if i]
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return {}
+    out: dict[str, str] = {}
+    with _db() as c:
+        for i in range(0, len(ids), 400):
+            chunk = ids[i:i + 400]
+            ph = ",".join("?" * len(chunk))
+            for row in c.execute(f"SELECT id, prefs FROM users WHERE id IN ({ph})", chunk):
+                try:
+                    prefs = json.loads(row["prefs"] or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    prefs = {}
+                av = prefs.get("avatar") if isinstance(prefs, dict) else None
+                if av:
+                    out[row["id"]] = av
+    return out
+
+
 def _soft_email(raw: Any) -> str | None:
     e = str(raw or "").strip().lower()
     return e if e and _EMAIL_RE.match(e) else None
@@ -552,6 +575,14 @@ def set_prefs(user_id: str, patch: dict[str, Any]) -> dict[str, Any]:
             clean["bottom_nav"] = seen or None
         else:
             raise AccountError("Configuration de barre invalide.")
+    if "avatar" in patch:
+        # Avatar de compte (refonte mobile). ID court d'un preset de la galerie ;
+        # 'ini'/absent/invalide → None (= initiales colorées). Le front valide.
+        av = patch["avatar"]
+        if av and isinstance(av, str) and av != "ini" and re.fullmatch(r"[a-z0-9_-]{1,16}", av):
+            clean["avatar"] = av
+        else:
+            clean["avatar"] = None
     with _lock, _db() as c:
         row = c.execute("SELECT prefs FROM users WHERE id = ?", (user_id,)).fetchone()
         if row is None:

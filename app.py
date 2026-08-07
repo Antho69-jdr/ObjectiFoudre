@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.137"
+APP_VERSION = "1.3.138"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4836,16 +4836,26 @@ def _forum_moderator_pseudos() -> set[str]:
 
 
 async def _forum_resolve_authors(author_ids: Any) -> dict[str, dict[str, Any]]:
-    """id compte → {pseudo, is_moderator}. Un auteur supprimé reste affichable (pseudo neutre)."""
+    """id compte → {pseudo, is_moderator, avatar}. Un auteur supprimé reste affichable
+    (pseudo neutre). `avatar` = preset choisi (ou None → initiales côté client)."""
     ids = [str(i) for i in (author_ids or []) if i]
     pseudos = await asyncio.to_thread(accounts.pseudos_for, ids) if ids else {}
+    avatars = await asyncio.to_thread(accounts.avatars_for, ids) if ids else {}
     mods = _forum_moderator_pseudos()
     out: dict[str, dict[str, Any]] = {}
     for i in set(ids):
         pseudo = pseudos.get(i)
         out[i] = {"pseudo": pseudo or "Compte supprimé",
-                  "is_moderator": bool(pseudo) and pseudo.lower() in mods}
+                  "is_moderator": bool(pseudo) and pseudo.lower() in mods,
+                  "avatar": avatars.get(i)}
     return out
+
+
+def _forum_me(user: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Objet `me` renvoyé au client forum : pseudo + avatar (preset) du visiteur."""
+    if not user:
+        return None
+    return {"pseudo": user["pseudo"], "avatar": (user.get("prefs") or {}).get("avatar")}
 
 
 @app.get("/api/forum/categories")
@@ -4858,14 +4868,15 @@ async def api_forum_categories(request: Request) -> dict[str, Any]:
     for c in cats:
         last = None
         if c.get("last_author_id") and c.get("last_post_utc"):
-            last = {"pseudo": authors.get(c["last_author_id"], {}).get("pseudo"),
+            _la = authors.get(c["last_author_id"], {})
+            last = {"pseudo": _la.get("pseudo"), "avatar": _la.get("avatar"),
                     "when": c["last_post_utc"]}
         out.append({
             "id": c["id"], "emoji": c["emoji"], "name": c["name"], "description": c["description"],
             "tint": c["tint"], "topic_count": c["topic_count"], "message_count": c["message_count"],
             "last": last,
         })
-    return {"ok": True, "categories": out, "me": ({"pseudo": user["pseudo"]} if user else None)}
+    return {"ok": True, "categories": out, "me": _forum_me(user)}
 
 
 @app.get("/api/forum/recent")
@@ -4899,7 +4910,7 @@ async def api_forum_topics(category_id: str, request: Request) -> dict[str, Any]
         "view_count": t["view_count"], "pinned": t["pinned"], "locked": t["locked"],
         "author": authors.get(t["author_id"], {"pseudo": "Compte supprimé"}),
         "last_author": authors.get(t["last_author_id"], {"pseudo": "Compte supprimé"}),
-    } for t in topics], "me": ({"pseudo": user["pseudo"]} if user else None)}
+    } for t in topics], "me": _forum_me(user)}
 
 
 @app.get("/api/forum/topic/{topic_id}")
@@ -4915,7 +4926,7 @@ async def api_forum_topic(topic_id: str, request: Request) -> dict[str, Any]:
     authors = await _forum_resolve_authors([p["author_id"] for p in posts] + [topic["author_id"]])
     liked = await asyncio.to_thread(forum.liked_post_ids, viewer_id, [p["id"] for p in posts])
     op_author = topic["author_id"]
-    return {"ok": True, "me": ({"pseudo": user["pseudo"]} if user else None),
+    return {"ok": True, "me": _forum_me(user),
             "category": {"id": cat["id"], "name": cat["name"], "emoji": cat["emoji"], "tint": cat["tint"]} if cat else None,
             "topic": {
                 "id": topic["id"], "title": topic["title"], "created_utc": topic["created_utc"],
@@ -16071,6 +16082,7 @@ async def account_set_pseudo(request: Request, payload: AccountPseudoRequest) ->
 class AccountPrefsRequest(BaseModel):
     default_map: str | None = Field(None, max_length=20)
     bottom_nav: list[str] | None = Field(None)
+    avatar: str | None = Field(None, max_length=32)
 
 
 @app.post("/api/account/prefs")
@@ -16090,6 +16102,8 @@ async def account_set_prefs(request: Request, payload: AccountPrefsRequest) -> R
         if isinstance(payload.bottom_nav, list) and len(payload.bottom_nav) > 20:
             return JSONResponse({"ok": False, "error": "Trop d'éléments."}, status_code=400)
         patch["bottom_nav"] = payload.bottom_nav
+    if "avatar" in fields:
+        patch["avatar"] = payload.avatar
     if not patch:
         return JSONResponse({"ok": True, "user": accounts.private_view(user)})
     try:

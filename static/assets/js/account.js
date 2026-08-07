@@ -221,6 +221,26 @@
     });
     prow.append(pin, psave); body.append(prow, perr);
 
+    // Avatar (galerie prédéfinie + initiales) — visible par tous sur le forum
+    if (window.OFAvatar) {
+      body.appendChild(el('label', 'account-label', 'Ton avatar'));
+      var avWrap = el('div', 'account-avatar');
+      var paintAv = function (selId) { avWrap.innerHTML = window.OFAvatar.pickerHTML(selId, u.pseudo); };
+      paintAv((u.prefs && u.prefs.avatar) || 'ini');
+      avWrap.addEventListener('click', function (e) {
+        var cell = e.target.closest('[data-av]'); if (!cell) return;
+        var id = cell.getAttribute('data-av');
+        paintAv(id);   // retour visuel immédiat
+        jsend('/api/account/prefs', 'POST', { avatar: id === 'ini' ? null : id }).then(function (r) {
+          if (r && r.ok) {
+            state.user = r.user; u = r.user; toast('Avatar mis à jour ✓'); refreshBtn();
+            try { window.dispatchEvent(new Event('objf:account-changed')); } catch (e2) {}
+          } else { paintAv((u.prefs && u.prefs.avatar) || 'ini'); }
+        });
+      });
+      body.appendChild(avWrap);
+    }
+
     // Carte au lancement
     body.appendChild(el('label', 'account-label', 'Carte à l\'ouverture de l\'app'));
     var seg = el('div', 'account-seg');

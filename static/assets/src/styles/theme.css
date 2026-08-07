@@ -138,6 +138,10 @@
    porteurs battent les bottom mobiles de timeline/chase/stargaze. */
 @import "./components/bottom-nav.css";
 
+/* Component avatar partage (Phase 2) : disque .of-av (initiales/preset) + selecteur
+   de compte. Rendu par avatar.js (window.OFAvatar) ; forum + compte + barre. */
+@import "./components/avatar.css";
+
 /* Component grid-cell-tooltip : bulle de survol des cellules (look + position
    absolue ; JS pose left/top inline + bascule is-visible). Tier 1 du retrait
    legacy. 0 !important ; legacy purge de components.css. */

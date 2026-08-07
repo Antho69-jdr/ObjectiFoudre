@@ -165,11 +165,12 @@
     var host = el('rightRailScroll');
     if (host) host.insertBefore(avatar, host.firstChild); else document.body.appendChild(avatar);
   }
-  function setAvatarInitial(pseudo) {
+  function setAvatar(avatarId, pseudo) {
     if (!avatar) return;
+    if (window.OFAvatar) { window.OFAvatar.applyToButton(avatar, avatarId, pseudo); return; }
+    // repli sans le module partagé : initiale ou icône générique
     var s = String(pseudo || '').replace(/[^A-Za-zÀ-ÿ0-9]/g, '');
-    if (s) { avatar.textContent = s.slice(0, 1).toUpperCase(); avatar.classList.add('has-initial'); }
-    else { avatar.innerHTML = IC.user; avatar.classList.remove('has-initial'); }
+    if (s) avatar.textContent = s.slice(0, 1).toUpperCase(); else avatar.innerHTML = IC.user;
   }
 
   // --- éditeur « Personnaliser la barre » ---
@@ -248,7 +249,8 @@
         var acct = sanitize(prefs.bottom_nav);
         if (acct.join(',') !== pinned.join(',')) { pinned = acct; saveLocal(); renderBar(); renderSheet(); updateActive(); }
       }
-      if (loggedIn && d.user) setAvatarInitial(d.user.pseudo);
+      if (loggedIn && d.user) setAvatar(prefs && prefs.avatar, d.user.pseudo);
+      else setAvatar(null, null);
     }).catch(function () {});
   }
 

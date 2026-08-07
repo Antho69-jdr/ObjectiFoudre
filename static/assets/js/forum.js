@@ -46,9 +46,14 @@
     var s = String(name || '?').replace(/[^A-Za-zÀ-ÿ0-9]/g, '');
     return (s.slice(0, 1) || '?').toUpperCase();
   }
-  function avatar(name, sz) {
-    return '<span class="forum-av" style="--sz:' + sz + 'px;background:' + avatarGrad(name) + '">'
-      + escapeHtml(initials(name)) + '</span>';
+  // `who` = objet auteur {pseudo, avatar} OU un pseudo (string). Délègue au module
+  // partagé OFAvatar (preset choisi / initiales) ; repli initiales si indispo.
+  function avatar(who, sz) {
+    var pseudo = (who && typeof who === 'object') ? who.pseudo : who;
+    var avId = (who && typeof who === 'object') ? who.avatar : null;
+    if (window.OFAvatar) return window.OFAvatar.discHTML(avId, pseudo, sz);
+    return '<span class="forum-av" style="--sz:' + sz + 'px;background:' + avatarGrad(pseudo) + '">'
+      + escapeHtml(initials(pseudo)) + '</span>';
   }
   function relTime(iso) {
     if (!iso) return '';
@@ -115,7 +120,7 @@
       var catObj = categories.filter(function (c) { return c.id === f.category_id; })[0] || {};
       var verb = f.is_op ? 'a ouvert' : 'a répondu dans';
       return '<button class="forum-feed__row" data-thread="' + escapeHtml(f.topic_id) + '">'
-        + avatar(f.author.pseudo, 32)
+        + avatar(f.author, 32)
         + '<span class="forum-feed__txt">'
         + '<span class="forum-feed__title">' + escapeHtml(f.topic_title) + '</span>'
         + '<span class="forum-feed__sub"><b>' + escapeHtml(f.author.pseudo) + '</b> ' + verb
@@ -131,7 +136,7 @@
     crumbsEl.hidden = true;
     var cats = categories.map(function (c) {
       var last = c.last
-        ? avatar(c.last.pseudo, 20) + '<span class="forum-who">' + escapeHtml(c.last.pseudo) + '</span> · ' + relTime(c.last.when)
+        ? avatar(c.last, 20) + '<span class="forum-who">' + escapeHtml(c.last.pseudo) + '</span> · ' + relTime(c.last.when)
         : "Aucun message pour l'instant";
       return '<button class="forum-cat" data-cat="' + escapeHtml(c.id) + '" style="--tint:' + cssTint(c.tint) + '">'
         + '<span class="forum-cat__glyph">' + c.emoji + '</span>'
@@ -165,7 +170,7 @@
         + '<span class="forum-topic__flag ' + (flag ? '' : 'is-blank') + '">' + (flag || '•') + '</span>'
         + '<span class="forum-topic__main">'
         + '<span class="forum-topic__title">' + escapeHtml(t.title) + badge + '</span>'
-        + '<span class="forum-topic__by">' + avatar(t.author.pseudo, 18) + ' ' + escapeHtml(t.author.pseudo)
+        + '<span class="forum-topic__by">' + avatar(t.author, 18) + ' ' + escapeHtml(t.author.pseudo)
         + ' · ' + relTime(t.created_utc) + '</span>'
         + '</span>'
         + '<span class="forum-topic__stats">'
@@ -221,7 +226,7 @@
       if (p.mine) actions.push('<button class="forum-danger" data-del="' + escapeHtml(p.id) + '">🗑 Supprimer</button>');
       if (admin && !p.mine) actions.push('<button class="forum-mod-act" data-hide="' + escapeHtml(p.id) + '">🚫 Masquer</button>');
       return '<article class="forum-post ' + (p.is_op ? 'is-op' : '') + '">'
-        + avatar(p.author.pseudo, 38)
+        + avatar(p.author, 38)
         + '<div>'
         + '<header class="forum-post__head">'
         + '<span class="forum-post__who">' + escapeHtml(p.author.pseudo) + '</span>' + role
@@ -237,7 +242,7 @@
       composer = '<div class="forum-locked-note">🔒 Ce sujet est verrouillé — vous ne pouvez plus y répondre.</div>';
     } else if (data.me) {
       composer = '<form class="forum-composer" id="forumReplyForm">'
-        + avatar(data.me.pseudo, 34)
+        + avatar(data.me, 34)
         + '<textarea id="forumReplyBody" maxlength="5000" placeholder="Écrire une réponse…  (connecté en tant que '
         + escapeHtml(data.me.pseudo) + ')"></textarea>'
         + '<button class="forum-btn forum-btn--accent" type="submit">Publier</button>'
