@@ -1,0 +1,108 @@
+/* ============================================================================
+   bottom-nav.css — Barre de navigation du BAS (refonte mobile, Phase 1).
+   Remplace le rail droit sur VRAI petit écran (≤767px, largeur réelle — PAS
+   body.mobile-ui qui est permanent). Look « Concept 1 » (onglets). Le contenu
+   est piloté par bottom-nav.js (config BOTTOM_NAV) qui délègue aux boutons du
+   rail existant (.click()). Desktop/tablette : inchangé (rail conservé).
+   ----------------------------------------------------------------------------
+   Décale les frises du bas (base #timelineDock / chasse #chaseControls / étoile
+   #stargazeControls) AU-DESSUS de la barre via `bottom` (leur centrage + repli
+   passent par transform → on ne touche pas au transform). Chargé après timeline/
+   chase/stargaze ; !important porteurs pour battre leurs bottom mobiles.
+   ============================================================================ */
+
+.bnav, .bnav-sheet, .bnav-scrim, .bnav-avatar { display: none; }
+
+@media (max-width: 767px) {
+  :root { --bottom-nav-h: 58px; }
+
+  /* ---- la barre ---- */
+  .bnav {
+    display: flex;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
+    gap: 2px;
+    background: rgba(9, 14, 26, 0.9);
+    border-top: 1px solid var(--border);
+    -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  }
+  .bnav-tab {
+    /* min-width porteur : échappe à body.mobile-ui button{min-width:88px} (0,1,1)
+       sinon les 5 onglets débordent (Plus hors écran). */
+    flex: 1; min-width: 0 !important; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    background: none; border: 0; cursor: pointer; color: var(--text-dim);
+    font-size: 9.5px; font-weight: var(--fw-semibold); padding: 2px 1px; position: relative;
+  }
+  .bnav-tab svg { width: 23px; height: 23px; }
+  .bnav-tab span { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.01em; }
+  .bnav-tab.is-active { color: var(--accent); }
+  .bnav-tab.is-active::before {
+    content: ""; position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
+    width: 24px; height: 3px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 9px var(--accent);
+  }
+  /* mode étoile = identité ambre « vision nocturne » (jamais de bleu) → accent ambre.
+     NB : --accent-2 est remappé sur du cyan par theme.css (legacy) → on prend l'ambre littéral. */
+  body.stargaze-mode .bnav-tab.is-active { color: #fbbf24; }
+  body.stargaze-mode .bnav-tab.is-active::before { background: #fbbf24; box-shadow: 0 0 9px #fbbf24; }
+
+  /* ---- avatar compte (injecté en tête de #rightRailScroll, au-dessus de la recherche) ---- */
+  .bnav-avatar {
+    /* dimensions porteuses : cercle 40px, échappe à body.mobile-ui button (min-width/height). */
+    display: grid; place-items: center; width: 40px !important; height: 40px !important;
+    min-width: 0 !important; min-height: 0 !important; border-radius: 50%; cursor: pointer;
+    border: 2px solid rgba(255, 255, 255, 0.22); background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+    color: #04121f; margin: 0 0 8px auto; flex: 0 0 auto; padding: 0;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  }
+  .bnav-avatar svg { width: 20px; height: 20px; color: #04121f; }
+
+  /* ---- masquer les boutons nav du rail (la recherche #topbar reste) ---- */
+  .right-rail-stack { display: none !important; }
+
+  /* ---- décaler les frises du bas au-dessus de la barre ---- */
+  #timelineDock,
+  #chaseControls,
+  #stargazeControls {
+    bottom: calc(var(--bottom-nav-h) + max(var(--sp-3), env(safe-area-inset-bottom))) !important;
+  }
+  /* légendes/badges ancrés juste au-dessus de la frise → remontés d'autant */
+  .chase-legend, .stargaze-legend { bottom: calc(83px + var(--bottom-nav-h)) !important; }
+
+  /* ---- feuille « Plus » ---- */
+  .bnav-scrim {
+    display: block; position: fixed; inset: 0; z-index: 49;
+    background: rgba(2, 6, 14, 0.55); opacity: 0; pointer-events: none; transition: opacity 0.28s var(--ease-out);
+  }
+  .bnav-scrim.is-open { opacity: 1; pointer-events: auto; }
+  .bnav-sheet {
+    display: block; position: fixed; left: 0; right: 0;
+    bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom)); z-index: 51;
+    transform: translateY(calc(100% + 90px)); transition: transform 0.3s var(--ease-out);
+    background: var(--surface-3); border: 1px solid var(--border-strong); border-bottom: 0;
+    border-top-left-radius: 20px; border-top-right-radius: 20px; padding: 8px 12px 14px;
+    -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+    box-shadow: 0 -18px 40px rgba(0, 0, 0, 0.5);
+  }
+  .bnav-sheet.is-open { transform: translateY(0); }
+  .bnav-sheet-handle { width: 38px; height: 4px; border-radius: 3px; background: var(--border-strong); margin: 2px auto 10px; }
+  .bnav-sheet-title { font-size: 11px; font-weight: var(--fw-bold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); margin: 0 6px 8px; }
+  .bnav-row {
+    display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 10px; border: 0; background: none;
+    color: var(--text); font-size: 14px; font-weight: var(--fw-semibold); cursor: pointer; border-radius: var(--r-md); text-align: left;
+  }
+  .bnav-row + .bnav-row { border-top: 1px solid var(--divider); }
+  .bnav-row:hover, .bnav-row:active { background: var(--fill-soft); }
+  .bnav-row svg { width: 20px; height: 20px; color: var(--accent); flex: 0 0 auto; }
+  .bnav-row .chev { margin-left: auto; color: var(--text-dim); }
+  .bnav-row .soon { margin-left: auto; font-size: 10px; font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.04em; color: #fbbf24; background: var(--accent-2-soft); border-radius: var(--r-pill); padding: 2px 8px; }
+
+  /* ---- petit toast (ex. « bientôt ») ---- */
+  .bnav-toast {
+    position: fixed; left: 50%; bottom: calc(var(--bottom-nav-h) + 20px + env(safe-area-inset-bottom));
+    transform: translateX(-50%) translateY(8px); z-index: 60; opacity: 0; pointer-events: none;
+    background: var(--surface-3); border: 1px solid var(--border-strong); color: var(--text);
+    font-size: 13px; font-weight: 600; padding: 10px 16px; border-radius: var(--r-pill);
+    box-shadow: var(--shadow-2); transition: opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out); max-width: 84vw; text-align: center;
+  }
+  .bnav-toast.is-show { opacity: 1; transform: translateX(-50%) translateY(0); }
+}

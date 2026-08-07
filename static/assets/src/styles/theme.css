@@ -133,6 +133,11 @@
    les petits controles (0,2,x) battent la tactile body.mobile-ui button (0,1,1). */
 @import "./components/forum-page.css";
 
+/* Component barre du bas (refonte mobile, Phase 1) : nav du bas ≤767px qui
+   remplace le rail droit + decale les frises. Charge EN DERNIER → ses !important
+   porteurs battent les bottom mobiles de timeline/chase/stargaze. */
+@import "./components/bottom-nav.css";
+
 /* Component grid-cell-tooltip : bulle de survol des cellules (look + position
    absolue ; JS pose left/top inline + bascule is-visible). Tier 1 du retrait
    legacy. 0 !important ; legacy purge de components.css. */
