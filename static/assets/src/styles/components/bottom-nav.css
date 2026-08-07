@@ -27,9 +27,10 @@
     -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   }
   .bnav-tab {
-    /* min-width porteur : échappe à body.mobile-ui button{min-width:88px} (0,1,1)
-       sinon les 5 onglets débordent (Plus hors écran). */
-    flex: 1; min-width: 0 !important; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    /* flex + min-width PORTEURS : échappent à body.mobile-ui button{flex:0 0 auto;
+       min-width:88px} (0,1,2) — sinon les onglets prennent leur largeur de contenu
+       et se tassent à gauche (au lieu de se répartir sur toute la barre). */
+    flex: 1 1 0 !important; min-width: 0 !important; display: flex; flex-direction: column; align-items: center; gap: 3px;
     background: none; border: 0; cursor: pointer; color: var(--text-dim);
     font-size: 9.5px; font-weight: var(--fw-semibold); padding: 2px 1px; position: relative;
   }
