@@ -534,6 +534,24 @@ def set_prefs(user_id: str, patch: dict[str, Any]) -> dict[str, Any]:
             clean["default_map"] = dm
         else:
             raise AccountError("Carte par défaut invalide.")
+    if "bottom_nav" in patch:
+        # Ordre des onglets épinglés de la barre du bas (refonte mobile). On ne
+        # stocke qu'une liste d'IDs courts et sûrs (le front valide contre son pool) ;
+        # None/[] = réinitialisation au défaut.
+        bn = patch["bottom_nav"]
+        if not bn:
+            clean["bottom_nav"] = None
+        elif isinstance(bn, list):
+            seen: list[str] = []
+            for x in bn:
+                s = str(x).strip().lower()
+                if re.fullmatch(r"[a-z0-9_-]{1,24}", s) and s not in seen:
+                    seen.append(s)
+                if len(seen) >= 6:
+                    break
+            clean["bottom_nav"] = seen or None
+        else:
+            raise AccountError("Configuration de barre invalide.")
     with _lock, _db() as c:
         row = c.execute("SELECT prefs FROM users WHERE id = ?", (user_id,)).fetchone()
         if row is None:

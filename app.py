@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.136"
+APP_VERSION = "1.3.137"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16070,6 +16070,7 @@ async def account_set_pseudo(request: Request, payload: AccountPseudoRequest) ->
 
 class AccountPrefsRequest(BaseModel):
     default_map: str | None = Field(None, max_length=20)
+    bottom_nav: list[str] | None = Field(None)
 
 
 @app.post("/api/account/prefs")
@@ -16077,8 +16078,22 @@ async def account_set_prefs(request: Request, payload: AccountPrefsRequest) -> R
     user = await _account_current_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
+    # Ne patcher QUE les champs réellement envoyés (sinon un envoi de bottom_nav
+    # seul remettrait default_map à None, et inversement).
+    fields = getattr(payload, "model_fields_set", None)
+    if fields is None:
+        fields = getattr(payload, "__fields_set__", set())
+    patch: dict[str, Any] = {}
+    if "default_map" in fields:
+        patch["default_map"] = payload.default_map
+    if "bottom_nav" in fields:
+        if isinstance(payload.bottom_nav, list) and len(payload.bottom_nav) > 20:
+            return JSONResponse({"ok": False, "error": "Trop d'éléments."}, status_code=400)
+        patch["bottom_nav"] = payload.bottom_nav
+    if not patch:
+        return JSONResponse({"ok": True, "user": accounts.private_view(user)})
     try:
-        updated = await asyncio.to_thread(accounts.set_prefs, user["id"], {"default_map": payload.default_map})
+        updated = await asyncio.to_thread(accounts.set_prefs, user["id"], patch)
     except accounts.AccountError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     return JSONResponse({"ok": True, "user": accounts.private_view(updated)})
