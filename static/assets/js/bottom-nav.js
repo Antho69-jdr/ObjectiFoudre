@@ -11,7 +11,9 @@
   var IC = {
     map:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5 9 4z"/><path d="M9 4v13M15 6.5v13"/></svg>',
     radar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l7-3.4"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>',
-    star:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.4 5 5.6.5-4.2 3.7 1.3 5.5L12 16.9l-5.1 3.1 1.3-5.5L4 8.5 9.6 8z"/></svg>',
+    /* étoile filante détaillée = MÊME icône que le bouton du rail #stargazePageBtn
+       (celle « qui existait déjà », demande Anthony) — pleine, viewBox 40. */
+    star:'<svg viewBox="0 0 40 40" fill="none"><path d="M31.01 4L29.2135 11.9046L36.176 16.0558L28.1031 16.7898L26.3066 24.6944L23.1139 17.2435L15.041 17.9775L21.1406 12.6386L17.9479 5.18768L24.9104 9.33894L31.01 4Z" fill="currentColor"/><path d="M22.0635 17.1537C21.5842 15.9095 21.1048 14.6653 20.6255 13.4211C20.1465 13.6412 19.6569 13.889 19.2081 14.1346C11.1809 18.6728 4.73357 26.1889 3.20966 34.9724C3.12522 35.4583 3.05852 35.9332 3.00401 36.4227C3.12412 35.9451 3.25571 35.486 3.40394 35.0199C6.0804 26.6388 13.2172 20.5968 20.8103 17.5803C21.2223 17.4253 21.6597 17.2733 22.0635 17.1537Z" fill="currentColor"/><path d="M23.8032 18.2434C24.062 18.1828 24.2787 18.0224 24.4027 17.7877C24.5268 17.5536 24.5479 17.2642 24.4645 16.9934C24.3811 16.7226 24.2009 16.4953 23.9665 16.3715C23.732 16.2472 23.4626 16.2366 23.2145 16.3321C22.9747 16.4233 22.7293 16.5226 22.4924 16.6239C18.3608 18.5034 14.1919 21.14 12.3739 25.3434C12.2834 25.5748 12.2038 25.8103 12.1368 26.0479C12.2352 25.8215 12.3451 25.6003 12.4644 25.3859C14.7757 21.5581 19.083 19.6373 23.1244 18.4157C23.3513 18.3533 23.5831 18.2938 23.8032 18.2434Z" fill="currentColor"/><path d="M21.2762 13.1842C21.5188 13.0766 21.7047 12.878 21.7903 12.6269C21.876 12.376 21.8545 12.0932 21.7331 11.8458C21.6116 11.5985 21.401 11.4085 21.15 11.323C20.899 11.2371 20.6282 11.2628 20.3947 11.389C20.3947 11.389 20.3947 11.389 20.3947 11.389C20.0066 11.598 19.6086 11.8247 19.227 12.0523C12.552 16.2327 6.07166 21.9326 4.125 29.7036C4.03118 30.1295 3.95632 30.5585 3.90177 30.9902C3.98921 30.564 4.09643 30.1435 4.22177 29.7288C6.72691 22.2273 13.4713 17.2232 20.1383 13.7195C20.5147 13.5327 20.9036 13.3485 21.2762 13.1842Z" fill="currentColor"/></svg>',
     chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.5 8.6 8.6 0 0 1-3.8-.9L3 21l1.9-5.7A8.4 8.4 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.4 8.4 0 0 1 21 11.5z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/></svg>',
     plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>',
     user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20.5c1.5-3.5 4.6-5 8-5s6.5 1.5 8 5"/></svg>',
@@ -52,11 +54,11 @@
 
   // ===== POOL des destinations ÉPINGLABLES (barre) — modifiable/réordonnable =====
   var POOL = [
-    { id: 'carte',   label: 'Carte',      icon: 'map',   go: goCarte },
+    { id: 'carte',   label: 'Prévisions', icon: 'map',   go: goCarte },
     { id: 'radar',   label: 'Radar',      icon: 'radar', go: goRadar },
     { id: 'etoiles', label: 'Étoiles',    icon: 'star',  go: goEtoiles },
     { id: 'forum',   label: 'Forum',      icon: 'chat',  go: function () { clickEl('forumPageBtn'); } },
-    { id: 'prev',    label: 'Prévisions', icon: 'prev',  go: function () { clickEl('predictionPageBtn'); } },
+    { id: 'prev',    label: 'Risque orageux J+0→J+10', icon: 'prev',  go: function () { clickEl('predictionPageBtn'); } },
     { id: 'spots',   label: 'Mes spots',  icon: 'pin',   go: function () { clickEl('spotsPageBtn'); } },
     { id: 'histo',   label: 'Historique', icon: 'clock', go: function () { clickEl('historyPageBtn'); } }
   ];
