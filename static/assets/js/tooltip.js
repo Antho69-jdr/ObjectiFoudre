@@ -45,6 +45,17 @@
     return el.classList.contains('timeline-wheel-item') || el.classList.contains('timeline-hour-mark');
   }
 
+  // Cibles autorisées du mode « révéler à l'écran » (#screenTooltipsBtn) : UNIQUEMENT
+  // les boutons des RAILS (droit + gauches chasse/étoile/spots) et les boutons des
+  // FRISES (base/chasse/étoile). Le reste (recherche, badges, avatar, popups de carte,
+  // panneaux…) est exclu — le bouton « ? » en révélait beaucoup trop (demande Anthony).
+  const REVEAL_RAILS = '.right-rail-stack, .chase-layer-rail, .stargaze-layer-rail, .spots-rail';
+  const REVEAL_FRISE_BTNS = '.timeline-icon-btn, .chase-frise-btn, .sg-frise-btn, .timeline-toggle-btn';
+  function isRevealTarget(el) {
+    if (!el || !el.closest) return false;
+    return !!(el.closest(REVEAL_RAILS) || el.closest(REVEAL_FRISE_BTNS));
+  }
+
   // Cible un porteur de data-tooltip, sauf les icônes de la frise (tooltip CSS dédié).
   function tooltipTarget(node) {
     if (!node || !node.closest) return null;
@@ -174,6 +185,7 @@
       if (el.id === 'screenTooltipsBtn') return;
       if (el.classList.contains('timeline-light-icon') || el.classList.contains('timeline-wheel-light-icon')) return;
       if (isHourTarget(el)) return;  // pas de label par heure : encombrant et redondant
+      if (!isRevealTarget(el)) return;  // UNIQUEMENT boutons de rails + boutons de frises
       const text = el.getAttribute('data-tooltip');
       if (!text) return;
       const r = el.getBoundingClientRect();
