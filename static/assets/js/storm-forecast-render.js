@@ -106,15 +106,38 @@ function predictionDistanceKm(a, b) {
 function smoothPredictionCells(cells) {
   if (!Array.isArray(cells) || !cells.length) return [];
   const radiusKm = 60;
+  // Perf : la version naïve comparait CHAQUE cellule à TOUTES les autres → O(n²)
+  // (≈850 ms pour 2636 cellules, ×N périodes = gels). On indexe les cellules dans
+  // une grille spatiale dont le pas (en degrés) est ≥ 60 km au pire cas France : un
+  // voisinage 3×3 de buckets contient alors TOUTES les cellules à ≤60 km → même
+  // ensemble filtré, donc résultat STRICTEMENT identique, en ~O(n·k) (≈21× plus vite).
+  const latStep = 0.6;    // 60 km ≈ 0,54° de latitude
+  const lonStep = 0.95;   // 60 km ≈ 0,86° de longitude à 51°N (pire cas)
+  const buckets = new Map();
+  const bucketKey = (bi, bj) => bi + ',' + bj;
+  for (const c of cells) {
+    const k = bucketKey(Math.floor(c.lat / latStep), Math.floor(c.lon / lonStep));
+    let arr = buckets.get(k);
+    if (!arr) { arr = []; buckets.set(k, arr); }
+    arr.push(c);
+  }
   return cells.map((cell) => {
+    const bi = Math.floor(cell.lat / latStep);
+    const bj = Math.floor(cell.lon / lonStep);
     let weighted = 0;
     let totalWeight = 0;
-    for (const other of cells) {
-      const distance = predictionDistanceKm(cell, other);
-      if (distance > radiusKm) continue;
-      const weight = Math.exp(-((distance / radiusKm) ** 2) * 2.15);
-      weighted += other.score * weight;
-      totalWeight += weight;
+    for (let di = -1; di <= 1; di += 1) {
+      for (let dj = -1; dj <= 1; dj += 1) {
+        const arr = buckets.get(bucketKey(bi + di, bj + dj));
+        if (!arr) continue;
+        for (const other of arr) {
+          const distance = predictionDistanceKm(cell, other);
+          if (distance > radiusKm) continue;
+          const weight = Math.exp(-((distance / radiusKm) ** 2) * 2.15);
+          weighted += other.score * weight;
+          totalWeight += weight;
+        }
+      }
     }
     const localMean = totalWeight ? weighted / totalWeight : cell.score;
     let smoothedScore = clampScore(cell.score * 0.56 + localMean * 0.44);
