@@ -45,6 +45,10 @@
      NB : --accent-2 est remappé sur du cyan par theme.css (legacy) → on prend l'ambre littéral. */
   body.stargaze-mode .bnav-tab.is-active { color: #fbbf24; }
   body.stargaze-mode .bnav-tab.is-active::before { background: #fbbf24; box-shadow: 0 0 9px #fbbf24; }
+  /* mode chasse = identité rouge « radar/orage » → onglet Radar actif en rouge
+     (pendant exact de l'ambre étoile). #f87171 = le rouge chasse partout ailleurs. */
+  body.chase-mode .bnav-tab.is-active { color: #f87171; }
+  body.chase-mode .bnav-tab.is-active::before { background: #f87171; box-shadow: 0 0 9px #f87171; }
 
   /* ---- avatar compte (injecté en tête de #rightRailScroll, au-dessus de la recherche) ---- */
   .bnav-avatar {
