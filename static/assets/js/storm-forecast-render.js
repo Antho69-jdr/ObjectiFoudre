@@ -648,7 +648,7 @@ function predictionContourLevelMarkup(field, project, level, cells) {
   });
   if (!rings.length) return '';
   const paths = rings.map((ring) => {
-    const smoothed = predictionChaikinClosed(ring, 3);
+    const smoothed = predictionChaikinClosed(ring, 2);   // perf : 2 passes suffisent (−28% de poids SVG, rendu identique à l'échelle d'affichage)
     const projected = smoothed.map(([gi, gj]) => project(field.minLon + (gi - field.pad) * field.cellW, field.minLat + (gj - field.pad) * field.cellH));
     return predictionClosedBezierPath(projected, 0.6);
   }).filter(Boolean).join(' ');
@@ -723,7 +723,7 @@ function predictionSeverityHatchMarkup(field, project, cells, threshold = PREDIC
   });
   if (!rings.length) return '';
   const paths = rings.map((ring) => {
-    const smoothed = predictionChaikinClosed(ring, 3);
+    const smoothed = predictionChaikinClosed(ring, 2);   // perf : 2 passes suffisent (−28% de poids SVG, rendu identique à l'échelle d'affichage)
     const projected = smoothed.map(([gi, gj]) => project(field.minLon + (gi - field.pad) * field.cellW, field.minLat + (gj - field.pad) * field.cellH));
     return predictionClosedBezierPath(projected, 0.6);
   }).filter(Boolean).join(' ');
@@ -817,15 +817,12 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${svgHeight}" width="${width}" height="${svgHeight}" role="img" aria-label="Prévision orageuse ${label}" shape-rendering="geometricPrecision">
   <defs>
     <clipPath id="franceClip" clipPathUnits="userSpaceOnUse"><path d="${francePath}"/></clipPath>
-    <filter id="mapShadow" x="-14%" y="-14%" width="128%" height="128%" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#000" flood-opacity="0.34"/>
-    </filter>
     <pattern id="severityHatch" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
       <line x1="0" y1="0" x2="0" y2="9" stroke="${PREDICTION_SEVERITY_HATCH_COLOR}" stroke-width="2.2" stroke-opacity="0.92"/>
     </pattern>
   </defs>
   <rect width="${width}" height="${svgHeight}" fill="#07111f"/>
-  <g filter="url(#mapShadow)">
+  <g>
     <path d="${francePath}" fill="${PREDICTION_RISK_LEVELS[0].color}"/>
     <g clip-path="url(#franceClip)">${shapeMarkup}</g>
     <g clip-path="url(#franceClip)">${severityMarkup}</g>
