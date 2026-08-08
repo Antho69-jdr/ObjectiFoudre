@@ -37,6 +37,7 @@
   function forumOpen() { var p = el('forumPage'); return !!p && p.getAttribute('aria-hidden') === 'false'; }
   function pageOpen(id) { var p = el(id); return !!p && p.getAttribute('aria-hidden') === 'false'; }
   function drawerOpen() { var d = el('infoDrawer'); return !!d && d.classList.contains('visible'); }
+  function accountOpen() { var m = el('accountModal'); return !!m && m.classList.contains('show'); }
   function isAdmin() { try { return document.documentElement.classList.contains('objf-admin'); } catch (e) { return false; } }
 
   // La barre est VISIBLE par-dessus les pages plein écran → pour qu'elle NAVIGUE
@@ -50,6 +51,7 @@
       if (c) c.click();
     }
     if (drawerOpen()) { var dc = el('closeDrawerBtn'); if (dc) dc.click(); }
+    if (accountOpen()) { var m = el('accountModal'); var ac = m.querySelector('.account-close'); if (ac) ac.click(); }
   }
 
   // --- actions modes (délèguent aux toggles globaux / boutons du rail) ---
@@ -73,7 +75,7 @@
     { id: 'radar',   label: 'Radar',      icon: 'radar', go: goRadar },
     { id: 'etoiles', label: 'Étoiles',    icon: 'star',  go: goEtoiles },
     { id: 'forum',   label: 'Forum',      icon: 'chat',  go: function () { clickEl('forumPageBtn'); } },
-    { id: 'prev',    label: 'Risque orageux J+0→J+10', icon: 'prev',  go: function () { clickEl('predictionPageBtn'); } },
+    { id: 'prev',    label: 'Risque orageux', icon: 'prev',  go: function () { clickEl('predictionPageBtn'); } },
     { id: 'spots',   label: 'Mes spots',  icon: 'pin',   go: function () { clickEl('spotsPageBtn'); } },
     { id: 'histo',   label: 'Historique', icon: 'clock', go: function () { clickEl('historyPageBtn'); } }
   ];
@@ -251,9 +253,10 @@
 
   // --- onglet actif ---
   function currentView() {
-    // Surfaces SANS onglet dédié (confidentialité, maintenance) : renvoient un id
-    // qui ne matche aucun onglet → aucun onglet surligné ET le tap d'un onglet les
-    // ferme (le guard id===currentView ne court-circuite pas).
+    // Surfaces SANS onglet dédié (compte, confidentialité, maintenance) : renvoient
+    // un id qui ne matche aucun onglet → aucun onglet surligné ET le tap d'un onglet
+    // les ferme (le guard id===currentView ne court-circuite pas).
+    if (accountOpen()) return 'compte';
     if (pageOpen('privacyPage')) return 'privacy';
     if (pageOpen('maintenancePage')) return 'admin';
     if (forumOpen()) return 'forum';
@@ -298,7 +301,7 @@
       var mo = new MutationObserver(function () { updateActive(); });
       mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
       // Onglet actif suit AUSSI l'ouverture/fermeture des pages plein écran.
-      ['forumPage', 'predictionPage', 'historyPage', 'spotsListPage', 'privacyPage', 'maintenancePage']
+      ['forumPage', 'predictionPage', 'historyPage', 'spotsListPage', 'privacyPage', 'maintenancePage', 'accountModal']
         .forEach(function (id) { var p = el(id); if (p) mo.observe(p, { attributes: true, attributeFilter: ['aria-hidden'] }); });
     } catch (e) {}
 

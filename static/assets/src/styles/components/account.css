@@ -4,7 +4,10 @@
 #accountBtn.is-auth { color: #46c0e6; border-color: rgba(70, 192, 230, 0.5); }
 
 .account-modal {
-  position: fixed; inset: 0; z-index: 200;
+  /* z 86 : SOUS la barre du bas (89) → elle reste visible/navigable par-dessus la
+     modale (demande Anthony), mais AU-DESSUS des pages (68) et de l'info drawer (84).
+     Le loader (100) reste au-dessus → pas de barre pendant le splash d'ouverture. */
+  position: fixed; inset: 0; z-index: 86;
   display: none; align-items: center; justify-content: center;
   background: rgba(6, 10, 16, 0.62);
   backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
@@ -154,6 +157,15 @@
 
 /* Mobile : feuille du bas. */
 @media (max-width: 767px) {
-  .account-modal { align-items: flex-end; padding: 0; }
-  .account-card { width: 100%; border-radius: 16px 16px 0 0; max-height: 90vh; }
+  /* PLEIN ÉCRAN (demande Anthony) : la carte remplit l'écran et réserve la hauteur
+     de la barre du bas (visible par-dessus) pour ne rien masquer. */
+  .account-modal { align-items: stretch; padding: 0; }
+  .account-card {
+    width: 100%; max-width: none;
+    height: 100dvh; max-height: 100dvh;
+    border-radius: 0; border: 0;
+    padding-bottom: calc(16px + var(--bottom-nav-h) + env(safe-area-inset-bottom));
+  }
+  /* Toast (z 210, au-dessus de la barre) remonté au-dessus d'elle. */
+  .account-toast { bottom: calc(24px + var(--bottom-nav-h) + env(safe-area-inset-bottom)); }
 }
