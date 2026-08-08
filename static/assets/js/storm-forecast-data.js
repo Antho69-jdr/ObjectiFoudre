@@ -421,13 +421,17 @@ function predictionPeriodStatus(day = getCurrentDay(), periodKey = selectedPredi
   };
 }
 
-// La fenêtre 08h-08h tire ses heures 0-7h du lendemain. Si le lendemain n'a pas de
-// données horaires (jour de tendance ECMWF, ou au-delà de l'horizon), on ne peut pas
-// compléter ce tail nocturne : on le rend optionnel pour que le jour reste affichable
-// (ex. J+4, dont la nuit retombe sur J+5 ECMWF).
+// La fenêtre 08h-08h tire ses heures 0-7h du lendemain. Ce tail n'est complétable QUE si
+// le lendemain est un jour HORAIRE (AROME/ARPEGE) — c.-à-d. celui que predictionEnsureDay
+// va effectivement fetcher (condition `!predictionDateUsesEcmwf`). Dès que le lendemain
+// passe en ECMWF (J+2/J+3 en créneaux, ou J+4+ en tendance) ou au-delà de l'horizon, on
+// n'a AUCUNE heure horaire pour ce tail : on le rend OPTIONNEL pour que le jour reste
+// affichable. Sinon J+1 (dont la nuit retombe sur J+2 ECMWF) restait bloqué en « chargement »
+// (heures h00-h07 exigées mais jamais fournies). NB : `usesEcmwf` couvre J+2+ ; `isTrend`
+// (l'ancienne condition) ne couvrait que J+4+ → il ratait justement le cas J+1→J+2.
 function predictionNextTailAvailable(day = getCurrentDay()) {
   const nextIso = predictionDateAddDays(predictionDayKey(day), 1);
-  return !predictionDateIsTrend(nextIso) && predictionDateOffset(nextIso) <= PREDICTION_MAX_OFFSET;
+  return !predictionDateUsesEcmwf(nextIso) && predictionDateOffset(nextIso) <= PREDICTION_MAX_OFFSET;
 }
 
 function predictionRequiredSlotKeys(slotKeys, day = getCurrentDay()) {
