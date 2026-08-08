@@ -1,0 +1,43 @@
+/* ============================================================================
+   privacy-page.css — Page « Confidentialité & données » IN-APP.
+   Ouvre la coquille partagée .prediction-page (#privacyPage) depuis le lien de la
+   modale Compte → la barre du bas reste visible par-dessus (comme Historique/Forum).
+   ⚠ Corps en FLUX SIMPLE (.privacy-page-body), PAS .prediction-page-body qui est
+   une grille 2-colonnes (même piège que le forum). Contenu = confidentialite.html.
+   ============================================================================ */
+
+.privacy-page-body {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 4px 10px;
+  scrollbar-width: thin;
+  line-height: 1.6;
+  color: #c9d6e4;
+}
+/* Colonne de lecture centrée (comme le forum). */
+.privacy-page-body > * {
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+}
+.privacy-meta { color: var(--text-dim); font-size: var(--fs-13); margin: 2px 0 4px; }
+.privacy-page-body h2 {
+  font-size: var(--fs-16); font-weight: var(--fw-bold);
+  margin: 26px 0 8px; color: #bfe3f4;
+}
+.privacy-page-body p { margin: 8px 0; }
+.privacy-page-body p, .privacy-page-body li { color: #c9d6e4; }
+.privacy-page-body ul { padding-left: 20px; margin: 6px 0; }
+.privacy-page-body li { margin: 4px 0; }
+.privacy-page-body a { color: #6cc7ec; }
+.privacy-page-body strong { color: #eef4fb; }
+.privacy-page-body code {
+  background: #0e151e; border: 1px solid #22303f; border-radius: 5px;
+  padding: 1px 5px; font-size: var(--fs-13);
+}
+.privacy-card {
+  background: #121b26; border: 1px solid #22303f; border-radius: 12px;
+  padding: 14px 18px; margin: 12px auto;
+}
+.privacy-footer { margin-top: 32px; color: #7c93ad; font-size: var(--fs-13); }

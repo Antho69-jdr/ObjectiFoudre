@@ -317,10 +317,38 @@
   }
 
   function appendPrivacy() {
+    // Lien conservé (href = page autonome, repli si JS échoue / clic « nouvel onglet »)
+    // mais ouvert IN-APP par défaut : ferme la modale Compte puis affiche #privacyPage
+    // (coquille .prediction-page) → la barre du bas reste visible par-dessus (Anthony).
     var p = el('a', 'account-privacy', 'Confidentialité & données');
-    p.href = '/confidentialite'; p.target = '_blank'; p.rel = 'noopener';
+    p.href = '/confidentialite'; p.rel = 'noopener';
+    p.addEventListener('click', function (e) {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return; // ouverture onglet volontaire
+      e.preventDefault();
+      openPrivacy();
+    });
     body.appendChild(p);
   }
+  function openPrivacy() {
+    close();  // ferme la modale Compte (z 200) pour révéler la page (z 68) + la barre du bas
+    var pg = document.getElementById('privacyPage');
+    if (pg) pg.setAttribute('aria-hidden', 'false');
+  }
+  function closePrivacy() {
+    var pg = document.getElementById('privacyPage');
+    if (pg) pg.setAttribute('aria-hidden', 'true');
+  }
+  // Fermeture de la page confidentialité (bouton × + Échap) — câblé une seule fois.
+  (function wirePrivacy() {
+    var pc = document.getElementById('privacyPageCloseBtn');
+    if (pc) pc.addEventListener('click', closePrivacy);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        var pg = document.getElementById('privacyPage');
+        if (pg && pg.getAttribute('aria-hidden') === 'false') closePrivacy();
+      }
+    });
+  })();
 
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function toast(msg, ms) {

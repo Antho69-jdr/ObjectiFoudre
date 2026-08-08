@@ -35,7 +35,22 @@
   function inChase() { return hasBody('chase-mode'); }
   function inStar() { return hasBody('stargaze-mode'); }
   function forumOpen() { var p = el('forumPage'); return !!p && p.getAttribute('aria-hidden') === 'false'; }
+  function pageOpen(id) { var p = el(id); return !!p && p.getAttribute('aria-hidden') === 'false'; }
+  function drawerOpen() { var d = el('infoDrawer'); return !!d && d.classList.contains('visible'); }
   function isAdmin() { try { return document.documentElement.classList.contains('objf-admin'); } catch (e) { return false; } }
+
+  // La barre est VISIBLE par-dessus les pages plein écran → pour qu'elle NAVIGUE
+  // vraiment, on ferme la surface ouverte (page .prediction-page ou info drawer)
+  // avant d'exécuter la destination. On clique leur bouton de fermeture (préserve
+  // leur nettoyage interne : forum.js/history.js/storm-forecast/account.js…).
+  function closeOpenSurfaces() {
+    var pages = document.querySelectorAll('.prediction-page[aria-hidden="false"]');
+    for (var i = 0; i < pages.length; i++) {
+      var c = pages[i].querySelector('.prediction-close-btn');
+      if (c) c.click();
+    }
+    if (drawerOpen()) { var dc = el('closeDrawerBtn'); if (dc) dc.click(); }
+  }
 
   // --- actions modes (délèguent aux toggles globaux / boutons du rail) ---
   function goCarte() {
@@ -116,6 +131,11 @@
       var id = b.getAttribute('data-nav');
       if (id === 'plus') { togglePlus(); return; }
       closePlus();
+      // Onglet déjà actif (page correspondante ouverte, ou mode courant) → on y est
+      // déjà : ne rien fermer/rouvrir. (currentView renvoie 'privacy'/'admin' pour les
+      // surfaces sans onglet → un tap 'carte' ferme bien ces pages plutôt que no-op.)
+      if (id === currentView()) { updateActive(); return; }
+      closeOpenSurfaces();
       var p = poolById(id); if (p) { try { p.go(); } catch (err) {} }
       window.setTimeout(updateActive, 60);
     });
@@ -148,6 +168,7 @@
       var r = e.target.closest('.bnav-row'); if (!r) return;
       var it = itemById(r.getAttribute('data-plus')); if (!it) return;
       closePlus();
+      closeOpenSurfaces();
       try { it.go(); } catch (err) {}
     });
     renderSheet();
@@ -230,7 +251,15 @@
 
   // --- onglet actif ---
   function currentView() {
+    // Surfaces SANS onglet dédié (confidentialité, maintenance) : renvoient un id
+    // qui ne matche aucun onglet → aucun onglet surligné ET le tap d'un onglet les
+    // ferme (le guard id===currentView ne court-circuite pas).
+    if (pageOpen('privacyPage')) return 'privacy';
+    if (pageOpen('maintenancePage')) return 'admin';
     if (forumOpen()) return 'forum';
+    if (pageOpen('predictionPage')) return 'prev';
+    if (pageOpen('historyPage')) return 'histo';
+    if (pageOpen('spotsListPage')) return 'spots';
     if (inChase()) return 'radar';
     if (inStar()) return 'etoiles';
     return 'carte';
@@ -268,7 +297,9 @@
     try {
       var mo = new MutationObserver(function () { updateActive(); });
       mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-      var fp = el('forumPage'); if (fp) mo.observe(fp, { attributes: true, attributeFilter: ['aria-hidden'] });
+      // Onglet actif suit AUSSI l'ouverture/fermeture des pages plein écran.
+      ['forumPage', 'predictionPage', 'historyPage', 'spotsListPage', 'privacyPage', 'maintenancePage']
+        .forEach(function (id) { var p = el(id); if (p) mo.observe(p, { attributes: true, attributeFilter: ['aria-hidden'] }); });
     } catch (e) {}
 
     document.addEventListener('keydown', function (e) {

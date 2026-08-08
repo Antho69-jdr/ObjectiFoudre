@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="ObjectiFoudre" />
-  <link rel="manifest" href="/manifest.webmanifest?v=1.3.141" />
-  <link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=1.3.141" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png?v=1.3.141" />
+  <link rel="manifest" href="/manifest.webmanifest?v=1.3.142" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=1.3.142" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png?v=1.3.142" />
   <title>ObjectiFoudre — Tactile</title>
   <script>
     // Mode ADMIN : visiter une fois /?admin=<secret> l'active sur ce navigateur
@@ -38,7 +38,7 @@
           seen[key] = true; sent += 1;
           var body = JSON.stringify({
             type: type, message: msg.slice(0, 1000), stack: String(stack || '').slice(0, 4000),
-            page: location.pathname + location.hash, version: '1.3.141',
+            page: location.pathname + location.hash, version: '1.3.142',
             ua: navigator.userAgent.slice(0, 300),
           });
           if (navigator.sendBeacon) navigator.sendBeacon('/api/client-report', new Blob([body], { type: 'text/plain' }));
@@ -59,16 +59,16 @@
       });
     })();
   </script>
-  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.3.141"></script>
-  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.3.141" rel="stylesheet" />
+  <script src="/assets/vendor/maplibre/maplibre-gl.js?v=1.3.142"></script>
+  <link href="/assets/vendor/maplibre/maplibre-gl.css?v=1.3.142" rel="stylesheet" />
   <!-- CSS legacy (main/components/responsive) supprimé : tout est désormais dans le
        bundle componentisé theme.css (esbuild de assets/src/styles/). -->
-  <link rel="stylesheet" href="/assets/dist/theme.css?v=1.3.141" />
+  <link rel="stylesheet" href="/assets/dist/theme.css?v=1.3.142" />
 </head>
 <body>
   <div id="mobileBlockScreen" class="mobile-block-screen" hidden>
     <div class="mobile-block-card">
-      <img class="mobile-block-logo" src="/static/logo-splash.png?v=1.3.141" alt="ObjectiFoudre" />
+      <img class="mobile-block-logo" src="/static/logo-splash.png?v=1.3.142" alt="ObjectiFoudre" />
       <div class="mobile-block-title">ObjectiFoudre</div>
       <p class="mobile-block-text">Smartphone non pris en charge.</p>
       <p class="mobile-block-text mobile-block-text-secondary">L'application est disponible uniquement sur PC et tablette.</p>
@@ -77,7 +77,7 @@
   <div id="app">
     <div class="app-loader" id="appLoader" aria-hidden="false">
       <div class="app-loader-card">
-        <img class="app-loader-logo" src="/static/logo-splash.png?v=1.3.141" alt="Objectif Foudre" />
+        <img class="app-loader-logo" src="/static/logo-splash.png?v=1.3.142" alt="Objectif Foudre" />
         <div class="app-loader-subtitle">Chargement de la situation convective…</div>
       </div>
     </div>
@@ -287,7 +287,7 @@
       </div>
     </div>
 
-    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.3.141">Version : v1.3.141 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
+    <div class="meta-stack"><div class="meta-corner meta-version" id="versionBadge" data-app-version="v1.3.142">Version : v1.3.142 · AROME France r121</div><div class="meta-corner" id="metaRun">AROME France : chargement…</div><div class="meta-corner meta-scale" id="cellScaleChip">1 cellule ≈ 15 km</div></div>
 
     <div id="drawerBackdrop" class="modal-backdrop drawer-backdrop-transparent"></div>
     <aside class="info-drawer" id="infoDrawer" role="dialog" aria-modal="true" aria-labelledby="infoDrawerTitle">
@@ -601,6 +601,67 @@
       </div>
     </section>
 
+    <!-- Page « Confidentialité & données » IN-APP (coquille .prediction-page) : ouverte
+         depuis le lien de la modale Compte (account.js), la barre du bas reste visible.
+         Corps en flux simple .privacy-page-body (PAS .prediction-page-body = grille 2-col). -->
+    <section class="prediction-page privacy-page" id="privacyPage" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="privacyPageTitle">
+      <div class="prediction-page-shell">
+        <header class="prediction-page-header">
+          <div>
+            <div class="prediction-eyebrow">Vie privée</div>
+            <h2 id="privacyPageTitle">Confidentialité &amp; données personnelles</h2>
+          </div>
+          <div class="prediction-page-actions">
+            <button class="icon-btn prediction-close-btn" id="privacyPageCloseBtn" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button>
+          </div>
+        </header>
+        <div class="privacy-page-body">
+          <p class="privacy-meta">ObjectiFoudre — application de chasse à l'orage (beta gratuite). Dernière mise à jour : 28 juillet 2026.</p>
+
+          <div class="privacy-card">
+            <strong>Responsable de traitement</strong> : Bruzzese Anthony.<br>
+            <strong>Contact</strong> : <a href="mailto:objectifoudre@outlook.com">objectifoudre@outlook.com</a>.<br>
+            ObjectiFoudre ne vend, ne loue et ne partage aucune donnée personnelle. Aucune publicité, aucun traceur publicitaire, aucun tiers commercial.
+          </div>
+
+          <h2>1. Quelles données, dans quel but ?</h2>
+          <ul>
+            <li><strong>Compte (facultatif)</strong> — Tu peux créer un compte de trois façons : <strong>Google</strong>, <strong>Microsoft</strong> (on reçoit alors ton <strong>adresse e-mail</strong> et ton <strong>nom</strong>, pour proposer un pseudo ; aucun mot de passe n'est échangé), ou <strong>e-mail + mot de passe</strong> (ton mot de passe est stocké <strong>haché</strong> — jamais en clair — et on t'envoie un e-mail de confirmation ; on n'utilise ton e-mail que pour confirmer ton adresse et, à ta demande, réinitialiser ton mot de passe). But : t'identifier, mémoriser ton pseudo et tes préférences, et t'attribuer tes spots. <em>Base légale : exécution du service que tu demandes en créant un compte.</em></li>
+            <li><strong>Préférences</strong> — carte affichée au lancement, pseudo. Liées à ton compte.</li>
+            <li><strong>Alertes orage (notifications push, facultatif)</strong> — Si tu actives les alertes, on enregistre l'<strong>abonnement push</strong> fourni par ton navigateur (une adresse technique <em>endpoint</em> et des clés de chiffrement, propres à ton appareil) ainsi que les <strong>départements</strong> que tu choisis de suivre, pour t'envoyer une notification quand un orage y est en cours ou approche. La notification est acheminée par le <strong>service de push de ton navigateur</strong> (Google, Mozilla ou Apple selon le navigateur) — c'est inhérent au standard Web Push ; le contenu des messages est <strong>chiffré</strong>. Tu peux te désabonner à tout moment (l'abonnement est alors supprimé). <em>Base légale : ton consentement (autorisation des notifications dans le navigateur).</em></li>
+            <li><strong>Spots de chasse</strong> — Si tu enregistres un spot <strong>public</strong>, ses coordonnées et ton pseudo (ou « anonyme ») sont visibles par les autres utilisateurs. Un spot est modéré avant publication.</li>
+            <li><strong>Mesure d'audience (anonyme, sans cookie)</strong> — Pour connaître le nombre de visiteurs, on calcule côté serveur un condensé (hash) quotidien à partir de ton adresse IP et de ton navigateur, avec un « sel » régénéré chaque jour puis supprimé. <strong>Ton IP n'est jamais conservée</strong> ; seuls des <strong>compteurs anonymes par jour</strong> sont gardés. Aucune identification, aucun suivi d'un jour à l'autre. <em>Cette mesure d'audience anonyme ne nécessite pas de consentement.</em></li>
+            <li><strong>Données météo / cartes</strong> — grilles publiques (Météo-France, IGN, ECMWF, EUMETSAT…). Aucune donnée personnelle.</li>
+          </ul>
+
+          <h2>2. Cookies &amp; stockage local</h2>
+          <p>Aucun cookie publicitaire ni de suivi. Si tu es connecté, un unique <strong>cookie de session</strong> (<code>objf_session</code>, technique, <code>httpOnly</code>) te maintient identifié — il est strictement nécessaire au fonctionnement du compte et ne requiert pas de consentement. Le navigateur peut aussi conserver localement de petites préférences d'affichage (ex. la carte au lancement).</p>
+
+          <h2>3. Durées de conservation</h2>
+          <ul>
+            <li><strong>Compte &amp; préférences</strong> : conservés tant que le compte existe ; supprimés à ta demande.</li>
+            <li><strong>Session</strong> : 60 jours maximum (renouvelable), ou jusqu'à la déconnexion.</li>
+            <li><strong>Abonnement aux alertes orage</strong> : conservé tant que tu restes abonné ; supprimé dès que tu te désabonnes, que ton navigateur invalide l'abonnement, ou que tu supprimes ton compte.</li>
+            <li><strong>Mesure d'audience</strong> : compteurs anonymes par jour, conservés au plus 400 jours.</li>
+            <li><strong>Spots</strong> : tant que le spot existe ou jusqu'à sa suppression.</li>
+          </ul>
+
+          <h2>4. Hébergement &amp; sécurité</h2>
+          <p>L'application est hébergée sur une infrastructure cloud (Railway), derrière Cloudflare, en HTTPS. Les <strong>mots de passe</strong> et les <strong>jetons de session</strong> sont stockés sous forme <strong>condensée (hachée)</strong> côté serveur — jamais en clair. Les échanges transitent en chiffré. L'envoi des e-mails de confirmation et de réinitialisation passe par un prestataire technique d'e-mailing hébergé dans l'Union européenne, qui n'utilise ton adresse que pour acheminer ces messages.</p>
+
+          <h2>5. Tes droits (RGPD)</h2>
+          <p>Tu disposes des droits d'<strong>accès</strong>, de <strong>rectification</strong> (ton pseudo est modifiable à tout moment dans « Mon compte »), d'<strong>effacement</strong>, de <strong>portabilité</strong> et d'<strong>opposition</strong>.</p>
+          <ul>
+            <li><strong>Supprimer ton compte</strong> : bouton « Supprimer mon compte » dans « Mon compte » (efface immédiatement ton compte et tes sessions). Tes éventuels spots publics restent, dissociés de ton identité.</li>
+            <li>Pour toute demande : <a href="mailto:objectifoudre@outlook.com">objectifoudre@outlook.com</a>.</li>
+            <li>Tu peux aussi introduire une réclamation auprès de la <a href="https://www.cnil.fr" target="_blank" rel="noopener">CNIL</a>.</li>
+          </ul>
+
+          <p class="privacy-footer">ObjectiFoudre est un projet personnel en beta. Cette page pourra évoluer avec les fonctionnalités ; la date de mise à jour ci-dessus fait foi.</p>
+        </div>
+      </div>
+    </section>
+
     <!-- Rail GAUCHE « Mes spots » (même forme que les rails de calques chasse/étoile) :
          afficher/masquer le calque des spots + ajouter un spot. Visible dans la vue de base
          (masqué en mode chasse/étoile et quand un overlay plein écran est ouvert). -->
@@ -772,51 +833,51 @@
     <div class="account-modal" id="accountModal" role="dialog" aria-modal="true" aria-label="Compte" aria-hidden="true">
       <div class="account-card" id="accountBody"></div>
     </div>
-  <script src="/assets/js/dom.js?v=1.3.141"></script>
-  <script src="/assets/js/utils.js?v=1.3.141"></script>
-  <script src="/assets/js/analytics.js?v=1.3.141"></script>
-  <script src="/assets/js/panels.js?v=1.3.141"></script>
-  <script src="/assets/js/state.js?v=1.3.141"></script>
-  <script src="/assets/js/core.js?v=1.3.141"></script>
-  <script src="/assets/js/map-ui.js?v=1.3.141"></script>
-  <script src="/assets/js/timeline-playback.js?v=1.3.141"></script>
-  <script src="/assets/js/timeline-solar.js?v=1.3.141"></script>
-  <script src="/assets/js/timeline-wheel.js?v=1.3.141"></script>
-  <script src="/assets/js/grid-loader.js?v=1.3.141"></script>
-  <script src="/assets/js/grid-clip-geometry.js?v=1.3.141"></script>
-  <script src="/assets/js/grid-geojson.js?v=1.3.141"></script>
-  <script src="/assets/js/france-admin-lines.js?v=1.3.141"></script>
-  <script src="/assets/js/france-regions.js?v=1.3.141"></script>
-  <script src="/assets/js/storm-forecast-data.js?v=1.3.141"></script>
-  <script src="/assets/js/storm-forecast-render.js?v=1.3.141"></script>
-  <script src="/assets/js/storm-forecast-page.js?v=1.3.141"></script>
-  <script src="/assets/js/grid-layers.js?v=1.3.141"></script>
-  <script src="/assets/js/grid.js?v=1.3.141"></script>
-  <script src="/assets/js/metric-data.js?v=1.3.141"></script>
-  <script src="/assets/js/metric-ui.js?v=1.3.141"></script>
-  <script src="/assets/js/selection-detail-data.js?v=1.3.141"></script>
-  <script src="/assets/js/selection-inspector.js?v=1.3.141"></script>
-  <script src="/assets/js/selection-card.js?v=1.3.141"></script>
-  <script src="/assets/js/data.js?v=1.3.141"></script>
-  <script src="/assets/js/services.js?v=1.3.141"></script>
-  <script src="/assets/js/search-autocomplete.js?v=1.3.141"></script>
-  <script src="/assets/js/controls-timeline.js?v=1.3.141"></script>
-  <script src="/assets/js/controls-export.js?v=1.3.141"></script>
-  <script src="/assets/js/controls-meteofrance.js?v=1.3.141"></script>
-  <script src="/assets/js/history.js?v=1.3.141"></script>
-  <script src="/assets/js/maintenance.js?v=1.3.141"></script>
-  <script src="/assets/js/chase.js?v=1.3.141"></script>
-  <script src="/assets/js/stargaze.js?v=1.3.141"></script>
-  <script src="/assets/js/spots.js?v=1.3.141"></script>
-  <script src="/assets/js/push-alerts.js?v=1.3.141"></script>
-  <script src="/assets/js/avatar.js?v=1.3.141"></script>
-  <script src="/assets/js/account.js?v=1.3.141"></script>
-  <script src="/assets/js/forum.js?v=1.3.141"></script>
-  <script src="/assets/js/bottom-nav.js?v=1.3.141"></script>
-  <script src="/assets/js/bootstrap.js?v=1.3.141"></script>
-  <script src="/assets/js/mobile-block.js?v=1.3.141"></script>
-  <script src="/assets/js/tooltip.js?v=1.3.141"></script>
+  <script src="/assets/js/dom.js?v=1.3.142"></script>
+  <script src="/assets/js/utils.js?v=1.3.142"></script>
+  <script src="/assets/js/analytics.js?v=1.3.142"></script>
+  <script src="/assets/js/panels.js?v=1.3.142"></script>
+  <script src="/assets/js/state.js?v=1.3.142"></script>
+  <script src="/assets/js/core.js?v=1.3.142"></script>
+  <script src="/assets/js/map-ui.js?v=1.3.142"></script>
+  <script src="/assets/js/timeline-playback.js?v=1.3.142"></script>
+  <script src="/assets/js/timeline-solar.js?v=1.3.142"></script>
+  <script src="/assets/js/timeline-wheel.js?v=1.3.142"></script>
+  <script src="/assets/js/grid-loader.js?v=1.3.142"></script>
+  <script src="/assets/js/grid-clip-geometry.js?v=1.3.142"></script>
+  <script src="/assets/js/grid-geojson.js?v=1.3.142"></script>
+  <script src="/assets/js/france-admin-lines.js?v=1.3.142"></script>
+  <script src="/assets/js/france-regions.js?v=1.3.142"></script>
+  <script src="/assets/js/storm-forecast-data.js?v=1.3.142"></script>
+  <script src="/assets/js/storm-forecast-render.js?v=1.3.142"></script>
+  <script src="/assets/js/storm-forecast-page.js?v=1.3.142"></script>
+  <script src="/assets/js/grid-layers.js?v=1.3.142"></script>
+  <script src="/assets/js/grid.js?v=1.3.142"></script>
+  <script src="/assets/js/metric-data.js?v=1.3.142"></script>
+  <script src="/assets/js/metric-ui.js?v=1.3.142"></script>
+  <script src="/assets/js/selection-detail-data.js?v=1.3.142"></script>
+  <script src="/assets/js/selection-inspector.js?v=1.3.142"></script>
+  <script src="/assets/js/selection-card.js?v=1.3.142"></script>
+  <script src="/assets/js/data.js?v=1.3.142"></script>
+  <script src="/assets/js/services.js?v=1.3.142"></script>
+  <script src="/assets/js/search-autocomplete.js?v=1.3.142"></script>
+  <script src="/assets/js/controls-timeline.js?v=1.3.142"></script>
+  <script src="/assets/js/controls-export.js?v=1.3.142"></script>
+  <script src="/assets/js/controls-meteofrance.js?v=1.3.142"></script>
+  <script src="/assets/js/history.js?v=1.3.142"></script>
+  <script src="/assets/js/maintenance.js?v=1.3.142"></script>
+  <script src="/assets/js/chase.js?v=1.3.142"></script>
+  <script src="/assets/js/stargaze.js?v=1.3.142"></script>
+  <script src="/assets/js/spots.js?v=1.3.142"></script>
+  <script src="/assets/js/push-alerts.js?v=1.3.142"></script>
+  <script src="/assets/js/avatar.js?v=1.3.142"></script>
+  <script src="/assets/js/account.js?v=1.3.142"></script>
+  <script src="/assets/js/forum.js?v=1.3.142"></script>
+  <script src="/assets/js/bottom-nav.js?v=1.3.142"></script>
+  <script src="/assets/js/bootstrap.js?v=1.3.142"></script>
+  <script src="/assets/js/mobile-block.js?v=1.3.142"></script>
+  <script src="/assets/js/tooltip.js?v=1.3.142"></script>
   <!-- Bundle modules ES (Phase 3) — s'exécute après le legacy, pont window.OF. Contient idb-cache migré. -->
-  <script type="module" src="/assets/dist/app.js?v=1.3.141"></script>
+  <script type="module" src="/assets/dist/app.js?v=1.3.142"></script>
 </body>
 </html>

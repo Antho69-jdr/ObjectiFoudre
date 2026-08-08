@@ -19,7 +19,11 @@
   /* ---- la barre ---- */
   .bnav {
     display: flex;
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    /* z 89 : la barre reste VISIBLE par-dessus les surfaces plein écran — pages
+       .prediction-page (68) et info drawer (84) — tout en restant SOUS la modale
+       Compte (200) et le loader (100). Le reste de la famille barre suit :
+       scrim 88 < barre 89 < feuille 90 < toast 91 < éditeur 92. */
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 89;
     padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
     gap: 2px;
     background: rgba(9, 14, 26, 0.9);
@@ -73,15 +77,31 @@
   /* légendes/badges ancrés juste au-dessus de la frise → remontés d'autant */
   .chase-legend, .stargaze-legend { bottom: calc(83px + var(--bottom-nav-h)) !important; }
 
+  /* ---- Réserver la place de la barre sur les surfaces plein écran ----
+     La barre (z 89) est désormais visible PAR-DESSUS les pages et le drawer :
+     on décale leur contenu pour que rien ne finisse masqué sous la barre.
+     Deux modèles : (a) pages « carte centrée » (.prediction-page hors forum) →
+     on réserve en bas du conteneur + on plafonne la coquille ; (b) forum + info
+     drawer (plein écran) → padding-bas sur la zone défilante. */
+  .prediction-page:not(.forum-page) {
+    padding-bottom: calc(20px + var(--bottom-nav-h) + env(safe-area-inset-bottom));
+  }
+  .prediction-page:not(.forum-page) .prediction-page-shell {
+    max-height: min(880px, calc(100dvh - 40px - var(--bottom-nav-h) - env(safe-area-inset-bottom)));
+  }
+  .forum-page-body { padding-bottom: calc(8px + var(--bottom-nav-h) + env(safe-area-inset-bottom)); }
+  /* (l'info drawer réserve déjà ~112px en bas dans info-drawer.css @media 900px,
+     largement au-dessus de la barre (58px) → rien à ajouter ici.) */
+
   /* ---- feuille « Plus » ---- */
   .bnav-scrim {
-    display: block; position: fixed; inset: 0; z-index: 49;
+    display: block; position: fixed; inset: 0; z-index: 88;
     background: rgba(2, 6, 14, 0.55); opacity: 0; pointer-events: none; transition: opacity 0.28s var(--ease-out);
   }
   .bnav-scrim.is-open { opacity: 1; pointer-events: auto; }
   .bnav-sheet {
     display: block; position: fixed; left: 0; right: 0;
-    bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom)); z-index: 51;
+    bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom)); z-index: 90;
     transform: translateY(calc(100% + 90px)); transition: transform 0.3s var(--ease-out);
     background: var(--surface-3); border: 1px solid var(--border-strong); border-bottom: 0;
     border-top-left-radius: 20px; border-top-right-radius: 20px; padding: 8px 12px 14px;
@@ -104,7 +124,7 @@
   /* ---- petit toast (ex. « bientôt ») ---- */
   .bnav-toast {
     position: fixed; left: 50%; bottom: calc(var(--bottom-nav-h) + 20px + env(safe-area-inset-bottom));
-    transform: translateX(-50%) translateY(8px); z-index: 60; opacity: 0; pointer-events: none;
+    transform: translateX(-50%) translateY(8px); z-index: 91; opacity: 0; pointer-events: none;
     background: var(--surface-3); border: 1px solid var(--border-strong); color: var(--text);
     font-size: 13px; font-weight: 600; padding: 10px 16px; border-radius: var(--r-pill);
     box-shadow: var(--shadow-2); transition: opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out); max-width: 84vw; text-align: center;
@@ -117,7 +137,7 @@
    ouvert depuis la feuille « Plus » (donc contexte mobile). HORS media-query :
    il se style correctement quel que soit le point d'entrée. Caché par défaut.
    ============================================================================ */
-.bnav-editor { position: fixed; inset: 0; z-index: 70; display: none;
+.bnav-editor { position: fixed; inset: 0; z-index: 92; display: none;
   background: rgba(2, 6, 14, 0.62); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .bnav-editor[aria-hidden="false"] { display: grid; place-items: end center; }
 .be-shell { width: 100%; max-width: 520px; max-height: 92vh; display: flex; flex-direction: column;

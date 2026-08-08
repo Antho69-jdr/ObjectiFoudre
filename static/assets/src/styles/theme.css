@@ -133,6 +133,10 @@
    les petits controles (0,2,x) battent la tactile body.mobile-ui button (0,1,1). */
 @import "./components/forum-page.css";
 
+/* Page « Confidentialité & données » in-app (coquille .prediction-page, corps flux
+   simple .privacy-page-body). Ouverte depuis la modale Compte, barre du bas visible. */
+@import "./components/privacy-page.css";
+
 /* Component barre du bas (refonte mobile, Phase 1) : nav du bas ≤767px qui
    remplace le rail droit + decale les frises. Charge EN DERNIER → ses !important
    porteurs battent les bottom mobiles de timeline/chase/stargaze. */
