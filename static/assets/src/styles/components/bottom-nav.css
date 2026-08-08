@@ -20,9 +20,9 @@
   .bnav {
     display: flex;
     /* z 89 : la barre reste VISIBLE par-dessus les surfaces plein écran — pages
-       .prediction-page (68) et info drawer (84) — tout en restant SOUS la modale
-       Compte (200) et le loader (100). Le reste de la famille barre suit :
-       scrim 88 < barre 89 < feuille 90 < toast 91 < éditeur 92. */
+       .prediction-page (68), info drawer (84), modale Compte (86) — tout en restant
+       SOUS le loader (100). Ordre de la famille barre : scrim 87 < feuille 88 <
+       BARRE 89 < toast 91 < éditeur 92 (la feuille « Plus » glisse SOUS la barre). */
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 89;
     padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
     gap: 2px;
@@ -95,13 +95,15 @@
 
   /* ---- feuille « Plus » ---- */
   .bnav-scrim {
-    display: block; position: fixed; inset: 0; z-index: 88;
+    display: block; position: fixed; inset: 0; z-index: 87;
     background: rgba(2, 6, 14, 0.55); opacity: 0; pointer-events: none; transition: opacity 0.28s var(--ease-out);
   }
   .bnav-scrim.is-open { opacity: 1; pointer-events: auto; }
   .bnav-sheet {
     display: block; position: fixed; left: 0; right: 0;
-    bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom)); z-index: 90;
+    /* z 88 : la feuille « Plus » glisse SOUS la barre (89) — la barre reste visible
+       au-dessus — mais AU-DESSUS du scrim (87) et des frises (docks ≤36). */
+    bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom)); z-index: 88;
     transform: translateY(calc(100% + 90px)); transition: transform 0.3s var(--ease-out);
     background: var(--surface-3); border: 1px solid var(--border-strong); border-bottom: 0;
     border-top-left-radius: 20px; border-top-right-radius: 20px; padding: 8px 12px 14px;
