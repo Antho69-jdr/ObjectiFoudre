@@ -27,15 +27,27 @@ function predictionPointInsideFrance(lon, lat) {
   return rings.some((ring) => pointInRing(lon, lat, ring));
 }
 
-// Rectangle du CONTENU de l'image (object-fit:contain → letterbox centré).
-// Indispensable pour aligner détection du survol + highlight + carte.
+// Rectangle du CONTENU FRANCE de l'image (object-fit:contain → letterbox centré).
+// ⚠️ L'image générée fait 860×svgHeight : la variante MOBILE de légende (isMobileSvg,
+// cf. storm-forecast-render) empile la légende SOUS la France → svgHeight = 830+ ≠ 760.
+// La France reste dans le HAUT 860×760. On letterbox donc l'image ENTIÈRE (dims
+// naturelles) puis on restreint à la région France (haut), sinon en mobile la détection
+// du survol ET le highlight sont scalés/décalés faux (bug remonté par Anthony).
 function predictionImageContentRect() {
   const rect = predictionImage.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
-  const scale = Math.min(rect.width / 860, rect.height / 760);
-  const cw = 860 * scale;
-  const ch = 760 * scale;
-  return { left: rect.left + (rect.width - cw) / 2, top: rect.top + (rect.height - ch) / 2, width: cw, height: ch };
+  const nW = predictionImage.naturalWidth || 860;
+  const nH = predictionImage.naturalHeight || 760;
+  const scale = Math.min(rect.width / nW, rect.height / nH);   // contain sur l'image entière
+  const cw = nW * scale;                       // largeur image contenue
+  const chFull = nH * scale;                   // hauteur image contenue (France + légende)
+  const chFrance = 760 * (nW / 860) * scale;   // hauteur de la SEULE région France (haut)
+  return {
+    left: rect.left + (rect.width - cw) / 2,
+    top: rect.top + (rect.height - chFull) / 2,
+    width: cw,
+    height: chFrance,
+  };
 }
 
 function predictionImagePointerGeo(event) {
@@ -265,8 +277,14 @@ function predictionDrawDepartmentHighlight(ring) {
   predictionHighlight.style.top = predictionImage.offsetTop + 'px';
   predictionHighlight.style.width = predictionImage.offsetWidth + 'px';
   predictionHighlight.style.height = predictionImage.offsetHeight + 'px';
-  // meet = même letterboxing que l'image (object-fit:contain) → tracé aligné sur la carte.
-  predictionHighlight.innerHTML = `<svg viewBox="0 0 860 760" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><path d="${d}" fill="rgba(56,189,248,0.20)" stroke="rgba(125,211,252,0.92)" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+  // ⚠️ viewBox = 860×svgHeight de l'IMAGE (la légende mobile ajoute de la hauteur sous
+  // la France, cf. predictionImageContentRect) → le tracé (coords 860×760, en HAUT) se
+  // letterbox comme l'image (meet = object-fit:contain). Un viewBox 860×760 codé en dur
+  // décalait/écrasait le département en vue mobile (svgHeight ≠ 760).
+  const nW = predictionImage.naturalWidth || 860;
+  const nH = predictionImage.naturalHeight || 760;
+  const vbH = (860 * nH / nW).toFixed(1);   // = svgHeight de l'image
+  predictionHighlight.innerHTML = `<svg viewBox="0 0 860 ${vbH}" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><path d="${d}" fill="rgba(56,189,248,0.20)" stroke="rgba(125,211,252,0.92)" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
   predictionHighlight.hidden = false;
 }
 
