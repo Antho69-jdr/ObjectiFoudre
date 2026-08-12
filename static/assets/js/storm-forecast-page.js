@@ -1,5 +1,13 @@
 // storm-forecast-page.js — issu du découpage de storm-forecast-image.js (Phase 3).
 // Interaction/hover/export/ouverture page + init et exports window.* (exécution top-level → chargé en DERNIER).
+
+// État du survol : throttle rAF + mémorisation du dernier département survolé, pour
+// n'exécuter le hit-test complet + reconstruction highlight/infobulle (coûteux, avec
+// recompose mix-blend) qu'au PASSAGE d'un département à l'autre (cf. processPredictionHover).
+let predictionHoverRaf = 0;
+let predictionHoverCoords = null;
+let predictionLastDeptRing = null;
+
 function updatePredictionPeriodTabs(periodKey = selectedPredictionPeriodKey) {
   const period = predictionPeriodConfig(periodKey);
   if (typeof predictionPeriodButtons === 'undefined' || !predictionPeriodButtons) return;
@@ -11,6 +19,9 @@ function updatePredictionPeriodTabs(periodKey = selectedPredictionPeriodKey) {
 }
 
 function hidePredictionHover() {
+  if (predictionHoverRaf) { cancelAnimationFrame(predictionHoverRaf); predictionHoverRaf = 0; }
+  predictionHoverCoords = null;
+  predictionLastDeptRing = null;
   if (predictionHover) {
     predictionHover.hidden = true;
     predictionHover.innerHTML = '';
@@ -288,21 +299,41 @@ function predictionDrawDepartmentHighlight(ring) {
   predictionHighlight.hidden = false;
 }
 
+// Handler brut : ne fait que mémoriser la dernière position et programmer un traitement
+// au prochain frame (throttle rAF) → un seul traitement par frame max, quel que soit le
+// débit de pointermove (souris PC = dizaines/s).
 function movePredictionHover(event) {
-  if (!predictionHover || !currentPredictionPageResult?.ok) return;
-  const point = predictionImagePointerGeo(event);
-  const zone = point ? predictionHitZoneAtPoint(point) : null;
-  if (!zone) {
-    hidePredictionHover();
+  predictionHoverCoords = { clientX: event.clientX, clientY: event.clientY };
+  if (predictionHoverRaf) return;
+  predictionHoverRaf = requestAnimationFrame(processPredictionHover);
+}
+
+function processPredictionHover() {
+  predictionHoverRaf = 0;
+  const ev = predictionHoverCoords;
+  if (!ev || !predictionHover || !currentPredictionPageResult?.ok) return;
+  const point = predictionImagePointerGeo(ev);
+  if (!point) { hidePredictionHover(); return; }
+  const panelRect = predictionImage.parentElement.getBoundingClientRect();
+  const x = Math.max(8, Math.min(panelRect.width - 270, ev.clientX - panelRect.left + 14));
+  const y = Math.max(8, Math.min(panelRect.height - 136, ev.clientY - panelRect.top + 14));
+  // Voie rapide : toujours dans le MÊME département → on repositionne seulement
+  // l'infobulle. On évite ainsi le hit-test complet (scan des cellules), la
+  // reconstruction du highlight SVG et de l'infobulle, et le recompose mix-blend —
+  // qui ne sont nécessaires qu'au changement de département.
+  if (predictionLastDeptRing && typeof pointInRing === 'function'
+      && pointInRing(point.lon, point.lat, predictionLastDeptRing)) {
+    predictionHover.style.left = `${x}px`;
+    predictionHover.style.top = `${y}px`;
     return;
   }
+  const zone = predictionHitZoneAtPoint(point);
+  if (!zone) { hidePredictionHover(); return; }
+  predictionLastDeptRing = zone.departmentRing;
   predictionDrawDepartmentHighlight(zone.departmentRing);
-  const panelRect = predictionImage.parentElement.getBoundingClientRect();
-  const x = Math.max(8, Math.min(panelRect.width - 270, event.clientX - panelRect.left + 14));
-  const y = Math.max(8, Math.min(panelRect.height - 136, event.clientY - panelRect.top + 14));
+  predictionHover.innerHTML = predictionHoverHtml(zone);
   predictionHover.style.left = `${x}px`;
   predictionHover.style.top = `${y}px`;
-  predictionHover.innerHTML = predictionHoverHtml(zone);
   predictionHover.hidden = false;
 }
 
@@ -318,6 +349,7 @@ function initPredictionHover() {
 function renderPredictionPageResult(result) {
   if (!predictionPage || !predictionAnalysisText || !predictionImage) return;
   currentPredictionPageResult = result?.ok ? result : null;
+  predictionLastDeptRing = null;   // données rafraîchies → forcer un re-hit-test au prochain survol
   if (typeof predictionDownloadBtn !== 'undefined' && predictionDownloadBtn) predictionDownloadBtn.disabled = !result?.ok;
   if (!result?.ok) hidePredictionHover();
   const period = predictionPeriodConfig(result?.periodKey || selectedPredictionPeriodKey);
