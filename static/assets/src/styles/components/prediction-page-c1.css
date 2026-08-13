@@ -54,7 +54,7 @@
      taille confortable (marge nette autour), pas plein cadre. */
   #predictionPage .prediction-image {
     max-width: 100%;
-    max-height: min(60vh, 480px);
+    max-height: min(66vh, 540px);
   }
 
   /* --- header = calque d'overlays (ne bloque pas la carte) --- */
