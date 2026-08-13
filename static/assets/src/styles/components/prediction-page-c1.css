@@ -1,0 +1,151 @@
+/* ============================================================================
+   prediction-page-c1.css — REFONTE DESKTOP de « Carte de risque journalier »
+   ----------------------------------------------------------------------------
+   Parti C·1 (choix Anthony) : carte PLEIN CADRE + chrome flottant.
+     • titre (eyebrow + h2) flottant en haut-gauche
+     • actions (Exporter PNG + fermer) flottantes en haut-droite
+     • « Situation attendue » en CARTE DE VERRE flottante à droite (contenu riche
+       existant : niveau + zones à surveiller + disclaimer)
+     • frise de dates + périodes réunies dans un DOCK en bas
+     • légende : celle DÉJÀ bakée dans l'image (paliers par niveau, bas-gauche,
+       démarre à « Faible ») — rien à changer côté générateur/export.
+   Portée : ≥1025px SEULEMENT. Mobile (<768) et tablette (768–1024) INCHANGÉS.
+   Scopé #predictionPage (1,x,0) → n'affecte QUE cette page (pas l'Historique qui
+   partage .prediction-page). Chargé en dernier → gagne la cascade.
+   NB : le `.prediction-dock` est neutralisé en `display:contents` sous 1025px, donc
+   la frise/onglets restent des enfants directs du header pour leurs règles mobiles.
+   ============================================================================ */
+
+/* Wrapper dock : transparent hors desktop → 0 impact mobile/tablette. */
+.prediction-dock { display: contents; }
+
+@media (min-width: 1025px) {
+  /* --- coquille = fond de carte plein cadre --- */
+  #predictionPage .prediction-page-shell {
+    display: block;
+    position: relative;
+    padding: 0;
+    background: #070d16;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: hidden;
+  }
+
+  /* --- corps = carte plein cadre (fond) --- */
+  #predictionPage .prediction-page-body {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: block;
+    gap: 0;
+    padding: 0;
+    overflow: visible;
+  }
+  #predictionPage .prediction-map-panel {
+    position: absolute;
+    inset: 0;
+    /* réserve : haut = titre/actions, bas = dock, droite = carte situation */
+    padding: 62px 348px 88px 22px;
+    border-radius: 0;
+  }
+  #predictionPage .prediction-image {
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  /* --- header = calque d'overlays (ne bloque pas la carte) --- */
+  #predictionPage .prediction-page-header {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: block;
+    padding: 0;
+    gap: 0;
+    pointer-events: none;
+  }
+  /* titre (1er div du header, sans classe) : haut-gauche */
+  #predictionPage .prediction-page-header > div:first-child {
+    position: absolute;
+    left: 18px;
+    top: 13px;
+    max-width: 46%;
+    pointer-events: auto;
+  }
+  #predictionPage .prediction-eyebrow { text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8); }
+  #predictionPage .prediction-page-header h2 {
+    margin: 3px 0 0;
+    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
+  }
+  /* sous-titre verbeux masqué en C·1 (date déjà dans le dock ; look épuré) */
+  #predictionPage .prediction-page-header > div:first-child p { display: none; }
+
+  /* actions : haut-droite */
+  #predictionPage .prediction-page-actions {
+    position: absolute;
+    right: 16px;
+    top: 12px;
+    pointer-events: auto;
+  }
+
+  /* --- dock du bas : périodes (gauche) + frise de dates --- */
+  #predictionPage .prediction-dock {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 13px;
+    z-index: 3;
+    pointer-events: auto;
+    padding: 9px 11px;
+    border-radius: 14px;
+    background: rgba(16, 26, 44, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+    backdrop-filter: blur(16px) saturate(1.2);
+  }
+  #predictionPage .prediction-dock .prediction-period-tabs {
+    order: -1;               /* périodes à gauche du dock */
+    flex: 0 0 auto;
+    width: auto;
+    margin: 0;
+    flex-wrap: nowrap;
+  }
+  #predictionPage .prediction-dock .prediction-date-strip {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 0;
+  }
+  #predictionPage .prediction-dock .prediction-date-strip::-webkit-scrollbar { display: none; }
+  #predictionPage .prediction-dock .prediction-date-chip {
+    flex: 0 0 auto;
+    scroll-snap-align: center;
+  }
+
+  /* --- « Situation attendue » : carte de verre flottante à droite --- */
+  #predictionPage .prediction-analysis-panel {
+    position: absolute;
+    right: 16px;
+    top: 62px;
+    z-index: 4;
+    width: 324px;
+    max-height: calc(100% - 62px - 96px);
+    padding: 14px 15px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-left: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: var(--r-md, 12px);
+    background: rgba(16, 26, 44, 0.82);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+    backdrop-filter: blur(16px) saturate(1.2);
+    overflow: auto;
+    pointer-events: auto;
+  }
+}

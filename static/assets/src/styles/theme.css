@@ -174,8 +174,10 @@
    !important porteurs preserves). Tier 3. Tokens conserves (definitions legacy). */
 @import "./components/rail-search-layout.css";
 @import "./components/maintenance.css";
-/* Bandeau header desktop (≥1025px) — DERNIER import : gagne la cascade. */
+/* Bandeau header desktop (≥1025px) — gagne la cascade. */
 @import "./components/desktop-header.css";
+/* Refonte desktop « Carte de risque journalier » (parti C·1, ≥1025px) — dernier. */
+@import "./components/prediction-page-c1.css";
 
 :root {
   /* Fond & surfaces */
