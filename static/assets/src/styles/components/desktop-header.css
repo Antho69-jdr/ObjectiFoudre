@@ -59,7 +59,10 @@
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
     border-bottom: 1px solid var(--border-faint);
-    pointer-events: none;
+    /* La barre CAPTE les événements → on ne peut pas déplacer la carte « à travers »
+       le header dans ses zones vides. Les items interactifs (logo/nav/avatar) sont
+       au-dessus (z90 > 88) donc restent cliquables. */
+    pointer-events: auto;
   }
 
   /* --- logo (marque icon-192 recadrée + wordmark Poppins) --- */
