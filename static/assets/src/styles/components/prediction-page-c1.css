@@ -49,11 +49,12 @@
     padding: 62px 348px 88px 22px;
     border-radius: 0;
   }
-  /* France « dézoomée » : ne remplit plus toute la hauteur, marge confortable
-     (le format France est ~vertical → c'est la hauteur qui contraint). */
+  /* France « dézoomée » : object-fit:contain + boîte large → la France est
+     limitée par la HAUTEUR, donc max-height = hauteur France. On la cale à une
+     taille confortable (marge nette autour), pas plein cadre. */
   #predictionPage .prediction-image {
     max-width: 100%;
-    max-height: min(78%, 600px);
+    max-height: min(60vh, 480px);
   }
 
   /* --- header = calque d'overlays (ne bloque pas la carte) --- */
