@@ -3,6 +3,11 @@
 const PREDICTION_IMAGE_RENDER_VERSION = 'iso-contour-atlas-v60-severity-amber-thicker';
 
 const PREDICTION_IMAGE_CACHE = new Map();
+// Plafond LRU : sans borne, jusqu'à 11 jours × 4 périodes = 44 entrées (chacune ≈ SVG
+// 1,2 Mo + tableau de ~2636 cellules) restaient en mémoire → pression heap (~196 Mo) et
+// pauses GC. 16 tient le préchargement (11 « jour ») + les périodes du jour actif sans
+// thrasher ; les entrées évincées se régénèrent à la volée (~130 ms) si on y revient.
+const PREDICTION_IMAGE_CACHE_MAX = 16;
 const PREDICTION_IMAGE_PREWARMING = new Set();
 const PREDICTION_DAY_START_HOUR = 8;
 const PREDICTION_DAY_WINDOW_HOURS = Array.from({ length: 24 }, (_, index) => (PREDICTION_DAY_START_HOUR + index) % 24);

@@ -635,9 +635,21 @@ async function downloadPredictionPageImage() {
 function ensurePredictionPageImage(day = getCurrentDay(), { force = false, periodKey = selectedPredictionPeriodKey } = {}) {
   const period = predictionPeriodConfig(periodKey);
   const key = predictionCacheKey(day, period.key);
-  if (!force && PREDICTION_IMAGE_CACHE.has(key)) return PREDICTION_IMAGE_CACHE.get(key);
+  if (!force && PREDICTION_IMAGE_CACHE.has(key)) {
+    const cached = PREDICTION_IMAGE_CACHE.get(key);
+    // LRU : réinsérer en fin de Map → marque « le plus récemment utilisé ».
+    PREDICTION_IMAGE_CACHE.delete(key);
+    PREDICTION_IMAGE_CACHE.set(key, cached);
+    return cached;
+  }
   const result = generatePredictionPageImage(day, period.key);
-  if (result.ok) PREDICTION_IMAGE_CACHE.set(key, result);
+  if (result.ok) {
+    PREDICTION_IMAGE_CACHE.set(key, result);
+    // Éviction LRU : au-delà du plafond, retirer l'entrée la plus ancienne (1re clé de la Map).
+    while (PREDICTION_IMAGE_CACHE.size > PREDICTION_IMAGE_CACHE_MAX) {
+      PREDICTION_IMAGE_CACHE.delete(PREDICTION_IMAGE_CACHE.keys().next().value);
+    }
+  }
   return result;
 }
 
