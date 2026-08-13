@@ -844,7 +844,7 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
       <line x1="0" y1="0" x2="0" y2="9" stroke="${PREDICTION_SEVERITY_HATCH_COLOR}" stroke-width="2.2" stroke-opacity="0.92"/>
     </pattern>
   </defs>
-  <rect width="${width}" height="${svgHeight}" fill="#07111f"/>
+  <rect width="${width}" height="${svgHeight}" fill="#070d16"/>
   <g>
     <path d="${francePath}" fill="${PREDICTION_RISK_LEVELS[0].color}"/>
     <g clip-path="url(#franceClip)">${shapeMarkup}</g>
@@ -877,7 +877,7 @@ function drawPredictionScopeImage() {
   const regionMarkup = predictionRegionBoundaryMarkup(project);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" shape-rendering="geometricPrecision">
     <defs><clipPath id="scopeClip" clipPathUnits="userSpaceOnUse"><path d="${francePath}"/></clipPath></defs>
-    <rect width="${width}" height="${height}" fill="#07111f"/>
+    <rect width="${width}" height="${height}" fill="#070d16"/>
     <path d="${francePath}" fill="#091321"/>
     <g clip-path="url(#scopeClip)">${adminMarkup}${regionMarkup}</g>
     <path d="${francePath}" fill="none" stroke="#020617" stroke-opacity="0.55" stroke-width="1.4" stroke-linejoin="round"/>

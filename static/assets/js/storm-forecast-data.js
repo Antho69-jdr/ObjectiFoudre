@@ -1,6 +1,6 @@
 // storm-forecast-data.js — issu du découpage de storm-forecast-image.js (Phase 3).
 // Constantes + helpers date/jour/fetch/score de la page Prévision. Script classique, chargé 1er.
-const PREDICTION_IMAGE_RENDER_VERSION = 'iso-contour-atlas-v60-severity-amber-thicker';
+const PREDICTION_IMAGE_RENDER_VERSION = 'iso-contour-atlas-v61-bg-070d16';
 
 const PREDICTION_IMAGE_CACHE = new Map();
 // Plafond LRU : sans borne, jusqu'à 11 jours × 4 périodes = 44 entrées (chacune ≈ SVG
