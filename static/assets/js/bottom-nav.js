@@ -267,9 +267,18 @@
     if (inStar()) return 'etoiles';
     return 'carte';
   }
+  // Bandeau desktop : l'onglet actif = le bouton du rail correspondant (hors
+  // 'compte' — l'avatar garde sa pastille). Réutilise currentView() + l'observer.
+  var HEADER_NAV_BTN = { prev: 'predictionPageBtn', radar: 'chasePageBtn', etoiles: 'stargazePageBtn', spots: 'spotsPageBtn', histo: 'historyPageBtn', forum: 'forumPageBtn', admin: 'maintenancePageBtn' };
   function updateActive() {
+    var v = currentView();
+    for (var k in HEADER_NAV_BTN) {
+      if (!HEADER_NAV_BTN.hasOwnProperty(k)) continue;
+      var b = el(HEADER_NAV_BTN[k]);
+      if (b) b.classList.toggle('active', k === v);
+    }
     if (sheet && sheet.classList.contains('is-open')) return;
-    var v = currentView(), tabs = bar.querySelectorAll('.bnav-tab');
+    var tabs = bar.querySelectorAll('.bnav-tab');
     for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('is-active', tabs[i].getAttribute('data-nav') === v);
   }
 
@@ -285,6 +294,11 @@
       }
       if (loggedIn && d.user) setAvatar(prefs && prefs.avatar, d.user.pseudo);
       else setAvatar(null, null);
+      // Bandeau desktop : le bouton compte (#accountBtn) porte aussi l'avatar.
+      if (window.OFAvatar) {
+        var ab = el('accountBtn');
+        if (ab) window.OFAvatar.applyToButton(ab, loggedIn ? (prefs && prefs.avatar) : null, loggedIn && d.user ? d.user.pseudo : null);
+      }
     }).catch(function () {});
   }
 
@@ -313,6 +327,15 @@
 
     // re-synchro quand le compte change (connexion/déconnexion via la modale)
     window.addEventListener('objf:account-changed', syncFromAccount);
+
+    // Bandeau desktop : le logo ramène à la carte (ferme la surface ouverte, sort
+    // du mode chasse/étoile), puis rafraîchit l'onglet actif.
+    var brand = el('brandHome');
+    if (brand) brand.addEventListener('click', function () {
+      closeOpenSurfaces();
+      goCarte();
+      updateActive();
+    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

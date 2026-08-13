@@ -1,0 +1,226 @@
+/* ============================================================================
+   desktop-header.css — BANDEAU HEADER desktop (≥1025px)
+   ----------------------------------------------------------------------------
+   Remplace le RAIL DE NAVIGATION droit (.right-rail-stack) par une barre header
+   pleine largeur en verre dépoli. Le rail GAUCHE (spots/chasse/étoiles) et la
+   frise du bas sont conservés tels quels. Mobile (≤767 : bottom-nav) et tablette
+   (768-1024 : rail vertical) NE SONT PAS touchés — ce component ne s'active qu'à
+   partir de 1025px.
+
+   Mécanique : #rightRailScroll est, en desktop, un flex COLUMN fixed haut-droite
+   (forcé !important par rail-search-layout.css) qui contient la recherche + le
+   rail nav. On le bascule en flex ROW ancrée en haut → l'ensemble
+   [recherche · Prévisions · Chasse · Étoiles · Spots · Historique · Forum · Info ·
+   compte] s'aligne dans le bandeau, le compte (accountBtn) en bout de ligne à
+   droite. Les overrides passent par l'ID #rightRailScroll (+ !important ciblé)
+   pour battre les règles !important de rail-search-layout.css.
+
+   Le logo (#brandHome) + la barre de fond (#appHeaderBar) sont de nouveaux
+   éléments DOM, desktop-only. Horloge (#gridSourceBadge) et date
+   (#timelineDateLabel) sont repositionnées dans la ligne du bandeau (pas de
+   déplacement DOM → restent des overlays carte en mobile/tablette).
+   Chargé EN DERNIER par theme.css → gagne la cascade.
+   ============================================================================ */
+
+/* Wordmark ObjectiFoudre : Poppins (typo d'origine du splash). Une seule graisse
+   (500), sous-ensemble latin, servie en statique. */
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../../../fonts/poppins-500.woff2") format("woff2");
+}
+
+/* Éléments desktop-only masqués par défaut (mobile/tablette). */
+#appHeaderBar { display: none; }
+.of-brand { display: none; }
+
+/* #accountBtn peut recevoir l'avatar (OFAvatar.applyToButton) sur toutes largeurs
+   — le svg injecté n'a pas la classe .icon-svg → on garantit sa taille, et celle
+   de l'initiale, partout (évite un glyphe non dimensionné en tablette). */
+#accountBtn svg { width: 20px; height: 20px; }
+#accountBtn.has-avatar { font-size: 15px; font-weight: 800; }
+
+@media (min-width: 1025px) {
+  :root { --app-header-h: 58px; }
+
+  /* --- barre de fond « verre fondu » (pleine largeur, purement visuelle) --- */
+  #appHeaderBar {
+    display: block;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: var(--app-header-h);
+    z-index: 16;
+    background: linear-gradient(180deg, rgba(11, 19, 34, 0.9) 0%, rgba(11, 19, 34, 0.5) 100%);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border-bottom: 1px solid var(--border-faint);
+    pointer-events: none;
+  }
+
+  /* --- logo (marque icon-192 recadrée + wordmark Poppins) --- */
+  .of-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 11px;
+    position: fixed;
+    left: 16px; top: 0;
+    height: var(--app-header-h);
+    z-index: 20;
+    padding: 0; border: 0; background: transparent;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .of-brand-mark {
+    width: 34px; height: 34px;
+    border-radius: 9px;
+    display: block;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), var(--shadow-1);
+    transition: box-shadow var(--dur-base) var(--ease);
+  }
+  .of-brand-wm {
+    font-family: "Poppins", var(--font-sans);
+    font-weight: 500;
+    font-size: 19px;
+    letter-spacing: -0.005em;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .of-brand-wm .o { color: #eff4fd; }
+  .of-brand-wm .f {
+    background: linear-gradient(180deg, #b6c6ec 0%, #7d95c9 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .of-brand:hover .of-brand-mark {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 0 0 3px var(--accent-soft);
+  }
+  .of-brand:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 3px;
+    border-radius: 10px;
+  }
+
+  /* --- horloge + date : repositionnées dans la ligne du bandeau, à gauche --- */
+  #gridSourceBadge.current-time-badge {
+    top: 12px;
+    left: 206px;
+    z-index: 20;
+  }
+  #timelineDateLabel.timeline-map-date-badge {
+    top: 12px;
+    left: 322px;
+    transform: none;
+    max-width: 190px;
+    z-index: 20;
+  }
+
+  /* --- bascule du rail droit en RANGÉE (le bandeau) --------------------- */
+  #rightRailScroll {
+    top: 0 !important;
+    right: 14px !important;
+    left: auto !important;
+    bottom: auto !important;
+    height: var(--app-header-h) !important;
+    width: auto !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 8px !important;
+    overflow: visible !important;
+    z-index: 41 !important;
+  }
+  #rightRailScroll > * {
+    width: auto !important;
+    height: auto !important;
+    flex: 0 0 auto !important;
+  }
+  .right-rail-stack {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 6px !important;
+    width: auto !important;
+  }
+  /* la recherche (dock) reste à gauche du groupe, rangée dans la ligne */
+  #rightRailScroll .search-dock { align-items: center !important; }
+
+  /* Séparateurs de groupe verticaux du rail (rail.css) : neutralisés à
+     l'horizontale (ils dessinaient un filet AU-DESSUS des boutons). */
+  #rightRailScroll #predictionPageBtn,
+  #rightRailScroll #infoDrawerBtn { margin-top: 0 !important; }
+  #rightRailScroll #predictionPageBtn::before,
+  #rightRailScroll #infoDrawerBtn::before { display: none !important; }
+
+  /* bouton « info-bulles » = mobile/tablette seulement → hors bandeau */
+  #rightRailScroll #screenTooltipsBtn { display: none !important; }
+
+  /* --- look des onglets nav : transparents au repos, remplis au survol/actif
+     (le fond verre est porté par le bandeau, pas par chaque bouton) --- */
+  #rightRailScroll .grid-focus-btn,
+  #rightRailScroll #toggleSearchBtn {
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    color: var(--text-muted) !important;
+  }
+  #rightRailScroll .grid-focus-btn:hover,
+  #rightRailScroll #toggleSearchBtn:hover {
+    background: var(--surface-1) !important;
+    border-color: var(--border) !important;
+    color: var(--text) !important;
+    transform: none !important;
+  }
+  #rightRailScroll .grid-focus-btn.active {
+    background: rgba(56, 189, 248, 0.16) !important;
+    border-color: var(--accent-ring) !important;
+    color: #bae6fd !important;
+  }
+  /* identités de mode : Chasse = rouge, Étoiles = ambre (miroir des frises) */
+  body.chase-mode #rightRailScroll #chasePageBtn.active {
+    background: rgba(248, 113, 113, 0.16) !important;
+    border-color: rgba(248, 113, 113, 0.45) !important;
+    color: #fecaca !important;
+  }
+  body.stargaze-mode #rightRailScroll #stargazePageBtn.active {
+    background: rgba(251, 191, 36, 0.16) !important;
+    border-color: rgba(251, 191, 36, 0.45) !important;
+    color: #fde68a !important;
+  }
+
+  /* --- compte = pastille ronde (avatar en bout de ligne, à droite) --- */
+  #rightRailScroll #accountBtn {
+    border-radius: 50% !important;
+    overflow: hidden;
+    margin-left: 8px !important;
+  }
+  /* fin séparateur avant le compte */
+  #rightRailScroll #accountBtn::before {
+    content: "";
+    position: absolute;
+    left: -8px; top: 50%;
+    transform: translateY(-50%);
+    width: 1px; height: 22px;
+    background: var(--border);
+    pointer-events: none;
+  }
+  /* avatar peint (OFAvatar.applyToButton) : pastille pleine, pas de survol gris */
+  #rightRailScroll #accountBtn.has-avatar {
+    border-color: rgba(255, 255, 255, 0.28) !important;
+    color: #04121f !important;
+  }
+  #rightRailScroll #accountBtn.has-avatar:hover {
+    border-color: rgba(255, 255, 255, 0.45) !important;
+    filter: brightness(1.05);
+  }
+
+  /* le panneau de recherche s'ouvre SOUS le bandeau (pas par-dessus le logo) */
+  .search-dock.show-search .search-panel {
+    top: calc(var(--app-header-h) + 8px) !important;
+  }
+}
