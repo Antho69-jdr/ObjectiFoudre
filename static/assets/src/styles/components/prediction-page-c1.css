@@ -49,12 +49,13 @@
     padding: 62px 348px 88px 22px;
     border-radius: 0;
   }
-  /* France « dézoomée » : object-fit:contain + boîte large → la France est
-     limitée par la HAUTEUR, donc max-height = hauteur France. On la cale à une
-     taille confortable (marge nette autour), pas plein cadre. */
+  /* France limitée par la HAUTEUR (object-fit:contain, boîte large). On la cale
+     à ~94 % de la hauteur DISPO (100dvh − header 58 − paddings 62+88 = 208px) →
+     grande, avec une petite marge, et SURTOUT elle grandit avec l'écran (pas de
+     plafond en px qui la rapetisse sur grand moniteur). */
   #predictionPage .prediction-image {
     max-width: 100%;
-    max-height: min(66vh, 540px);
+    max-height: calc((100dvh - 208px) * 0.94);
   }
 
   /* --- header = calque d'overlays (ne bloque pas la carte) --- */
