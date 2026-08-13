@@ -336,6 +336,33 @@
       goCarte();
       updateActive();
     });
+
+    // Bandeau desktop : les pages plein écran ne recouvrent plus le header (z 88).
+    // Du coup on peut naviguer d'une page à l'autre → on ferme la surface courante
+    // AVANT d'ouvrir la nouvelle (sinon empilement). Re-cliquer l'onglet ACTIF
+    // ferme sa surface (toggle = retour carte). Capture-phase = avant le handler
+    // natif du bouton. Réutilise closeOpenSurfaces() (comme la barre mobile).
+    function btnSurfaceOpen(id) {
+      if (id === 'infoDrawerBtn') return drawerOpen();
+      var pmap = { predictionPageBtn: 'predictionPage', spotsPageBtn: 'spotsListPage', historyPageBtn: 'historyPage', forumPageBtn: 'forumPage', maintenancePageBtn: 'maintenancePage' };
+      return pmap[id] ? pageOpen(pmap[id]) : false;
+    }
+    function anySurfaceOpen() {
+      return !!document.querySelector('.prediction-page[aria-hidden="false"]') || drawerOpen();
+    }
+    var railHost = el('rightRailScroll');
+    if (railHost) railHost.addEventListener('click', function (e) {
+      var btn = e.target.closest('.grid-focus-btn, #toggleSearchBtn');
+      if (!btn || btn.id === 'accountBtn') return;   // compte = modale au-dessus du bandeau
+      if (btnSurfaceOpen(btn.id)) {                   // re-clic sur l'onglet actif → fermer, retour carte
+        closeOpenSurfaces();
+        updateActive();
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (anySurfaceOpen()) closeOpenSurfaces();       // une autre surface ouverte → la fermer d'abord
+    }, true);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -51,7 +51,10 @@
     position: fixed;
     top: 0; left: 0; right: 0;
     height: var(--app-header-h);
-    z-index: 16;
+    /* z 88 : le bandeau reste VISIBLE par-dessus les pages plein écran (68) et le
+       drawer (84), sous la modale compte (200) et le loader (100). Miroir desktop
+       de la barre du bas mobile (cf. mobile-nav v1.3.142). */
+    z-index: 88;
     background: linear-gradient(180deg, rgba(11, 19, 34, 0.9) 0%, rgba(11, 19, 34, 0.5) 100%);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -67,7 +70,7 @@
     position: fixed;
     left: 16px; top: 0;
     height: var(--app-header-h);
-    z-index: 20;
+    z-index: 90;
     padding: 0; border: 0; background: transparent;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -108,14 +111,14 @@
   #gridSourceBadge.current-time-badge {
     top: 12px;
     left: 206px;
-    z-index: 20;
+    z-index: 90;
   }
   #timelineDateLabel.timeline-map-date-badge {
     top: 12px;
     left: 322px;
     transform: none;
     max-width: 190px;
-    z-index: 20;
+    z-index: 90;
   }
 
   /* --- bascule du rail droit en RANGÉE (le bandeau) --------------------- */
@@ -131,7 +134,7 @@
     justify-content: flex-end !important;
     gap: 8px !important;
     overflow: visible !important;
-    z-index: 41 !important;
+    z-index: 90 !important;
   }
   #rightRailScroll > * {
     width: auto !important;
@@ -222,5 +225,25 @@
   /* le panneau de recherche s'ouvre SOUS le bandeau (pas par-dessus le logo) */
   .search-dock.show-search .search-panel {
     top: calc(var(--app-header-h) + 8px) !important;
+  }
+
+  /* ------------------------------------------------------------------------
+     Pages plein écran & drawer : le bandeau NE LES RECOUVRE PLUS. On réserve
+     la hauteur du header en haut pour que leur contenu ne passe pas dessous.
+     Les pages (.prediction-page = prévisions/spots/historique/forum/confid./
+     maintenance) sont des modales centrées (inset:0, place-items:center) : on
+     pousse la zone de centrage sous le bandeau + on plafonne la hauteur du
+     shell. Le drawer (aside plein écran) est décalé de 58px en haut.
+     La modale compte (z 200) reste, elle, AU-DESSUS du bandeau (voulu).
+     ------------------------------------------------------------------------ */
+  .prediction-page {
+    padding-top: calc(20px + var(--app-header-h));
+  }
+  .prediction-page-shell {
+    max-height: min(880px, calc(100dvh - 40px - var(--app-header-h)));
+  }
+  .info-drawer {
+    top: var(--app-header-h);
+    height: calc(100dvh - var(--app-header-h));
   }
 }
