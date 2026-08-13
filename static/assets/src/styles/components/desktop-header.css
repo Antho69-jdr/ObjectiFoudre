@@ -228,22 +228,21 @@
   }
 
   /* ------------------------------------------------------------------------
-     Pages plein écran & drawer : le bandeau NE LES RECOUVRE PLUS. On réserve
-     la hauteur du header en haut pour que leur contenu ne passe pas dessous.
-     Les pages (.prediction-page = prévisions/spots/historique/forum/confid./
-     maintenance) sont des modales centrées (inset:0, place-items:center) : on
-     pousse la zone de centrage sous le bandeau + on plafonne la hauteur du
-     shell. Le drawer (aside plein écran) est décalé de 58px en haut.
-     La modale compte (z 200) reste, elle, AU-DESSUS du bandeau (voulu).
+     Pages plein écran & drawer : le bandeau NE LES RECOUVRE PLUS. On fait
+     DÉMARRER la page sous le bandeau (top:58) → tout son espace est sous le
+     header, rien ne passe dessous (barre de dates/onglets/fermer inclus).
+     `!important` car certaines pages sont pilotées par des règles #id (ex.
+     #predictionPage / #historyPage = pleine hauteur `place-items:stretch`,
+     spécificité 1,1,0) qui battraient un simple `.prediction-page`. La modale
+     compte (z 200) reste AU-DESSUS du bandeau (voulu). Le bas (inset bottom:0)
+     est conservé → la page occupe pile la bande [58px … bas].
      ------------------------------------------------------------------------ */
   .prediction-page {
-    padding-top: calc(20px + var(--app-header-h));
-  }
-  .prediction-page-shell {
-    max-height: min(880px, calc(100dvh - 40px - var(--app-header-h)));
+    top: var(--app-header-h) !important;
+    bottom: 0 !important;
   }
   .info-drawer {
-    top: var(--app-header-h);
-    height: calc(100dvh - var(--app-header-h));
+    top: var(--app-header-h) !important;
+    height: calc(100dvh - var(--app-header-h)) !important;
   }
 }
