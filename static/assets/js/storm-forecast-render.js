@@ -687,25 +687,40 @@ function predictionContourLevelMarkup(field, project, level, cells) {
 // où le risque combine une forte probabilité ET une forte intensité potentielle
 // (CAPE + rafales) — soit un orage potentiellement violent, distinct d'un simple
 // orage probable mais mou. Décision produit : « combiné probabilité × intensité ».
-const PREDICTION_SEVERITY_THRESHOLD = 52;   // indice combiné 0-100, seuil de hachurage (jours horaires AROME/ARPEGE)
-// La tendance ECMWF (J+4+) a des CAPE quotidiennes plus généreuses sur grille plus large
-// → seuil rehaussé pour ne hachurer que le vrai cœur sévère (sinon presque tout est hachuré).
-const PREDICTION_SEVERITY_THRESHOLD_TREND = 75;
+const PREDICTION_SEVERITY_THRESHOLD = 52;   // indice combiné 0-100, seuil unique de hachurage (tous modèles)
 const PREDICTION_SEVERITY_MIN_PROB = 60;    // pas de sévérité sous le seuil orageux cartographié
+// Référence CAPE de normalisation de l'intensité, PAR MODÈLE. La CAPE (mucape) n'a pas la
+// même échelle selon la source : sur cellule orageuse, AROME/ARPEGE horaire tourne ~350 J/kg,
+// ECMWF multi-créneaux (grille plus large) ~1100, et la tendance ECMWF quotidienne ~1500-2200
+// (mesuré sur prod, 08-2026). Avec une référence unique (2500), l'indice SATURE (cape ≥ 2500
+// → capeIdx 100) sur ECMWF et hachure 50-70 % des cellules orageuses — alors qu'AROME n'en
+// hachure que ~2 %. Monter le SEUIL ne corrige rien (une fois l'indice saturé, il ne fait plus
+// que filtrer la probabilité). On recale donc la référence par modèle pour que « forte
+// intensité » désigne le même percentile partout. NB : côté ECMWF les rafales sont quasi
+// absentes (wind_gusts ≈ 0) → l'intensité y est portée par la CAPE seule.
+const PREDICTION_SEVERITY_CAPE_REF_AROME = 2500;   // horaire AROME/ARPEGE (inchangé — référence historique)
+const PREDICTION_SEVERITY_CAPE_REF_ECMWF = 7500;   // ECMWF multi-créneaux J+2/J+3 (~5-7 % hachuré)
+const PREDICTION_SEVERITY_CAPE_REF_TREND = 12000;  // tendance ECMWF J+4+ (~4-7 % jours actifs, 0 % jours calmes)
+// Référence CAPE à utiliser selon le modèle porteur du jour affiché.
+function predictionSeverityCapeRef(day) {
+  if (predictionDayIsTrend(day)) return PREDICTION_SEVERITY_CAPE_REF_TREND;
+  if (typeof predictionDayIsEcmwfSlots === 'function' && predictionDayIsEcmwfSlots(day)) return PREDICTION_SEVERITY_CAPE_REF_ECMWF;
+  return PREDICTION_SEVERITY_CAPE_REF_AROME;
+}
 // Couleur des hachures de sévérité : jaune/orange clair — clair (donc distinct des traits
 // SOMBRES du territoire/des départements) et bien visible sur les zones colorées où les
 // hachures apparaissent.
 const PREDICTION_SEVERITY_HATCH_COLOR = '#fde68a';
-function predictionCellSeverity(cell) {
+function predictionCellSeverity(cell, capeRef = PREDICTION_SEVERITY_CAPE_REF_AROME) {
   if (!cell) return 0;
   const prob = clampScore(predictionLayerScore(cell));
   if (prob < PREDICTION_SEVERITY_MIN_PROB) return 0; // orage peu probable → pas de sévérité
   // Intensité potentielle, normalisée en 0-100 :
-  //  - CAPE : 2500 J/kg ≈ énergie convective très forte (potentiel grêle / forte pluie)
+  //  - CAPE : `capeRef` J/kg ≈ énergie convective très forte (référence propre au modèle, cf. plus haut)
   //  - rafales 10 m : 40 km/h (base) → 100 km/h (rafale orageuse violente)
   const cape = Number(cell.meanCape);
   const gusts = Number(cell.maxGusts);
-  const capeIdx = Number.isFinite(cape) ? clampScore((cape / 2500) * 100) : 0;
+  const capeIdx = Number.isFinite(cape) ? clampScore((cape / capeRef) * 100) : 0;
   const gustIdx = Number.isFinite(gusts) ? clampScore(((gusts - 40) / 60) * 100) : 0;
   const intensity = Math.max(capeIdx, gustIdx);
   // Moyenne géométrique probabilité × intensité : l'indice ne monte que si LES DEUX
@@ -716,7 +731,7 @@ function predictionCellSeverity(cell) {
 // Anneaux de sévérité → chemin SVG rempli d'un motif de hachures. Reprend la même
 // chaîne marching-squares / lissage / signifiance que les zones de probabilité, mais
 // sur le champ de sévérité et avec un seul seuil.
-function predictionSeverityHatchMarkup(field, project, cells, threshold = PREDICTION_SEVERITY_THRESHOLD) {
+function predictionSeverityHatchMarkup(field, project, cells, capeRef = PREDICTION_SEVERITY_CAPE_REF_AROME, threshold = PREDICTION_SEVERITY_THRESHOLD) {
   let rings = predictionMarchingSquaresRings(field, threshold)
     .filter((ring) => predictionPolygonArea(ring) >= 1.4);
   if (!rings.length) return '';
@@ -724,7 +739,7 @@ function predictionSeverityHatchMarkup(field, project, cells, threshold = PREDIC
   const centroids = rings.map(predictionRingCentroidPt);
   rings = rings.filter((ring, idx) => !rings.some((other, k) => k !== idx && areas[k] > areas[idx] && predictionRingContains(other, centroids[idx])));
   const sigPts = (Array.isArray(cells) ? cells : [])
-    .filter((c) => predictionCellSeverity(c) >= threshold)
+    .filter((c) => predictionCellSeverity(c, capeRef) >= threshold)
     .map((c) => [(Number(c.lon) - field.minLon) / field.cellW + field.pad, (Number(c.lat) - field.minLat) / field.cellH + field.pad]);
   rings = rings.filter((ring) => {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -771,15 +786,18 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
   const levels = predictionLevelConfigs(cells);
   const field = predictionBuildScalarField(cells);
   const shapeMarkup = levels.map((level) => predictionContourLevelMarkup(field, project, level, cells)).join('');
-  // Hachures de sévérité : tous les jours de prévision J0 → J+10, y compris la tendance
-  // ECMWF (J+4+). Les cellules tendance portent CAPE (mucape) et rafales (wind_gusts_10m),
-  // exposées comme meanCape/maxGusts par predictionTrendDailyCells → même calcul de
-  // sévérité (probabilité × intensité) que les jours horaires AROME/ARPEGE.
+  // Hachures de sévérité : tous les jours de prévision J0 → J+10, y compris ECMWF
+  // multi-créneaux (J+2/J+3) et tendance (J+4+). Même calcul (probabilité × intensité),
+  // mais la référence CAPE de l'intensité dépend du modèle (predictionSeverityCapeRef) —
+  // la CAPE ECMWF étant nettement plus généreuse qu'AROME, une référence unique saturerait
+  // et sur-hachurerait les jours ECMWF (cf. bloc PREDICTION_SEVERITY_CAPE_REF_*).
   const severityOffset = predictionDateOffset(predictionDayKey(day));
   const isSeverityDay = severityOffset >= 0 && severityOffset <= PREDICTION_MAX_OFFSET;
-  const severityThreshold = predictionDayIsTrend(day) ? PREDICTION_SEVERITY_THRESHOLD_TREND : PREDICTION_SEVERITY_THRESHOLD;
+  const severityCapeRef = predictionSeverityCapeRef(day);
   const severityMarkup = isSeverityDay
-    ? predictionSeverityHatchMarkup(predictionBuildScalarField(cells, predictionCellSeverity), project, cells, severityThreshold)
+    ? predictionSeverityHatchMarkup(
+        predictionBuildScalarField(cells, (c) => predictionCellSeverity(c, severityCapeRef)),
+        project, cells, severityCapeRef)
     : '';
   const adminMarkup = predictionAdminLineMarkup(project);
   const regionBoundaryMarkup = predictionRegionBoundaryMarkup(project);
