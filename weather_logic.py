@@ -616,16 +616,24 @@ def score_cin_actual(cin_jkg: float | None) -> int | None:
 
 
 def score_surface_convergence(convergence_s1: float | None) -> int | None:
+    """Forçage dynamique de basse couche = INTENSITÉ du gradient de vent horizontal
+    |∂u/∂x + ∂v/∂y| (× 1e4). À la maille ~20 km, le SIGNE (convergence vs divergence) ne
+    porte PAS le signal orageux — c'est l'AMPLITUDE du gradient qui compte : une zone de fort
+    gradient (front, courant de densité, forçage orographique) déclenche, qu'elle converge OU
+    diverge. Mesuré sur archives (été 2026, foudre observée) : |gradient| discrimine la foudre
+    à **AUC 0,61** (taux 20 %→41 % du gradient faible au fort) contre 0,49 pour le signe seul.
+    On score donc |gradient|. La valeur SIGNÉE reste exposée à part (surface_convergence_1e4s)
+    pour l'affichage/diagnostic."""
     if convergence_s1 is None or not math.isfinite(convergence_s1):
         return None
-    convergence_1e4 = convergence_s1 * 10_000.0
-    return piecewise_score(convergence_1e4, [
-        (-2.0, 0),
-        (-1.0, 20),
-        (0.0, 50),
-        (0.5, 65),
-        (1.0, 80),
-        (2.0, 95),
+    gradient_1e4 = abs(convergence_s1) * 10_000.0
+    return piecewise_score(gradient_1e4, [
+        (0.0, 15),
+        (0.25, 30),
+        (0.5, 45),
+        (0.8, 60),
+        (1.2, 75),
+        (1.8, 88),
         (3.0, 100),
     ])
 

@@ -408,8 +408,8 @@
       },
       surface_convergence_1e4s: {
         label: 'Convergence', suffix: '', scoreKey: 'surface_trigger_score',
-        definition: 'Proxy local de convergence de surface reconstruit à partir du vent 10 m des cellules voisines. Positif : air qui converge localement.',
-        scale: '< -0.5 divergent · -0.5 à 0.5 neutre · 0.5-1 favorable · > 1 bon déclencheur.',
+        definition: 'Gradient du vent 10 m reconstruit depuis les cellules voisines (positif : air qui converge, négatif : qui diverge). Le score retient l’INTENSITÉ du gradient : un forçage marqué déclenche des orages qu’il converge ou diverge (mesuré sur foudre observée).',
+        scale: '≈ 0 vent uniforme, peu favorable · |valeur| ~0,5 notable · ~1 favorable · > 1,5 fort forçage.',
       },
       cloud_cover_low: {
         label: 'Nuages bas', suffix: ' %', scoreKey: 'cloud_trigger_score',
