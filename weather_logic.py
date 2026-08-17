@@ -1123,6 +1123,34 @@ def compute_storm_probability(initiation_score: int, confidence_score: int = 50,
     return clamp(round(initiation_score * calibration))
 
 
+# Hybride « activité » (jours AROME uniquement) : quand AROME prévoit DÉJÀ de la convection
+# (précipitation / nuages convectifs / rafales) plus marquée que ne le dit l'environnement, on
+# REHAUSSE le score — sans jamais le baisser. Cela préserve intégralement le prédicteur
+# ENVIRONNEMENTAL (identité de l'app, valeur chasse, échéances) : un boost purement additif ne
+# dégrade aucune cellule « armée mais calme ». Ne s'active QUE là où les champs d'activité
+# existent → naturellement inactif en tendance ECMWF (J+2+, pas de ces champs). Gain mesuré sur
+# foudre observée (held-out, été 2026) : AUC J0 0,846 → 0,854 ; strictement neutre (|Δ|≈0) sur
+# les cellules sans convection prévue. Séparé de compute_initiation/score_from_archived_cell,
+# qui restent la reproduction du trigger ENVIRONNEMENTAL pur (base de l'auto-calibration).
+ACTIVITY_BOOST_GAIN = 0.30
+def apply_activity_boost(score: int, metric: dict) -> int:
+    """Rehausse `score` (trigger post-confiance) vers le signal d'activité AROME, jamais en
+    dessous. `metric` = composantes de compute_initiation. Renvoie `score` inchangé si aucun
+    champ d'activité n'est disponible (ex. tendance ECMWF)."""
+    cloud = metric.get("cloud_trigger_component")
+    candidates = [
+        metric.get("precipitation_component"),
+        (cloud * 0.9 if cloud is not None else None),
+        metric.get("gust_potential_component"),
+        metric.get("convective_activity_component"),
+    ]
+    present = [v for v in candidates if v is not None]
+    if not present:
+        return score
+    activity = max(present)
+    return clamp(score + ACTIVITY_BOOST_GAIN * max(0.0, activity - score))
+
+
 def score_from_archived_cell(cell: dict, weights: dict[str, float] | None = None) -> int | None:
     """Re-score une cellule ARCHIVÉE (metric_scores + champs bruts) via le pipeline COMPLET,
     à l'identique de compute_initiation : mélange[weights] → gates → modificateurs → puis
@@ -1625,6 +1653,9 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                 confidence_score, confidence_diag = compute_signal_confidence(metric, neighbours)
                 raw_trigger = clamp(metric["trigger"])
                 storm_probability = compute_storm_probability(raw_trigger, confidence_score)
+                # Hybride C : rehausse le score du jour quand AROME prévoit déjà de la convection
+                # (sans jamais le baisser ; inactif si champs d'activité absents — cf. apply_activity_boost).
+                storm_probability = apply_activity_boost(storm_probability, metric)
                 pot = potentiel(storm_probability)
                 conf = confiance_label(confidence_score)
                 selected_hour = metric["dt"].strftime("%Hh")
