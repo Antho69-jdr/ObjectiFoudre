@@ -40,6 +40,10 @@ WEIGHTS_MIN_POSITIVES = 300
 
 # Règle d'activation : le candidat doit battre la baseline sur le test held-out.
 ACTIVATION_CSI_MARGIN = 0.02     # gain minimal de CSI
+# Les POIDS appris ne s'activent que s'ils battent le candidat CALIBRATION SEULE (poids
+# d'origine) sur le held-out, de cette marge. Sinon les poids « montent à bord » du gain de
+# la calibration sans rien apporter (voire proportions douteuses : humidité à 0) — cf. audit.
+WEIGHTS_CSI_MARGIN = 0.02
 TEST_FRACTION = 0.30             # part des jours (les plus récents) réservée au test
 MIN_TEST_DAYS = 3
 FLASH_THRESHOLD = 1              # >= 1 flash dans la cellule = orage observé
@@ -542,30 +546,37 @@ def evaluate_and_select(
                 return int(s)
         return blend_score(example["blocks"], w)
 
-    # --- candidat : fit sur le train uniquement ---
+    # --- candidats : fit sur le train uniquement, skill mesuré sur le test held-out ---
     train_labels = [e["label"] for e in train]
+    trigger_train = [e["trigger"] for e in train]
+
+    def _fit_and_score(train_scores: list[int], test_scores: list[int]):
+        """Réapprend calibration (isotone) + seuil sur le train, mesure le skill sur le test."""
+        curve = isotonic_pav(train_scores, train_labels)
+        thr, _ = best_threshold_neighborhood(train, train_scores, neighborhood_km=neighborhood_km)
+        skill = skill_neighborhood(test, test_scores, int(thr), neighborhood_km=neighborhood_km)
+        return curve, int(thr), skill
+
+    # Candidat CALIBRATION SEULE (poids d'origine) : apporte l'essentiel du gain (seuil+isotone).
+    calib_curve, calib_thr, calib_skill = _fit_and_score(trigger_train, base_scores_test)
+    weights = None
+    curve, thr, candidate_skill = calib_curve, calib_thr, calib_skill
+    weights_skill = None
+
+    # Candidat À POIDS APPRIS : validé via le pipeline complet (rescore_fn = objet déployé),
+    # puis RETENU seulement s'il bat la calibration seule sur le HELD-OUT d'une marge réelle.
+    # Sans ce gate, les poids « montaient à bord » du gain de la calibration (l'ancien garde-fou
+    # train-Brier sur-apprenait) et s'activaient sans rien apporter — voire avec des proportions
+    # physiquement douteuses (humidité à 0 alors que les gates la gèrent déjà).
     if use_weights:
-        weights = fit_blend_weights(train)
-        cand_train = [_cand_score(e, weights) for e in train]
-        # Garde-fou : les poids ré-appris ne remplacent le score actuel que s'ils DISCRIMINENT
-        # strictement mieux sur le train. Avec rescore_fn, candidat et déploiement sont le
-        # MÊME objet (blend+gates+modificateurs+confiance) → comparaison enfin équitable vs la
-        # baseline (formule complète, poids d'origine). Sinon → seuil+calibration seuls réappris.
-        trigger_train = [e["trigger"] for e in train]
-        if calibrated_brier(cand_train, train_labels) < calibrated_brier(trigger_train, train_labels) - 1e-9:
-            train_scores = cand_train
-            cand_scores_test = [_cand_score(e, weights) for e in test]
-        else:
-            weights = None
-            train_scores = trigger_train
-            cand_scores_test = list(base_scores_test)
-    else:
-        weights = None
-        train_scores = [e["trigger"] for e in train]
-        cand_scores_test = list(base_scores_test)
-    curve = isotonic_pav(train_scores, train_labels)
-    thr, _ = best_threshold_neighborhood(train, train_scores, neighborhood_km=neighborhood_km)
-    candidate_skill = skill_neighborhood(test, cand_scores_test, thr, neighborhood_km=neighborhood_km)
+        w = fit_blend_weights(train)
+        cand_train = [_cand_score(e, w) for e in train]
+        cand_test = [_cand_score(e, w) for e in test]
+        w_curve, w_thr, weights_skill = _fit_and_score(cand_train, cand_test)
+        if (weights_skill["csi"] >= calib_skill["csi"] + WEIGHTS_CSI_MARGIN
+                and weights_skill["hss"] >= calib_skill["hss"] - 1e-9):
+            weights = w
+            curve, thr, candidate_skill = w_curve, w_thr, weights_skill
 
     better = (
         candidate_skill["csi"] >= baseline_skill["csi"] + ACTIVATION_CSI_MARGIN
@@ -580,7 +591,10 @@ def evaluate_and_select(
         "calibration": {"type": "isotonic", "points": curve},
         "weights": ({"enabled": True, **weights} if weights else {"enabled": False}),
         "data": counts,
+        # `calibration_only` et `weights` (candidat poids, même rejeté) exposés pour la
+        # transparence : on voit ce que les poids APPORTERAIENT vs la calibration seule.
         "skill": {"baseline": baseline_skill, "candidate": candidate_skill,
+                  "calibration_only": calib_skill, "weights": weights_skill,
                   "test_days": sorted({e["date"] for e in test})},
     }
     base["config"] = config
