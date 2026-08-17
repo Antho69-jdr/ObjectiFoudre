@@ -773,11 +773,17 @@
       : (calibrated
         ? '<div class="hl-w-hint">Poids d\'origine conservés — aucun mélange appris ne fait mieux pour l\'instant (seuil et calibration, eux, sont appris).</div>'
         : '<div class="hl-w-hint">Proportions d\'origine — affinées dès que la calibration s\'active.</div>');
+    // Honnêteté : ces 4 proportions valent quand la convergence de surface est disponible.
+    // Sinon (donnée absente), le modèle rebascule sur un barème à 3 blocs (part convergence
+    // répartie sur CAPE / humidité / chauffage) — le score final applique aussi gates,
+    // modificateurs et atténuation par la confiance.
+    const convNote = '<div class="hl-w-hint hl-w-note">La convergence n\'entre que si elle est disponible ; sinon sa part est répartie sur les trois autres blocs.</div>';
     return `<div class="history-learning-hist">
       <div class="hl-w-head"><span>Poids dans le calcul du score</span>${badge}</div>
       <div class="hl-w-stack">${stacked}</div>
       ${rows}
       ${hint}
+      ${convNote}
     </div>`;
   }
 

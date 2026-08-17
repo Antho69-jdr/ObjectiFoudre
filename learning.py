@@ -156,16 +156,28 @@ def build_training_examples(
                 blocks = cell_blocks(cell.get("metric_scores") or {})
                 if blocks is None:
                     continue
-                by_key[key] = {"trigger": trig, "blocks": blocks, "lat": float(lat), "lon": float(lon)}
-        for key, rec in by_key.items():
+                # `rec` : de quoi RE-SCORER la cellule via le pipeline complet (blend+gates+
+                # modificateurs+confiance) pour des poids candidats — cf. weather_logic.
+                # score_from_archived_cell. Objectif : valider l'objet réellement DÉPLOYÉ.
+                rec = {
+                    "metric_scores": cell.get("metric_scores") or {},
+                    "mucape": cell.get("mucape"),
+                    "shear_ms": cell.get("shear_ms"),
+                    "selected_time_iso": cell.get("selected_time_iso"),
+                    "confidence_score": cell.get("confidence_score"),
+                }
+                by_key[key] = {"trigger": trig, "blocks": blocks, "rec": rec,
+                               "lat": float(lat), "lon": float(lon)}
+        for key, agg in by_key.items():
             observed = float(flashes_per_cell.get(key, 0.0))
             examples.append({
                 "date": date_str,
                 "cell_key": key,
-                "lat": rec["lat"],
-                "lon": rec["lon"],
-                "blocks": rec["blocks"],
-                "trigger": rec["trigger"],
+                "lat": agg["lat"],
+                "lon": agg["lon"],
+                "blocks": agg["blocks"],
+                "rec": agg["rec"],
+                "trigger": agg["trigger"],
                 "label": 1 if observed >= flash_threshold else 0,
             })
     return examples
@@ -179,10 +191,29 @@ def isotonic_pav(scores: list[float], labels: list[int]) -> list[list[float]]:
     pairs = sorted(zip(scores, labels), key=lambda p: p[0])
     if not pairs:
         return [[0.0, 0.0], [100.0, 0.0]]
-    # blocs (somme, poids, x_repr) fusionnés tant que non monotones
-    blocks: list[list[float]] = []  # [sum_y, count, x]
+    # Passe 1 — agrégation par x : un bloc initial par valeur de score DISTINCTE. Sans
+    # ça, chaque exemple devient son propre bloc et, comme la fusion PAVA n'agit que sur
+    # un `>` STRICT, des milliers d'exemples de même score et même moyenne (ex. score=2,
+    # label=0 ×1500) ne se poolent jamais → la courbe explose en doublons ([2.0, 0.0]
+    # répété), gonflant active.json / le payload /api/learning/status et ralentissant
+    # calibrated_probability ; pire, deux exemples de MÊME score pouvaient hériter de
+    # probas différentes (isotonie violée). Agréger d'abord garantit une proba unique par
+    # score et une courbe compacte : c'est la régression isotone CORRECTE (elle ne diffère
+    # de l'ancienne courbe que là où celle-ci était incohérente sur des scores dupliqués ;
+    # écart moyen pondéré par la fréquence des scores ~3e-4, mesuré). Non appliquée au
+    # scoring live (seuls poids+seuil le sont) → sert au Brier calibré interne + diagnostic.
+    agg: list[list[float]] = []  # [sum_y, count, x] par x croissant
     for x, y in pairs:
-        blocks.append([float(y), 1.0, float(x)])
+        xf = float(x)
+        if agg and agg[-1][2] == xf:
+            agg[-1][0] += float(y)
+            agg[-1][1] += 1.0
+        else:
+            agg.append([float(y), 1.0, xf])
+    # Passe 2 — PAVA : fusion des blocs adjacents tant que non monotones (moyenne).
+    blocks: list[list[float]] = []  # [sum_y, count, x_repr]
+    for sy, n, x in agg:
+        blocks.append([sy, n, x])
         while len(blocks) >= 2 and (blocks[-2][0] / blocks[-2][1]) > (blocks[-1][0] / blocks[-1][1]):
             sy2, n2, _ = blocks.pop()
             sy1, n1, x1 = blocks.pop()
@@ -456,12 +487,19 @@ def evaluate_and_select(
     examples: list[dict[str, Any]],
     *,
     neighborhood_km: float = DEFAULT_NEIGHBORHOOD_KM,
+    rescore_fn: Callable[[dict[str, Any], dict[str, float]], int | None] | None = None,
 ) -> dict[str, Any]:
     """Construit un candidat (calibration + poids si gate), le valide en CV temporelle
     contre la baseline, et décide de l'activer ou non. Renvoie décision + config + skill.
 
     Le skill (baseline & candidat) est mesuré en VOISINAGE (`neighborhood_km`), comme la
-    vérif affichée — pour que l'apprentissage optimise bien la métrique qu'on regarde."""
+    vérif affichée — pour que l'apprentissage optimise bien la métrique qu'on regarde.
+
+    `rescore_fn(rec, weights) -> score` (injecté par app.py = weather_logic.score_from_archived_cell)
+    re-score une cellule via le PIPELINE COMPLET (blend[weights]+gates+modificateurs+confiance).
+    Fourni → le candidat à poids appris est validé/déployé À L'IDENTIQUE (fin de l'ancienne
+    comparaison inéquitable « blend nu vs formule complète » qui n'activait jamais les poids).
+    Absent (auto-tests) → repli sur `blend_score` (ancien comportement)."""
     counts = _data_counts(examples)
     gates = {
         "calibration_ready": counts["days"] >= CALIB_MIN_DAYS and counts["positives"] >= CALIB_MIN_POSITIVES,
@@ -494,19 +532,29 @@ def evaluate_and_select(
     base_scores_test = [e["trigger"] for e in test]
     baseline_skill = skill_neighborhood(test, base_scores_test, BASELINE_THRESHOLD, neighborhood_km=neighborhood_km)
 
+    # Score d'un candidat à poids `w` : PIPELINE COMPLET si rescore_fn fourni (objet déployé),
+    # sinon blend linéaire nu (repli auto-tests). Le fit reste sur le blend (grille rapide) ;
+    # seule la VALIDATION passe par le pipeline complet — d'où « fit rapide, validation exacte ».
+    def _cand_score(example: dict[str, Any], w: dict[str, float]) -> int:
+        if rescore_fn is not None and example.get("rec") is not None:
+            s = rescore_fn(example["rec"], w)
+            if s is not None:
+                return int(s)
+        return blend_score(example["blocks"], w)
+
     # --- candidat : fit sur le train uniquement ---
     train_labels = [e["label"] for e in train]
     if use_weights:
         weights = fit_blend_weights(train)
-        blend_train = [blend_score(e["blocks"], weights) for e in train]
-        # Garde-fou : le blend linéaire ré-appris ne remplace le score actuel (formule
-        # complète : gates CAPE/humidité, modificateurs, cap CIN…) que s'il DISCRIMINE
-        # strictement mieux sur le train. Sinon le candidat reste le score actuel avec
-        # seuil + calibration réappris (weights désactivés) — jamais un blend dégradé.
+        cand_train = [_cand_score(e, weights) for e in train]
+        # Garde-fou : les poids ré-appris ne remplacent le score actuel que s'ils DISCRIMINENT
+        # strictement mieux sur le train. Avec rescore_fn, candidat et déploiement sont le
+        # MÊME objet (blend+gates+modificateurs+confiance) → comparaison enfin équitable vs la
+        # baseline (formule complète, poids d'origine). Sinon → seuil+calibration seuls réappris.
         trigger_train = [e["trigger"] for e in train]
-        if calibrated_brier(blend_train, train_labels) < calibrated_brier(trigger_train, train_labels) - 1e-9:
-            train_scores = blend_train
-            cand_scores_test = [blend_score(e["blocks"], weights) for e in test]
+        if calibrated_brier(cand_train, train_labels) < calibrated_brier(trigger_train, train_labels) - 1e-9:
+            train_scores = cand_train
+            cand_scores_test = [_cand_score(e, weights) for e in test]
         else:
             weights = None
             train_scores = trigger_train
@@ -733,6 +781,39 @@ if __name__ == "__main__":
     assert res_guard["config"] is not None, res_guard
     assert res_guard["config"]["weights"]["enabled"] is False, res_guard["config"]["weights"]
     print("garde-fou trigger>blend : weights désactivés OK")
+
+    # 3b-bis) rescore_fn injecté : le candidat est scoré via le PIPELINE fourni (pas le blend
+    #     nu). Ici le blend sur `blocks` est du BRUIT et le `trigger` aussi, mais rescore_fn
+    #     expose le vrai signal (rec['ideal']) → le candidat doit battre la baseline et activer,
+    #     avec des scores candidats = ceux du pipeline injecté (preuve du câblage).
+    rng5 = random.Random(41)
+    inj = []
+    for d in range(40):
+        date = f"2026-02-{d + 1:02d}" if d < 28 else f"2026-03-{d - 27:02d}"
+        for k in range(70):
+            h = rng5.uniform(0, 100)                       # variable cachée = vrai signal
+            label = 1 if rng5.random() < 1.0 / (1.0 + math.exp(-(h - 62.0) / 7.0)) else 0
+            inj.append({
+                "date": date, "cell_key": f"i{d}_{k}",
+                "lat": 43.0 + (k // 8) * 1.0, "lon": 0.0 + (k % 8) * 1.0,
+                "blocks": {"cape": rng5.uniform(0, 100), "humid": rng5.uniform(0, 100),
+                           "heat": rng5.uniform(0, 100), "conv": None},   # bruit
+                "rec": {"ideal": clamp(h)},                # le pipeline injecté verra le signal
+                "trigger": clamp(rng5.uniform(0, 100)),    # baseline = bruit
+                "label": label,
+            })
+    stub_rescore = lambda rec, w: rec["ideal"]            # ignore w, renvoie le vrai signal
+    res_inj = evaluate_and_select(inj, rescore_fn=stub_rescore)
+    res_noinj = evaluate_and_select(inj)                  # candidat = blend nu sur du bruit
+    assert res_inj["gates"]["weights_ready"] is True, res_inj["data"]
+    assert res_inj["config"]["weights"]["enabled"] is True, res_inj["config"]["weights"]
+    assert res_inj["decision"] == "activate", res_inj["decision"]
+    # Preuve du câblage : le candidat scoré via le pipeline injecté (signal parfait) discrimine
+    # FRANCHEMENT mieux que le candidat sans injection (blend nu sur du bruit).
+    csi_inj = res_inj["skill"]["candidate"]["csi"]
+    csi_noinj = res_noinj["skill"]["candidate"]["csi"]
+    assert csi_inj > csi_noinj + 0.15, (csi_inj, csi_noinj)
+    print(f"rescore_fn injecté : candidat via pipeline CSI={csi_inj:.2f} > sans injection {csi_noinj:.2f} (câblage OK)")
 
     # 3b) gate poids NON atteint (assez de jours, trop peu de positifs) -> calibration seule
     sparse = []

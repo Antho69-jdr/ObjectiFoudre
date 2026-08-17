@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.162"
+APP_VERSION = "1.3.163"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -3447,7 +3447,10 @@ def _run_learning_evaluation(*, source: str = "manual") -> dict[str, Any]:
         examples = learning.build_training_examples(
             dates, _learning_full_day_loader, _read_lightning_archive,
         )
-        res = learning.evaluate_and_select(examples)
+        # rescore_fn = pipeline COMPLET (blend[poids]+gates+modificateurs+confiance) : le candidat
+        # à poids appris est ainsi validé À L'IDENTIQUE de ce qui sera déployé (cf. B★). Sans lui,
+        # l'ancien code comparait un blend nu à la formule complète → poids jamais activés.
+        res = learning.evaluate_and_select(examples, rescore_fn=weather_logic.score_from_archived_cell)
         applied = False
         config = res.get("config")
         if config:

@@ -14,7 +14,7 @@ from datetime import date as Date
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 FORECAST_API_BASE = "https://api.open-meteo.com/v1/meteofrance"
 HISTORICAL_API_BASE = "https://historical-forecast-api.open-meteo.com/v1/forecast"
@@ -835,6 +835,76 @@ def _apply_environment_modifiers(
     return score, penalty
 
 
+def humidity_block_from_scores(
+    dew_s: float, rh_s: float, vpd_s: float, wet_s: float, precipitable_water_s: float | None,
+) -> int:
+    """Bloc humidité (0-100) à partir des sous-scores. RH et VPD mesurent tous deux l'écart
+    à la saturation (corrélés) → fusionnés en un axe ; le point de rosée reste dominant.
+    Source unique de vérité pour compute_initiation ET la reconstruction depuis archive."""
+    saturation_s = clamp(vpd_s * 0.60 + rh_s * 0.40)
+    if precipitable_water_s is None:
+        return clamp(dew_s * 0.65 + saturation_s * 0.35)
+    return clamp(dew_s * 0.48 + saturation_s * 0.27 + wet_s * 0.08 + precipitable_water_s * 0.17)
+
+
+def _blend_initiation(
+    cape_s: float, humidity_block: float, surface_heating_s: float,
+    surface_trigger_s: float | None, weights: dict[str, float] | None,
+) -> float:
+    """Mélange de haut niveau (score brut avant gates). `weights=None` → barème d'ORIGINE
+    (constantes codées en dur : 4 poids avec convergence, barème dédié 0.50/0.40/0.10 sans).
+    Sinon poids appris (renormalisation sur 3 si convergence absente, comme learning.blend_score)."""
+    _w = weights
+    if _w is None:
+        if surface_trigger_s is None:
+            return 0.50 * cape_s + 0.40 * humidity_block + 0.10 * surface_heating_s
+        return (
+            0.44 * cape_s + 0.34 * humidity_block + 0.10 * surface_heating_s + 0.12 * surface_trigger_s
+        )
+    if surface_trigger_s is None:
+        _denom = _w["cape"] + _w["humid"] + _w["heat"]
+        return (
+            (_w["cape"] * cape_s + _w["humid"] * humidity_block + _w["heat"] * surface_heating_s) / _denom
+            if _denom > 0 else 0.0
+        )
+    return (
+        _w["cape"] * cape_s + _w["humid"] * humidity_block
+        + _w["heat"] * surface_heating_s + _w["conv"] * surface_trigger_s
+    )
+
+
+def _finalize_initiation_score(
+    score: float,
+    *,
+    cape: float,
+    dt: datetime,
+    cape_s: int,
+    dew_s: int,
+    vpd_s: int,
+    cin_actual_s: int | None,
+    surface_trigger_s: int | None,
+    precipitable_water_s: int | None,
+    shortwave_s: int | None,
+    convective_activity_s: int | None,
+    boundary_layer_s: int | None,
+    shear_s: int | None,
+) -> tuple[float, float]:
+    """Applique gates CAPE/humidité puis modificateurs d'environnement au score de mélange.
+    Renvoie (score, pénalité) NON clampés (le clamp final reste chez l'appelant, à l'identique)."""
+    penalty = 0.0
+    score, penalty = _apply_cape_moisture_gates(
+        score, penalty, cape=cape, cape_s=cape_s, dew_s=dew_s, vpd_s=vpd_s,
+    )
+    score, penalty = _apply_environment_modifiers(
+        score, penalty,
+        dt=dt, cape_s=cape_s, dew_s=dew_s, cin_actual_s=cin_actual_s,
+        surface_trigger_s=surface_trigger_s, precipitable_water_s=precipitable_water_s,
+        shortwave_s=shortwave_s, convective_activity_s=convective_activity_s,
+        boundary_layer_s=boundary_layer_s, shear_s=shear_s,
+    )
+    return score, penalty
+
+
 def compute_initiation(
     cape: float,
     dewpoint_c: float,
@@ -914,72 +984,22 @@ def compute_initiation(
         elif cloud_activity >= 55 and gust_activity >= 35:
             convective_activity_s = clamp(cloud_activity * 0.55 + gust_activity * 0.25 + precipitation_s * 0.20)
 
-    # RH et VPD mesurent tous deux l'écart à la saturation (fortement corrélés) :
-    # on les fusionne en un seul axe "déficit de saturation" pour ne pas double-compter
-    # ce signal. Le point de rosée (humidité absolue) reste l'axe dominant et distinct.
-    saturation_s = clamp(vpd_s * 0.60 + rh_s * 0.40)
-    if precipitable_water_s is None:
-        humidity_block = clamp(dew_s * 0.65 + saturation_s * 0.35)
-    else:
-        humidity_block = clamp(dew_s * 0.48 + saturation_s * 0.27 + wet_s * 0.08 + precipitable_water_s * 0.17)
+    # RH et VPD fusionnés (déficit de saturation) sans double-compter ; le point de rosée
+    # reste dominant. Calcul déporté dans humidity_block_from_scores (source unique partagée
+    # avec la reconstruction depuis archive), à l'identique.
+    humidity_block = humidity_block_from_scores(dew_s, rh_s, vpd_s, wet_s, precipitable_water_s)
     moisture = humidity_block
     instability = cape_s
 
-    _w = _active_blend_weights
-    if _w is None:
-        # Poids d'origine (comportement par défaut). Cas sans convergence : barème
-        # dédié 0.50/0.40/0.10 (et non une simple renormalisation).
-        if surface_trigger_s is None:
-            score = (
-                0.50 * cape_s +
-                0.40 * humidity_block +
-                0.10 * surface_heating_s
-            )
-        else:
-            score = (
-                0.44 * cape_s +
-                0.34 * humidity_block +
-                0.10 * surface_heating_s +
-                0.12 * surface_trigger_s
-            )
-    else:
-        # Poids appris (auto-calibration). Renormalisation sur 3 si convergence absente
-        # — identique à learning.blend_score, pour que train/apply concordent.
-        if surface_trigger_s is None:
-            _denom = _w["cape"] + _w["humid"] + _w["heat"]
-            score = (
-                (_w["cape"] * cape_s + _w["humid"] * humidity_block + _w["heat"] * surface_heating_s) / _denom
-                if _denom > 0 else 0.0
-            )
-        else:
-            score = (
-                _w["cape"] * cape_s +
-                _w["humid"] * humidity_block +
-                _w["heat"] * surface_heating_s +
-                _w["conv"] * surface_trigger_s
-            )
+    # Mélange de haut niveau : poids actifs (appris) ou barème d'origine (cf. _blend_initiation).
+    score = _blend_initiation(cape_s, humidity_block, surface_heating_s, surface_trigger_s, _active_blend_weights)
 
-    inhibition_penalty = 0.0
-    score, inhibition_penalty = _apply_cape_moisture_gates(
+    score, inhibition_penalty = _finalize_initiation_score(
         score,
-        inhibition_penalty,
-        cape=cape,
-        cape_s=cape_s,
-        dew_s=dew_s,
-        vpd_s=vpd_s,
-    )
-    score, inhibition_penalty = _apply_environment_modifiers(
-        score,
-        inhibition_penalty,
-        dt=dt,
-        cape_s=cape_s,
-        dew_s=dew_s,
-        cin_actual_s=cin_actual_s,
-        surface_trigger_s=surface_trigger_s,
-        precipitable_water_s=precipitable_water_s,
-        shortwave_s=shortwave_s,
-        convective_activity_s=convective_activity_s,
-        boundary_layer_s=boundary_layer_s,
+        cape=cape, dt=dt, cape_s=cape_s, dew_s=dew_s, vpd_s=vpd_s,
+        cin_actual_s=cin_actual_s, surface_trigger_s=surface_trigger_s,
+        precipitable_water_s=precipitable_water_s, shortwave_s=shortwave_s,
+        convective_activity_s=convective_activity_s, boundary_layer_s=boundary_layer_s,
         shear_s=shear_s,
     )
 
@@ -1093,6 +1113,78 @@ def compute_storm_probability(initiation_score: int, confidence_score: int = 50,
     """
     calibration = (max(1, confidence_score) / 100) ** _CONFIDENCE_ALPHA
     return clamp(round(initiation_score * calibration))
+
+
+def score_from_archived_cell(cell: dict, weights: dict[str, float] | None = None) -> int | None:
+    """Re-score une cellule ARCHIVÉE (metric_scores + champs bruts) via le pipeline COMPLET,
+    à l'identique de compute_initiation : mélange[weights] → gates → modificateurs → puis
+    atténuation par la confiance (compute_storm_probability). Objectif : que l'auto-
+    calibration des poids VALIDE le même objet que celui DÉPLOYÉ (et non un blend nu).
+
+    `weights=None` reproduit le `trigger_score` archivé au bit près (auto-vérification). Pour
+    des poids appris, la confiance est figée à sa valeur archivée : sa dépendance au mélange
+    est de 2e ordre (franchissements de seuils trigger∈{20,35,55} + triggers voisins) et
+    négligée ici. Renvoie None si un sous-score indispensable manque (cellule inexploitable)."""
+    ms = cell.get("metric_scores") or {}
+
+    def _s(key: str) -> int | None:
+        v = ms.get(key)
+        if v is None:
+            return None
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+
+    cape_s = _s("cape_score")
+    surface_heating_s = _s("surface_heating_score")
+    if cape_s is None or surface_heating_s is None:
+        return None
+    dew_s = _s("dewpoint_score") or 0
+    rh_s = _s("humidity_score") or 0
+    vpd_s = _s("vpd_score") or 0
+    wet_s = _s("wetbulb_score") or 0
+    precipitable_water_s = _s("precipitable_water_score")
+    surface_trigger_s = _s("surface_trigger_score")
+    cin_actual_s = _s("cin_actual_score")
+    shortwave_s = _s("shortwave_radiation_score")
+    convective_activity_s = _s("convective_activity_score")
+    boundary_layer_s = _s("boundary_layer_score")
+
+    def _num(v: Any) -> float | None:
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return f if math.isfinite(f) else None
+
+    cape = _num(cell.get("mucape")) or 0.0
+    shear_s = score_shear(_num(cell.get("shear_ms")))
+    iso = cell.get("selected_time_iso")
+    try:
+        dt = datetime.fromisoformat(iso) if iso else None
+    except (TypeError, ValueError):
+        dt = None
+    if dt is None:
+        return None
+
+    humidity_block = humidity_block_from_scores(dew_s, rh_s, vpd_s, wet_s, precipitable_water_s)
+    score = _blend_initiation(cape_s, humidity_block, surface_heating_s, surface_trigger_s, weights)
+    score, _penalty = _finalize_initiation_score(
+        score,
+        cape=cape, dt=dt, cape_s=cape_s, dew_s=dew_s, vpd_s=vpd_s,
+        cin_actual_s=cin_actual_s, surface_trigger_s=surface_trigger_s,
+        precipitable_water_s=precipitable_water_s, shortwave_s=shortwave_s,
+        convective_activity_s=convective_activity_s, boundary_layer_s=boundary_layer_s,
+        shear_s=shear_s,
+    )
+    environment = clamp(score)
+    conf = cell.get("confidence_score")
+    try:
+        conf_i = int(conf) if conf is not None else 50
+    except (TypeError, ValueError):
+        conf_i = 50
+    return compute_storm_probability(environment, conf_i)
 
 
 
