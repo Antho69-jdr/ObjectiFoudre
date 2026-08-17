@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.166"
+APP_VERSION = "1.3.167"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -8828,7 +8828,7 @@ def _enrich_field_values_with_wcs(field_values: dict[str, Any], slot_dt: datetim
     # Les champs WCS sont des téléchargements GetCoverage indépendants → récupérés EN
     # PARALLÈLE (I/O réseau dominant ; le GIL est relâché pendant urllib et les appels
     # eccodes). Avant : 4 requêtes séquentielles par heure. Chaque champ reste NON-FATAL.
-    field_keys = ["convective_inhibition", "mucape"]
+    field_keys = ["convective_inhibition", "mucape", "t500_k", "surface_pressure"]
     if want_shear:
         field_keys += ["u_500hpa", "v_500hpa"]
 
@@ -8848,6 +8848,12 @@ def _enrich_field_values_with_wcs(field_values: dict[str, Any], slot_dt: datetim
         field_values["convective_inhibition"] = results["convective_inhibition"]
     if results.get("mucape"):
         field_values["mucape"] = results["mucape"]
+    # T500 (environnement 500 hPa) + pression de surface pour l'indice de soulèvement. Non-fatals :
+    # absents → lifted_index None → aucun effet (le scoring reste celui des paquets, non-régression).
+    if results.get("t500_k"):
+        field_values["t500_k"] = results["t500_k"]
+    if results.get("surface_pressure"):
+        field_values["surface_pressure"] = results["surface_pressure"]
 
     # Cisaillement profond 0-6 km = |V(500 hPa) - V(10 m)| : u/v 500 hPa (ARPEGE WCS
     # isobare) moins le vent 10 m déjà extrait des paquets SP. Non-fatal.
@@ -9315,6 +9321,10 @@ def _build_meteofrance_grib_slot_grid_sync(
                 "dew_point_2m": [dewpoint_c],
                 "convective_inhibition": [field_values.get("convective_inhibition", {}).get(zone)],
                 "shear_ms": [field_values.get("shear_ms", {}).get(zone)],
+                # Indice de soulèvement (rehausse le score quand l'instabilité d'altitude dépasse
+                # la CAPE de surface) : T500 environnement + pression de surface (ARPEGE WCS).
+                "t500_k": [field_values.get("t500_k", {}).get(zone)],
+                "surface_pressure": [field_values.get("surface_pressure", {}).get(zone)],
                 "relative_humidity_2m": [rh2m],
                 "vapour_pressure_deficit": [_vapour_pressure_deficit_kpa(float(temp_c), float(dewpoint_c)) if has_td else None],
                 "wet_bulb_temperature_2m": [_wet_bulb_stull_c(float(temp_c), float(rh2m)) if (has_td and rh2m is not None) else None],

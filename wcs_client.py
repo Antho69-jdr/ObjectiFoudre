@@ -47,6 +47,10 @@ COVERAGE_REGISTRY: dict[str, tuple[str, str, int | None]] = {
     "cape_ins": ("arome", "CAPE_INS__GROUND", None),
     "u_500hpa": ("arpege", "U_COMPONENT_OF_WIND__ISOBARIC_SURFACE", 500),
     "v_500hpa": ("arpege", "V_COMPONENT_OF_WIND__ISOBARIC_SURFACE", 500),
+    # Indice de soulèvement : T500 environnement (ARPEGE isobare) + pression de surface pour
+    # la parcelle. La T2m/Td2m de la parcelle vient des paquets AROME (déjà en grille).
+    "t500_k": ("arpege", "TEMPERATURE__ISOBARIC_SURFACE", 500),
+    "surface_pressure": ("arpege", "PRESSURE__GROUND_OR_WATER_SURFACE", None),
 }
 
 _BASE_BY_SOURCE = {"arome": _AROME_BASE, "arpege": _ARPEGE_BASE}
