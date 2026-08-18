@@ -89,6 +89,24 @@ def get_active_blend_weights() -> dict[str, float] | None:
     return _active_blend_weights
 
 
+# Force du boost d'indice de soulèvement — None = défaut codé en dur (LI_BOOST_GAIN), sinon
+# valeur apprise par l'autocalibration (learning.py) depuis l'historique, injectée via active.json.
+_active_li_boost_gain: float | None = None
+
+
+def set_active_li_boost_gain(gain: float | None) -> None:
+    """Active une force de boost LI apprise (ou None → défaut LI_BOOST_GAIN)."""
+    global _active_li_boost_gain
+    try:
+        _active_li_boost_gain = float(gain) if gain is not None else None
+    except (TypeError, ValueError):
+        _active_li_boost_gain = None
+
+
+def get_active_li_boost_gain() -> float | None:
+    return _active_li_boost_gain
+
+
 def km_to_deg_lat(km: float) -> float:
     return km / 111.0
 
@@ -1200,8 +1218,11 @@ def apply_lifted_index_boost(score: int, lifted_index_value: float | None) -> in
     +20 points (LI ≤ -6)."""
     if lifted_index_value is None or not math.isfinite(lifted_index_value):
         return score
+    gain = _active_li_boost_gain if _active_li_boost_gain is not None else LI_BOOST_GAIN
+    if gain <= 0:
+        return score
     inst = min(LI_BOOST_CAP, max(0.0, -(lifted_index_value + LI_BOOST_ONSET)))
-    return clamp(score + LI_BOOST_GAIN * inst)
+    return clamp(score + gain * inst)
 
 
 def score_from_archived_cell(cell: dict, weights: dict[str, float] | None = None) -> int | None:
@@ -1744,6 +1765,9 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     "cloud_trigger_score": metric.get("cloud_trigger_component"),
                     "boundary_layer_score": metric.get("boundary_layer_component"),
                     "clear_sky_penalty_score": metric.get("clear_sky_penalty", 0),
+                    # Valeur BRUTE (K, peut être négative) — pas un score 0-100 — archivée pour que
+                    # l'autocalibration apprenne la force du boost LI depuis l'historique.
+                    "lifted_index": metric.get("lifted_index"),
                     "confidence_consistency_score": confidence_diag.get("consistency"),
                     "confidence_temporal_score": confidence_diag.get("temporal_stability"),
                     "confidence_margin_score": confidence_diag.get("margin"),

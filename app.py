@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.167"
+APP_VERSION = "1.3.168"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -3417,7 +3417,7 @@ def _learning_data_counts_cheap() -> dict[str, int]:
 
 
 def _apply_learning_config(config: dict[str, Any] | None) -> None:
-    """Applique (ou réinitialise) la config apprise : poids de mélange + seuil de décision."""
+    """Applique (ou réinitialise) la config apprise : poids de mélange + seuil + force du boost LI."""
     global _active_score_threshold
     if config:
         weights = config.get("weights") or {}
@@ -3426,9 +3426,12 @@ def _apply_learning_config(config: dict[str, Any] | None) -> None:
             _active_score_threshold = int(config.get("threshold") or verification.DEFAULT_SCORE_THRESHOLD)
         except (TypeError, ValueError):
             _active_score_threshold = verification.DEFAULT_SCORE_THRESHOLD
+        # Force du boost d'indice de soulèvement apprise (None → défaut codé en dur).
+        weather_logic.set_active_li_boost_gain(config.get("li_boost_gain"))
     else:
         weather_logic.set_active_blend_weights(None)
         _active_score_threshold = verification.DEFAULT_SCORE_THRESHOLD
+        weather_logic.set_active_li_boost_gain(None)
     _verification_cache.clear()  # le seuil « zones prévues » a pu changer
 
 
