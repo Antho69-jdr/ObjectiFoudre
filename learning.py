@@ -44,6 +44,17 @@ ACTIVATION_CSI_MARGIN = 0.02     # gain minimal de CSI
 # d'origine) sur le held-out, de cette marge. Sinon les poids « montent à bord » du gain de
 # la calibration sans rien apporter (voire proportions douteuses : humidité à 0) — cf. audit.
 WEIGHTS_CSI_MARGIN = 0.02
+
+# --- Force du boost « indice de soulèvement » (lifted index) apprise --------------------------
+# On cherche la force qui maximise le CSI held-out en RECONSTRUISANT le trigger déployé
+# (base pré-boost + boost activité + boost LI[gain]) — jamais depuis le trigger archivé, qui
+# inclut déjà le boost (double-comptage). Le boost LI n'est archivé que depuis v1.3.167 : les
+# jours plus anciens ont lifted_index None → boost 0 quel que soit le gain (neutre, normal).
+LI_GAIN_CANDIDATES = (0, 2, 4, 6, 8, 10)  # 0 = LI désactivé (référence)
+LI_GAIN_CSI_MARGIN = 0.02        # le gain retenu doit battre gain=0 d'au moins ça (held-out)
+LI_MIN_DAYS = 15                 # jours AVEC LI archivé requis avant de calibrer la force
+LI_MIN_POSITIVES = 60            # positifs (cellules foudroyées) parmi les jours avec LI
+
 TEST_FRACTION = 0.30             # part des jours (les plus récents) réservée au test
 MIN_TEST_DAYS = 3
 FLASH_THRESHOLD = 1              # >= 1 flash dans la cellule = orage observé
@@ -467,12 +478,48 @@ def _data_counts(examples: list[dict[str, Any]]) -> dict[str, int]:
     days = sorted({e["date"] for e in examples})
     positives = sum(1 for e in examples if e["label"] >= 1)
     storm_days = sorted({e["date"] for e in examples if e["label"] >= 1})
+    li = _li_data_counts(examples)
     return {
         "days": len(days),
         "storm_days": len(storm_days),
         "examples": len(examples),
         "positives": positives,
+        "li_days": li["li_days"],
+        "li_positives": li["li_positives"],
     }
+
+
+def _example_lifted_index(example: dict[str, Any]) -> float | None:
+    """Valeur BRUTE (K) du lifted index archivé pour cet exemple, ou None (jour < v1.3.167,
+    trou de données, ou champ absent)."""
+    rec = example.get("rec")
+    if not isinstance(rec, dict):
+        return None
+    ms = rec.get("metric_scores") or {}
+    v = ms.get("lifted_index")
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
+def _li_data_counts(examples: list[dict[str, Any]]) -> dict[str, int]:
+    """Volumes RESTREINTS aux exemples porteurs d'un lifted index archivé : c'est le seul
+    signal qui peut discriminer les gains (les autres jours sont neutres au boost LI)."""
+    li_days: set[str] = set()
+    li_positives = 0
+    li_examples = 0
+    for e in examples:
+        if _example_lifted_index(e) is None:
+            continue
+        li_examples += 1
+        li_days.add(e["date"])
+        if e["label"] >= 1:
+            li_positives += 1
+    return {"li_days": len(li_days), "li_positives": li_positives, "li_examples": li_examples}
 
 
 def _time_split(examples: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -492,9 +539,11 @@ def evaluate_and_select(
     *,
     neighborhood_km: float = DEFAULT_NEIGHBORHOOD_KM,
     rescore_fn: Callable[[dict[str, Any], dict[str, float]], int | None] | None = None,
+    li_rescore_fn: Callable[[dict[str, Any], float], int | None] | None = None,
 ) -> dict[str, Any]:
-    """Construit un candidat (calibration + poids si gate), le valide en CV temporelle
-    contre la baseline, et décide de l'activer ou non. Renvoie décision + config + skill.
+    """Construit un candidat (calibration + poids si gate + force du boost LI si gate), le valide
+    en CV temporelle contre la baseline, et décide de l'activer ou non. Renvoie décision + config
+    + skill.
 
     Le skill (baseline & candidat) est mesuré en VOISINAGE (`neighborhood_km`), comme la
     vérif affichée — pour que l'apprentissage optimise bien la métrique qu'on regarde.
@@ -503,15 +552,23 @@ def evaluate_and_select(
     re-score une cellule via le PIPELINE COMPLET (blend[weights]+gates+modificateurs+confiance).
     Fourni → le candidat à poids appris est validé/déployé À L'IDENTIQUE (fin de l'ancienne
     comparaison inéquitable « blend nu vs formule complète » qui n'activait jamais les poids).
-    Absent (auto-tests) → repli sur `blend_score` (ancien comportement)."""
+    Absent (auto-tests) → repli sur `blend_score` (ancien comportement).
+
+    `li_rescore_fn(rec, gain) -> score` (injecté = weather_logic.deployed_trigger_from_archived_cell,
+    gain explicite) reconstruit le trigger DÉPLOYÉ (base pré-boost + activité + boost LI[gain]) —
+    JAMAIS depuis le trigger archivé, qui inclut déjà le boost (double-comptage). Fourni + gate LI
+    atteint → on calibre la force du boost LI (cf. LI_GAIN_CANDIDATES). Absent → LI laissé au défaut."""
     counts = _data_counts(examples)
     gates = {
         "calibration_ready": counts["days"] >= CALIB_MIN_DAYS and counts["positives"] >= CALIB_MIN_POSITIVES,
         "weights_ready": counts["days"] >= WEIGHTS_MIN_DAYS and counts["positives"] >= WEIGHTS_MIN_POSITIVES,
+        "li_ready": counts.get("li_days", 0) >= LI_MIN_DAYS and counts.get("li_positives", 0) >= LI_MIN_POSITIVES,
         "calib_min_days": CALIB_MIN_DAYS,
         "calib_min_positives": CALIB_MIN_POSITIVES,
         "weights_min_days": WEIGHTS_MIN_DAYS,
         "weights_min_positives": WEIGHTS_MIN_POSITIVES,
+        "li_min_days": LI_MIN_DAYS,
+        "li_min_positives": LI_MIN_POSITIVES,
     }
     base = {
         "decision": "collecting",
@@ -557,8 +614,41 @@ def evaluate_and_select(
         skill = skill_neighborhood(test, test_scores, int(thr), neighborhood_km=neighborhood_km)
         return curve, int(thr), skill
 
+    # --- Force du boost LI (indice de soulèvement) : gain ∈ LI_GAIN_CANDIDATES, validé held-out.
+    # On RECONSTRUIT le trigger déployé à chaque gain (base pré-boost + activité + boost LI[gain])
+    # via li_rescore_fn — jamais depuis e["trigger"] archivé (déjà boosté = double-comptage). Les
+    # jours sans LI archivé sont NEUTRES (boost 0 quel que soit le gain) : le signal vient des
+    # seuls jours porteurs. On RETIENT un gain > 0 uniquement s'il bat gain=0 d'une marge réelle.
+    def _li_trigger_scores(exs: list[dict[str, Any]], gain: float) -> list[int]:
+        out: list[int] = []
+        for e in exs:
+            rec = e.get("rec")
+            s = li_rescore_fn(rec, gain) if (li_rescore_fn is not None and rec is not None) else None
+            out.append(int(s) if s is not None else int(round(float(e["trigger"]))))
+        return out
+
+    li_boost_gain: int | None = None
+    li_gain_skill: dict[str, Any] | None = None
+    if li_rescore_fn is not None and gates["li_ready"]:
+        per_gain = {g: _fit_and_score(_li_trigger_scores(train, g), _li_trigger_scores(test, g))[2]
+                    for g in LI_GAIN_CANDIDATES}
+        li_gain_skill = {str(g): per_gain[g] for g in LI_GAIN_CANDIDATES}
+        zero = per_gain[0]
+        best_g = max((g for g in LI_GAIN_CANDIDATES if g > 0),
+                     key=lambda g: (per_gain[g]["csi"], per_gain[g]["hss"]))
+        if (per_gain[best_g]["csi"] >= zero["csi"] + LI_GAIN_CSI_MARGIN
+                and per_gain[best_g]["hss"] >= zero["hss"] - 1e-9):
+            li_boost_gain = int(best_g)
+
     # Candidat CALIBRATION SEULE (poids d'origine) : apporte l'essentiel du gain (seuil+isotone).
-    calib_curve, calib_thr, calib_skill = _fit_and_score(trigger_train, base_scores_test)
+    # Au gain LI RETENU si la calibration LI a tranché (sinon trigger archivé = défaut) → le seuil
+    # et la courbe restent cohérents avec le trigger réellement déployé.
+    if li_boost_gain is not None:
+        calib_train_scores = _li_trigger_scores(train, li_boost_gain)
+        calib_test_scores = _li_trigger_scores(test, li_boost_gain)
+    else:
+        calib_train_scores, calib_test_scores = trigger_train, base_scores_test
+    calib_curve, calib_thr, calib_skill = _fit_and_score(calib_train_scores, calib_test_scores)
     weights = None
     curve, thr, candidate_skill = calib_curve, calib_thr, calib_skill
     weights_skill = None
@@ -590,11 +680,15 @@ def evaluate_and_select(
         "neighborhood_km": round(float(neighborhood_km), 1),
         "calibration": {"type": "isotonic", "points": curve},
         "weights": ({"enabled": True, **weights} if weights else {"enabled": False}),
+        # Force du boost LI apprise : None → défaut codé en dur (weather_logic.LI_BOOST_GAIN).
+        # Un entier ∈ LI_GAIN_CANDIDATES\{0} seulement s'il bat gain=0 held-out d'une marge.
+        "li_boost_gain": li_boost_gain,
         "data": counts,
-        # `calibration_only` et `weights` (candidat poids, même rejeté) exposés pour la
-        # transparence : on voit ce que les poids APPORTERAIENT vs la calibration seule.
+        # `calibration_only`, `weights` (candidat poids même rejeté) et `li_gain` (CSI par gain LI)
+        # exposés pour la transparence : on voit ce que chaque levier APPORTERAIT.
         "skill": {"baseline": baseline_skill, "candidate": candidate_skill,
                   "calibration_only": calib_skill, "weights": weights_skill,
+                  "li_gain": li_gain_skill,
                   "test_days": sorted({e["date"] for e in test})},
     }
     base["config"] = config
@@ -828,6 +922,61 @@ if __name__ == "__main__":
     csi_noinj = res_noinj["skill"]["candidate"]["csi"]
     assert csi_inj > csi_noinj + 0.15, (csi_inj, csi_noinj)
     print(f"rescore_fn injecté : candidat via pipeline CSI={csi_inj:.2f} > sans injection {csi_noinj:.2f} (câblage OK)")
+
+    # 3c) FORCE DU BOOST LI (indice de soulèvement) : reconstruction + calibration.
+    #     li_rescore_fn(rec, gain) = base pré-boost + boost LI[gain] (même forme que
+    #     weather_logic._lifted_index_boost). Vérité terrain pilotée par base + boost(gain=5).
+    rng6 = random.Random(53)
+    def _inst(li):  # réplique de la forme du boost LI (onset 2, cap 4)
+        return min(4.0, max(0.0, -(li + 2.0)))
+    li_stub = lambda rec, gain: clamp(rec["base"] + gain * _inst(rec["li"]))
+    li_ex = []
+    for d in range(40):
+        date = f"2026-07-{d + 1:02d}" if d < 31 else f"2026-08-{d - 30:02d}"
+        for k in range(70):
+            base_env = rng6.uniform(20, 60)                 # base seule = signal faible/bruité
+            li = rng6.uniform(-9.0, 3.0)                    # instabilité d'altitude (négatif = instable)
+            deployed = clamp(base_env + 5.0 * _inst(li))    # vérité = base + boost LI (gain défaut 5)
+            p = 1.0 / (1.0 + math.exp(-(deployed - 55.0) / 6.0))
+            li_ex.append({
+                "date": date, "cell_key": f"li{d}_{k}",
+                "lat": 43.0 + (k // 8) * 1.0, "lon": 0.0 + (k % 8) * 1.0,
+                "blocks": {"cape": base_env, "humid": base_env, "heat": base_env, "conv": None},
+                # rec porte le LI archivé (gate) + de quoi reconstruire la base pré-boost (stub).
+                "rec": {"base": base_env, "li": li, "metric_scores": {"lifted_index": li}},
+                "trigger": deployed,                        # archive = déployé au gain défaut
+                "label": 1 if rng6.random() < p else 0,
+            })
+
+    # (a) ANTI-DOUBLE-COMPTAGE : reconstruire au gain DÉFAUT (5) reproduit le trigger archivé
+    #     (base + boost une seule fois) — surtout PAS archive + boost (qui doublerait).
+    for e in li_ex[:200]:
+        assert li_stub(e["rec"], 5) == int(round(e["trigger"])), (li_stub(e["rec"], 5), e["trigger"])
+        boosted_twice = clamp(e["trigger"] + 5.0 * _inst(e["rec"]["li"]))
+        # là où le boost est actif (LI < -2), doubler donnerait STRICTEMENT plus (hors saturation).
+        if _inst(e["rec"]["li"]) > 0 and e["trigger"] < 100:
+            assert li_stub(e["rec"], 5) < boosted_twice, (li_stub(e["rec"], 5), boosted_twice)
+    print("anti-double-comptage LI : reconstruction au gain défaut == archive (pas de double boost) OK")
+
+    # (b) La calibration RETIENT un gain > 0 qui bat gain=0 sur le held-out.
+    res_li = evaluate_and_select(li_ex, li_rescore_fn=li_stub)
+    assert res_li["gates"]["li_ready"] is True, res_li["data"]
+    li_cfg = res_li["config"]["li_boost_gain"]
+    assert li_cfg is not None and li_cfg > 0, li_cfg
+    lig = res_li["config"]["skill"]["li_gain"]
+    csi0 = lig["0"]["csi"]
+    csi_best = lig[str(li_cfg)]["csi"]
+    assert csi_best >= csi0 + LI_GAIN_CSI_MARGIN, (csi0, csi_best)
+    print(f"boost LI calibré : gain={li_cfg} CSI {csi0:.2f}→{csi_best:.2f} (bat gain=0, gate li={res_li['data']['li_days']}j)")
+
+    # (c) Sans li_rescore_fn OU gate LI non atteint → li_boost_gain None (défaut préservé).
+    res_no_li = evaluate_and_select(li_ex)  # pas d'injection
+    assert res_no_li["config"]["li_boost_gain"] is None, res_no_li["config"]["li_boost_gain"]
+    li_short = [e for e in li_ex if e["date"] <= "2026-07-12"]  # < 15 jours avec LI
+    res_short = evaluate_and_select(li_short, li_rescore_fn=li_stub)
+    assert res_short["gates"]["li_ready"] is False, res_short["data"]
+    assert res_short["config"] is None or res_short["config"]["li_boost_gain"] is None
+    print("gate LI : pas d'injection ou < seuil jours → gain défaut préservé OK")
 
     # 3b) gate poids NON atteint (assez de jours, trop peu de positifs) -> calibration seule
     sparse = []

@@ -362,5 +362,74 @@ class TimeSlotTests(unittest.TestCase):
         self.assertEqual(wl.TIME_SLOTS[-1], ("h23", 23, 23, "23h"))
 
 
+class DeployedTriggerReconstructionTests(unittest.TestCase):
+    """Reconstruction du trigger DÉPLOYÉ (pour l'autocalibration de la force du boost LI)."""
+
+    def _cell(self, lifted_index):
+        # Cellule archivée synthétique instable (LI très négatif → boost actif).
+        return {
+            "metric_scores": {
+                "cape_score": 55, "surface_heating_score": 55,
+                "dewpoint_score": 60, "humidity_score": 60, "vpd_score": 55,
+                "wetbulb_score": 55, "precipitable_water_score": 55,
+                "surface_trigger_score": 50, "cin_actual_score": 80,
+                "shortwave_radiation_score": 60, "convective_activity_score": 30,
+                "boundary_layer_score": 50,
+                # champs d'activité MODESTES (sous la base) → boost activité ~nul, on isole le LI
+                "cloud_trigger_score": 20, "precipitation_score": 15, "gust_potential_score": 20,
+                "lifted_index": lifted_index,
+            },
+            "mucape": 1200.0, "shear_ms": 12.0,
+            "selected_time_iso": "2026-07-15T15:00:00+02:00",
+            "confidence_score": 70,
+        }
+
+    def test_reconstruction_equals_deploy_pipeline_no_double_count(self):
+        cell = self._cell(-8.0)  # inst = min(4, -( -8+2)) = 4 → boost = gain·4
+        base = wl.score_from_archived_cell(cell, None)
+        self.assertIsNotNone(base)
+        # Pipeline de déploiement à l'identique de rows_for_location : base → activité → LI.
+        after_activity = wl.apply_activity_boost(base, wl._activity_metric_from_scores(cell["metric_scores"]))
+        expected = wl.apply_lifted_index_boost(after_activity, -8.0)  # gain défaut actif
+        got = wl.deployed_trigger_from_archived_cell(cell, None, None)
+        self.assertEqual(got, expected)
+        # Le gain explicite == défaut donne le même résultat.
+        self.assertEqual(wl.deployed_trigger_from_archived_cell(cell, None, wl.LI_BOOST_GAIN), expected)
+        # ANTI-DOUBLE-COMPTAGE : `got` est le trigger DÉPLOYÉ (= ce qui serait archivé). Rebooster
+        # cette valeur déjà boostée (double-comptage) donnerait STRICTEMENT plus.
+        self.assertGreater(got, base)                                 # le boost LI a bien agi
+        self.assertLess(got, 100)                                     # pas de saturation
+        self.assertGreater(wl.apply_lifted_index_boost(got, -8.0), got)  # doubler > got
+        self.assertEqual(got, expected)                              # got ne double PAS
+
+    def test_gain_zero_disables_li_and_gain_monotone(self):
+        cell = self._cell(-8.0)
+        base = wl.score_from_archived_cell(cell, None)
+        after_activity = wl.apply_activity_boost(base, wl._activity_metric_from_scores(cell["metric_scores"]))
+        # gain=0 → aucun boost LI (reste à la base + activité).
+        self.assertEqual(wl.deployed_trigger_from_archived_cell(cell, None, 0), after_activity)
+        # boost croissant avec le gain (LI actif).
+        g4 = wl.deployed_trigger_from_archived_cell(cell, None, 4)
+        g8 = wl.deployed_trigger_from_archived_cell(cell, None, 8)
+        self.assertLess(after_activity, g4)
+        self.assertLess(g4, g8)
+
+    def test_stable_cell_and_missing_li_are_neutral(self):
+        base_cell = self._cell(None)
+        after_activity = wl.apply_activity_boost(
+            wl.score_from_archived_cell(base_cell, None),
+            wl._activity_metric_from_scores(base_cell["metric_scores"]),
+        )
+        # LI absent → aucun boost quel que soit le gain.
+        self.assertEqual(wl.deployed_trigger_from_archived_cell(base_cell, None, 10), after_activity)
+        # LI positif (stable, > -2) → onset non franchi → boost nul.
+        stable = self._cell(3.0)
+        after_stable = wl.apply_activity_boost(
+            wl.score_from_archived_cell(stable, None),
+            wl._activity_metric_from_scores(stable["metric_scores"]),
+        )
+        self.assertEqual(wl.deployed_trigger_from_archived_cell(stable, None, 10), after_stable)
+
+
 if __name__ == "__main__":
     unittest.main()

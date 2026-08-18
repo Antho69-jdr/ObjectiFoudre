@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.168"
+APP_VERSION = "1.3.169"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -3453,7 +3453,13 @@ def _run_learning_evaluation(*, source: str = "manual") -> dict[str, Any]:
         # rescore_fn = pipeline COMPLET (blend[poids]+gates+modificateurs+confiance) : le candidat
         # à poids appris est ainsi validé À L'IDENTIQUE de ce qui sera déployé (cf. B★). Sans lui,
         # l'ancien code comparait un blend nu à la formule complète → poids jamais activés.
-        res = learning.evaluate_and_select(examples, rescore_fn=weather_logic.score_from_archived_cell)
+        # li_rescore_fn = trigger DÉPLOYÉ reconstruit (base pré-boost + activité + boost LI[gain])
+        # pour calibrer la FORCE du boost LI sans double-comptage (poids d'origine pour la base).
+        res = learning.evaluate_and_select(
+            examples,
+            rescore_fn=weather_logic.score_from_archived_cell,
+            li_rescore_fn=lambda rec, gain: weather_logic.deployed_trigger_from_archived_cell(rec, None, gain),
+        )
         applied = False
         config = res.get("config")
         if config:
@@ -3505,6 +3511,11 @@ def _learning_status() -> dict[str, Any]:
         "weights": {
             "active": (active.get("weights") if active else None),
             "default": learning.DEFAULT_BLEND_WEIGHTS,
+        },
+        # Force du boost « indice de soulèvement » : None = défaut codé en dur (transparence/suivi).
+        "li_boost_gain": {
+            "active": (active.get("li_boost_gain") if active else None),
+            "default": weather_logic.LI_BOOST_GAIN,
         },
         "calibration": (active.get("calibration") if active else None),
         "skill": (active.get("skill") if active else None),

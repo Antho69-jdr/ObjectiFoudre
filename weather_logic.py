@@ -1211,18 +1211,24 @@ def lifted_index(t2m_c: float | None, td2m_c: float | None, psfc_hpa: float | No
 LI_BOOST_ONSET = 2.0   # boost dès que LI < -2 (modérément instable)
 LI_BOOST_CAP = 4.0     # plafonne (LI ≤ -6 → boost maximal)
 LI_BOOST_GAIN = 5.0    # points de score par unité d'instabilité (calé sur le held-out)
-def apply_lifted_index_boost(score: int, lifted_index_value: float | None) -> int:
-    """Rehausse `score` (trigger) quand l'indice de soulèvement révèle une instabilité d'altitude
-    que la CAPE de surface sous-estime — JAMAIS en dessous (préserve l'environnemental, comme
-    apply_activity_boost). Inchangé si LI absent. Gain mesuré (held-out) ~+0,013 AUC ; borné à
-    +20 points (LI ≤ -6)."""
+def _lifted_index_boost(score: int, lifted_index_value: float | None, gain: float) -> int:
+    """Cœur du boost LI, à force `gain` EXPLICITE. Séparé de apply_lifted_index_boost pour que
+    l'autocalibration puisse reconstruire le trigger à un gain candidat donné (cf.
+    deployed_trigger_from_archived_cell). Inchangé si LI absent ou gain ≤ 0."""
     if lifted_index_value is None or not math.isfinite(lifted_index_value):
         return score
-    gain = _active_li_boost_gain if _active_li_boost_gain is not None else LI_BOOST_GAIN
     if gain <= 0:
         return score
     inst = min(LI_BOOST_CAP, max(0.0, -(lifted_index_value + LI_BOOST_ONSET)))
     return clamp(score + gain * inst)
+
+def apply_lifted_index_boost(score: int, lifted_index_value: float | None) -> int:
+    """Rehausse `score` (trigger) quand l'indice de soulèvement révèle une instabilité d'altitude
+    que la CAPE de surface sous-estime — JAMAIS en dessous (préserve l'environnemental, comme
+    apply_activity_boost). Inchangé si LI absent. Gain mesuré (held-out) ~+0,013 AUC ; borné à
+    +20 points (LI ≤ -6). Force = gain appris (set_active_li_boost_gain) ou défaut LI_BOOST_GAIN."""
+    gain = _active_li_boost_gain if _active_li_boost_gain is not None else LI_BOOST_GAIN
+    return _lifted_index_boost(score, lifted_index_value, gain)
 
 
 def score_from_archived_cell(cell: dict, weights: dict[str, float] | None = None) -> int | None:
@@ -1295,6 +1301,38 @@ def score_from_archived_cell(cell: dict, weights: dict[str, float] | None = None
     except (TypeError, ValueError):
         conf_i = 50
     return compute_storm_probability(environment, conf_i)
+
+
+def _activity_metric_from_scores(metric_scores: dict) -> dict:
+    """Adapte les noms ARCHIVÉS (`*_score`) vers ceux qu'attend apply_activity_boost
+    (`*_component`). L'archive stocke des `*_score` ; sans cet adaptateur, le boost d'activité
+    serait toujours nul en reconstruction (les clés `*_component` seraient absentes)."""
+    ms = metric_scores or {}
+    return {
+        "cloud_trigger_component": ms.get("cloud_trigger_score"),
+        "precipitation_component": ms.get("precipitation_score"),
+        "gust_potential_component": ms.get("gust_potential_score"),
+        "convective_activity_component": ms.get("convective_activity_score"),
+    }
+
+
+def deployed_trigger_from_archived_cell(cell: dict, weights: dict[str, float] | None = None,
+                                        li_boost_gain: float | None = None) -> int | None:
+    """Reconstruit le trigger DÉPLOYÉ (post-boosts) d'une cellule archivée, à l'identique de
+    rows_for_location : base ENVIRONNEMENTALE (score_from_archived_cell) → boost activité →
+    boost LI (force `li_boost_gain` EXPLICITE ; None → défaut LI_BOOST_GAIN).
+
+    ⚠️ NE PART JAMAIS du `trigger_score` archivé (qui inclut DÉJÀ les deux boosts) : on repart
+    de la base pré-boost pour éviter le DOUBLE-COMPTAGE. Sert à l'autocalibration de la force du
+    boost LI (learning.evaluate_and_select via li_rescore_fn). Reconstruire au gain par défaut
+    reproduit le trigger archivé (aux ±1-3 près de l'arrondi shear), pas un double boost."""
+    base = score_from_archived_cell(cell, weights)
+    if base is None:
+        return None
+    ms = cell.get("metric_scores") or {}
+    after_activity = apply_activity_boost(base, _activity_metric_from_scores(ms))
+    gain = li_boost_gain if li_boost_gain is not None else LI_BOOST_GAIN
+    return _lifted_index_boost(after_activity, ms.get("lifted_index"), gain)
 
 
 
