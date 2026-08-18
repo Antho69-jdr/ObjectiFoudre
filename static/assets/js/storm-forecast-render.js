@@ -1033,7 +1033,7 @@ function predictionBuildAnalysisHtml(day, cells, periodKey = selectedPredictionP
   const disclaimerText = isTrend
     ? 'Tendance ECMWF (open data, maille ~28 km), informative et non officielle. À cette échéance (J+5 à J+10), à lire comme « jours / régions à surveiller » — pas une localisation précise des orages.'
     : 'Synthèse automatique AROME / ARPEGE France, informative et non officielle. La couleur traduit la probabilité orageuse agrégée sur la période sélectionnée.';
-  const activeSectors = sectors.filter((area) => area.score >= 60).slice(0, 6);
+  const activeSectors = sectors.filter((area) => area.score >= 60).slice(0, 4);
   const quietText = !activeSectors.length
     ? 'Aucun secteur ne dépasse le seuil cartographié. La carte reste en fond très faible.'
     : activeSectors.map((area) => {

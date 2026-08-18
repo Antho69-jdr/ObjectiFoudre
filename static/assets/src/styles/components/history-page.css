@@ -112,7 +112,14 @@
   background: rgba(255, 214, 64, 0.22);
   border-color: rgba(255, 214, 64, 0.65);
   box-shadow: 0 0 10px rgba(255, 214, 64, 0.35);
+  color: #ffd54a;   /* l'éclair SVG (currentColor) vire à l'ambre quand actif */
 }
+/* Icône éclair SVG (.icon-svg 40×40, currentColor) : remplace l'ancien emoji ⚡.
+   Taille explicite + flex-shrink:0 IMPÉRATIF : le bouton a un padding horizontal
+   (10px 14px) qui réduit l'aire de contenu à ~10px ; sans flex-shrink:0 le SVG
+   (flex-item) se comprimerait à ~8px de large (l'emoji, lui, débordait sans
+   rétrécir). Centré par le justify-content:center du bouton. */
+.history-flash-btn .icon-svg { width: 22px; height: 22px; flex-shrink: 0; }
 /* Carré 38 verrouillé min+max, préfixe #historyPage (1,1,0) : sans lui,
    body.mobile-ui button{min-width:88;min-height:46} (0,1,1, toujours posé, même
    desktop) gagne sur la classe seule (0,1,0) et étire en pilule 88×46.
@@ -730,18 +737,36 @@
     font-size: var(--fs-12);
     opacity: 0.9;
   }
+  /* La Vérification a été SORTIE du panneau d'analyse (elle est désormais une
+     cellule directe de la grille, pour se placer sous l'agenda en desktop). En
+     mobile l'ordre DOM reste dates→player→Vérification→(Synthèse+Auto-calib) : on
+     lui redonne ici le liseré + rythme haut que le panneau portait au-dessus de la
+     Vérification, et on retire ce liseré du panneau (qui commence par la Synthèse)
+     → l'empilement mobile est identique à l'avant-refonte. */
+  #historyPage .history-verif-cat {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border-top: 1px solid var(--ghost-border-faint);
+    padding-top: 14px;
+  }
+  #historyPage .prediction-analysis-panel { border-top: 0; padding-top: 0; }
 }
 @media (orientation: landscape) and (max-height: 600px) {
   #historyPage .history-cal-toggle { display: none; }
-  /* Rangée 1 = carte|calendrier sur ~un plein écran (carte grande) ; rangée 2 =
-     analyse pleine largeur. Le CORPS défile (l'en-tête + le × restent ancrés) :
-     on descend pour lire l'analyse (catégories en 2 colonnes). */
+  /* Rangée 1 = carte|calendrier sur ~un plein écran (carte grande) ; puis, en
+     défilant : Vérification pleine largeur, puis Synthèse+Auto-calibration en 2
+     colonnes. La Vérification ayant été SORTIE du panneau (cellule directe de la
+     grille), on l'empile explicitement en bande pleine largeur AU-DESSUS du
+     panneau — rangées AUTO distinctes = aucun recouvrement même en écran très bas.
+     Le CORPS défile (l'en-tête + le × restent ancrés). */
   #historyPage .history-page-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) min(420px, 46vw);
-    grid-template-rows: calc(100svh - 96px) auto;
+    grid-template-rows: calc(100svh - 96px) auto auto;
     grid-template-areas:
-      "player dates"
+      "player   dates"
+      "verif    verif"
       "analysis analysis";
     gap: 8px 8px;
     align-items: stretch;
@@ -750,25 +775,29 @@
   }
   /* (Nav de mois ‹ › : taille verrouillée par la règle GLOBALE #historyPage
      .history-cal-nav — plus de doublon ici.) */
-  /* Analyse VISIBLE (avant écrasée) + catégories CÔTE À CÔTE.
-     Placement en ZONES pour équilibrer des hauteurs très inégales : la Synthèse
-     (+ sa liste « zones à surveiller ») est ~3× plus haute que la Vérification.
-     → Synthèse = une colonne pleine hauteur ; Vérification (score) puis
-     Auto-calibration empilées dans l'autre. Plus de trou béant sous la courte. */
+  /* Vérification = bande pleine largeur (aire "verif"), avec le liseré de section
+     (séparateur carte → analyse). En paysage, Block A (max-height:600) matche
+     AUSSI → on force ici gap/padding propres. */
+  #historyPage .history-verif-cat {
+    grid-area: verif;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--ghost-border-faint);
+  }
+  /* Le panneau ne porte plus QUE la Synthèse + l'Auto-calibration, côte à côte
+     (2 colonnes, ordre naturel du DOM). Plus de liseré haut (porté par la
+     Vérification au-dessus). */
   #historyPage .prediction-analysis-panel {
     grid-area: analysis;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-areas:
-      "verif synthese"
-      "autocalib synthese";
     grid-auto-rows: min-content;
     align-items: start;
     gap: 14px 18px;
     min-height: 0;
     overflow: visible;
-    border-top: 1px solid var(--ghost-border-faint);
-    padding: 12px 2px 6px;
+    border-top: 0;
+    padding: 4px 2px 6px;
   }
   #historyPage .history-analysis-cat {
     display: flex;
@@ -776,9 +805,6 @@
     gap: 8px;
     min-width: 0;
   }
-  #historyPage .history-analysis-cat:nth-child(1) { grid-area: verif; }      /* Vérification */
-  #historyPage .history-analysis-cat:nth-child(2) { grid-area: synthese; }   /* Synthèse (haute) */
-  #historyPage .history-analysis-cat:nth-child(3) { grid-area: autocalib; }  /* Auto-calibration */
   /* Les titres deviennent des têtes de colonne : la marge sup est gérée par la
      grille, on retire les margin-top ad hoc (sinon décalage vertical inégal). */
   #historyPage .prediction-analysis-panel .prediction-analysis-title { margin-top: 0; }
@@ -863,4 +889,57 @@
     box-shadow: none;
   }
   #historyPage .history-cal-day { aspect-ratio: auto; height: 30px; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   DESKTOP (agenda FIXE + Vérification SOUS l'agenda).
+   Portée = complémentaire EXACT de la compaction : la compaction est
+   (max-width:920) OU (max-height:600) → le desktop est (min-width:921) ET
+   (min-height:601). Ces deux régimes sont disjoints → mobile/paysage strictement
+   inchangés (aucune de ces règles ne les touche). Selecteurs #historyPage (1,1,0)
+   qui battent la base à classes nues. Cf. tâches 2 & 3 de la refonte historique.
+   ════════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 921px) and (min-height: 601px) {
+  /* Colonne 1 ÉLARGIE : elle accueille l'agenda PUIS la Vérification, empilés.
+     La grille passe à 2 rangées ; la carte (player) et le panneau d'analyse
+     s'étendent sur les 2 rangées, l'agenda occupe la rangée haute et la
+     Vérification la rangée basse de la colonne 1. */
+  #historyPage .history-page-body {
+    grid-template-columns: minmax(250px, 330px) minmax(0, 1.35fr) minmax(240px, 0.72fr);
+    grid-template-rows: min-content minmax(0, 1fr);
+    grid-template-areas:
+      "dates  player analysis"
+      "verif  player analysis";
+    align-items: stretch;
+  }
+  #historyPage .history-dates-panel { grid-area: dates; }
+  #historyPage .history-player { grid-area: player; }
+  #historyPage .prediction-analysis-panel { grid-area: analysis; }
+  /* Vérification : redevient une vraie cellule flex (annule le display:contents de
+     base) posée sous l'agenda, ancrée en haut de sa rangée. */
+  #historyPage .history-verif-cat {
+    grid-area: verif;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-self: start;
+    min-width: 0;
+    min-height: 0;
+    margin-top: 4px;
+    /* Desktop court (hauteur 601–~700px) : si agenda + Vérification dépassent la
+       coquille, la Vérification scrolle en interne au lieu de déborder (sur écran
+       haut elle reste à hauteur de contenu, collée sous l'agenda). */
+    max-height: 100%;
+    overflow-y: auto;
+  }
+
+  /* Agenda FIXE : le repli est neutralisé. Le chevron disparaît, l'en-tête
+     « Dates archivées » devient un simple titre non-cliquable, et le calendrier
+     reste affiché même si .cal-collapsed traîne (ex. redimensionnement depuis
+     mobile). Le JS ignore déjà le clic hors mobile (garde isMobileHistory). */
+  #historyPage .history-cal-toggle { cursor: default; pointer-events: none; }
+  #historyPage .history-cal-toggle:hover { background: var(--fill-soft); }
+  #historyPage .history-cal-toggle-chevron { display: none; }
+  #historyPage .history-dates-panel.cal-collapsed .history-calendar { display: block; }
+  #historyPage .history-dates-panel.cal-collapsed .history-cal-toggle-current { display: none; }
 }

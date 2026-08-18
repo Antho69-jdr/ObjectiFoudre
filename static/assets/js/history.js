@@ -1111,6 +1111,9 @@
   const calToggleBtn = document.getElementById('historyCalToggle');
   if (calToggleBtn) {
     calToggleBtn.addEventListener('click', () => {
+      // Desktop : agenda FIXE — le repli est neutralisé (le chevron est masqué en
+      // CSS et l'en-tête devient un simple titre). Seul le mobile/paysage replie.
+      if (!isMobileHistory()) return;
       const panel = datesPanelEl();
       if (!panel) return;
       const collapsed = panel.classList.toggle('cal-collapsed');
