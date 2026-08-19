@@ -229,9 +229,15 @@ async function predictionRefetchDay(dateIso) {
 // du calme (ink ≈ fond) au cyan/vert/ambre/rouge/magasin. Cohérent avec le radar
 // de chargement. NB : la légende du tiroir (forecast-scales.css .legend-gradient)
 // reprend ces mêmes teintes — les garder synchronisées.
+// Fond « terre éclaircie » (parti A choisi par Anthony) : le remplissage du continent
+// est DÉCORRÉLÉ de la rampe (le niveau 0 « Sous seuil » n'est jamais tracé — cf.
+// predictionAllLevelConfigs .slice(1) — il ne servait QUE de fond). On éclaircit la
+// terre pour qu'elle se détache de l'océan #070d16 (contraste 1.05:1 → ~1.35:1) sans
+// toucher le niveau 0 de la rampe partagée (légende/macarons/tiroir).
+const PREDICTION_LAND_FILL = '#14243a';
 const PREDICTION_RISK_LEVELS = Object.freeze([
   { key: 'below-threshold', label: 'Sous seuil', range: '0-59', min: 0, color: '#091321', stroke: '#16283c', text: 'signal inférieur au seuil cartographié' },
-  { key: 'low', label: 'Faible', range: '60-70', min: 60, color: '#2e83a6', stroke: '#0b485c', text: 'signal faible, à surveiller localement' },
+  { key: 'low', label: 'Faible', range: '60-70', min: 60, color: '#3597be', stroke: '#0b485c', text: 'signal faible, à surveiller localement' },
   { key: 'medium', label: 'Moyen', range: '71-80', min: 71, color: '#34d399', stroke: '#0f766e', text: 'signal moyen, environnement à suivre' },
   { key: 'elevated', label: 'Élevé', range: '81-89', min: 81, color: '#fbbf24', stroke: '#92580e', text: 'signal élevé à surveiller sérieusement' },
   { key: 'very-high', label: 'Très élevé', range: '90-95', min: 90, color: '#f43f5e', stroke: '#9f1239', text: 'signal très élevé, à contrôler finement' },

@@ -1,0 +1,236 @@
+// storm-forecast-ribbon.js — Frise 3 « ruban chronologique à curseur glissant »
+// (parti retenu par Anthony). Remplace la bande de dates + les onglets de période
+// par un seul ruban : chaque jour = une colonne ; J0→J+3 (horaire/ECMWF) = 3 sous-
+// créneaux Matin/Après-midi/Soir ; J+4→J+10 (tendance ECMWF) = un seul « jour ».
+// Le curseur (poignée ambre + bec, PAS de ligne sur le texte) s'aimante au créneau
+// le plus proche ; glissé souris + tactile (Pointer Events) + clavier.
+//
+// Pilote la MÊME sélection que l'ancien UI : (predictionSelectedDate,
+// selectedPredictionPeriodKey) → renderActivePrediction(). Script classique chargé
+// après storm-forecast-page.js ; toutes ses dépendances sont des globals déjà définis.
+
+const PREDICTION_RIBBON_SUBS = [
+  { key: 'morning', ab: 'M', label: 'Matin' },
+  { key: 'afternoon', ab: 'A', label: 'Après-midi' },
+  { key: 'evening', ab: 'S', label: 'Soir' },
+];
+
+let predictionRibbonStops = [];   // [{ dateIso, periodKey, kind, el, dayEl }]
+let predictionRibbonEls = null;   // { root, wrap, ribbon, cursor, grip }
+let predictionRibbonActive = -1;
+let predictionRibbonRO = null;
+let predictionRibbonCenters = [];
+let predictionRibbonDragging = false;
+
+function predictionRibbonKind(dateIso) {
+  if (typeof predictionDateIsTrend === 'function' && predictionDateIsTrend(dateIso)) return 'trend';
+  if (typeof predictionDateUsesEcmwf === 'function' && predictionDateUsesEcmwf(dateIso)) return 'ecmwf';
+  return 'hourly';
+}
+
+function predictionRibbonReduce() {
+  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function buildPredictionRibbon() {
+  const root = document.getElementById('predictionRibbon');
+  if (!root) return;
+  root.innerHTML = '';
+  predictionRibbonStops = [];
+
+  const wrap = document.createElement('div');
+  wrap.className = 'pribbon-wrap';
+  const ribbon = document.createElement('div');
+  ribbon.className = 'pribbon';
+  ribbon.tabIndex = -1;
+
+  const dates = (typeof predictionSelectableDates === 'function') ? predictionSelectableDates() : [];
+  dates.forEach((iso) => {
+    const kind = predictionRibbonKind(iso);
+    const offset = (typeof predictionDateOffset === 'function') ? predictionDateOffset(iso) : 0;
+    const day = document.createElement('div');
+    day.className = 'pr-day pr-' + kind + (offset === 0 ? ' pr-now' : '');
+    if (typeof formatShortDateLabel === 'function') day.title = formatShortDateLabel(iso);
+
+    const top = document.createElement('div');
+    top.className = 'pr-top';
+    top.textContent = (typeof predictionDateChipLabel === 'function') ? predictionDateChipLabel(iso) : iso;
+
+    const cells = document.createElement('div');
+    cells.className = 'pr-cells';
+    const startIdx = predictionRibbonStops.length;
+    if (kind === 'trend') {
+      cells.appendChild(predictionRibbonCell(iso, 'day', kind, ''));
+    } else {
+      PREDICTION_RIBBON_SUBS.forEach((s) => cells.appendChild(predictionRibbonCell(iso, s.key, kind, s.ab)));
+    }
+    for (let i = startIdx; i < predictionRibbonStops.length; i += 1) predictionRibbonStops[i].dayEl = day;
+
+    day.appendChild(top);
+    day.appendChild(cells);
+    ribbon.appendChild(day);
+  });
+
+  const cursor = document.createElement('div');
+  cursor.className = 'pr-cursor';
+  cursor.innerHTML = '<span class="pr-beak"></span>'
+    + '<span class="pr-grip" tabindex="0" role="slider" aria-label="Créneau de prévision" '
+    + 'aria-valuemin="0" aria-valuemax="' + Math.max(0, predictionRibbonStops.length - 1) + '"></span>';
+  ribbon.appendChild(cursor);
+
+  wrap.appendChild(ribbon);
+  root.appendChild(wrap);
+  predictionRibbonEls = { root, wrap, ribbon, cursor, grip: cursor.querySelector('.pr-grip') };
+
+  wirePredictionRibbon();
+  if (predictionRibbonRO) predictionRibbonRO.disconnect();
+  if (typeof ResizeObserver === 'function') {
+    predictionRibbonRO = new ResizeObserver(() => {
+      measurePredictionRibbon();
+      positionPredictionCursor(predictionRibbonActive, false);
+    });
+    predictionRibbonRO.observe(ribbon);
+  }
+  wrap.addEventListener('scroll', () => positionPredictionCursor(predictionRibbonActive, false), { passive: true });
+
+  requestAnimationFrame(() => { measurePredictionRibbon(); updatePredictionRibbon(); });
+}
+
+function predictionRibbonCell(dateIso, periodKey, kind, label) {
+  const c = document.createElement('button');
+  c.type = 'button';
+  c.className = 'pr-cell' + (kind === 'ecmwf' ? ' pr-ecmwf' : '') + (kind === 'trend' ? ' pr-trendcell' : '');
+  c.textContent = label;
+  c.dataset.i = predictionRibbonStops.length;
+  predictionRibbonStops.push({ dateIso, periodKey, kind, el: c, dayEl: null });
+  return c;
+}
+
+function measurePredictionRibbon() {
+  if (!predictionRibbonEls) return;
+  const rb = predictionRibbonEls.ribbon.getBoundingClientRect();
+  predictionRibbonCenters = predictionRibbonStops.map((s) => {
+    const r = s.el.getBoundingClientRect();
+    return r.left - rb.left + r.width / 2;
+  });
+}
+
+function positionPredictionCursor(i, animate) {
+  if (!predictionRibbonEls || i < 0 || !predictionRibbonCenters.length) return;
+  const cursor = predictionRibbonEls.cursor;
+  cursor.classList.toggle('pr-animate', !!animate && !predictionRibbonReduce());
+  cursor.style.left = predictionRibbonCenters[i] + 'px';
+}
+
+// Applique l'état visuel (surbrillance case, position curseur, aria) SANS déclencher
+// de sélection — utilisé par la voie ruban (après selection) ET la voie externe.
+function renderPredictionRibbonVisual(i, animate) {
+  if (!predictionRibbonEls || i < 0) return;
+  predictionRibbonStops.forEach((s, idx) => s.el.classList.toggle('on', idx === i));
+  predictionRibbonStops.forEach((s) => s.dayEl && s.dayEl.classList.remove('pr-some-on'));
+  const s = predictionRibbonStops[i];
+  if (s && s.dayEl) s.dayEl.classList.add('pr-some-on');
+  positionPredictionCursor(i, animate);
+  const grip = predictionRibbonEls.grip;
+  if (grip) {
+    grip.setAttribute('aria-valuenow', i);
+    const sub = PREDICTION_RIBBON_SUBS.find((p) => p.key === s.periodKey);
+    const jx = (typeof predictionDateChipLabel === 'function') ? predictionDateChipLabel(s.dateIso) : s.dateIso;
+    grip.setAttribute('aria-valuetext', jx + ' · ' + (sub ? sub.label : 'Journée'));
+  }
+}
+
+// Voie RUBAN : l'utilisateur clique / glisse / tape sur un créneau.
+function setPredictionRibbonStop(i, animate) {
+  i = Math.max(0, Math.min(predictionRibbonStops.length - 1, i));
+  if (i < 0) return;
+  const changed = i !== predictionRibbonActive;
+  predictionRibbonActive = i;
+  renderPredictionRibbonVisual(i, animate);
+  if (changed) {
+    const s = predictionRibbonStops[i];
+    selectPredictionSlot(s.dateIso, s.periodKey);   // fire-and-forget (rend en async)
+  }
+}
+
+// Voie EXTERNE : la sélection a changé ailleurs (ouverture, etc.) → resynchronise
+// le ruban sans re-déclencher de rendu.
+function updatePredictionRibbon() {
+  if (!predictionRibbonEls || !predictionRibbonStops.length) return;
+  const iso = (typeof predictionSelectedDate !== 'undefined') ? predictionSelectedDate : null;
+  const pk = (typeof selectedPredictionPeriodKey !== 'undefined') ? selectedPredictionPeriodKey : 'day';
+  let idx = predictionRibbonStops.findIndex((s) => s.dateIso === iso && s.periodKey === pk);
+  if (idx < 0) idx = predictionRibbonStops.findIndex((s) => s.dateIso === iso);   // 'day' sur jour horaire → 1re sous-case
+  if (idx < 0) return;
+  predictionRibbonActive = idx;
+  renderPredictionRibbonVisual(idx, true);
+}
+
+// Applique (date, période) et rend une seule fois. Trend → forcé « jour ».
+async function selectPredictionSlot(dateIso, periodKey) {
+  const iso = (typeof normalizeDateIso === 'function') ? normalizeDateIso(dateIso) : dateIso;
+  const isTrend = (typeof predictionDateIsTrend === 'function') && predictionDateIsTrend(iso);
+  const pk = isTrend ? 'day' : (periodKey || 'day');
+  if (iso === predictionSelectedDate && pk === selectedPredictionPeriodKey) return;
+  predictionSelectedDate = iso;
+  selectedPredictionPeriodKey = pk;
+  if (typeof renderActivePrediction === 'function') await renderActivePrediction();
+}
+
+function predictionRibbonNearest(clientX) {
+  if (!predictionRibbonEls || !predictionRibbonCenters.length) return 0;
+  const rb = predictionRibbonEls.ribbon.getBoundingClientRect();
+  const x = clientX - rb.left;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < predictionRibbonCenters.length; i += 1) {
+    const d = Math.abs(predictionRibbonCenters[i] - x);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+
+function wirePredictionRibbon() {
+  const { ribbon, grip } = predictionRibbonEls;
+
+  const down = (e) => {
+    predictionRibbonDragging = true;
+    if (ribbon.setPointerCapture) { try { ribbon.setPointerCapture(e.pointerId); } catch (_) {} }
+    setPredictionRibbonStop(predictionRibbonNearest(e.clientX), true);
+    e.preventDefault();
+  };
+  const move = (e) => {
+    if (!predictionRibbonDragging) return;
+    setPredictionRibbonStop(predictionRibbonNearest(e.clientX), false);
+    e.preventDefault();
+  };
+  const up = () => {
+    if (predictionRibbonDragging) {
+      predictionRibbonDragging = false;
+      positionPredictionCursor(predictionRibbonActive, true);
+    }
+  };
+  ribbon.addEventListener('pointerdown', down);
+  ribbon.addEventListener('pointermove', move);
+  ribbon.addEventListener('pointerup', up);
+  ribbon.addEventListener('pointercancel', up);
+
+  // survol léger (souris)
+  ribbon.addEventListener('pointermove', (e) => {
+    if (predictionRibbonDragging) return;
+    const n = predictionRibbonNearest(e.clientX);
+    predictionRibbonStops.forEach((s, i) => s.el.classList.toggle('pr-hover', i === n && i !== predictionRibbonActive));
+  });
+  ribbon.addEventListener('pointerleave', () => predictionRibbonStops.forEach((s) => s.el.classList.remove('pr-hover')));
+
+  if (grip) {
+    grip.addEventListener('keydown', (e) => {
+      let handled = true;
+      if (e.key === 'ArrowLeft') setPredictionRibbonStop(predictionRibbonActive - 1, true);
+      else if (e.key === 'ArrowRight') setPredictionRibbonStop(predictionRibbonActive + 1, true);
+      else if (e.key === 'Home') setPredictionRibbonStop(0, true);
+      else if (e.key === 'End') setPredictionRibbonStop(predictionRibbonStops.length - 1, true);
+      else handled = false;
+      if (handled) e.preventDefault();
+    });
+  }
+}

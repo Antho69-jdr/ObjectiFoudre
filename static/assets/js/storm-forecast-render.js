@@ -244,8 +244,7 @@ function predictionAdminLineMarkup(project) {
     }).filter(Boolean).join('');
     if (!paths) return '';
     return `<g class="prediction-admin-lines" fill="none" stroke-linejoin="round" stroke-linecap="round">
-      <g stroke="#020617" stroke-opacity="0.72" stroke-width="1.7">${paths}</g>
-      <g stroke="#7dd3fc" stroke-opacity="0.42" stroke-width="0.62">${paths}</g>
+      <g stroke="#2b4a6b" stroke-opacity="0.55" stroke-width="1.0">${paths}</g>
     </g>`;
   }
 
@@ -273,8 +272,7 @@ function predictionAdminLineMarkup(project) {
   }).filter(Boolean).join('');
   if (!paths) return '';
   return `<g class="prediction-admin-lines" fill="none" stroke-linejoin="round" stroke-linecap="round">
-    <g stroke="#020617" stroke-opacity="0.72" stroke-width="1.7">${paths}</g>
-    <g stroke="#7dd3fc" stroke-opacity="0.18" stroke-width="0.24">${paths}</g>
+    <g stroke="#2b4a6b" stroke-opacity="0.55" stroke-width="1.0">${paths}</g>
   </g>`;
 }
 
@@ -350,8 +348,8 @@ function predictionRegionBoundaryMarkup(project) {
     .join('');
   if (!paths) return '';
   return `<g class="prediction-region-lines" fill="none" stroke-linejoin="round" stroke-linecap="round">
-    <g stroke="#020617" stroke-opacity="0.72" stroke-width="2.8">${paths}</g>
-    <g stroke="#7dd3fc" stroke-opacity="0.72" stroke-width="1.3">${paths}</g>
+    <g stroke="#3a5c80" stroke-opacity="0.72" stroke-width="1.9">${paths}</g>
+    <g stroke="#7dd3fc" stroke-opacity="0.30" stroke-width="0.7">${paths}</g>
   </g>`;
 }
 
@@ -771,6 +769,45 @@ function predictionSeverityHatchMarkup(field, project, cells, capeRef = PREDICTI
   </g>`;
 }
 
+// Légende « barre-échelle segmentée » (parti A) : un segment de barre par palier,
+// extrémités arrondies (côté 'left'/'right'/'both'), inter-segments carrés → aspect
+// « échelle continue » avec un gap de surface entre chaque palier.
+function predictionLegendSegPath(x, y, w, h, r, side, color) {
+  const x2 = x + w, y2 = y + h;
+  const f = (n) => Number(n).toFixed(1);
+  let d;
+  if (side === 'left') {
+    d = `M${f(x + r)} ${f(y)} H${f(x2)} V${f(y2)} H${f(x + r)} A${r} ${r} 0 0 1 ${f(x)} ${f(y2 - r)} V${f(y + r)} A${r} ${r} 0 0 1 ${f(x + r)} ${f(y)} Z`;
+  } else if (side === 'right') {
+    d = `M${f(x)} ${f(y)} H${f(x2 - r)} A${r} ${r} 0 0 1 ${f(x2)} ${f(y + r)} V${f(y2 - r)} A${r} ${r} 0 0 1 ${f(x2 - r)} ${f(y2)} H${f(x)} Z`;
+  } else if (side === 'both') {
+    d = `M${f(x + r)} ${f(y)} H${f(x2 - r)} A${r} ${r} 0 0 1 ${f(x2)} ${f(y + r)} V${f(y2 - r)} A${r} ${r} 0 0 1 ${f(x2 - r)} ${f(y2)} H${f(x + r)} A${r} ${r} 0 0 1 ${f(x)} ${f(y2 - r)} V${f(y + r)} A${r} ${r} 0 0 1 ${f(x + r)} ${f(y)} Z`;
+  } else {
+    d = `M${f(x)} ${f(y)} H${f(x2)} V${f(y2)} H${f(x)} Z`;
+  }
+  return `<path d="${d}" fill="${color}" fill-opacity="0.95"/>`;
+}
+
+// Construit la barre segmentée + les libellés/tranches centrés sous chaque segment.
+// m = { barW, yBar, hBar, r, segGap, labelY, labelSize, rangeY, rangeSize }.
+// Chaque libellé occupe TOUTE la colonne de son segment → jamais tronqué.
+function predictionSegmentedLegendMarkup(levels, m) {
+  const n = levels.length;
+  if (!n) return '';
+  const segW = (m.barW - m.segGap * (n - 1)) / n;
+  let bars = '', labels = '';
+  levels.forEach((lvl, i) => {
+    const x = i * (segW + m.segGap);
+    const side = n === 1 ? 'both' : (i === 0 ? 'left' : (i === n - 1 ? 'right' : 'none'));
+    bars += predictionLegendSegPath(x, m.yBar, segW, m.hBar, m.r, side, lvl.color);
+    const cx = (x + segW / 2).toFixed(1);
+    labels += `<text x="${cx}" y="${m.labelY}" text-anchor="middle" fill="#dbe4f2" font-family="Inter, Arial, sans-serif" font-size="${m.labelSize}" font-weight="800">${predictionEscapeXml(lvl.label)}</text>`;
+    const range = String(lvl.range || '').replace('-', '–');
+    if (range) labels += `<text x="${cx}" y="${m.rangeY}" text-anchor="middle" fill="#8ba0bd" font-family="Inter, Arial, sans-serif" font-size="${m.rangeSize}" font-weight="700">${predictionEscapeXml(range)}</text>`;
+  });
+  return bars + labels;
+}
+
 function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey) {
   const width = 860;
   const height = 760;
@@ -802,54 +839,38 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
   const adminMarkup = predictionAdminLineMarkup(project);
   const regionBoundaryMarkup = predictionRegionBoundaryMarkup(project);
   const isMobileSvg = predictionLegendVariant() === 'm';
+  const legendLevels = predictionExportLegendLevels();
 
-  let legendMarkup, svgHeight, legendY;
-  if (isMobileSvg) {
-    // 2 lignes de 3+2 items, fonts ×2.2 pour être lisibles à ~375px
-    const levels = predictionExportLegendLevels();
-    const perRow = 3;
-    const colW = Math.floor((width - 76) / perRow);
-    const rowH = 52;
-    const rW = 40, rH = 18, rRx = 6, fSize = 22;
-    legendMarkup = levels.map((level, i) => {
-      const col = i % perRow;
-      const row = Math.floor(i / perRow);
-      return `<g transform="translate(${col * colW} ${row * rowH + 28})">
-        <rect x="0" y="0" width="${rW}" height="${rH}" rx="${rRx}" fill="${level.color}" fill-opacity="0.92" stroke="#e2e8f0" stroke-opacity="0.16"/>
-        <text x="${rW + 10}" y="${rH - 3}" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="${fSize}" font-weight="800">${predictionEscapeXml(level.label)}</text>
-      </g>`;
-    }).join('');
-    svgHeight = height + 70;
-    legendY = height - 28;
-  } else {
-    legendMarkup = predictionExportLegendLevels().map((level, index) => {
-      const x = index * 104;
-      return `<g transform="translate(${x} 24)">
-        <rect x="0" y="0" width="36" height="15" rx="7" fill="${level.color}" fill-opacity="0.92" stroke="#e2e8f0" stroke-opacity="0.16"/>
-        <text x="45" y="12.5" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="12.5" font-weight="800">${predictionEscapeXml(level.label)}</text>
-      </g>`;
-    }).join('');
-    svgHeight = height;
-    legendY = height - 66;
-  }
+  // Légende « barre-échelle segmentée » (parti A choisi par Anthony) : une barre
+  // continue de N paliers accolés (gap 2 px, extrémités arrondies) avec libellé +
+  // tranche centrés SOUS chaque segment → zéro troncature (« Très élevé » a toute sa
+  // colonne) et lecture d'« échelle de probabilité ». Cuite dans le SVG = identique sur
+  // l'export PNG. Variante mobile = même barre, empilée sous la France (haut = 860×760).
+  const legM = isMobileSvg
+    ? { barW: width - 76, yBar: 16, hBar: 22, r: 10, segGap: 2, labelY: 60, labelSize: 22, rangeY: 82, rangeSize: 16, sevY: 104, sevText: 22, sevRect: [40, 18, 6] }
+    : { barW: width - 76, yBar: 12, hBar: 15, r: 7, segGap: 2, labelY: 43, labelSize: 12.5, rangeY: 57, rangeSize: 10.5, sevY: 74, sevText: 12.5, sevRect: [34, 14, 4] };
 
-  // Entrée de légende pour les hachures de sévérité (J0 uniquement).
+  const legendMarkup = predictionSegmentedLegendMarkup(legendLevels, legM);
+
+  // Entrée « hachures sévérité » sous la barre (même colonne de gauche).
   let severityLegendMarkup = '';
   if (severityMarkup) {
-    if (isMobileSvg) {
-      const rowsUsed = Math.ceil(predictionExportLegendLevels().length / 3);
-      const yOff = rowsUsed * 52 + 30;
-      severityLegendMarkup = `<g transform="translate(0 ${yOff})">
-        <rect x="0" y="0" width="40" height="18" rx="6" fill="url(#severityHatch)" stroke="${PREDICTION_SEVERITY_HATCH_COLOR}" stroke-opacity="0.7"/>
-        <text x="50" y="15" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800">Hachures : orage potentiellement violent</text>
-      </g>`;
-      svgHeight = Math.max(svgHeight, legendY + yOff + 28);
-    } else {
-      severityLegendMarkup = `<g transform="translate(0 44)">
-        <rect x="0" y="0" width="36" height="15" rx="4" fill="url(#severityHatch)" stroke="${PREDICTION_SEVERITY_HATCH_COLOR}" stroke-opacity="0.7"/>
-        <text x="45" y="12.5" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="12.5" font-weight="800">Hachures : orage potentiellement violent</text>
-      </g>`;
-    }
+    const [sw, sh, srx] = legM.sevRect;
+    severityLegendMarkup = `<g transform="translate(0 ${legM.sevY})">
+      <rect x="0" y="0" width="${sw}" height="${sh}" rx="${srx}" fill="url(#severityHatch)" stroke="${PREDICTION_SEVERITY_HATCH_COLOR}" stroke-opacity="0.7"/>
+      <text x="${sw + 10}" y="${sh - 4}" fill="#dbe4f2" font-family="Inter, Arial, sans-serif" font-size="${legM.sevText}" font-weight="800">Hachures : orage potentiellement violent</text>
+    </g>`;
+  }
+
+  // Hauteur du bloc (titre à y=0 → barre → libellés → tranches [→ sévérité]).
+  const legBlockH = (severityMarkup ? legM.sevY + legM.sevRect[1] : legM.rangeY) + 12;
+  let svgHeight, legendY;
+  if (isMobileSvg) {
+    legendY = height + 18;               // empilée sous la France (haut reste 860×760)
+    svgHeight = legendY + legBlockH;
+  } else {
+    svgHeight = height;                  // par-dessus l'océan, en bas de carte
+    legendY = height - legBlockH - 8;
   }
 
   const legendTitleSize = isMobileSvg ? 24 : 12;
@@ -864,13 +885,13 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
   </defs>
   <rect width="${width}" height="${svgHeight}" fill="#070d16"/>
   <g>
-    <path d="${francePath}" fill="${PREDICTION_RISK_LEVELS[0].color}"/>
+    <path d="${francePath}" fill="${PREDICTION_LAND_FILL}"/>
     <g clip-path="url(#franceClip)">${shapeMarkup}</g>
     <g clip-path="url(#franceClip)">${severityMarkup}</g>
     <g clip-path="url(#franceClip)">${adminMarkup}</g>
     <g clip-path="url(#franceClip)">${regionBoundaryMarkup}</g>
-    <path d="${francePath}" fill="none" stroke="#020617" stroke-opacity="0.6" stroke-width="1.7" stroke-linejoin="round"/>
-    <path d="${francePath}" fill="none" stroke="#7dd3fc" stroke-opacity="0.72" stroke-width="1.3" stroke-linejoin="round"/>
+    <path d="${francePath}" fill="none" stroke="#071426" stroke-opacity="0.5" stroke-width="1.7" stroke-linejoin="round"/>
+    <path d="${francePath}" fill="none" stroke="#7dd3fc" stroke-opacity="0.8" stroke-width="1.4" stroke-linejoin="round"/>
   </g>
   <g transform="translate(38 ${legendY})">
     <text x="0" y="0" fill="#dbeafe" fill-opacity="0.82" font-family="Inter, Arial, sans-serif" font-size="${legendTitleSize}" font-weight="900">PROBABILITÉ DE RISQUE ORAGEUX</text>
@@ -896,10 +917,10 @@ function drawPredictionScopeImage() {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" shape-rendering="geometricPrecision">
     <defs><clipPath id="scopeClip" clipPathUnits="userSpaceOnUse"><path d="${francePath}"/></clipPath></defs>
     <rect width="${width}" height="${height}" fill="#070d16"/>
-    <path d="${francePath}" fill="#091321"/>
+    <path d="${francePath}" fill="${PREDICTION_LAND_FILL}"/>
     <g clip-path="url(#scopeClip)">${adminMarkup}${regionMarkup}</g>
-    <path d="${francePath}" fill="none" stroke="#020617" stroke-opacity="0.55" stroke-width="1.4" stroke-linejoin="round"/>
-    <path d="${francePath}" fill="none" stroke="#7dd3fc" stroke-opacity="0.55" stroke-width="1.05" stroke-linejoin="round"/>
+    <path d="${francePath}" fill="none" stroke="#071426" stroke-opacity="0.5" stroke-width="1.7" stroke-linejoin="round"/>
+    <path d="${francePath}" fill="none" stroke="#7dd3fc" stroke-opacity="0.8" stroke-width="1.4" stroke-linejoin="round"/>
   </svg>`;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }

@@ -178,6 +178,9 @@
 @import "./components/desktop-header.css";
 /* Refonte desktop « Carte de risque journalier » (parti C·1, ≥1025px) — dernier. */
 @import "./components/prediction-page-c1.css";
+/* Frise 3 « ruban chronologique à curseur » (remplace date-strip + period-tabs) —
+   après c1 pour gagner la cascade dans le dock desktop. */
+@import "./components/prediction-ribbon.css";
 
 :root {
   /* Fond & surfaces */

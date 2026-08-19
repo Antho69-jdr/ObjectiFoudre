@@ -1,0 +1,168 @@
+/* prediction-ribbon.css — Frise 3 « ruban chronologique à curseur glissant ».
+   Remplace .prediction-date-strip + .prediction-period-tabs par un ruban unique.
+   Importé APRÈS prediction-page-c1.css → gagne la cascade dans le dock desktop.
+   3 régimes : desktop dock (≥1025, dans .prediction-dock flex), tablette 768–1024
+   et mobile-ui ≤767 (dock en display:contents → ruban = item grid plein largeur). */
+
+.prediction-ribbon { min-width: 0; }
+
+.pribbon-wrap {
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-top: 15px;              /* loge la poignée qui déborde au-dessus du ruban */
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.pribbon-wrap::-webkit-scrollbar { display: none; }
+
+.pribbon {
+  position: relative;
+  display: flex;
+  gap: 0;
+  min-width: 620px;              /* scroll horizontal en dessous */
+  touch-action: pan-y;          /* le glissé horizontal ne scrolle pas la page */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pr-day {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pr-top {
+  font-size: 10px;
+  line-height: 1;
+  text-align: center;
+  color: rgba(148, 163, 184, 0.85);
+  padding: 0 0 4px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.pr-now .pr-top { color: #b6c6ec; }
+.pr-trend .pr-top { color: rgba(148, 163, 184, 0.6); }
+.pr-day.pr-some-on.pr-trend .pr-top,
+.pr-day.pr-some-on .pr-top { color: #f4c94e; }
+
+/* Ruban CONTINU (parti 3) : bande d'un seul tenant, jours séparés par un filet
+   interne, coins arrondis uniquement aux extrémités. */
+.pr-cells {
+  display: flex;
+  height: 30px;
+  overflow: hidden;
+}
+.pr-day:first-child .pr-cells { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+.pr-day:last-child .pr-cells { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
+.pr-day + .pr-day .pr-cells { box-shadow: inset 1px 0 0 rgba(30, 44, 64, 0.95); }
+.pribbon::after {   /* liseré englobant la bande de cases (sous le curseur) */
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0; height: 30px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.16);
+  pointer-events: none;
+}
+
+.pr-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  border: 0;
+  border-right: 1px solid rgba(7, 13, 22, 0.85);
+  background: #0e1a2b;
+  color: rgba(148, 163, 184, 0.85);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  transition: background 0.12s ease;
+}
+.pr-cell:last-child { border-right: 0; }
+/* PIÈGE : `body.mobile-ui button` force flex:0 0 auto + min-width:88px (cf. mobile-nav) ;
+   mobile-ui peut être actif au-delà de 767px → override NON scopé en media query, sinon
+   les cases <button> débordent leur jour dès que mobile-ui s'active sur large écran. */
+body.mobile-ui .pr-cell { flex: 1 1 0 !important; min-width: 0 !important; }
+.pr-cell.pr-ecmwf { background: #0c1826; }
+.pr-cell.pr-trendcell { background: #0a1524; color: rgba(120, 140, 170, 0.75); }
+.pr-cell.pr-hover { background: #16273c; }
+.pr-cell.on {
+  background: linear-gradient(180deg, #f4c94e, #e0a92e);
+  color: #3a2a05;
+}
+
+/* --- curseur : poignée ambre + bec, JAMAIS de ligne sur le texte --- */
+.pr-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 5;
+}
+.pr-cursor.pr-animate { transition: left 0.16s cubic-bezier(0.22, 0.61, 0.36, 1); }
+.pr-beak {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid #f4c94e;
+  filter: drop-shadow(0 0 4px rgba(244, 201, 78, 0.55));
+}
+.pr-grip {
+  position: absolute;
+  top: -15px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 15px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #ffe9a8, #e0a92e);
+  border: 1px solid #caa02f;
+  box-shadow: 0 3px 10px -3px rgba(244, 201, 78, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  cursor: grab;
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+}
+.pr-grip::before {
+  content: "";
+  width: 9px;
+  height: 7px;
+  border-left: 2px solid #6b4e08;
+  border-right: 2px solid #6b4e08;
+  opacity: 0.6;
+}
+.pr-grip:active { cursor: grabbing; }
+.pr-grip:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pr-cursor.pr-animate { transition: none; }
+  .pr-cell { transition: none; }
+}
+
+/* ---- desktop ≥1025 : le ruban remplit le dock de verre ---- */
+@media (min-width: 1025px) {
+  #predictionPage .prediction-dock .prediction-ribbon { flex: 1 1 auto; min-width: 0; }
+}
+
+/* ---- tablette + mobile : dock = display:contents → ruban = item grid pleine largeur ---- */
+@media (max-width: 1024px) {
+  #predictionPage .prediction-ribbon { grid-column: 1 / -1; margin-top: 8px; }
+}
+@media (max-width: 767px) {
+  body.mobile-ui .prediction-ribbon { grid-column: 1 / -1; margin: 8px -8px 0; }
+  body.mobile-ui .pribbon-wrap { padding-left: 8px; padding-right: 8px; }
+  body.mobile-ui .pribbon { min-width: 560px; }
+  body.mobile-ui .pr-cells { height: 34px; }        /* cible tactile un peu plus haute */
+  body.mobile-ui .pribbon::after { height: 34px; }
+}

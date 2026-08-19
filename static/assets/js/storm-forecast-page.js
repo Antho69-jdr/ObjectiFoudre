@@ -16,6 +16,7 @@ function updatePredictionPeriodTabs(periodKey = selectedPredictionPeriodKey) {
     button.classList.toggle('active', active);
     button.setAttribute('aria-selected', active ? 'true' : 'false');
   });
+  if (typeof updatePredictionRibbon === 'function') updatePredictionRibbon();   // Frise 3 : sync période
 }
 
 function hidePredictionHover() {
@@ -733,6 +734,7 @@ function buildPredictionDateStrip() {
 }
 
 function highlightPredictionDateChip() {
+  if (typeof updatePredictionRibbon === 'function') updatePredictionRibbon();   // Frise 3 : sync date
   const strip = predictionDateStripEl();
   if (!strip) return;
   let activeBtn = null;
@@ -875,6 +877,7 @@ async function openPredictionPage(initialDate = null) {
   predictionPage.setAttribute('aria-hidden', 'false');
   showPredictionScanning();
   buildPredictionDateStrip();
+  if (typeof buildPredictionRibbon === 'function') buildPredictionRibbon();   // Frise 3
   // Date par défaut : celle demandée si dans la plage, sinon la date de la grille si
   // elle est dans J0→J+10, sinon aujourd'hui.
   let target = initialDate ? normalizeDateIso(initialDate) : null;
@@ -884,6 +887,11 @@ async function openPredictionPage(initialDate = null) {
     target = (gridOffset >= 0 && gridOffset <= PREDICTION_MAX_OFFSET) ? gridDate : predictionTodayIso();
   }
   predictionSelectedDate = target;
+  // Frise 3 : le ruban sélectionne des sous-créneaux (Matin/Après-midi/Soir) sur les
+  // jours horaires — plus de « Journée 08-08 » agrégée. Défaut = après-midi (pic
+  // convectif), ou « jour » en tendance ; une sous-période déjà choisie est conservée.
+  if (predictionDateIsTrend(target)) selectedPredictionPeriodKey = 'day';
+  else if (selectedPredictionPeriodKey === 'day') selectedPredictionPeriodKey = 'afternoon';
   highlightPredictionDateChip();
   await renderActivePrediction();
   prewarmPredictionDates();
