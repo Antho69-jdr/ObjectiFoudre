@@ -34,7 +34,7 @@
   min-width: 0;
   overflow-x: auto;
   overflow-y: visible;
-  padding-top: 15px;              /* loge la poignée qui déborde au-dessus du ruban */
+  padding-top: 28px;              /* loge la poignée remontée au-dessus des libellés */
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
@@ -136,7 +136,7 @@ body.mobile-ui .pr-modebtn { min-width: 0 !important; min-height: 34px !importan
 .pr-cursor.pr-animate { transition: left 0.16s cubic-bezier(0.22, 0.61, 0.36, 1); }
 .pr-beak {
   position: absolute;
-  top: -3px;
+  top: -13px;                     /* apex ~5px AU-DESSUS de la rangée de libellés */
   left: 50%;
   transform: translateX(-50%);
   width: 0;
@@ -148,7 +148,7 @@ body.mobile-ui .pr-modebtn { min-width: 0 !important; min-height: 34px !importan
 }
 .pr-grip {
   position: absolute;
-  top: -15px;
+  top: -26px;
   left: 50%;
   transform: translateX(-50%);
   width: 24px;

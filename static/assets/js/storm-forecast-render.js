@@ -846,9 +846,12 @@ function drawPredictionImage(day, cells, periodKey = selectedPredictionPeriodKey
   // tranche centrés SOUS chaque segment → zéro troncature (« Très élevé » a toute sa
   // colonne) et lecture d'« échelle de probabilité ». Cuite dans le SVG = identique sur
   // l'export PNG. Variante mobile = même barre, empilée sous la France (haut = 860×760).
+  // Desktop : barre rétrécie (540) et ancrée à gauche → l'extrémité magenta reste loin
+  // de la Corse (bas-droite) qu'elle recouvrait à pleine largeur. Mobile : pleine largeur
+  // (empilée SOUS la France, aucun recouvrement).
   const legM = isMobileSvg
     ? { barW: width - 76, yBar: 16, hBar: 22, r: 10, segGap: 2, labelY: 60, labelSize: 22, rangeY: 82, rangeSize: 16, sevY: 104, sevText: 22, sevRect: [40, 18, 6] }
-    : { barW: width - 76, yBar: 12, hBar: 15, r: 7, segGap: 2, labelY: 43, labelSize: 12.5, rangeY: 57, rangeSize: 10.5, sevY: 74, sevText: 12.5, sevRect: [34, 14, 4] };
+    : { barW: 540, yBar: 12, hBar: 15, r: 7, segGap: 2, labelY: 43, labelSize: 12.5, rangeY: 57, rangeSize: 10.5, sevY: 74, sevText: 12.5, sevRect: [34, 14, 4] };
 
   const legendMarkup = predictionSegmentedLegendMarkup(legendLevels, legM);
 
