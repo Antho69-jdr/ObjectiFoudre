@@ -21,6 +21,9 @@ let predictionRibbonActive = -1;
 let predictionRibbonRO = null;
 let predictionRibbonCenters = [];
 let predictionRibbonDragging = false;
+let predictionRibbonMode = 'journee';   // 'journee' (1 case/jour, 08-08) | 'detail' (M/A/S sur J0→J+3)
+let predictionRibbonModeBtn = null;
+let predictionRibbonWired = false;       // listeners pointeur du ruban attachés une seule fois
 
 function predictionRibbonKind(dateIso) {
   if (typeof predictionDateIsTrend === 'function' && predictionDateIsTrend(dateIso)) return 'trend';
@@ -35,14 +38,47 @@ function predictionRibbonReduce() {
 function buildPredictionRibbon() {
   const root = document.getElementById('predictionRibbon');
   if (!root) return;
+  predictionRibbonMode = 'journee';        // ouverture = vue d'ensemble (journée 08-08)
+  predictionRibbonWired = false;
   root.innerHTML = '';
-  predictionRibbonStops = [];
+
+  // Bouton de bascule Journée ⇄ Détail (à gauche du ruban).
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pr-modebtn';
+  btn.addEventListener('click', togglePredictionRibbonMode);
+  root.appendChild(btn);
+  predictionRibbonModeBtn = btn;
 
   const wrap = document.createElement('div');
   wrap.className = 'pribbon-wrap';
   const ribbon = document.createElement('div');
   ribbon.className = 'pribbon';
   ribbon.tabIndex = -1;
+  wrap.appendChild(ribbon);
+  root.appendChild(wrap);
+  predictionRibbonEls = { root, wrap, ribbon, cursor: null, grip: null };
+
+  wrap.addEventListener('scroll', () => positionPredictionCursor(predictionRibbonActive, false), { passive: true });
+  if (predictionRibbonRO) predictionRibbonRO.disconnect();
+  if (typeof ResizeObserver === 'function') {
+    predictionRibbonRO = new ResizeObserver(() => {
+      measurePredictionRibbon();
+      positionPredictionCursor(predictionRibbonActive, false);
+    });
+    predictionRibbonRO.observe(ribbon);
+  }
+  wirePredictionRibbonPointer();            // listeners pointeur sur le ruban : une seule fois
+  populatePredictionRibbon();
+}
+
+// (Re)construit les colonnes-jours + le curseur selon le mode courant. Le ruban et ses
+// listeners pointeur persistent (attachés une fois) ; seul son contenu est régénéré.
+function populatePredictionRibbon() {
+  if (!predictionRibbonEls) return;
+  const ribbon = predictionRibbonEls.ribbon;
+  ribbon.innerHTML = '';
+  predictionRibbonStops = [];
 
   const dates = (typeof predictionSelectableDates === 'function') ? predictionSelectableDates() : [];
   dates.forEach((iso) => {
@@ -59,7 +95,9 @@ function buildPredictionRibbon() {
     const cells = document.createElement('div');
     cells.className = 'pr-cells';
     const startIdx = predictionRibbonStops.length;
-    if (kind === 'trend') {
+    // Mode « journée » (ou jour de tendance) = une seule case 08-08 ; mode « détail » =
+    // Matin/Après-midi/Soir sur les jours horaires/ECMWF.
+    if (predictionRibbonMode === 'journee' || kind === 'trend') {
       cells.appendChild(predictionRibbonCell(iso, 'day', kind, ''));
     } else {
       PREDICTION_RIBBON_SUBS.forEach((s) => cells.appendChild(predictionRibbonCell(iso, s.key, kind, s.ab)));
@@ -77,23 +115,36 @@ function buildPredictionRibbon() {
     + '<span class="pr-grip" tabindex="0" role="slider" aria-label="Créneau de prévision" '
     + 'aria-valuemin="0" aria-valuemax="' + Math.max(0, predictionRibbonStops.length - 1) + '"></span>';
   ribbon.appendChild(cursor);
+  predictionRibbonEls.cursor = cursor;
+  predictionRibbonEls.grip = cursor.querySelector('.pr-grip');
+  wirePredictionRibbonGrip();               // le grip est recréé à chaque populate
 
-  wrap.appendChild(ribbon);
-  root.appendChild(wrap);
-  predictionRibbonEls = { root, wrap, ribbon, cursor, grip: cursor.querySelector('.pr-grip') };
-
-  wirePredictionRibbon();
-  if (predictionRibbonRO) predictionRibbonRO.disconnect();
-  if (typeof ResizeObserver === 'function') {
-    predictionRibbonRO = new ResizeObserver(() => {
-      measurePredictionRibbon();
-      positionPredictionCursor(predictionRibbonActive, false);
-    });
-    predictionRibbonRO.observe(ribbon);
-  }
-  wrap.addEventListener('scroll', () => positionPredictionCursor(predictionRibbonActive, false), { passive: true });
-
+  updatePredictionRibbonModeBtn();
   requestAnimationFrame(() => { measurePredictionRibbon(); updatePredictionRibbon(); });
+}
+
+function updatePredictionRibbonModeBtn() {
+  if (!predictionRibbonModeBtn) return;
+  const detail = predictionRibbonMode === 'detail';
+  predictionRibbonModeBtn.textContent = detail ? 'Journée' : 'Détail';
+  predictionRibbonModeBtn.title = detail
+    ? 'Revenir à la vue journée entière (08-08)'
+    : 'Voir le détail matin / après-midi / soir';
+  predictionRibbonModeBtn.setAttribute('aria-pressed', detail ? 'true' : 'false');
+  predictionRibbonModeBtn.classList.toggle('is-detail', detail);
+}
+
+// Bascule le mode + adapte la période sélectionnée au nouveau mode, puis re-rend.
+function togglePredictionRibbonMode() {
+  predictionRibbonMode = (predictionRibbonMode === 'journee') ? 'detail' : 'journee';
+  const iso = predictionSelectedDate;
+  const isTrend = (typeof predictionDateIsTrend === 'function') && predictionDateIsTrend(iso);
+  const pk = (predictionRibbonMode === 'journee' || isTrend)
+    ? 'day'
+    : (selectedPredictionPeriodKey && selectedPredictionPeriodKey !== 'day' ? selectedPredictionPeriodKey : 'afternoon');
+  populatePredictionRibbon();
+  selectPredictionSlot(iso, pk);   // no-op si (iso,pk) inchangé (mode journée↔trend)
+  updatePredictionRibbon();
 }
 
 function predictionRibbonCell(dateIso, periodKey, kind, label) {
@@ -189,8 +240,10 @@ function predictionRibbonNearest(clientX) {
   return best;
 }
 
-function wirePredictionRibbon() {
-  const { ribbon, grip } = predictionRibbonEls;
+function wirePredictionRibbonPointer() {
+  if (predictionRibbonWired || !predictionRibbonEls) return;
+  predictionRibbonWired = true;
+  const ribbon = predictionRibbonEls.ribbon;
 
   const down = (e) => {
     predictionRibbonDragging = true;
@@ -221,16 +274,18 @@ function wirePredictionRibbon() {
     predictionRibbonStops.forEach((s, i) => s.el.classList.toggle('pr-hover', i === n && i !== predictionRibbonActive));
   });
   ribbon.addEventListener('pointerleave', () => predictionRibbonStops.forEach((s) => s.el.classList.remove('pr-hover')));
+}
 
-  if (grip) {
-    grip.addEventListener('keydown', (e) => {
-      let handled = true;
-      if (e.key === 'ArrowLeft') setPredictionRibbonStop(predictionRibbonActive - 1, true);
-      else if (e.key === 'ArrowRight') setPredictionRibbonStop(predictionRibbonActive + 1, true);
-      else if (e.key === 'Home') setPredictionRibbonStop(0, true);
-      else if (e.key === 'End') setPredictionRibbonStop(predictionRibbonStops.length - 1, true);
-      else handled = false;
-      if (handled) e.preventDefault();
-    });
-  }
+function wirePredictionRibbonGrip() {
+  const grip = predictionRibbonEls && predictionRibbonEls.grip;
+  if (!grip) return;
+  grip.addEventListener('keydown', (e) => {
+    let handled = true;
+    if (e.key === 'ArrowLeft') setPredictionRibbonStop(predictionRibbonActive - 1, true);
+    else if (e.key === 'ArrowRight') setPredictionRibbonStop(predictionRibbonActive + 1, true);
+    else if (e.key === 'Home') setPredictionRibbonStop(0, true);
+    else if (e.key === 'End') setPredictionRibbonStop(predictionRibbonStops.length - 1, true);
+    else handled = false;
+    if (handled) e.preventDefault();
+  });
 }

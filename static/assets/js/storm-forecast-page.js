@@ -887,11 +887,10 @@ async function openPredictionPage(initialDate = null) {
     target = (gridOffset >= 0 && gridOffset <= PREDICTION_MAX_OFFSET) ? gridDate : predictionTodayIso();
   }
   predictionSelectedDate = target;
-  // Frise 3 : le ruban sélectionne des sous-créneaux (Matin/Après-midi/Soir) sur les
-  // jours horaires — plus de « Journée 08-08 » agrégée. Défaut = après-midi (pic
-  // convectif), ou « jour » en tendance ; une sous-période déjà choisie est conservée.
-  if (predictionDateIsTrend(target)) selectedPredictionPeriodKey = 'day';
-  else if (selectedPredictionPeriodKey === 'day') selectedPredictionPeriodKey = 'afternoon';
+  // Frise 3 : le ruban s'ouvre en mode « journée » (vue d'ensemble 08-08, buildPredictionRibbon
+  // remet le mode à 'journee') → période par défaut = 'day'. Le bouton « Détail » déplie
+  // ensuite Matin/Après-midi/Soir sur J0→J+3.
+  selectedPredictionPeriodKey = 'day';
   highlightPredictionDateChip();
   await renderActivePrediction();
   prewarmPredictionDates();

@@ -4,9 +4,34 @@
    3 régimes : desktop dock (≥1025, dans .prediction-dock flex), tablette 768–1024
    et mobile-ui ≤767 (dock en display:contents → ruban = item grid plein largeur). */
 
-.prediction-ribbon { min-width: 0; }
+.prediction-ribbon {
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;          /* bouton aligné sur la bande de cases */
+  gap: 10px;
+}
+
+/* Bouton bascule Journée ⇄ Détail (chip, langage visuel des ex-onglets période). */
+.pr-modebtn {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(125, 211, 252, 0.38);
+  background: rgba(56, 189, 248, 0.12);
+  color: #cfeaff;
+  font: 700 11px Inter, Arial, sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.pr-modebtn:hover { background: rgba(56, 189, 248, 0.2); border-color: rgba(125, 211, 252, 0.6); }
+.pr-modebtn.is-detail { background: rgba(251, 191, 36, 0.14); border-color: rgba(251, 191, 36, 0.5); color: #fff3d6; }
+.pr-modebtn:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
 
 .pribbon-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: visible;
   padding-top: 15px;              /* loge la poignée qui déborde au-dessus du ruban */
@@ -87,6 +112,9 @@
    mobile-ui peut être actif au-delà de 767px → override NON scopé en media query, sinon
    les cases <button> débordent leur jour dès que mobile-ui s'active sur large écran. */
 body.mobile-ui .pr-cell { flex: 1 1 0 !important; min-width: 0 !important; }
+/* même piège pour le bouton mode : on garde une cible tactile correcte sans l'énorme
+   min-width:88/min-height:46 qui déborderait le dock. */
+body.mobile-ui .pr-modebtn { min-width: 0 !important; min-height: 34px !important; padding: 0 10px !important; }
 .pr-cell.pr-ecmwf { background: #0c1826; }
 .pr-cell.pr-trendcell { background: #0a1524; color: rgba(120, 140, 170, 0.75); }
 .pr-cell.pr-hover { background: #16273c; }
