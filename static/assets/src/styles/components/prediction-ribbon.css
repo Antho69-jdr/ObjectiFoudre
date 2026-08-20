@@ -7,8 +7,14 @@
 .prediction-ribbon {
   min-width: 0;
   display: flex;
+  flex-direction: column;         /* [rangée bouton+ruban] puis [barre de défilement] */
+  gap: 5px;
+}
+.pr-row {
+  display: flex;
   align-items: flex-end;          /* bouton aligné sur la bande de cases */
   gap: 10px;
+  min-width: 0;
 }
 
 /* Bouton bascule Journée ⇄ Détail (chip, langage visuel des ex-onglets période). */
@@ -39,6 +45,33 @@
   -webkit-overflow-scrolling: touch;
 }
 .pribbon-wrap::-webkit-scrollbar { display: none; }
+
+/* Barre de défilement horizontale dédiée (surtout mobile portrait) — affichée
+   uniquement quand le ruban déborde (has-scroll posé par updatePredictionScrollbar). */
+.pr-scroll {
+  display: none;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.16);
+  position: relative;
+  touch-action: none;
+  cursor: pointer;
+}
+.prediction-ribbon.has-scroll .pr-scroll { display: block; }
+.pr-scroll-thumb {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40px;
+  border-radius: 4px;
+  background: rgba(125, 211, 252, 0.5);
+  cursor: grab;
+  touch-action: none;
+}
+.pr-scroll-thumb:hover { background: rgba(125, 211, 252, 0.72); }
+.pr-scroll-thumb:active { cursor: grabbing; }
+.pr-scroll-thumb:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
 
 .pribbon {
   position: relative;

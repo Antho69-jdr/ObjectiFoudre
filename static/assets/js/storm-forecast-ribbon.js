@@ -42,12 +42,14 @@ function buildPredictionRibbon() {
   predictionRibbonWired = false;
   root.innerHTML = '';
 
-  // Bouton de bascule Journée ⇄ Détail (à gauche du ruban).
+  // Rangée [bouton bascule][ruban] ; la barre de défilement occupe la largeur dessous.
+  const rowEl = document.createElement('div');
+  rowEl.className = 'pr-row';
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'pr-modebtn';
   btn.addEventListener('click', togglePredictionRibbonMode);
-  root.appendChild(btn);
+  rowEl.appendChild(btn);
   predictionRibbonModeBtn = btn;
 
   const wrap = document.createElement('div');
@@ -56,20 +58,93 @@ function buildPredictionRibbon() {
   ribbon.className = 'pribbon';
   ribbon.tabIndex = -1;
   wrap.appendChild(ribbon);
-  root.appendChild(wrap);
-  predictionRibbonEls = { root, wrap, ribbon, cursor: null, grip: null };
+  rowEl.appendChild(wrap);
+  root.appendChild(rowEl);
 
-  wrap.addEventListener('scroll', () => positionPredictionCursor(predictionRibbonActive, false), { passive: true });
+  // Barre de défilement horizontale (surtout mobile portrait) : le ruban dépasse la
+  // largeur d'écran et le swipe horizontal est capté par le curseur → J+6→J+10 seraient
+  // inaccessibles. Ce pouce glissable pilote wrap.scrollLeft. Masqué s'il n'y a pas de
+  // débordement (desktop / paysage).
+  const scroll = document.createElement('div');
+  scroll.className = 'pr-scroll';
+  scroll.innerHTML = '<div class="pr-scroll-thumb" role="scrollbar" aria-label="Faire défiler la frise" aria-orientation="horizontal" tabindex="0"></div>';
+  root.appendChild(scroll);
+
+  predictionRibbonEls = {
+    root, row: rowEl, wrap, ribbon,
+    scroll, thumb: scroll.querySelector('.pr-scroll-thumb'),
+    cursor: null, grip: null,
+  };
+
+  wrap.addEventListener('scroll', () => {
+    positionPredictionCursor(predictionRibbonActive, false);
+    updatePredictionScrollbar();
+  }, { passive: true });
   if (predictionRibbonRO) predictionRibbonRO.disconnect();
   if (typeof ResizeObserver === 'function') {
     predictionRibbonRO = new ResizeObserver(() => {
       measurePredictionRibbon();
       positionPredictionCursor(predictionRibbonActive, false);
     });
-    predictionRibbonRO.observe(ribbon);
+    predictionRibbonRO.observe(root);       // suit les changements de largeur (viewport)
   }
   wirePredictionRibbonPointer();            // listeners pointeur sur le ruban : une seule fois
+  wirePredictionScrollbar();                // pouce recréé à chaque build → listeners neufs
   populatePredictionRibbon();
+}
+
+// Pouce de défilement horizontal : drag → wrap.scrollLeft. Clic sur la piste = saut.
+function wirePredictionScrollbar() {
+  const els = predictionRibbonEls;
+  if (!els || !els.thumb || !els.scroll || !els.wrap) return;
+  const { wrap, scroll, thumb } = els;
+  const maxScroll = () => Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+  const trackRange = () => Math.max(1, scroll.clientWidth - thumb.offsetWidth);
+  let dragging = false, startX = 0, startScroll = 0;
+
+  thumb.addEventListener('pointerdown', (e) => {
+    dragging = true; startX = e.clientX; startScroll = wrap.scrollLeft;
+    if (thumb.setPointerCapture) { try { thumb.setPointerCapture(e.pointerId); } catch (_) {} }
+    e.preventDefault(); e.stopPropagation();
+  });
+  thumb.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const ratio = maxScroll() / trackRange();
+    wrap.scrollLeft = startScroll + (e.clientX - startX) * ratio;
+    e.preventDefault();
+  });
+  const end = () => { dragging = false; };
+  thumb.addEventListener('pointerup', end);
+  thumb.addEventListener('pointercancel', end);
+
+  scroll.addEventListener('pointerdown', (e) => {
+    if (e.target === thumb) return;
+    const rect = scroll.getBoundingClientRect();
+    const x = e.clientX - rect.left - thumb.offsetWidth / 2;
+    wrap.scrollLeft = (x / trackRange()) * maxScroll();
+  });
+  thumb.addEventListener('keydown', (e) => {
+    const step = wrap.clientWidth * 0.6;
+    if (e.key === 'ArrowLeft') { wrap.scrollLeft -= step; e.preventDefault(); }
+    else if (e.key === 'ArrowRight') { wrap.scrollLeft += step; e.preventDefault(); }
+    else if (e.key === 'Home') { wrap.scrollLeft = 0; e.preventDefault(); }
+    else if (e.key === 'End') { wrap.scrollLeft = maxScroll(); e.preventDefault(); }
+  });
+}
+
+// Dimensionne/positionne le pouce et affiche la barre uniquement s'il y a débordement.
+function updatePredictionScrollbar() {
+  const els = predictionRibbonEls;
+  if (!els || !els.wrap || !els.scroll || !els.thumb) return;
+  const wrap = els.wrap;
+  const overflow = wrap.scrollWidth - wrap.clientWidth;
+  if (overflow <= 2) { els.root.classList.remove('has-scroll'); return; }
+  els.root.classList.add('has-scroll');
+  const trackW = els.scroll.clientWidth || wrap.clientWidth;
+  const thumbW = Math.max(28, Math.round((wrap.clientWidth / wrap.scrollWidth) * trackW));
+  els.thumb.style.width = thumbW + 'px';
+  const left = Math.round((wrap.scrollLeft / overflow) * (trackW - thumbW));
+  els.thumb.style.transform = 'translateX(' + left + 'px)';
 }
 
 // (Re)construit les colonnes-jours + le curseur selon le mode courant. Le ruban et ses
@@ -164,6 +239,7 @@ function measurePredictionRibbon() {
     const r = s.el.getBoundingClientRect();
     return r.left - rb.left + r.width / 2;
   });
+  updatePredictionScrollbar();
 }
 
 function positionPredictionCursor(i, animate) {
