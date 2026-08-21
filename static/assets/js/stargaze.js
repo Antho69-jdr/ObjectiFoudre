@@ -24,6 +24,7 @@
   const bestBtn = document.getElementById('sgBestBtn');
   const layersBtn = document.getElementById('sgLayersBtn');
   const layersPanel = document.getElementById('sgLayersPanel');
+  const legendEl = document.getElementById('stargazeLegend');   // ruban légende (rail gauche)
   const PLAY_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M10 8.2 16.3 12 10 15.8Z" fill="currentColor" stroke="none"></path></svg>';
   const PAUSE_SVG = '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><rect x="9" y="8.3" width="2.2" height="7.4" rx="0.6" fill="currentColor" stroke="none"></rect><rect x="12.8" y="8.3" width="2.2" height="7.4" rx="0.6" fill="currentColor" stroke="none"></rect></svg>';
 
@@ -1292,6 +1293,18 @@
   playBtn && playBtn.addEventListener('click', play);
   geoBtn && geoBtn.addEventListener('click', autourDeMoi);
   bestBtn && bestBtn.addEventListener('click', () => setBestCells(!bestCellsOn));
+  // Légende (ruban vertical du rail) : survol = déplie (CSS) ; tap tactile / Entrée = bascule.
+  if (legendEl) {
+    const toggleLegend = () => {
+      const open = legendEl.classList.toggle('open');
+      legendEl.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    legendEl.addEventListener('click', toggleLegend);
+    legendEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLegend(); }
+      else if (e.key === 'Escape') { legendEl.classList.remove('open'); legendEl.setAttribute('aria-expanded', 'false'); }
+    });
+  }
   // « Couches » : ouverture de la modale + cases (multi-sélection superposable).
   layersBtn && layersBtn.addEventListener('click', () => openLayersPanel(layersPanel ? layersPanel.hidden : true));
   if (layersPanel) {

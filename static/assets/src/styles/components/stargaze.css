@@ -113,23 +113,63 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
   color: #ffe9b0;
 }
 
-/* --- Légende de qualité (bas-gauche) : rampe médiocre → excellent --- */
+/* --- Légende de qualité : ruban VERTICAL logé dans le rail gauche (item 6, v1.3.176) ---
+   Ruban fin par défaut ; le texte se DÉPLIE au survol (desktop) ou au tap (tactile,
+   classe .open posée par stargaze.js). Sombre = excellent (haut) → ambre = médiocre (bas). */
 .stargaze-legend {
-  position: fixed;
-  left: 14px;
-  bottom: calc(var(--meta-height-px, 48px) + 88px);
-  z-index: 18;
+  position: relative;            /* dans le flux du rail (plus de position:fixed) */
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  pointer-events: auto;
+  cursor: help;
+  outline: none;
+}
+.sg-legend-bar {
+  width: 9px;
+  height: 104px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-mid);
+  /* Rampe INVERSÉE, orientée VERTICALEMENT : excellent (sombre) en haut →
+     médiocre (ambre pâle) en bas. Miroir des COLOR_STOPS de stargaze.js. */
+  background: linear-gradient(180deg,
+    #100c08, #2e1e0c, #6e4512, #b0741a, #e0a52f, #f4cf6b, #fdf3d0);
+}
+/* Panneau texte déplié — surgit à DROITE du ruban (comme la modale « Couches »). */
+.sg-legend-panel {
+  position: absolute;
+  left: calc(100% + 9px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-6px);
+  display: flex;
+  flex-direction: column;
+  min-height: 104px;
+  gap: 6px;
+  padding: 8px 12px;
   border-radius: var(--r-chip);
-  background: rgba(18, 13, 5, 0.82);
+  background: rgba(18, 13, 5, 0.92);
   border: 1px solid rgba(251, 191, 36, 0.26);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.3);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
   pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease;
 }
+.stargaze-legend:hover .sg-legend-panel,
+.stargaze-legend:focus-visible .sg-legend-panel,
+.stargaze-legend.open .sg-legend-panel {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
+}
+.stargaze-legend:focus-visible { box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.55); border-radius: var(--r-pill); }
 .sg-legend-title {
   font-size: var(--fs-10);
   font-weight: var(--fw-bold);
@@ -137,19 +177,11 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
   text-transform: uppercase;
   color: var(--label-section-color);
 }
-.sg-legend-bar {
-  width: 156px;
-  height: 8px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--border-mid);
-  /* Rampe INVERSÉE (v1.3.175) : médiocre (gauche) = ambre pâle incandescent →
-     excellent (droite) = noir profond. Miroir des COLOR_STOPS de stargaze.js. */
-  background: linear-gradient(90deg,
-    #fdf3d0, #f4cf6b, #e0a52f, #b0741a, #6e4512, #2e1e0c, #100c08);
-}
 .sg-legend-scale {
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
+  flex: 1;
   font-size: var(--fs-10);
   font-weight: 600;
   color: var(--text-dim);
@@ -481,10 +513,7 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
     border: 0;
     box-shadow: var(--shadow-2), 0 0 26px rgba(245, 158, 11, 0.08);
   }
-  .stargaze-legend { bottom: 83px; }
-}
-@media (max-width: 1024px) and (max-height: 600px) {
-  .stargaze-legend { left: 68px; }
+  /* (la légende suit désormais le rail gauche — plus de repositionnement fixe) */
 }
 
 /* ===== Mobile (<768) : carte flottante arrondie (comme le dock mobile) ===== */
