@@ -589,6 +589,27 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 .sg-dome-close { flex: none; width: 30px; height: 30px; border-radius: 9px; border: 1px solid #22304a; background: transparent; color: #9fb0c8; cursor: pointer; font-size: 15px; line-height: 1; display: grid; place-items: center; transition: 0.15s; }
 .sg-dome-close:hover { background: rgba(255, 255, 255, 0.05); color: #eaf0fb; }
 .sg-dome-close:focus-visible { outline: 2px solid #f4b942; outline-offset: 2px; }
+/* Onglets Conditions/Ciel (item 4 — la vue « Ciel » n'existe que pour les spots). */
+.sg-dome-tabs { display: flex; gap: 6px; padding: 2px 16px 10px; }
+.sg-dome-tabs[hidden] { display: none; }
+.sg-dome-tab {
+  flex: 1; padding: 8px 10px; border-radius: 10px; cursor: pointer;
+  border: 1px solid #22304a; background: transparent; color: #9fb0c8;
+  font: 600 12.5px/1 ui-sans-serif, system-ui, -apple-system, sans-serif; letter-spacing: 0.02em;
+  transition: 0.15s;
+}
+.sg-dome-tab:hover { color: #eaf0fb; border-color: #33445f; }
+.sg-dome-tab.is-on { background: rgba(155, 182, 232, 0.14); border-color: rgba(155, 182, 232, 0.4); color: #cfe0ff; }
+.sg-dome-tab:focus-visible { outline: 2px solid #f4b942; outline-offset: 2px; }
+.sg-dome-pane[hidden] { display: none; }
+/* Vue « Ciel » : planisphère tout-azimut + résumé (Voie lactée / planètes / étoiles). */
+.sg-sky-pane { padding: 2px 14px 12px; }
+.sg-sky-svg { display: block; width: 100%; max-width: 320px; height: auto; margin: 0 auto; }
+.sg-sky-summary { margin-top: 8px; display: flex; flex-direction: column; }
+.sg-sky-row { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; padding: 6px 2px; border-top: 1px solid #1a2438; }
+.sg-sky-row span { color: #7dd3fc; font-weight: 600; }
+.sg-sky-row b { color: #eaf0fb; font-weight: 700; text-align: right; }
+.sg-sky-row.sg-sky-never b { color: #e8896a; }
 .sg-dome-wrap { position: relative; padding: 2px 12px 4px; }
 .sg-dome-svg { display: block; width: 100%; height: auto; }
 .sg-dome-verdict { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); text-align: center; pointer-events: none; }

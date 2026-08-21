@@ -988,7 +988,102 @@
     };
   }
 
-  let sgDomeEls = null, sgDomeCurrent = null, domeFrac = 0;
+  // ── Astro (onglet « Ciel » du dôme, SPOTS uniquement) : positions des astres par la
+  //    méthode de Schlyter, PUR JS, sans dépendance ni réseau. Cf. .h_collect/astro_s0_sky.py.
+  const SKY_RAD = Math.PI / 180, SKY_DEG = 180 / Math.PI;
+  const SKY_J2000 = Date.UTC(1999, 11, 31, 0, 0, 0);
+  function skyDays(ms) { return (ms - SKY_J2000) / 86400000; }
+  function skyLstDeg(ms, lon) {
+    const d = skyDays(ms);
+    const Ms = (356.0470 + 0.9856002585 * d) % 360, ws = (282.9404 + 0.0000470935 * d) % 360;
+    const g0 = ((Ms + ws) + 180) % 360, dt = new Date(ms);
+    const uth = dt.getUTCHours() + dt.getUTCMinutes() / 60 + dt.getUTCSeconds() / 3600;
+    return (g0 + uth * 15 + lon) % 360;
+  }
+  function skyAltaz(ra, dec, ms, lat, lon) {
+    const ha = (skyLstDeg(ms, lon) - ra) * SKY_RAD, la = lat * SKY_RAD, de = dec * SKY_RAD;
+    const alt = Math.asin(Math.max(-1, Math.min(1, Math.sin(la) * Math.sin(de) + Math.cos(la) * Math.cos(de) * Math.cos(ha))));
+    const az = Math.atan2(-Math.cos(de) * Math.sin(ha), Math.sin(de) * Math.cos(la) - Math.cos(de) * Math.sin(la) * Math.cos(ha));
+    return { alt: alt * SKY_DEG, az: ((az * SKY_DEG) % 360 + 360) % 360 };
+  }
+  function skyKepler(M, e) {
+    M = ((M % 360) + 360) % 360 * SKY_RAD;
+    let E = M + e * Math.sin(M) * (1 + e * Math.cos(M));
+    for (let k = 0; k < 6; k++) E = E - (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+    return E;
+  }
+  function skySunEcl(d) {
+    const ws = 282.9404 + 4.70935e-5 * d, e = 0.016709 - 1.151e-9 * d, M = 356.0470 + 0.9856002585 * d;
+    const E = skyKepler(M, e), xv = Math.cos(E) - e, yv = Math.sqrt(1 - e * e) * Math.sin(E);
+    const v = Math.atan2(yv, xv) * SKY_DEG, r = Math.hypot(xv, yv), lon = ((v + ws) % 360) * SKY_RAD;
+    return [r * Math.cos(lon), r * Math.sin(lon)];
+  }
+  const SKY_PL = {
+    'Mercure': { N: [48.3313, 3.24587e-5], i: [7.0047, 5e-8], w: [29.1241, 1.01444e-5], a: [0.387098, 0], e: [0.205635, 5.59e-10], M: [168.6562, 4.0923344368] },
+    'Vénus':   { N: [76.6799, 2.4659e-5], i: [3.3946, 2.75e-8], w: [54.891, 1.38374e-5], a: [0.72333, 0], e: [0.006773, -1.302e-9], M: [48.0052, 1.6021302244] },
+    'Mars':    { N: [49.5574, 2.11081e-5], i: [1.8497, -1.78e-8], w: [286.5016, 2.92961e-5], a: [1.523688, 0], e: [0.093405, 2.516e-9], M: [18.6021, 0.5240207766] },
+    'Jupiter': { N: [100.4542, 2.76854e-5], i: [1.303, -1.557e-7], w: [273.8777, 1.64505e-5], a: [5.20256, 0], e: [0.048498, 4.469e-9], M: [19.895, 0.0830853001] },
+    'Saturne': { N: [113.6634, 2.3898e-5], i: [2.4886, -1.081e-7], w: [339.3939, 2.97661e-5], a: [9.55475, 0], e: [0.055546, -9.499e-9], M: [316.967, 0.0334442282] },
+  };
+  function skyPlanetRadec(name, ms) {
+    const p = SKY_PL[name], d = skyDays(ms), v = (k) => p[k][0] + p[k][1] * d;
+    const N = v('N'), i = v('i'), w = v('w'), a = v('a'), e = v('e'), E = skyKepler(v('M'), e);
+    const xv = a * (Math.cos(E) - e), yv = a * Math.sqrt(1 - e * e) * Math.sin(E);
+    const vv = Math.atan2(yv, xv), r = Math.hypot(xv, yv), u = vv + w * SKY_RAD, Nr = N * SKY_RAD, ir = i * SKY_RAD;
+    const xh = r * (Math.cos(Nr) * Math.cos(u) - Math.sin(Nr) * Math.sin(u) * Math.cos(ir));
+    const yh = r * (Math.sin(Nr) * Math.cos(u) + Math.cos(Nr) * Math.sin(u) * Math.cos(ir));
+    const zh = r * (Math.sin(u) * Math.sin(ir));
+    const su = skySunEcl(d), xg = xh + su[0], yg = yh + su[1], zg = zh, eps = (23.4393 - 3.563e-7 * d) * SKY_RAD;
+    const xe = xg, ye = yg * Math.cos(eps) - zg * Math.sin(eps), ze = yg * Math.sin(eps) + zg * Math.cos(eps);
+    return { ra: ((Math.atan2(ye, xe) * SKY_DEG) % 360 + 360) % 360, dec: Math.atan2(ze, Math.hypot(xe, ye)) * SKY_DEG };
+  }
+  const SKY_NGP_RA = 192.85948, SKY_NGP_DEC = 27.12825, SKY_L_NCP = 122.93192;
+  function skyGalToRadec(l, b) {   // plan galactique → équatorial (bande de la Voie lactée)
+    const lr = l * SKY_RAD, br = b * SKY_RAD, dgp = SKY_NGP_DEC * SKY_RAD, lncp = SKY_L_NCP * SKY_RAD;
+    const dec = Math.asin(Math.sin(dgp) * Math.sin(br) + Math.cos(dgp) * Math.cos(br) * Math.cos(lncp - lr));
+    const ra = SKY_NGP_RA * SKY_RAD + Math.atan2(Math.cos(br) * Math.sin(lncp - lr), Math.cos(dgp) * Math.sin(br) - Math.sin(dgp) * Math.cos(br) * Math.cos(lncp - lr));
+    return { ra: ((ra * SKY_DEG) % 360 + 360) % 360, dec: dec * SKY_DEG };
+  }
+  // Étoiles brillantes NOMMÉES [nom, RA° J2000, Dec°, mag, constellation].
+  const SKY_STARS = [
+    ['Sirius', 101.287, -16.716, -1.46, 'Grand Chien'], ['Arcturus', 213.915, 19.182, -0.05, 'Bouvier'],
+    ['Véga', 279.234, 38.784, 0.03, 'Lyre'], ['Capella', 79.172, 45.998, 0.08, 'Cocher'],
+    ['Rigel', 78.634, -8.202, 0.13, 'Orion'], ['Procyon', 114.826, 5.225, 0.34, 'Petit Chien'],
+    ['Bételgeuse', 88.793, 7.407, 0.42, 'Orion'], ['Altaïr', 297.696, 8.868, 0.76, 'Aigle'],
+    ['Aldébaran', 68.98, 16.509, 0.85, 'Taureau'], ['Spica', 201.298, -11.161, 0.97, 'Vierge'],
+    ['Antarès', 247.352, -26.432, 1.06, 'Scorpion'], ['Pollux', 116.329, 28.026, 1.14, 'Gémeaux'],
+    ['Fomalhaut', 344.413, -29.622, 1.16, 'Poisson austral'], ['Deneb', 310.358, 45.28, 1.25, 'Cygne'],
+    ['Régulus', 152.093, 11.967, 1.35, 'Lion'], ['Castor', 113.649, 31.888, 1.58, 'Gémeaux'],
+    ['Alkaïd', 206.885, 49.313, 1.85, 'Grande Ourse'], ['Dubhe', 165.932, 61.751, 1.79, 'Grande Ourse'],
+    ['Schedar', 10.127, 56.537, 2.24, 'Cassiopée'], ['Polaris', 37.954, 89.264, 1.98, 'Petite Ourse'],
+    ['α Centauri', 219.902, -60.834, -0.27, 'Centaure'],
+  ];
+  function skyNeverRises(dec, lat) { return dec < (lat - 90); }   // ne franchit jamais l'horizon
+  // Horizon (°) du spot dans la direction az, interpolé entre les azimuts LiDAR (spot.horizon.azimuths).
+  function skyHorizonAt(azimuths, az) {
+    if (!azimuths || !azimuths.length) return 0;
+    az = ((az % 360) + 360) % 360;
+    let lo = null, hi = null;
+    for (const a of azimuths) {
+      const d = ((a.az - az + 540) % 360) - 180;   // écart signé [-180,180]
+      const h = a.horizon_deg || 0;
+      if (d <= 0 && (lo === null || d > lo.d)) lo = { d, h };
+      if (d >= 0 && (hi === null || d < hi.d)) hi = { d, h };
+    }
+    if (!lo) return hi ? hi.h : 0;
+    if (!hi || lo.d === hi.d) return lo.h;
+    return lo.h + (hi.h - lo.h) * ((0 - lo.d) / (hi.d - lo.d));
+  }
+  // Instant (ms) correspondant au curseur fractionnaire du dôme (mêmes bornes que sgDomeData).
+  function skyDomeMs() {
+    const n = hours.length || 1;
+    const h0 = Math.max(0, Math.min(n - 1, Math.floor(domeFrac))), h1 = Math.min(n - 1, h0 + 1);
+    const t0 = (hours[h0] && hours[h0].iso) ? Date.parse(hours[h0].iso) : Date.now();
+    const t1 = (hours[h1] && hours[h1].iso) ? Date.parse(hours[h1].iso) : t0;
+    return t0 + (t1 - t0) * (domeFrac - h0);
+  }
+
+  let sgDomeEls = null, sgDomeCurrent = null, domeFrac = 0, domeTab = 'cond';
   function ensureDomeModal() {
     if (sgDomeEls) return sgDomeEls;
     const ov = document.createElement('div');
@@ -998,15 +1093,23 @@
       + '<div class="sg-dome-head"><div><p class="sg-dome-eyebrow">Chasse d\'étoiles · cette nuit</p>'
       + '<h2 class="sg-dome-title" id="sgDomeTitle">—</h2><p class="sg-dome-sub" id="sgDomeSub"></p></div>'
       + '<button class="sg-dome-close" type="button" aria-label="Fermer">✕</button></div>'
+      + '<div class="sg-dome-tabs" id="sgDomeTabs" role="tablist" hidden>'
+      + '<button class="sg-dome-tab is-on" id="sgTabCond" type="button" role="tab" aria-selected="true">Conditions</button>'
+      + '<button class="sg-dome-tab" id="sgTabSky" type="button" role="tab" aria-selected="false">Ciel</button></div>'
+      + '<div class="sg-dome-pane" id="sgDomeCond">'
       + '<div class="sg-dome-wrap"><svg class="sg-dome-svg" id="sgDomeSvg" viewBox="0 0 460 250" role="img" aria-label="Dôme des conditions d\'observation"></svg>'
       + '<div class="sg-dome-verdict"><div class="sg-dome-score" id="sgDomeScore">—</div><div class="sg-dome-scorelbl" id="sgDomeScoreLbl">observation</div></div></div>'
-      + '<div class="sg-dome-frise" id="sgDomeFrise" role="slider" aria-label="Heure de la nuit" style="display:none"></div>'
       + '<div class="sg-dome-legend">'
       + '<div class="sg-dome-leg full"><div class="sg-dome-legh"><span class="sg-dome-dot moon"></span><span class="sg-dome-legt">Lune</span><span class="sg-dome-legv" id="sgDomeMoonPct">—</span></div><div class="sg-dome-moonline" id="sgDomeMoonLine"></div></div>'
       + '<div class="sg-dome-leg"><div class="sg-dome-legh"><span class="sg-dome-dot cloud"></span><span class="sg-dome-legt">Nébulosité</span></div><div class="sg-dome-bars" id="sgDomeCloud"></div></div>'
       + '<div class="sg-dome-leg"><div class="sg-dome-legh"><span class="sg-dome-dot amber"></span><span class="sg-dome-legt">Pollution lumineuse</span></div>'
       + '<div class="sg-dome-amber"><span id="sgDomeBortle"></span><span class="sg-dome-track"><span class="sg-dome-fill amber" id="sgDomePollFill"></span></span></div></div>'
-      + '</div></div>';
+      + '</div></div>'
+      + '<div class="sg-dome-pane sg-sky-pane" id="sgDomeSky" hidden>'
+      + '<svg class="sg-sky-svg" id="sgSkySvg" viewBox="0 0 300 316" role="img" aria-label="Carte du ciel du spot selon son champ de vision"></svg>'
+      + '<div class="sg-sky-summary" id="sgSkySummary"></div></div>'
+      + '<div class="sg-dome-frise" id="sgDomeFrise" role="slider" aria-label="Heure de la nuit" style="display:none"></div>'
+      + '</div>';
     document.body.appendChild(ov);
     const close = () => closeDome();
     ov.querySelector('.sg-dome-close').addEventListener('click', close);
@@ -1017,7 +1120,12 @@
       moonPct: ov.querySelector('#sgDomeMoonPct'), moonLine: ov.querySelector('#sgDomeMoonLine'),
       cloud: ov.querySelector('#sgDomeCloud'), bortle: ov.querySelector('#sgDomeBortle'), pollFill: ov.querySelector('#sgDomePollFill'),
       frise: ov.querySelector('#sgDomeFrise'),
+      tabs: ov.querySelector('#sgDomeTabs'), tabCond: ov.querySelector('#sgTabCond'), tabSky: ov.querySelector('#sgTabSky'),
+      paneCond: ov.querySelector('#sgDomeCond'), paneSky: ov.querySelector('#sgDomeSky'),
+      skySvg: ov.querySelector('#sgSkySvg'), skySummary: ov.querySelector('#sgSkySummary'),
     };
+    sgDomeEls.tabCond.addEventListener('click', () => setDomeTab('cond'));
+    sgDomeEls.tabSky.addEventListener('click', () => setDomeTab('sky'));
     return sgDomeEls;
   }
 
@@ -1083,16 +1191,96 @@
     updateDomeFriseActive();
   }
 
+  // Bascule d'onglet Conditions/Ciel (le Ciel n'existe que pour les spots).
+  function setDomeTab(which) {
+    const e = sgDomeEls; if (!e) return;
+    domeTab = which;
+    const sky = which === 'sky';
+    e.paneCond.hidden = sky; e.paneSky.hidden = !sky;
+    e.tabCond.classList.toggle('is-on', !sky); e.tabSky.classList.toggle('is-on', sky);
+    e.tabCond.setAttribute('aria-selected', sky ? 'false' : 'true');
+    e.tabSky.setAttribute('aria-selected', sky ? 'true' : 'false');
+    paintDomeActive();
+  }
+  // Peint l'onglet ACTIF (évite de recalculer le panneau caché pendant le scrub).
+  function paintDomeActive() {
+    if (!sgDomeCurrent) return;
+    if (domeTab === 'sky' && sgDomeCurrent.spot) paintSky();
+    else paintDome(sgDomeData(sgDomeCurrent.i, sgDomeCurrent.title, sgDomeCurrent.sub));
+  }
+  // Planisphère du ciel du spot (zénith centre, horizon bord, N haut / E droite), croisé
+  // avec le champ de vision LiDAR : ce qui est sous le relief est cerclé rouge + barré.
+  function paintSky() {
+    const e = sgDomeEls; if (!e || !e.skySvg) return;
+    const spot = sgDomeCurrent && sgDomeCurrent.spot;
+    if (!spot) { e.skySvg.innerHTML = ''; e.skySummary.innerHTML = ''; return; }
+    const az0 = (spot.horizon && spot.horizon.azimuths) || [];
+    const lat = Number(spot.lat), lon = Number(spot.lon), ms = skyDomeMs();
+    const R = 132, CX = 150, CY = 150, rad = SKY_RAD;
+    const hz = (az) => skyHorizonAt(az0, az);
+    const proj = (alt, az) => { const r = (90 - alt) / 90 * R, a = az * rad; return [CX + r * Math.sin(a), CY - r * Math.cos(a)]; };
+    const card = (az) => ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round((((az % 360) + 360) % 360) / 45) % 8];
+    let s = '<defs><radialGradient id="sgSkyG" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#0c1a30"/><stop offset="70%" stop-color="#0a1120"/><stop offset="100%" stop-color="#070b14"/></radialGradient></defs>';
+    s += '<circle cx="' + CX + '" cy="' + CY + '" r="' + R + '" fill="url(#sgSkyG)" stroke="rgba(155,182,232,.28)" stroke-width="1"/>';
+    for (const alt of [30, 60]) { const rr = ((90 - alt) / 90 * R).toFixed(1); s += '<circle cx="' + CX + '" cy="' + CY + '" r="' + rr + '" fill="none" stroke="rgba(155,182,232,.12)" stroke-width="1"/>'; }
+    // Voie lactée (plan galactique b=0), en segments continus au-dessus de l'horizon.
+    let seg = [], gc = null;
+    const flush = () => { if (seg.length > 1) { s += '<polyline points="' + seg.join(' ') + '" fill="none" stroke="#9bb6e8" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" opacity="0.16"/>'; s += '<polyline points="' + seg.join(' ') + '" fill="none" stroke="#cfe0ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.3"/>'; } seg = []; };
+    for (let l = 0; l <= 360; l += 4) {
+      const g = skyGalToRadec(l, 0), aa = skyAltaz(g.ra, g.dec, ms, lat, lon);
+      if (aa.alt > -2) { const p = proj(Math.max(0, aa.alt), aa.az); seg.push(p[0].toFixed(1) + ',' + p[1].toFixed(1)); if (l === 0) gc = { p, alt: aa.alt, az: aa.az }; }
+      else flush();
+    }
+    flush();
+    // Relief du spot (champ de vision) : anneau entre l'horizon vrai (0°) et le relief.
+    let outer = [], inner = [];
+    for (let az = 0; az <= 360; az += 4) { const p = proj(0, az); outer.push(p[0].toFixed(1) + ',' + p[1].toFixed(1)); }
+    for (let az = 360; az >= 0; az -= 4) { const p = proj(Math.min(89, hz(az)), az); inner.push(p[0].toFixed(1) + ',' + p[1].toFixed(1)); }
+    s += '<path d="M ' + outer.join(' L ') + ' L ' + inner.join(' L ') + ' Z" fill="rgba(251,191,36,.14)" stroke="rgba(251,191,36,.5)" stroke-width="1" stroke-dasharray="3 3"/>';
+    for (const c of [['N', 0], ['E', 90], ['S', 180], ['O', 270]]) { const p = proj(-7, c[1]); s += '<text x="' + p[0].toFixed(1) + '" y="' + (p[1] + 4).toFixed(1) + '" text-anchor="middle" fill="#f2d488" font-size="12" font-weight="600">' + c[0] + '</text>'; }
+    const vis = { stars: [], planets: [], never: [] };
+    const drawObj = (name, ra, dec, isPlanet, mag) => {
+      if (skyNeverRises(dec, lat)) { vis.never.push(name); return; }
+      const aa = skyAltaz(ra, dec, ms, lat, lon); if (aa.alt < -1) return;
+      const masked = aa.alt < hz(aa.az), p = proj(Math.max(0, aa.alt), aa.az), x = p[0], y = p[1];
+      if (isPlanet) {
+        const z = 4.5;
+        s += '<rect x="' + (x - z).toFixed(1) + '" y="' + (y - z).toFixed(1) + '" width="' + (2 * z) + '" height="' + (2 * z) + '" transform="rotate(45 ' + x.toFixed(1) + ' ' + y.toFixed(1) + ')" fill="' + (masked ? 'none' : '#ffd27a') + '" stroke="' + (masked ? '#e8896a' : 'none') + '" stroke-width="1.4"/>';
+        s += '<text x="' + (x + 7).toFixed(1) + '" y="' + (y + 3).toFixed(1) + '" fill="' + (masked ? '#e8896a' : '#ffe6b8') + '" font-size="9">' + name + '</text>';
+        if (!masked) vis.planets.push(name);
+      } else {
+        const r0 = mag < 0.5 ? 3.6 : mag < 1.3 ? 2.9 : 2.2;
+        s += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r0 + '" fill="' + (masked ? 'none' : '#eaf2ff') + '" stroke="' + (masked ? '#e8896a' : 'none') + '" stroke-width="1.3"/>';
+        if (mag < 1.5) s += '<text x="' + (x + 6).toFixed(1) + '" y="' + (y + 3).toFixed(1) + '" fill="' + (masked ? '#e8896a' : '#dbe6f7') + '" font-size="8.5">' + name + '</text>';
+        if (masked) s += '<line x1="' + (x - 3.5).toFixed(1) + '" y1="' + y.toFixed(1) + '" x2="' + (x + 3.5).toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="#e8896a" stroke-width="1.1"/>';
+        if (!masked && mag < 1.0) vis.stars.push(name);
+      }
+    };
+    for (const st of SKY_STARS) drawObj(st[0], st[1], st[2], false, st[3]);
+    for (const nm in SKY_PL) { const pr = skyPlanetRadec(nm, ms); drawObj(nm, pr.ra, pr.dec, true, -2); }
+    if (gc) { const m = gc.alt < hz(gc.az); s += '<text x="' + gc.p[0].toFixed(1) + '" y="' + (gc.p[1] + 4).toFixed(1) + '" text-anchor="middle" fill="' + (m ? '#e8896a' : '#cfe0ff') + '" font-size="12">✦</text>'; }
+    e.skySvg.innerHTML = s;
+    let mw = 'sous l\'horizon';
+    if (gc) mw = (gc.alt < hz(gc.az)) ? ('centre bas, gêné ' + card(gc.az)) : ('visible · ' + card(gc.az));
+    let html = '<div class="sg-sky-row"><span>Voie lactée</span><b>' + mw + '</b></div>'
+      + '<div class="sg-sky-row"><span>Planètes</span><b>' + (vis.planets.length ? vis.planets.join(', ') : '—') + '</b></div>'
+      + '<div class="sg-sky-row"><span>Étoiles phares</span><b>' + (vis.stars.slice(0, 4).join(', ') || '—') + '</b></div>';
+    if (vis.never.length) html += '<div class="sg-sky-row sg-sky-never"><span>Hors de portée</span><b>' + vis.never.join(', ') + '</b></div>';
+    e.skySummary.innerHTML = html;
+  }
   function sgDomeIsOpen() { return !!(sgDomeEls && sgDomeEls.ov.classList.contains('open')); }
   function closeDome() { if (sgDomeEls) { sgDomeEls.ov.classList.remove('open'); sgDomeEls.ov.setAttribute('aria-hidden', 'true'); } sgDomeCurrent = null; }
-  function openDome(i, title, sub) {
+  function openDome(i, title, sub, spot) {
     if (!data || !data.cells || !data.cells[i]) return;
-    sgDomeCurrent = { i, title, sub };
+    sgDomeCurrent = { i, title, sub, spot: spot || null };
     domeFrac = cursor;                 // démarre à l'heure affichée sur la carte, puis INDÉPENDANT
     if (sgDomeTweenRaf) { cancelAnimationFrame(sgDomeTweenRaf); sgDomeTweenRaf = null; }
-    paintDome(sgDomeData(i, title, sub));
-    buildDomeFrise();
     const e = ensureDomeModal();
+    // Onglet « Ciel » réservé aux SPOTS (seuls porteurs d'un champ de vision LiDAR).
+    const hasSky = !!(spot && spot.horizon && spot.horizon.azimuths && spot.horizon.azimuths.length);
+    e.tabs.hidden = !hasSky;
+    setDomeTab('cond');                // toujours démarrer sur Conditions (peint l'onglet actif)
+    buildDomeFrise();
     e.ov.classList.add('open'); e.ov.setAttribute('aria-hidden', 'false');
   }
   // Re-rendu du dôme (coalescé en rAF pour un scrub fluide). N'affecte PAS la carte (curseur indépendant).
@@ -1101,7 +1289,7 @@
     if (!sgDomeIsOpen() || !sgDomeCurrent || sgDomeRaf) return;
     sgDomeRaf = requestAnimationFrame(() => {
       sgDomeRaf = null;
-      if (sgDomeIsOpen() && sgDomeCurrent) paintDome(sgDomeData(sgDomeCurrent.i, sgDomeCurrent.title, sgDomeCurrent.sub));
+      if (sgDomeIsOpen() && sgDomeCurrent) paintDomeActive();
     });
   }
   // Positionne le curseur du dôme (fractionnaire). animate=true → transition douce (tap).
@@ -1115,7 +1303,7 @@
     const step = (now) => {
       const k = Math.min(1, (now - t0) / dur);
       domeFrac = from + (to - from) * ease(k);
-      if (sgDomeIsOpen() && sgDomeCurrent) paintDome(sgDomeData(sgDomeCurrent.i, sgDomeCurrent.title, sgDomeCurrent.sub));
+      if (sgDomeIsOpen() && sgDomeCurrent) paintDomeActive();
       if (k < 1) sgDomeTweenRaf = requestAnimationFrame(step); else { sgDomeTweenRaf = null; domeFrac = to; }
     };
     sgDomeTweenRaf = requestAnimationFrame(step);
@@ -1136,7 +1324,7 @@
     if (!active || !spot) return false;
     const i = sgNearestCell(Number(spot.lat), Number(spot.lon));
     if (i < 0) return false;
-    openDome(i, spot.name || 'Spot', 'Spot de chasse');
+    openDome(i, spot.name || 'Spot', 'Spot de chasse', spot);
     return true;
   }
 
