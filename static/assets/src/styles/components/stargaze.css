@@ -142,8 +142,10 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
   height: 8px;
   border-radius: var(--r-pill);
   border: 1px solid var(--border-mid);
+  /* Rampe INVERSÉE (v1.3.175) : médiocre (gauche) = ambre pâle incandescent →
+     excellent (droite) = noir profond. Miroir des COLOR_STOPS de stargaze.js. */
   background: linear-gradient(90deg,
-    #1a1108, #3a2410, #6b4114, #a2701a, #d6a437, #f2d488);
+    #fdf3d0, #f4cf6b, #e0a52f, #b0741a, #6e4512, #2e1e0c, #100c08);
 }
 .sg-legend-scale {
   display: flex;

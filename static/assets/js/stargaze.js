@@ -54,8 +54,10 @@
   const FIELD_BEFORE = 'water';
   const CELL_KM = 15, OVERLAP = 1.06;
   const EMPTY_FC = { type: 'FeatureCollection', features: [] };
-  // Rampe V3 « ambre nuit » (opaque) : médiocre = sombre → excellent = or.
-  const COLOR_STOPS = [12, '#0e0b08', 30, '#241408', 48, '#472810', 62, '#764715', 74, '#ad781b', 84, '#dcab3e', 92, '#f2d488'];
+  // Rampe « pollution lumineuse » (INVERSÉE v1.3.175, mockup validé par Anthony) : médiocre =
+  // ambre pâle incandescent (halo de ville) → excellent = noir profond (ciel noir). La logique
+  // colle à une carte de pollution lumineuse : ce qui « brille » = mauvais coin d'observation.
+  const COLOR_STOPS = [12, '#fdf3d0', 30, '#f4cf6b', 48, '#e0a52f', 62, '#b0741a', 74, '#6e4512', 84, '#2e1e0c', 92, '#100c08'];
   // Recoloration NUIT de la carte de base (comme setChaseMapTint) : les surroundings
   // restent VISIBLES, juste assombris/réchauffés (jamais de bleu). [layer, prop, nuit, normal]
   const STARGAZE_MAP_TINT = [
@@ -728,10 +730,11 @@
     sgTipEl = el;
     return el;
   }
-  function sgRampColor(q) {
-    if (q <= COLOR_STOPS[0]) return COLOR_STOPS[1];
-    for (let i = 2; i < COLOR_STOPS.length; i += 2) { if (q <= COLOR_STOPS[i]) return COLOR_STOPS[i + 1]; }
-    return COLOR_STOPS[COLOR_STOPS.length - 1];
+  // Couleur SÉMANTIQUE du chiffre de score (tooltip) — vert/ambre/orange, mêmes seuils que le
+  // dôme (paintDome), source de vérité unique. Découplée de la rampe carte : depuis l'inversion
+  // (sombre = excellent), un bon score serait quasi-noir → illisible. On code le sens, pas la teinte.
+  function sgScoreColor(s) {
+    return (s >= 55) ? '#7ee0a6' : (s >= 35) ? '#f4d06a' : '#e8896a';
   }
   function onSgEnter() { if (!sgIsTouch()) map.getCanvas().style.cursor = 'pointer'; }
   function onSgLeave() { if (map.getCanvas()) map.getCanvas().style.cursor = ''; if (sgTipEl) sgTipEl.classList.remove('is-visible'); }
@@ -742,7 +745,7 @@
     if (!(i >= 0) || !data || !data.cells[i]) { onSgLeave(); return; }
     const el = ensureSgTip();
     if (degraded) {
-      const dk = data.darkness[i], col = sgRampColor(dk);
+      const dk = data.darkness[i], col = sgScoreColor(dk);
       el.style.setProperty('--gct-score', col);
       el.innerHTML =
         '<span class="gct-head"><b>Obscurité</b><strong style="color:' + col + '">' + dk + '</strong></span>' +
@@ -752,7 +755,7 @@
       if (sc == null) { onSgLeave(); return; }
       const cl = data.cloud[cursor] ? data.cloud[cursor][i] : null;
       const bh = bestDarkHour ? bestDarkHour[i] : null;
-      const col = sgRampColor(sc);
+      const col = sgScoreColor(sc);
       el.style.setProperty('--gct-score', col);
       el.innerHTML =
         '<span class="gct-head"><b>Qualité</b><strong style="color:' + col + '">' + sc + '</strong></span>' +
@@ -1062,7 +1065,7 @@
     e.title.textContent = d.title; e.sub.textContent = d.sub || '';
     renderDome(e.svg, d);
     e.score.textContent = (d.score != null ? d.score : '—');
-    e.score.style.color = (d.score == null) ? '#9fb0c8' : (d.score >= 55 ? '#7ee0a6' : d.score >= 35 ? '#f4d06a' : '#e8896a');
+    e.score.style.color = (d.score == null) ? '#9fb0c8' : sgScoreColor(d.score);
     e.scoreLbl.textContent = d.scoreLabel;
     e.moonPct.textContent = `${Math.round(d.moon.illum * 100)}% · ${d.moon.name}`;
     e.moonLine.innerHTML = `<span>Levée <b>${d.moon.rise}</b></span><span>Coucher <b>${d.moon.set}</b></span><span><b>${d.moon.up ? 'au-dessus' : 'sous'} l'horizon</b></span>`;
