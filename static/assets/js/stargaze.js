@@ -33,10 +33,16 @@
   // les cellules les mieux notées au créneau courant (suit le curseur, plus « meilleure
   // heure de la nuit »). Remplace les anciens points « top spots ». On/off via #sgBestBtn.
   const BEST_SRC = 'sg-best-src', BEST_GLOW = 'sg-best-glow', BEST_LINE = 'sg-best-line';
-  const BEST_MIN_ABS = 20;      // ne jamais souligner une cellule sous ce score
-  const BEST_REL_DROP = 15;     // on garde les cellules à moins de 15 pts du meilleur du créneau
   const BEST_SEP_DEG = 0.33;    // dédoublonnage spatial (spots distincts) ≈ 35 km
-  const BEST_MAX = 12;          // nb max de cellules soulignées
+  // Sensibilité du liseré (item 1) : presets pilotant le seuil RELATIF (pts sous le meilleur du
+  // créneau), le seuil ABSOLU et le NB MAX de cellules. Réglable (panneau Couches), persisté.
+  const SG_BEST_PRESETS = {
+    strict: { rel: 8,  min: 30, max: 6 },
+    normal: { rel: 15, min: 20, max: 12 },
+    large:  { rel: 25, min: 12, max: 20 },
+  };
+  let bestSensKey = 'normal';
+  try { const _bs = localStorage.getItem('sg_best_sens'); if (_bs && SG_BEST_PRESETS[_bs]) bestSensKey = _bs; } catch (_) {}
   // ── « Couches » (item Trello « masques ») : le champ de qualité SE RECOLORE selon le
   //    score des SEULS critères cochés (multi-sélection superposable). Rien coché = score
   //    global. Critères : pollution lumineuse (obscurité) · Lune (selon lever/coucher) ·
@@ -235,7 +241,8 @@
     const row = data.scores[hi];
     let mx = 0;
     for (const s of row) { if (s != null && s > mx) mx = s; }
-    const floor = Math.max(BEST_MIN_ABS, mx - BEST_REL_DROP);
+    const P = SG_BEST_PRESETS[bestSensKey] || SG_BEST_PRESETS.normal;
+    const floor = Math.max(P.min, mx - P.rel);
     const cand = [];
     for (let i = 0; i < row.length; i++) {
       const s = row[i];
@@ -249,7 +256,7 @@
       const cl = Math.cos(c.lat * Math.PI / 180);
       if (picks.some((p) => Math.abs(p.lat - c.lat) < BEST_SEP_DEG && Math.abs(p.lon - c.lon) * cl < BEST_SEP_DEG)) continue;
       picks.push(c);
-      if (picks.length >= BEST_MAX) break;
+      if (picks.length >= P.max) break;
     }
     return { type: 'FeatureCollection', features: picks.map((p) => ({
       type: 'Feature', properties: { idx: p.i, score: p.s }, geometry: cellGeomByIdx[p.i] })) };
@@ -290,6 +297,23 @@
     });
     updateBestLayer();
     if (on && active) startPulse(); else stopPulse();
+  }
+  // Sensibilité du liseré (presets strict/normal/large) : persiste + re-rend le liseré.
+  function setBestSens(key) {
+    if (!SG_BEST_PRESETS[key]) return;
+    bestSensKey = key;
+    try { localStorage.setItem('sg_best_sens', key); } catch (_) {}
+    syncBestSensUI();
+    updateBestLayer();
+  }
+  function syncBestSensUI() {
+    const box = document.getElementById('sgBestSens');
+    if (!box) return;
+    box.querySelectorAll('.sg-sens-chip').forEach((c) => {
+      const on = c.getAttribute('data-sens') === bestSensKey;
+      c.classList.toggle('is-on', on);
+      c.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
   }
 
   // ── Couches ────────────────────────────────────────────────────────────────
@@ -737,6 +761,13 @@
   function sgScoreColor(s) {
     return (s >= 55) ? '#7ee0a6' : (s >= 35) ? '#f4d06a' : '#e8896a';
   }
+  // Bortle (échelle pollution lumineuse) depuis la pollution 0..100 (= 100 − obscurité).
+  // Source de vérité PARTAGÉE tooltip ↔ dôme (item 5) : mêmes chiffres/libellés partout.
+  function sgBortle(poll) {
+    const lvl = Math.min(8, Math.round(poll / 13) + 1);
+    const label = ['—', 'Excellent', 'Très bon', 'Rural', 'Périurbain', 'Banlieue', 'Urbain', 'Ville'][Math.min(7, Math.round(poll / 14) + 1)];
+    return { lvl, label };
+  }
   function onSgEnter() { if (!sgIsTouch()) map.getCanvas().style.cursor = 'pointer'; }
   function onSgLeave() { if (map.getCanvas()) map.getCanvas().style.cursor = ''; if (sgTipEl) sgTipEl.classList.remove('is-visible'); }
   function sgIsTouch() { try { return window.matchMedia('(hover: none), (pointer: coarse)').matches; } catch (_) { return false; } }
@@ -746,23 +777,27 @@
     if (!(i >= 0) || !data || !data.cells[i]) { onSgLeave(); return; }
     const el = ensureSgTip();
     if (degraded) {
-      const dk = data.darkness[i], col = sgScoreColor(dk);
+      // Repli « obscurité seule » : pas de score/nuages → on montre la pollution du site.
+      const dk = data.darkness[i], b = sgBortle(Math.max(0, Math.min(100, 100 - dk))), col = sgScoreColor(dk);
       el.style.setProperty('--gct-score', col);
       el.innerHTML =
         '<span class="gct-head"><b>Obscurité</b><strong style="color:' + col + '">' + dk + '</strong></span>' +
-        '<span class="gct-row"><b>Pollution lum.</b><span class="gct-val">' + (100 - dk) + '<span class="gct-unit">/100</span></span></span>';
+        '<span class="gct-row"><b>Pollution</b><span class="gct-val">Bortle ' + b.lvl + '</span></span>';
     } else {
+      // Mini-dôme (item 5) : mêmes champs/valeurs que la modale dôme (Qualité, Pollution = Bortle, Nébulosité, Lune).
       const sc = data.scores[cursor] ? data.scores[cursor][i] : null;
       if (sc == null) { onSgLeave(); return; }
       const cl = data.cloud[cursor] ? data.cloud[cursor][i] : null;
-      const bh = bestDarkHour ? bestDarkHour[i] : null;
+      const b = sgBortle(Math.max(0, Math.min(100, 100 - (data.darkness[i] || 0))));
+      const m = data.moon || {};
+      const moonTxt = m.phase_name ? m.phase_name : (m.illumination != null ? Math.round(m.illumination * 100) + ' %' : '—');
       const col = sgScoreColor(sc);
       el.style.setProperty('--gct-score', col);
       el.innerHTML =
         '<span class="gct-head"><b>Qualité</b><strong style="color:' + col + '">' + sc + '</strong></span>' +
-        '<span class="gct-row"><b>Obscurité</b><span class="gct-val">' + data.darkness[i] + '<span class="gct-unit">/100</span></span></span>' +
-        '<span class="gct-row"><b>Nuages</b><span class="gct-val">' + (cl != null ? Math.round(cl) : '—') + '<span class="gct-unit"> %</span></span></span>' +
-        '<span class="gct-row"><b>Meilleur créneau</b><span class="gct-val">' + (bh != null ? String(bh).padStart(2, '0') + '<span class="gct-unit"> h</span>' : '—') + '</span></span>';
+        '<span class="gct-row"><b>Pollution</b><span class="gct-val">Bortle ' + b.lvl + '</span></span>' +
+        '<span class="gct-row"><b>Nébulosité</b><span class="gct-val">' + (cl != null ? Math.round(cl) : '—') + '<span class="gct-unit"> %</span></span></span>' +
+        '<span class="gct-row"><b>Lune</b><span class="gct-val">' + moonTxt + '</span></span>';
     }
     const cont = map.getContainer();
     const cw = cont ? cont.clientWidth : 0, ch = cont ? cont.clientHeight : 0;
@@ -1184,9 +1219,8 @@
       row.innerHTML = `<span class="k">${lbl}</span><span class="sg-dome-track"><span class="sg-dome-fill" style="width:${d.cloud[k]}%"></span></span><span class="v">${d.cloud[k]}%</span>`;
       e.cloud.appendChild(row);
     });
-    const lvl = Math.min(8, Math.round(d.poll / 13) + 1);
-    const lbl = ['—', 'Excellent', 'Très bon', 'Rural', 'Périurbain', 'Banlieue', 'Urbain', 'Ville'][Math.min(7, Math.round(d.poll / 14) + 1)];
-    e.bortle.textContent = `Bortle ${lvl} · ${lbl}`;
+    const b = sgBortle(d.poll);
+    e.bortle.textContent = `Bortle ${b.lvl} · ${b.label}`;
     e.pollFill.style.width = d.poll + '%';
     updateDomeFriseActive();
   }
@@ -1493,6 +1527,15 @@
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLegend(); }
       else if (e.key === 'Escape') { legendEl.classList.remove('open'); legendEl.setAttribute('aria-expanded', 'false'); }
     });
+  }
+  // Sensibilité des favoris (item 1) : chips strict/normal/large dans le panneau Couches.
+  const bestSensBox = document.getElementById('sgBestSens');
+  if (bestSensBox) {
+    bestSensBox.addEventListener('click', (e) => {
+      const chip = e.target.closest('.sg-sens-chip');
+      if (chip) setBestSens(chip.getAttribute('data-sens'));
+    });
+    syncBestSensUI();
   }
   // « Couches » : ouverture de la modale + cases (multi-sélection superposable).
   layersBtn && layersBtn.addEventListener('click', () => openLayersPanel(layersPanel ? layersPanel.hidden : true));
