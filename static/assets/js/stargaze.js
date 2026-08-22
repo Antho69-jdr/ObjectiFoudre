@@ -1267,6 +1267,7 @@
       + '<div class="sg-sky-row"><span>Étoiles phares</span><b>' + (vis.stars.slice(0, 4).join(', ') || '—') + '</b></div>';
     if (vis.never.length) html += '<div class="sg-sky-row sg-sky-never"><span>Hors de portée</span><b>' + vis.never.join(', ') + '</b></div>';
     e.skySummary.innerHTML = html;
+    updateDomeFriseActive();   // la frise partagée doit suivre le scrub aussi en onglet Ciel
   }
   function sgDomeIsOpen() { return !!(sgDomeEls && sgDomeEls.ov.classList.contains('open')); }
   function closeDome() { if (sgDomeEls) { sgDomeEls.ov.classList.remove('open'); sgDomeEls.ov.setAttribute('aria-hidden', 'true'); } sgDomeCurrent = null; }
