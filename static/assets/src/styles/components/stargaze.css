@@ -659,3 +659,55 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 .sg-dome-frise-lab { font-size: 10px; color: #6c7d97; font-variant-numeric: tabular-nums; transition: color 0.12s; }
 .sg-dome-frise-lab.active { color: #f4d06a; font-weight: 700; }
 @media (max-width: 767px) { .sg-dome { max-width: 100%; } .sg-dome-legend { grid-template-columns: 1fr; } .sg-dome-frise-lab { font-size: 9px; } }
+
+/* ── « Autour de moi » (item 3) : feuille en bas — géoloc + rayon + résultats ── */
+.sg-geo-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 96;
+  width: min(460px, 100%); margin: 0 auto;
+  background: rgba(16, 12, 6, 0.97); border: 1px solid rgba(251, 191, 36, 0.30); border-bottom: 0;
+  border-radius: 18px 18px 0 0; padding: 12px 16px 16px; color: #f2e8d0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  box-shadow: 0 -18px 50px -12px rgba(0, 0, 0, 0.6);
+  backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+}
+.sg-geo-sheet[hidden] { display: none; }
+.sg-geo-grip { display: block; width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); margin: 0 auto 12px; }
+.sg-geo-close {
+  position: absolute; top: 12px; right: 12px; width: 28px; height: 28px;
+  min-width: 0 !important; min-height: 0 !important;
+  border-radius: 8px; border: 1px solid var(--border-mid); background: transparent; color: var(--text-dim);
+  cursor: pointer; font-size: 13px; line-height: 1;
+}
+.sg-geo-close:hover { background: rgba(255, 255, 255, 0.06); color: #eaf0fb; }
+.sg-geo-close:focus-visible { outline: 2px solid #f4b942; outline-offset: 2px; }
+.sg-geo-title { font-weight: 700; font-size: 16px; }
+.sg-geo-sub { color: var(--text-dim); font-size: 12.5px; margin-top: 4px; }
+.sg-geo-cta {
+  margin-top: 14px; width: 100%; min-width: 0 !important;
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  font-weight: 700; font-size: 14px; color: #0b0a08; background: #fbbf24;
+  border: 0; border-radius: 12px; padding: 12px; cursor: pointer; transition: 0.15s;
+}
+.sg-geo-cta:hover { background: #ffc733; }
+.sg-geo-cta svg { width: 18px; height: 18px; }
+.sg-geo-cta.is-loading { opacity: 0.7; pointer-events: none; }
+.sg-geo-privacy { margin-top: 9px; font-size: 11px; color: var(--text-dim); text-align: center; line-height: 1.4; }
+.sg-geo-posrow { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; }
+.sg-geo-dot { width: 10px; height: 10px; border-radius: 50%; background: #7dd3fc; box-shadow: 0 0 8px #7dd3fc; flex: 0 0 auto; }
+.sg-geo-posrow b { color: #ffe9b0; }
+.sg-geo-relocate { margin-left: auto; min-width: 0 !important; min-height: 0 !important; font-size: 11px; color: #7dd3fc; background: none; border: 0; cursor: pointer; text-decoration: underline; }
+.sg-geo-radius { margin-top: 12px; }
+.sg-geo-radhead { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--text-dim); font-weight: 600; }
+.sg-geo-radhead b { font-size: 15px; color: #ffe9b0; }
+.sg-geo-radius input[type="range"] { width: 100%; accent-color: #fbbf24; margin-top: 6px; }
+.sg-geo-radscale { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-dim); }
+.sg-geo-results { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+.sg-geo-resh { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
+.sg-geo-res { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(251, 191, 36, 0.16); }
+.sg-geo-rk { font-size: 11px; color: var(--text-dim); width: 14px; text-align: center; flex: 0 0 auto; }
+.sg-geo-meta { flex: 1; font-size: 12.5px; min-width: 0; }
+.sg-geo-meta .d { color: #eaf0fb; font-weight: 600; }
+.sg-geo-meta .s { color: var(--text-dim); font-size: 11px; }
+.sg-geo-sc { font-weight: 700; font-size: 14px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.sg-geo-sc.spot { color: #43c46a; font-size: 12px; }
+.sg-geo-empty { color: var(--text-dim); font-size: 12.5px; text-align: center; padding: 8px 2px; }

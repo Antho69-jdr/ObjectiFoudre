@@ -33,6 +33,9 @@
   // les cellules les mieux notées au créneau courant (suit le curseur, plus « meilleure
   // heure de la nuit »). Remplace les anciens points « top spots ». On/off via #sgBestBtn.
   const BEST_SRC = 'sg-best-src', BEST_GLOW = 'sg-best-glow', BEST_LINE = 'sg-best-line';
+  // « Autour de moi » (item 3) : anneau de rayon + surlignage des meilleures cellules dans le rayon.
+  const GEO_RING_SRC = 'sg-geo-ring-src', GEO_RING_FILL = 'sg-geo-ring-fill', GEO_RING_LINE = 'sg-geo-ring-line';
+  const GEO_HI_SRC = 'sg-geo-hi-src', GEO_HI_GLOW = 'sg-geo-hi-glow', GEO_HI_LINE = 'sg-geo-hi-line';
   const BEST_SEP_DEG = 0.33;    // dédoublonnage spatial (spots distincts) ≈ 35 km
   // Sensibilité du liseré (item 1) : presets pilotant le seuil RELATIF (pts sous le meilleur du
   // créneau), le seuil ABSOLU et le NB MAX de cellules. Réglable (panneau Couches), persisté.
@@ -80,6 +83,9 @@
   let playing = false, playTimer = null;
   let layersReady = false, loadToken = 0, clickBound = false;
   let popup = null, userMarker = null;
+  // « Autour de moi » : position géolocalisée + rayon (persisté) + refs DOM de la feuille.
+  let geoPos = null, geoRadius = 50, geoSheetEls = null;
+  try { const _gr = parseInt(localStorage.getItem('sg_geo_radius'), 10); if (_gr >= 20 && _gr <= 150) geoRadius = _gr; } catch (_) {}
   let degraded = false, retryTimer = null;     // repli « obscurité seule » quand la météo AROME manque
   let qualityFC = null;                        // géométrie des cellules construite UNE fois (scores q0..qN en props)
   let clippedCells = null;                     // coords de chaque cellule ROGNÉE à la France (statique → cache)
@@ -332,6 +338,19 @@
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: { 'line-color': '#f5b942', 'line-width': 9, 'line-blur': 6, 'line-opacity': 0.5 } });
     if (!map.getLayer(BEST_LINE)) map.addLayer({ id: BEST_LINE, type: 'line', source: BEST_SRC,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': '#ffe9b0', 'line-width': 2.4, 'line-opacity': 0.95 } });
+    // « Autour de moi » : anneau de rayon (cyan) + surlignage des meilleures cellules dans le rayon.
+    if (!map.getSource(GEO_RING_SRC)) map.addSource(GEO_RING_SRC, { type: 'geojson', data: EMPTY_FC });
+    if (!map.getLayer(GEO_RING_FILL)) map.addLayer({ id: GEO_RING_FILL, type: 'fill', source: GEO_RING_SRC,
+      paint: { 'fill-color': '#7dd3fc', 'fill-opacity': 0.06 } });
+    if (!map.getLayer(GEO_RING_LINE)) map.addLayer({ id: GEO_RING_LINE, type: 'line', source: GEO_RING_SRC,
+      paint: { 'line-color': '#7dd3fc', 'line-width': 2, 'line-dasharray': [2, 2], 'line-opacity': 0.9 } });
+    if (!map.getSource(GEO_HI_SRC)) map.addSource(GEO_HI_SRC, { type: 'geojson', data: EMPTY_FC });
+    if (!map.getLayer(GEO_HI_GLOW)) map.addLayer({ id: GEO_HI_GLOW, type: 'line', source: GEO_HI_SRC,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': '#f5b942', 'line-width': 9, 'line-blur': 6, 'line-opacity': 0.5 } });
+    if (!map.getLayer(GEO_HI_LINE)) map.addLayer({ id: GEO_HI_LINE, type: 'line', source: GEO_HI_SRC,
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: { 'line-color': '#ffe9b0', 'line-width': 2.4, 'line-opacity': 0.95 } });
     layersReady = true;
@@ -844,51 +863,117 @@
     if (sgIsTouch()) onSgLeave();   // referme le tooltip tactile
   }
 
-  // ── Autour de moi ────────────────────────────────────────────────────────
+  // ── Autour de moi (item 3) : feuille en bas → se géolocaliser + rayon réglable ─────────────
+  function ensureGeoSheet() {
+    if (geoSheetEls) return geoSheetEls;
+    const q = (id) => document.getElementById(id);
+    const sheet = q('sgGeoSheet');
+    if (!sheet) return null;
+    geoSheetEls = { sheet, step1: q('sgGeoStep1'), step2: q('sgGeoStep2'), pos: q('sgGeoPos'),
+      rad: q('sgGeoRad'), radVal: q('sgGeoRadVal'), results: q('sgGeoResults') };
+    q('sgGeoClose').addEventListener('click', closeGeoSheet);
+    q('sgGeoLocate').addEventListener('click', geoLocate);
+    q('sgGeoRelocate').addEventListener('click', geoLocate);
+    geoSheetEls.rad.value = String(geoRadius);
+    geoSheetEls.radVal.textContent = geoRadius + ' km';
+    geoSheetEls.rad.addEventListener('input', (e) => {
+      geoRadius = parseInt(e.target.value, 10) || 50;
+      geoSheetEls.radVal.textContent = geoRadius + ' km';
+      try { localStorage.setItem('sg_geo_radius', String(geoRadius)); } catch (_) {}
+      geoApply();
+    });
+    return geoSheetEls;
+  }
+  // Le bouton géoloc ouvre D'ABORD la feuille (choix Anthony : layout « feuille en bas »).
   function autourDeMoi() {
+    const e = ensureGeoSheet(); if (!e) return;
+    e.sheet.hidden = false;
+    e.step1.hidden = !!geoPos; e.step2.hidden = !geoPos;   // rouvre sur les résultats si déjà localisé
+    if (geoPos) geoApply();
+  }
+  function closeGeoSheet() { if (geoSheetEls) geoSheetEls.sheet.hidden = true; geoClearMap(); }
+  function geoClearMap() {
+    try { map.getSource(GEO_RING_SRC) && map.getSource(GEO_RING_SRC).setData(EMPTY_FC); } catch (_) {}
+    try { map.getSource(GEO_HI_SRC) && map.getSource(GEO_HI_SRC).setData(EMPTY_FC); } catch (_) {}
+    if (userMarker) { userMarker.remove(); userMarker = null; }
+  }
+  function geoLocate() {
     if (!navigator.geolocation) { showHint('Géolocalisation indisponible.'); window.setTimeout(hideHint, 2500); return; }
+    const cta = document.getElementById('sgGeoLocate'); cta && cta.classList.add('is-loading');
     geoBtn && geoBtn.classList.add('active');
     navigator.geolocation.getCurrentPosition((pos) => {
-      geoBtn && geoBtn.classList.remove('active');
-      const lat = pos.coords.latitude, lng = pos.coords.longitude;
-      if (userMarker) userMarker.remove();
-      const el = document.createElement('div'); el.className = 'sg-user-dot';
-      userMarker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
-      // meilleurs spots dans ~120 km
-      const cl = Math.cos(lat * Math.PI / 180);
-      const cand = [];
-      for (let i = 0; i < data.cells.length; i++) {
-        if (bestDark[i] < 20) continue;
-        const dx = (data.cells[i].lon - lng) * cl * 111.32, dy = (data.cells[i].lat - lat) * 110.574;
-        const km = Math.sqrt(dx * dx + dy * dy);
-        if (km <= 120) cand.push({ i, km, s: bestDark[i] });
-      }
-      cand.sort((a, b) => b.s - a.s || a.km - b.km);
-      const picks = [];
-      for (const c of cand) {
-        if (picks.some((p) => { const a = data.cells[p.i], b = data.cells[c.i];
-          return Math.abs(a.lat - b.lat) < 0.28 && Math.abs(a.lon - b.lon) * cl < 0.32; })) continue;
-        picks.push(c); if (picks.length >= 5) break;
-      }
-      map.flyTo({ center: [lng, lat], zoom: 7.4, duration: 900 });
-      let html = '<p class="sg-pop-title">Meilleurs coins près de toi</p>';
-      if (!picks.length) html += '<p class="sg-pop-empty">Aucun bon spot à moins de 120 km ce soir.</p>';
-      else {
-        html += '<ul class="sg-pop-list">';
-        picks.forEach((p) => {
-          const c = data.cells[p.i];
-          const brg = bearing(lat, lng, c.lat, c.lon);
-          const bh = bestDarkHour[p.i];
-          const hourTxt = (bh != null) ? ' · ' + String(bh).padStart(2, '0') + ' h' : '';
-          html += '<li><span>' + Math.round(p.km) + ' km ' + brg + hourTxt + '</span><strong>' + p.s + '/100</strong></li>';
-        });
-        html += '</ul>';
-      }
-      ensurePopup().setLngLat([lng, lat]).setHTML(html).addTo(map);
+      geoBtn && geoBtn.classList.remove('active'); cta && cta.classList.remove('is-loading');
+      geoPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      const e = ensureGeoSheet();
+      if (e) { e.step1.hidden = true; e.step2.hidden = false; e.pos.textContent = geoPos.lat.toFixed(3) + ', ' + geoPos.lng.toFixed(3); }
+      map.flyTo({ center: [geoPos.lng, geoPos.lat], zoom: 7.4, duration: 900 });
+      geoApply();
     }, () => {
-      geoBtn && geoBtn.classList.remove('active');
+      geoBtn && geoBtn.classList.remove('active'); cta && cta.classList.remove('is-loading');
       showHint('Localisation refusée.'); window.setTimeout(hideHint, 2500);
     }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 });
+  }
+  // Cercle GeoJSON (rayon km) autour d'un point — 64 sommets (formule grand-cercle).
+  function geoCircle(lat, lng, km) {
+    const pts = [], d = km / 6371, la = lat * Math.PI / 180, lo = lng * Math.PI / 180;
+    for (let i = 0; i <= 64; i++) {
+      const b = (i / 64) * 2 * Math.PI;
+      const la2 = Math.asin(Math.sin(la) * Math.cos(d) + Math.cos(la) * Math.sin(d) * Math.cos(b));
+      const lo2 = lo + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la), Math.cos(d) - Math.sin(la) * Math.sin(la2));
+      pts.push([lo2 * 180 / Math.PI, la2 * 180 / Math.PI]);
+    }
+    return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [pts] } }] };
+  }
+  // Anneau + surlignage des meilleures cellules du rayon + liste (spots puis cellules).
+  function geoApply() {
+    if (!geoPos || !geoSheetEls) return;
+    const lat = geoPos.lat, lng = geoPos.lng, cl = Math.cos(lat * Math.PI / 180);
+    if (userMarker) userMarker.remove();
+    const dot = document.createElement('div'); dot.className = 'sg-user-dot';
+    userMarker = new maplibregl.Marker({ element: dot }).setLngLat([lng, lat]).addTo(map);
+    try { map.getSource(GEO_RING_SRC) && map.getSource(GEO_RING_SRC).setData(geoCircle(lat, lng, geoRadius)); } catch (_) {}
+    // meilleures cellules dans le rayon (bestDark = score robuste, marche aussi en dégradé)
+    const cand = [];
+    if (data && data.cells && bestDark) {
+      for (let i = 0; i < data.cells.length; i++) {
+        const s = bestDark[i]; if (s == null) continue;
+        const dx = (data.cells[i].lon - lng) * cl * 111.32, dy = (data.cells[i].lat - lat) * 110.574;
+        const km = Math.sqrt(dx * dx + dy * dy);
+        if (km <= geoRadius) cand.push({ i, km, s });
+      }
+    }
+    cand.sort((a, b) => b.s - a.s || a.km - b.km);
+    const picks = [];
+    for (const c of cand) {
+      if (picks.some((p) => Math.abs(data.cells[p.i].lat - data.cells[c.i].lat) < 0.20 && Math.abs(data.cells[p.i].lon - data.cells[c.i].lon) * cl < 0.24)) continue;
+      picks.push(c); if (picks.length >= 6) break;
+    }
+    const hiFeats = picks.filter((p) => p.s >= 55 && cellGeomByIdx && cellGeomByIdx[p.i])
+      .map((p) => ({ type: 'Feature', properties: { idx: p.i }, geometry: cellGeomByIdx[p.i] }));
+    try { map.getSource(GEO_HI_SRC) && map.getSource(GEO_HI_SRC).setData({ type: 'FeatureCollection', features: hiFeats }); } catch (_) {}
+    // spots dans le rayon (cellules + spots = choix Anthony)
+    let spots = [];
+    try { spots = (window.ObjectiFoudreSpots && window.ObjectiFoudreSpots.list) ? window.ObjectiFoudreSpots.list() : []; } catch (_) {}
+    const spotsIn = spots.filter((sp) => {
+      const dx = (Number(sp.lon) - lng) * cl * 111.32, dy = (Number(sp.lat) - lat) * 110.574;
+      sp._km = Math.sqrt(dx * dx + dy * dy); return isFinite(sp._km) && sp._km <= geoRadius;
+    }).sort((a, b) => a._km - b._km);
+    let html = '';
+    if (!picks.length && !spotsIn.length) {
+      html = '<p class="sg-geo-empty">Aucun bon coin dans ' + geoRadius + ' km — élargis le rayon.</p>';
+    } else {
+      html = '<div class="sg-geo-resh">Meilleurs coins &lt; ' + geoRadius + ' km</div>';
+      spotsIn.slice(0, 4).forEach((sp) => {
+        const brg = bearing(lat, lng, Number(sp.lat), Number(sp.lon));
+        html += '<div class="sg-geo-res"><span class="sg-geo-rk">★</span><span class="sg-geo-meta"><span class="d">' + esc(sp.name || 'Spot') + '</span><span class="s"> · ' + Math.round(sp._km) + ' km ' + brg + ' · ton spot</span></span><span class="sg-geo-sc spot">spot</span></div>';
+      });
+      picks.forEach((p, k) => {
+        const c = data.cells[p.i], brg = bearing(lat, lng, c.lat, c.lon), bh = bestDarkHour ? bestDarkHour[p.i] : null;
+        const hourTxt = (bh != null) ? ' · vers ' + String(bh).padStart(2, '0') + ' h' : '';
+        html += '<div class="sg-geo-res"><span class="sg-geo-rk">' + (k + 1) + '</span><span class="sg-geo-meta"><span class="d">' + Math.round(p.km) + ' km ' + brg + '</span><span class="s">' + hourTxt + '</span></span><span class="sg-geo-sc" style="color:' + sgScoreColor(p.s) + '">' + p.s + '</span></div>';
+      });
+    }
+    geoSheetEls.results.innerHTML = html;
   }
 
   function bearing(la1, lo1, la2, lo2) {
@@ -1421,7 +1506,7 @@
       map.off('mouseleave', QUALITY_LYR, onSgLeave);
       clickBound = false;
     }
-    window.sgOnSpotClick = null; closeDome();
+    window.sgOnSpotClick = null; closeDome(); closeGeoSheet();
     onSgLeave();
     if (popup) { popup.remove(); }
     if (userMarker) { userMarker.remove(); userMarker = null; }
@@ -1577,6 +1662,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !active) return;
     if (sgDomeIsOpen()) { closeDome(); return; }
+    if (geoSheetEls && !geoSheetEls.sheet.hidden) { closeGeoSheet(); return; }
     if (agendaOpenState()) { hideAgenda(); return; }
     deactivate();
   });

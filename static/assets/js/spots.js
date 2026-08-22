@@ -1316,5 +1316,6 @@
   else init();
 
   // exposé pour debug / rechargement après ajout
-  window.ObjectiFoudreSpots = { reload: loadSpots, highlightStorm: highlightStorm, clearStormHighlight: clearStormHighlight };
+  // list() : spots publics + « mes spots » fusionnés/dédupliqués (pour « Autour de moi » du mode étoile).
+  window.ObjectiFoudreSpots = { reload: loadSpots, highlightStorm: highlightStorm, clearStormHighlight: clearStormHighlight, list: function () { return renderList(); } };
 })();
