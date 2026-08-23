@@ -1030,9 +1030,11 @@
     g.appendChild(starG);
     // pollution lumineuse (cercle égal, transparente)
     g.appendChild(dmEl('path', { d: dmBand(0, pollTop), fill: 'url(#sgPoll)', opacity: (0.2 + 0.34 * d.poll / 100).toFixed(2), filter: 'url(#sgSoft)' }));
-    // 3 voiles de nébulosité
+    // Voiles de nébulosité : pilotés par le TOTAL fiable (les étages AROME sont un placeholder,
+    // cf. bug #1) → l'intensité du voile reflète la vraie couverture, pas 3 valeurs bidon.
+    const cloudFrac = (d.cloud.total || 0) / 100;
     for (const key of ['low', 'mid', 'high']) {
-      const b = DM_BANDS[key], frac = d.cloud[key] / 100;
+      const b = DM_BANDS[key], frac = cloudFrac;
       g.appendChild(dmEl('path', { d: dmBand(b[0], b[1]), fill: '#8b96a8', opacity: (0.06 + 0.72 * frac).toFixed(2) }));
       g.appendChild(dmEl('path', { d: dmArc(0, 180, b[1]), fill: 'none', stroke: '#0a0f1c', 'stroke-width': 1, opacity: 0.5 }));
     }
@@ -1103,7 +1105,9 @@
     return {
       title, sub,
       poll: Math.max(0, Math.min(100, 100 - (data.darkness ? (data.darkness[i] || 0) : 0))),
-      cloud: { low: cl('cloud_low'), mid: cl('cloud_mid'), high: cl('cloud_high') },
+      // total = nébulosité FIABLE (total_cloud_cover) ; les étages low/mid/high AROME sont un
+      // placeholder (30) non fiable → on n'affiche plus que le total (choix Anthony). Cf. bug #1.
+      cloud: { total: cl('cloud'), low: cl('cloud_low'), mid: cl('cloud_mid'), high: cl('cloud_high') },
       score, scoreLabel: (score != null ? verdict(score) : '—'),
       moon: {
         illum: (m.illumination != null ? m.illumination : 0), name: (m.phase_name || '—'),
@@ -1304,12 +1308,9 @@
     e.scoreLbl.textContent = d.scoreLabel;
     e.moonPct.textContent = `${Math.round(d.moon.illum * 100)}% · ${d.moon.name}`;
     e.moonLine.innerHTML = `<span>Levée <b>${d.moon.rise}</b></span><span>Coucher <b>${d.moon.set}</b></span><span><b>${d.moon.up ? 'au-dessus' : 'sous'} l'horizon</b></span>`;
-    e.cloud.innerHTML = '';
-    [['Basse', 'low'], ['Moyenne', 'mid'], ['Haute', 'high']].forEach(([lbl, k]) => {
-      const row = document.createElement('div'); row.className = 'sg-dome-bar';
-      row.innerHTML = `<span class="k">${lbl}</span><span class="sg-dome-track"><span class="sg-dome-fill" style="width:${d.cloud[k]}%"></span></span><span class="v">${d.cloud[k]}%</span>`;
-      e.cloud.appendChild(row);
-    });
+    // Nébulosité = TOTAL fiable en une valeur (les étages AROME sont un placeholder, cf. bug #1).
+    const cov = Math.max(0, Math.min(100, Math.round(d.cloud.total || 0)));
+    e.cloud.innerHTML = `<div class="sg-dome-bar"><span class="k">Couverture</span><span class="sg-dome-track"><span class="sg-dome-fill" style="width:${cov}%"></span></span><span class="v">${cov}%</span></div>`;
     const b = sgBortle(d.poll);
     e.bortle.textContent = `Bortle ${b.lvl} · ${b.label}`;
     e.pollFill.style.width = d.poll + '%';
