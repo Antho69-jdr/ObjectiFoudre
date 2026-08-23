@@ -225,9 +225,45 @@
     filter: brightness(1.05);
   }
 
-  /* le panneau de recherche s'ouvre SOUS le bandeau (pas par-dessus le logo) */
+  /* --- Recherche SORTIE du bandeau (demande Anthony) : le bouton loupe devient un
+     chrome FLOTTANT en haut à droite de la carte, SOUS le bandeau (plus dans la ligne
+     du header). Le dock #topbar est extrait du flux du bandeau (position:fixed) → la
+     ligne du header ne contient plus que [nav · compte]. Portée desktop-only ; mobile
+     et tablette gardent la recherche dans le rail (déjà flottante en haut à droite). --- */
+  #rightRailScroll .search-dock {
+    position: fixed !important;
+    top: calc(var(--app-header-h) + 12px) !important;
+    right: 14px !important;
+    left: auto !important;
+    bottom: auto !important;
+    width: auto !important;
+    height: auto !important;
+    align-items: flex-end !important;
+    z-index: 87 !important;   /* sous le bandeau (88), au-dessus de la carte */
+  }
+  #rightRailScroll .search-dock .mobile-toggle-bar { width: auto !important; }
+  /* le bouton loupe = pastille « verre » flottante (pas le look transparent du bandeau) */
+  #rightRailScroll .search-dock #toggleSearchBtn {
+    background: linear-gradient(180deg, rgba(11, 19, 34, 0.92), rgba(11, 19, 34, 0.72)) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: var(--shadow-2) !important;
+    -webkit-backdrop-filter: var(--glass-blur) !important;
+    backdrop-filter: var(--glass-blur) !important;
+    color: var(--text) !important;
+  }
+  #rightRailScroll .search-dock #toggleSearchBtn:hover {
+    background: var(--surface-1) !important;
+    border-color: var(--accent-ring) !important;
+    color: #bae6fd !important;
+    transform: none !important;
+  }
+
+  /* le panneau de recherche s'ouvre en dropdown SOUS le bouton loupe flottant,
+     aligné sur son bord droit (le bouton reste visible au-dessus). */
   .search-dock.show-search .search-panel {
-    top: calc(var(--app-header-h) + 8px) !important;
+    top: calc(var(--app-header-h) + 64px) !important;
+    right: 14px !important;
+    left: auto !important;
   }
 
   /* ------------------------------------------------------------------------

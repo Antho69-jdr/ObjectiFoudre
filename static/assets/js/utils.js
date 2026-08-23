@@ -31,13 +31,12 @@
       const today = normalizeDateIso(todayIso);
       // J-1 n'est PLUS proposé dans la frise : la veille se consulte uniquement dans les
       // Archives (la grille du jour passé y est servie depuis l'archive durable).
+      // J+2 et J+3 ont été RETIRÉS de la carte de base (« ces jours n'existent plus » sur la
+      // grille cellules/score) : la grille de base s'arrête à demain (J+1). Les échéances
+      // lointaines restent sur la carte « Risque orageux » (J0→J+10).
       return [
         { value: today, kind: 'today', label: 'Aujourd’hui' },
         { value: addDaysIso(today, 1), kind: 'next', label: 'Demain' },
-        { value: addDaysIso(today, 2), kind: 'day_after_tomorrow', label: 'Après-demain' },
-        // J+3 : grille servie par ARPEGE (le serveur choisit le modèle selon la date).
-        // J+4+ = tendance ECMWF, accessible dans la carte Prévision (pas sur la grille de base).
-        { value: addDaysIso(today, 3), kind: 'j3_arpege', label: 'J+3 (ARPEGE)' },
       ];
     }
 
@@ -85,7 +84,7 @@
         minDate,
         maxDate,
         clampedDate,
-        message: 'Jour non disponible : ' + selected + '. Choisis entre aujourd’hui et J+3 (AROME jusqu’à J+2, ARPEGE ensuite). La veille est dans les Archives.',
+        message: 'Jour non disponible : ' + selected + '. Choisis entre aujourd’hui et demain. La veille est dans les Archives.',
       };
     }
 
@@ -138,7 +137,7 @@
           dateInput.max = dates[dates.length - 1].value;
         }
         dateInput.value = nextDate;
-        dateInput.title = 'Jours disponibles : d’aujourd’hui à J+3 (AROME jusqu’à J+2, ARPEGE ensuite). La veille est dans les Archives.';
+        dateInput.title = 'Jours disponibles : aujourd’hui et demain. La veille est dans les Archives.';
       }
       syncDateNavButtons(nextDate);
     }

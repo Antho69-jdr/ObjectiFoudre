@@ -876,6 +876,13 @@
     q('sgGeoClose').addEventListener('click', closeGeoSheet);
     q('sgGeoLocate').addEventListener('click', geoLocate);
     q('sgGeoRelocate').addEventListener('click', geoLocate);
+    // Tap EN DEHORS de la feuille « Autour de moi » → fermeture (avant : bouton ✕ seul).
+    if (window.OFDismiss) window.OFDismiss.register({
+      el: sheet,
+      isOpen: () => !sheet.hidden,
+      close: closeGeoSheet,
+      ignore: [geoBtn],
+    });
     geoSheetEls.rad.value = String(geoRadius);
     geoSheetEls.radVal.textContent = geoRadius + ' km';
     geoSheetEls.rad.addEventListener('input', (e) => {
@@ -1631,6 +1638,13 @@
   }
   // « Couches » : ouverture de la modale + cases (multi-sélection superposable).
   layersBtn && layersBtn.addEventListener('click', () => openLayersPanel(layersPanel ? layersPanel.hidden : true));
+  // Tap EN DEHORS du panneau Couches → fermeture (cohérent avec les autres surfaces).
+  if (window.OFDismiss && layersPanel) window.OFDismiss.register({
+    el: layersPanel,
+    isOpen: () => !layersPanel.hidden,
+    close: () => openLayersPanel(false),
+    ignore: [layersBtn],
+  });
   if (layersPanel) {
     const parent = document.getElementById('sgLayerCloud');
     const subs = document.getElementById('sgLayerSubs');

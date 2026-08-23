@@ -207,14 +207,23 @@
 
     function timelinePhaseDefinitions(dateIso) {
       const sunWindow = estimateTimelineSunWindow(dateIso);
-      const morningNightEnd = sunWindow.sunrise;
-      const eveningNightStart = sunWindow.sunset;
+      const loc = sunWindow.location || timelineSolarReferenceLocation();
+      const normalized = normalizeDateIso(dateIso || selectedBaseDate || getTodayIsoDate());
+      // Les nuits TRAVERSENT minuit : on ne clampe plus à 00:00 / 24:00.
+      // - Nuit du matin : coucher de la VEILLE → lever du jour (ex. « 20:45-06:58 »).
+      // - Nuit du soir : coucher du jour → lever du LENDEMAIN (ex. « 20:47-06:59 »).
+      const morningNightEnd = sunWindow.sunrise;                              // lever du jour
+      const prevSunset = timelineSolarEventHour(addDaysIso(normalized, -1), loc.lat, loc.lon, false); // coucher veille
+      const eveningNightStart = sunWindow.sunset;                             // coucher du jour
+      const nextSunrise = timelineSolarEventHour(addDaysIso(normalized, 1), loc.lat, loc.lon, true);  // lever lendemain
+      const morningNightStartLabel = Number.isFinite(prevSunset) ? formatTimelineSunHour(prevSunset) : '00:00';
+      const eveningNightEndLabel = Number.isFinite(nextSunrise) ? formatTimelineSunHour(nextSunrise) : '24:00';
       return [
-        { type: 'night', hour: sunWindow.sunrise / 2, label: 'Nuit', tooltip: `Nuit · 00:00-${formatTimelineSunHour(morningNightEnd)}` },
+        { type: 'night', hour: sunWindow.sunrise / 2, label: 'Nuit', tooltip: `Nuit · ${morningNightStartLabel}-${formatTimelineSunHour(morningNightEnd)}` },
         { type: 'sunrise', hour: sunWindow.sunrise, label: 'Lever' },
         { type: 'day', hour: sunWindow.noon, label: 'Journée', tooltip: `Journée · ${formatTimelineSunHour(sunWindow.sunrise)}-${formatTimelineSunHour(sunWindow.sunset)}` },
         { type: 'sunset', hour: sunWindow.sunset, label: 'Coucher' },
-        { type: 'night', hour: sunWindow.sunset + ((24 - sunWindow.sunset) / 2), label: 'Nuit', tooltip: `Nuit · ${formatTimelineSunHour(eveningNightStart)}-24:00` },
+        { type: 'night', hour: sunWindow.sunset + ((24 - sunWindow.sunset) / 2), label: 'Nuit', tooltip: `Nuit · ${formatTimelineSunHour(eveningNightStart)}-${eveningNightEndLabel}` },
       ];
     }
 

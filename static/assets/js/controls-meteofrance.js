@@ -1313,6 +1313,26 @@
         }
         requestAnimationFrame(alignTopPanels);
       });
+      // Fermeture au tap/clic EN DEHORS du dock de recherche (toggle + panneau vivent
+      // dans #topbar) — surtout tactile, où rien ne refermait le panneau.
+      if (window.OFDismiss && topbar) {
+        window.OFDismiss.register({
+          el: topbar,
+          isOpen: () => topbar.classList.contains('show-search'),
+          close: closeTopPanels,
+        });
+      }
+      // Carte de sélection (clic cellule sur la carte de base) : au TACTILE, un tap
+      // ailleurs la referme (le bouton ✕ restait la seule sortie). coarseOnly → le pan
+      // souris desktop ne la ferme pas intempestivement.
+      if (window.OFDismiss && selectionCard) {
+        window.OFDismiss.register({
+          el: selectionCard,
+          isOpen: () => selectionCard.classList.contains('visible'),
+          close: closeSelection,
+          coarseOnly: true,
+        });
+      }
       closeSelectionBtn?.addEventListener('click', closeSelection);
       openDetailsBtn?.addEventListener('click', openDetails);
       recenterBtn?.addEventListener('click', () => {
