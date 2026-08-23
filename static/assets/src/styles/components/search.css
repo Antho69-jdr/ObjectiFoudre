@@ -73,6 +73,16 @@
   z-index: 60;
 }
 .search-autocomplete[hidden] { display: none; }
+/* Depuis le retrait du wrapper .location-bar, l'autocomplétion est enfant DIRECT de
+   .search-panel → la règle `.search-panel > *{position:relative}` (rail-search-layout)
+   la casserait. On la ré-ancre en absolu sous le champ (!important bat la règle non-!). */
+.search-panel #searchAutocomplete {
+  position: absolute !important;
+  top: calc(100% + var(--sp-2)) !important;
+  left: 0;
+  right: 0;
+  z-index: 60 !important;
+}
 .search-autocomplete-item {
   position: relative;
   display: flex;

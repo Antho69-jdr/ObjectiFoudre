@@ -38,6 +38,17 @@
   function pageOpen(id) { var p = el(id); return !!p && p.getAttribute('aria-hidden') === 'false'; }
   function drawerOpen() { var d = el('infoDrawer'); return !!d && d.classList.contains('visible'); }
   function accountOpen() { var m = el('accountModal'); return !!m && m.classList.contains('show'); }
+  function detailsOpen() { var d = el('detailsModal'); return !!d && d.classList.contains('visible'); }
+  // Le bouton recherche flottant (desktop) est enfant du bandeau (#rightRailScroll, z90)
+  // → il ne peut pas passer SOUS les surfaces par z-index. On le MASQUE quand une
+  // surface s'ouvre par-dessus la carte (demande Anthony : « disparaître ou recouvert »).
+  function anyOverlayForSearch() {
+    return !!document.querySelector('.prediction-page[aria-hidden="false"]')
+      || forumOpen() || drawerOpen() || accountOpen() || detailsOpen();
+  }
+  function updateSearchDockHidden() {
+    document.body.classList.toggle('of-search-hidden', anyOverlayForSearch());
+  }
   function isAdmin() { try { return document.documentElement.classList.contains('objf-admin'); } catch (e) { return false; } }
 
   // La barre est VISIBLE par-dessus les pages plein écran → pour qu'elle NAVIGUE
@@ -312,11 +323,15 @@
     syncFromAccount();
 
     try {
-      var mo = new MutationObserver(function () { updateActive(); });
+      var mo = new MutationObserver(function () { updateActive(); updateSearchDockHidden(); });
       mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
       // Onglet actif suit AUSSI l'ouverture/fermeture des pages plein écran.
       ['forumPage', 'predictionPage', 'historyPage', 'spotsListPage', 'privacyPage', 'maintenancePage', 'accountModal']
         .forEach(function (id) { var p = el(id); if (p) mo.observe(p, { attributes: true, attributeFilter: ['aria-hidden'] }); });
+      // Surfaces à base de classe (.visible) → masquage du bouton recherche flottant.
+      ['infoDrawer', 'detailsModal', 'accountModal']
+        .forEach(function (id) { var p = el(id); if (p) mo.observe(p, { attributes: true, attributeFilter: ['class'] }); });
+      updateSearchDockHidden();
     } catch (e) {}
 
     document.addEventListener('keydown', function (e) {
