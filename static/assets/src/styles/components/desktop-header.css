@@ -245,28 +245,30 @@
     z-index: 20 !important;
   }
   #rightRailScroll .search-dock .mobile-toggle-bar { width: auto !important; }
-  /* le bouton loupe garde le MÊME look que les boutons de rail (chip verre neutre
-     au repos) : on ré-annule le look « transparent » que le bandeau impose au rail.
-     Valeurs alignées sur rail.css (var(--fill-ghost)/--ghost-border/--text-soft). */
+  /* le bouton loupe garde le MÊME look que les boutons de rail gauche (chip verre :
+     #bestCellsBtn / .spots-rail-btn) : fond ghost, bordure ardoise, ombre, backdrop.
+     ⚠️ !important OBLIGATOIRE : le bandeau impose `background/border-color/box-shadow/
+     backdrop:transparent !important` (2,0,0) au rail → sans !important le bouton
+     redevient INVISIBLE. Notre sélecteur (2,1,0) + !important gagne. */
   #rightRailScroll .search-dock #toggleSearchBtn {
-    background: var(--fill-ghost);
-    border: 1px solid var(--ghost-border);
-    color: var(--text-soft);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
-    -webkit-backdrop-filter: blur(16px) saturate(1.15);
-    backdrop-filter: blur(16px) saturate(1.15);
+    background: var(--fill-ghost) !important;
+    border: 1px solid var(--ghost-border) !important;
+    color: var(--text-soft) !important;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(1.15) !important;
+    backdrop-filter: blur(16px) saturate(1.15) !important;
   }
   #rightRailScroll .search-dock #toggleSearchBtn:hover {
-    background: var(--border-faint);
-    border-color: rgba(103, 232, 249, 0.4);
-    color: #e6fbff;
-    transform: translateY(-1px);
+    background: var(--border-faint) !important;
+    border-color: rgba(103, 232, 249, 0.4) !important;
+    color: #e6fbff !important;
+    transform: translateY(-1px) !important;
   }
   /* état actif (recherche ouverte) = cyan, comme les autres boutons de rail. */
   #rightRailScroll .search-dock.show-search #toggleSearchBtn {
-    background: rgba(56, 189, 248, 0.14);
-    border-color: rgba(125, 211, 252, 0.45);
-    color: #e2eefc;
+    background: rgba(56, 189, 248, 0.14) !important;
+    border-color: rgba(125, 211, 252, 0.45) !important;
+    color: #e2eefc !important;
   }
 
   /* le champ de recherche s'ouvre ALIGNÉ HORIZONTALEMENT avec le bouton loupe,
