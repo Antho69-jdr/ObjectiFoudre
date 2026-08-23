@@ -829,14 +829,14 @@
   }
   // Desktop : SURVOL → tooltip. (Au tactile, rien au mousemove — cf. tap.)
   function onSgMove(e) {
-    if (sgIsTouch() || !data) return;
-    const f = e.features && e.features[0];
-    const i = f ? Number(f.properties.idx) : -1;
-    if (!(i >= 0) || !data.cells[i]
-        || (typeof pointInFranceGridMask === 'function' && e.lngLat && !pointInFranceGridMask(e.lngLat.lng, e.lngLat.lat))) {
-      onSgLeave();
-      return;
-    }
+    if (sgIsTouch() || !data || !e.lngLat) return;
+    // Résolution DÉTERMINISTE : cellule dont le CENTRE est le plus proche du pointeur.
+    // Les cellules se chevauchent de 6 % (OVERLAP) → e.features[0] est ambigu et « saute »
+    // d'une cellule à l'autre dans une même case (tooltip incohérent / décalé). sgNearestCell
+    // = une seule cellule par position, identique au clic → dôme (cf. bugs #2/#3).
+    if (typeof pointInFranceGridMask === 'function' && !pointInFranceGridMask(e.lngLat.lng, e.lngLat.lat)) { onSgLeave(); return; }
+    const i = sgNearestCell(e.lngLat.lat, e.lngLat.lng);
+    if (!(i >= 0) || !data.cells[i]) { onSgLeave(); return; }
     showSgTip(i, e.point || { x: 0, y: 0 });
   }
 
@@ -851,13 +851,15 @@
   // passe UNIQUEMENT par le tooltip .grid-cell-tooltip (survol desktop / tap tactile).
   // Clic sur une cellule (desktop OU tactile) → modale « dôme céleste ».
   function onSgTap(e) {
-    if (!data) return;
-    const box = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
+    if (!data || !e.lngLat) return;
+    if (typeof pointInFranceGridMask === 'function' && !pointInFranceGridMask(e.lngLat.lng, e.lngLat.lat)) return;
+    // Confirme qu'une cellule est bien sous le clic, puis résout la MÊME cellule que le survol
+    // (centre le plus proche) → tooltip et dôme parlent toujours de la même cellule (cf. bug #2).
     let feats = [];
-    try { feats = map.queryRenderedFeatures(box, { layers: [QUALITY_LYR] }); } catch (_) {}
-    const i = feats.length ? Number(feats[0].properties.idx) : -1;
+    try { feats = map.queryRenderedFeatures([[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]], { layers: [QUALITY_LYR] }); } catch (_) {}
+    if (!feats.length) return;
+    const i = sgNearestCell(e.lngLat.lat, e.lngLat.lng);
     if (!(i >= 0) || !data.cells[i]) return;
-    if (typeof pointInFranceGridMask === 'function' && e.lngLat && !pointInFranceGridMask(e.lngLat.lng, e.lngLat.lat)) return;
     const c = data.cells[i];
     openDome(i, 'Point d\'observation', `${Number(c.lat).toFixed(2)}, ${Number(c.lon).toFixed(2)}`);
     if (sgIsTouch()) onSgLeave();   // referme le tooltip tactile
@@ -1050,7 +1052,11 @@
       const mg = dmEl('g', { opacity: mf.toFixed(2) });
       mg.appendChild(dmEl('circle', { cx: mx, cy: my, r: mr + 7, fill: '#c7d1de', opacity: 0.11, filter: 'url(#sgSoft2)' }));
       mg.appendChild(dmEl('circle', { cx: mx, cy: my, r: mr, fill: 'url(#sgMoonG)', stroke: '#dbe3ee', 'stroke-width': 0.6 }));
-      const off = (1 - d.moon.illum) * 2 * mr * (d.moon.waning ? -1 : 1);
+      // Ombre = disque décalé, clippé au disque lunaire. Décalage ∝ illumination :
+      //   illum=1 (pleine) → |off|=2·mr → ombre hors du disque → tout éclairé ;
+      //   illum=0 (nouvelle) → off=0 → ombre sur tout le disque → tout noir.
+      // Croissante (waning=false) : éclairée à DROITE → ombre à gauche (off négatif).
+      const off = d.moon.illum * 2 * mr * (d.moon.waning ? 1 : -1);
       mg.appendChild(dmEl('circle', { cx: mx + off, cy: my, r: mr, fill: '#0c1322', opacity: 0.82, 'clip-path': 'url(#sgMClip)' }));
       const cg = dmEl('g', { 'clip-path': 'url(#sgMClip)', opacity: 0.35 });
       cg.appendChild(dmEl('circle', { cx: mx - 4, cy: my - 3, r: 2.4, fill: '#93a2ba' }));
