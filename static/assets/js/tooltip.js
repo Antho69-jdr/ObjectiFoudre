@@ -71,6 +71,12 @@
     // survol/tap (item Trello UI/UX) — on les révèle UNIQUEMENT via #screenTooltipsBtn.
     if (window.innerWidth <= 1024 && el.id !== 'screenTooltipsBtn'
         && el.closest('.right-rail-stack, .chase-layer-rail')) return null;
+    // Onglets nav du bandeau desktop AVEC libellé visible (≥1200px) : le libellé sous
+    // l'icône rend le tooltip de survol redondant → on ne l'affiche pas (demande Anthony).
+    // (En mode icône seule — 1025-1199px — le libellé a une largeur ~0 → tooltip conservé ;
+    // le compte n'a pas de .rail-label → il garde son tooltip.)
+    const railLabel = el.querySelector && el.querySelector('.rail-label');
+    if (railLabel && railLabel.getBoundingClientRect().width > 1) return null;
     return el;
   }
 
