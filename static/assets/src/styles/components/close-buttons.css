@@ -29,6 +29,8 @@
 #historyPageCloseBtn,
 #maintenancePageCloseBtn,
 #forumPageCloseBtn,
+#spotsListCloseBtn,
+#privacyPageCloseBtn,
 #maintenanceReportsClose,
 #selectionCard #closeSelectionBtn {
   aspect-ratio: 1 / 1;
@@ -65,6 +67,8 @@
 #historyPageCloseBtn:hover,
 #maintenancePageCloseBtn:hover,
 #forumPageCloseBtn:hover,
+#spotsListCloseBtn:hover,
+#privacyPageCloseBtn:hover,
 #maintenanceReportsClose:hover,
 #selectionCard #closeSelectionBtn:hover {
   background: var(--divider);
@@ -96,6 +100,8 @@
   #historyPageCloseBtn,
   #maintenancePageCloseBtn,
   #forumPageCloseBtn,
+  #spotsListCloseBtn,
+  #privacyPageCloseBtn,
   #maintenanceReportsClose {
     /* Cible tactile confortable sur téléphone (≥40px). */
     width: 40px;
