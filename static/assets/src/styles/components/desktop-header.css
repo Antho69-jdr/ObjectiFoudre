@@ -135,7 +135,7 @@
     flex-direction: row !important;
     align-items: center !important;
     justify-content: flex-end !important;
-    gap: 8px !important;
+    gap: 5px !important;
     overflow: visible !important;
     z-index: 90 !important;
   }
@@ -225,6 +225,15 @@
     filter: brightness(1.05);
   }
 
+  /* --- Onglets nav du bandeau = ICÔNE + LIBELLÉ (harmonisés avec la barre mobile,
+     demande Anthony). Icônes reprises du jeu mobile (bottom-nav.js) ; libellé affiché
+     en permanence sous l'icône (comme les onglets mobiles). Le compte reste une
+     pastille ronde (avatar, sans libellé).
+     ⚠️ Les libellés ne s'affichent qu'à partir de 1200px : entre 1025 et 1199 la
+     rangée [nav+libellés] chevaucherait le badge date (à gauche) → on garde l'icône
+     seule dans cette bande (le libellé reste dispo au survol via title). --- */
+  #rightRailScroll #accountBtn .rail-label { display: none; }
+
   /* --- Recherche SORTIE du bandeau (demande Anthony) : le bouton loupe devient un
      chrome FLOTTANT en haut à droite de la carte, SOUS le bandeau (plus dans la ligne
      du header). Le dock #topbar est extrait du flux du bandeau (position:fixed) → la
@@ -301,5 +310,39 @@
   .info-drawer {
     top: var(--app-header-h) !important;
     height: calc(100dvh - var(--app-header-h)) !important;
+  }
+}
+
+/* ==========================================================================
+   Onglets nav du bandeau = ICÔNE + LIBELLÉ (harmonisés avec la barre mobile).
+   ≥1200px seulement : entre 1025 et 1199, la rangée [nav + libellés] chevauche
+   le badge date à gauche → on garde l'icône seule dans cette bande (le libellé
+   reste dispo au survol via l'attribut title). Le compte reste une pastille
+   ronde (avatar, sans libellé).
+   ========================================================================== */
+@media (min-width: 1200px) {
+  #rightRailScroll .right-rail-stack .grid-focus-btn:not(#accountBtn) {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 3px !important;
+    width: auto !important;
+    min-width: 54px !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: 5px 8px !important;
+    border-radius: 11px !important;
+  }
+  #rightRailScroll .right-rail-stack .grid-focus-btn .rail-label {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    color: inherit;
   }
 }
