@@ -1229,7 +1229,7 @@
       '<div class="sg-dome" role="dialog" aria-label="Conditions d\'observation" aria-modal="true">'
       + '<div class="sg-dome-head"><div><p class="sg-dome-eyebrow">Chasse d\'étoiles · cette nuit</p>'
       + '<h2 class="sg-dome-title" id="sgDomeTitle">—</h2><p class="sg-dome-sub" id="sgDomeSub"></p></div>'
-      + '<button class="sg-dome-close" type="button" aria-label="Fermer">✕</button></div>'
+      + '<button class="sg-dome-close" type="button" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button></div>'
       + '<div class="sg-dome-tabs" id="sgDomeTabs" role="tablist" hidden>'
       + '<button class="sg-dome-tab is-on" id="sgTabCond" type="button" role="tab" aria-selected="true">Conditions</button>'
       + '<button class="sg-dome-tab" id="sgTabSky" type="button" role="tab" aria-selected="false">Ciel</button></div>'

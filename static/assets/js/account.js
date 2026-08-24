@@ -56,7 +56,7 @@
 
   function render() {
     body.innerHTML = '';
-    var close_ = el('button', 'account-close', '×'); close_.setAttribute('aria-label', 'Fermer'); close_.type = 'button';
+    var close_ = mkClose(); close_.setAttribute('aria-label', 'Fermer'); close_.type = 'button';
     close_.addEventListener('click', close); body.appendChild(close_);
     if (!state.user) { renderLoggedOut(); } else { renderLoggedIn(); }
   }
@@ -134,7 +134,7 @@
 
   function renderCheckEmail(email) {
     body.innerHTML = '';
-    var close_ = el('button', 'account-close', '×'); close_.type = 'button'; close_.setAttribute('aria-label', 'Fermer');
+    var close_ = mkClose(); close_.type = 'button'; close_.setAttribute('aria-label', 'Fermer');
     close_.addEventListener('click', close); body.appendChild(close_);
     body.appendChild(el('div', 'account-title', 'Vérifie ta boîte mail'));
     var s = el('div', 'account-sub'); s.innerHTML = 'On a envoyé un lien de confirmation à <b>' + esc(email) + '</b>. Clique dessus pour activer ton compte (pense à vérifier les spams).';
@@ -173,7 +173,7 @@
   function renderResetForm(token) {
     open();
     body.innerHTML = '';
-    var close_ = el('button', 'account-close', '×'); close_.type = 'button'; close_.setAttribute('aria-label', 'Fermer');
+    var close_ = mkClose(); close_.type = 'button'; close_.setAttribute('aria-label', 'Fermer');
     close_.addEventListener('click', close); body.appendChild(close_);
     body.appendChild(el('div', 'account-title', 'Nouveau mot de passe'));
     body.appendChild(el('div', 'account-sub', 'Choisis un nouveau mot de passe (8 caractères minimum).'));
@@ -351,6 +351,12 @@
   })();
 
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
+  // Bouton FERMER homogène (même croix SVG que partout dans l'app, cf. .icon-close).
+  function mkClose() {
+    var b = el('button', 'account-close'); b.type = 'button'; b.setAttribute('aria-label', 'Fermer');
+    b.innerHTML = '<svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>';
+    return b;
+  }
   function toast(msg, ms) {
     var t = document.getElementById('accountToast');
     if (!t) { t = el('div', 'account-toast'); t.id = 'accountToast'; document.body.appendChild(t); }

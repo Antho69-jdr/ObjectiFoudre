@@ -23,15 +23,16 @@
   box-shadow: 0 24px 60px -20px #000d;
   display: flex; flex-direction: column; gap: 8px;
 }
+/* Bouton fermer HOMOGÈNE (36px rond verre + croix SVG, cf. close-buttons.css). */
 .account-close {
   position: absolute; top: 10px; right: 10px;
-  min-width: 0 !important; min-height: 0 !important;
-  width: 32px; height: 32px; display: grid; place-items: center;
-  background: transparent; border: none; color: #8ba0b8;
-  font-size: 24px; line-height: 1; border-radius: 8px; cursor: pointer; padding: 0;
+  min-width: 36px !important; min-height: 36px !important; max-width: 36px; max-height: 36px;
+  width: 36px; height: 36px; display: grid; place-items: center;
+  background: var(--fill-soft); border: 1px solid var(--border); color: var(--text);
+  line-height: 1; border-radius: 50%; cursor: pointer; padding: 0;
 }
-.account-close:hover { background: #ffffff12; color: #e9eff7; }
-.account-title { font-size: 18px; font-weight: 800; padding-right: 30px; }
+.account-close:hover { background: var(--divider); border-color: var(--border-strong); color: #fff; }
+.account-title { font-size: 18px; font-weight: 800; padding-right: 44px; }
 .account-sub { font-size: 13px; color: #93a7bd; line-height: 1.45; }
 .account-who { display: flex; flex-direction: column; gap: 1px; padding: 4px 0 2px; }
 .account-who b { font-size: 15px; font-weight: 700; }

@@ -311,6 +311,13 @@
     top: var(--app-header-h) !important;
     height: calc(100dvh - var(--app-header-h)) !important;
   }
+  /* Modale détails (plein écran, z 31) : elle DÉMARRE sous le bandeau → sinon le
+     bandeau (z90) recouvrait son en-tête et donc son bouton FERMER (top-droite),
+     rendant la modale impossible à fermer. Miroir de .prediction-page. */
+  #detailsModal.details-modal {
+    top: var(--app-header-h) !important;
+    height: calc(100vh - var(--app-header-h)) !important;
+  }
 }
 
 /* ==========================================================================

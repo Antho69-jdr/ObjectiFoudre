@@ -246,10 +246,11 @@ body.mobile-ui .ofspot-storm-panel { left: 8px; right: 8px; width: auto; max-wid
    Sans ça, éditer depuis la liste ouvrait la modale DERRIÈRE la page. */
 .ofspot-modal-back { position: fixed; inset: 0; z-index: 82; background: #04070ccc; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .ofspot-modal { position: relative; background: #121a25; color: #e9eff7; border: 1px solid #22303f; border-radius: 14px; padding: 18px; width: min(420px, 100%); max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px -20px #000; }
-.ofspot-modal-close { position: absolute; top: 8px; right: 8px; min-width: 0 !important; min-height: 0 !important; width: 32px !important; height: 32px !important; box-sizing: border-box; display: grid; place-items: center; background: transparent; border: none; color: #8ba0b8; font-size: 24px; line-height: 1; border-radius: 8px; cursor: pointer; padding: 0; }
-.ofspot-modal-close:hover { background: #ffffff12; color: #e9eff7; }
+/* Bouton fermer HOMOGÈNE (36px rond verre + croix SVG, cf. close-buttons.css). */
+.ofspot-modal-close { position: absolute; top: 10px; right: 10px; min-width: 36px !important; min-height: 36px !important; width: 36px !important; height: 36px !important; max-width: 36px; max-height: 36px; box-sizing: border-box; display: grid; place-items: center; background: var(--fill-soft); border: 1px solid var(--border); color: var(--text); line-height: 1; border-radius: 50%; cursor: pointer; padding: 0; }
+.ofspot-modal-close:hover { background: var(--divider); border-color: var(--border-strong); color: #fff; }
 .ofspot-modal-close:focus-visible { outline: 2px solid #46c0e6; }
-.ofspot-modal h4 { margin: 0 26px 12px 0; font-size: 16px; font-weight: 650; }
+.ofspot-modal h4 { margin: 0 44px 12px 0; font-size: 16px; font-weight: 650; }
 .ofspot-modal label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #8ba0b8; margin-bottom: 10px; }
 .ofspot-modal input, .ofspot-modal textarea { background: #0e1620; border: 1px solid #22303f; border-radius: 8px; color: #e9eff7; font: inherit; font-size: 14px; padding: 8px 10px; width: 100%; box-sizing: border-box; resize: vertical; }
 .ofspot-modal input:focus, .ofspot-modal textarea:focus { outline: 2px solid #46c0e6; border-color: #46c0e6; }

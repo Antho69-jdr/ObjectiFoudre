@@ -972,7 +972,7 @@
     var back = document.createElement('div'); back.className = 'ofspot-modal-back';
     var modal = document.createElement('div'); modal.className = 'ofspot-modal';
     modal.innerHTML =
-      '<button type="button" class="ofspot-modal-close" aria-label="Fermer">×</button>' +
+      '<button type="button" class="ofspot-modal-close" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button>' +
       '<h4>Modifier le spot</h4>' +
       '<label>Nom<input class="e-name" maxlength="60"></label>' +
       '<label>Description<textarea class="e-notes" rows="3" maxlength="280"></textarea></label>' +

@@ -599,8 +599,9 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 .sg-dome-eyebrow { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #6c7d97; font-weight: 600; margin: 0 0 3px; }
 .sg-dome-title { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
 .sg-dome-sub { font-size: 12px; color: #9fb0c8; margin: 3px 0 0; }
-.sg-dome-close { flex: none; width: 30px; height: 30px; border-radius: 9px; border: 1px solid #22304a; background: transparent; color: #9fb0c8; cursor: pointer; font-size: 15px; line-height: 1; display: grid; place-items: center; transition: 0.15s; }
-.sg-dome-close:hover { background: rgba(255, 255, 255, 0.05); color: #eaf0fb; }
+/* Bouton fermer HOMOGÈNE (mêmes 36px rond verre + croix SVG que close-buttons.css). */
+.sg-dome-close { flex: none; width: 36px; height: 36px; min-width: 36px !important; min-height: 36px !important; max-width: 36px; max-height: 36px; border-radius: 50%; border: 1px solid var(--border); background: var(--fill-soft); color: var(--text); cursor: pointer; line-height: 1; display: grid; place-items: center; padding: 0; transition: 0.15s; }
+.sg-dome-close:hover { background: var(--divider); border-color: var(--border-strong); color: #fff; }
 .sg-dome-close:focus-visible { outline: 2px solid #f4b942; outline-offset: 2px; }
 /* Onglets Conditions/Ciel (item 4 — la vue « Ciel » n'existe que pour les spots). */
 .sg-dome-tabs { display: flex; gap: 6px; padding: 2px 16px 10px; }
@@ -672,13 +673,14 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 }
 .sg-geo-sheet[hidden] { display: none; }
 .sg-geo-grip { display: block; width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); margin: 0 auto 12px; }
+/* Bouton fermer HOMOGÈNE (36px rond verre + croix SVG, cf. close-buttons.css). */
 .sg-geo-close {
-  position: absolute; top: 12px; right: 12px; width: 28px; height: 28px;
-  min-width: 0 !important; min-height: 0 !important;
-  border-radius: 8px; border: 1px solid var(--border-mid); background: transparent; color: var(--text-dim);
-  cursor: pointer; font-size: 13px; line-height: 1;
+  position: absolute; top: 12px; right: 12px; width: 36px; height: 36px;
+  min-width: 36px !important; min-height: 36px !important; max-width: 36px; max-height: 36px;
+  border-radius: 50%; border: 1px solid var(--border); background: var(--fill-soft); color: var(--text);
+  cursor: pointer; line-height: 1; display: grid; place-items: center; padding: 0;
 }
-.sg-geo-close:hover { background: rgba(255, 255, 255, 0.06); color: #eaf0fb; }
+.sg-geo-close:hover { background: var(--divider); border-color: var(--border-strong); color: #fff; }
 .sg-geo-close:focus-visible { outline: 2px solid #f4b942; outline-offset: 2px; }
 .sg-geo-title { font-weight: 700; font-size: 16px; }
 .sg-geo-sub { color: var(--text-dim); font-size: 12.5px; margin-top: 4px; }
