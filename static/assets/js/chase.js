@@ -265,13 +265,17 @@
     radarRebuildTimer = setTimeout(rebuildRadarSource, 300);
   }
 
-  // Sortie du mode chasse : vide la source combinée.
+  function setRadarLayerVisible(visible) {
+    try { if (map.getLayer(RADAR_FILL)) map.setLayoutProperty(RADAR_FILL, 'visibility', visible ? 'visible' : 'none'); } catch (_) {}
+  }
+
+  // Sortie du mode chasse (P3) : on MASQUE la couche radar au lieu de vider la source. La géométrie
+  // déjà triangulée + le cache (mémoire + IndexedDB) sont CONSERVÉS → ré-ouverture INSTANTANÉE :
+  // ni re-fetch des shapes, ni re-triangulation (fini le « recharge les frames » au switch d'onglet).
+  // rebuildRadarSource ne refera un setData que si de VRAIES nouvelles frames sont arrivées entre-temps.
   function clearRadarSource() {
     if (radarRebuildTimer) { clearTimeout(radarRebuildTimer); radarRebuildTimer = null; }
-    try { const s = map.getSource(RADAR_SRC); if (s) s.setData(EMPTY_FC); } catch (_) {}
-    radarFrameIds.clear();
-    radarBuiltKeys = new Set();
-    visibleRadarKey = null;
+    setRadarLayerVisible(false);
   }
 
   // ── Overlay CELLULES SUIVIES (moteur objets serveur) ──────────────────────────
@@ -1328,6 +1332,7 @@
     nowTimer = window.setInterval(updateNow, 1000);
     if (ensureLayers()) {
       hideGrid(true);
+      setRadarLayerVisible(true);   // P3 : réaffiche le radar conservé (instantané)
     } else {
       // Style pas encore prêt. ⚠️ PAS un simple once('idle') : isStyleLoaded() repasse à
       // false à chaque chargement de la carte de base (grille en cours de matérialisation
@@ -1336,7 +1341,7 @@
       // tant que le mode est actif.
       const retryLayers = () => {
         if (!active) return;
-        if (ensureLayers()) { hideGrid(true); applyCursor(); return; }
+        if (ensureLayers()) { hideGrid(true); setRadarLayerVisible(true); applyCursor(); return; }
         window.setTimeout(retryLayers, 250);
       };
       window.setTimeout(retryLayers, 250);
