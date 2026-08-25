@@ -203,7 +203,10 @@
 
     function scheduleAromeFranceNextDayPrefetch(centerToken) {
       try {
-        const dates = (typeof getAromeSelectableDates === 'function') ? getAromeSelectableDates().map(normalizeDateIso) : [];
+        // getAromeSelectableDates() renvoie des OBJETS {value, kind, label} → prendre .value.
+        const dates = (typeof getAromeSelectableDates === 'function')
+          ? getAromeSelectableDates().map((d) => normalizeDateIso(d && typeof d === 'object' ? d.value : d)).filter(Boolean)
+          : [];
         const idx = dates.indexOf(normalizeDateIso(selectedBaseDate));
         const next = idx >= 0 && idx + 1 < dates.length ? dates[idx + 1] : null;
         if (!next) return;
