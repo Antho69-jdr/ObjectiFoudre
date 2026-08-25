@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.202"
+APP_VERSION = "1.3.203"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16042,6 +16042,14 @@ def _prewarm_once() -> None:
         _stargaze_outlook_sync()
     except Exception:
         pass
+    # « Ce soir » Étoiles (~3,75 s à froid) : on garde le cache RAM chaud (clé = date locale,
+    # grille AROME nuit → pas de cache disque durable, mais le réchauffeur évite le froid post-MAJ).
+    if _prewarm_stop.is_set():
+        return
+    try:
+        _stargaze_tonight()
+    except Exception:
+        pass
     # Jours ECMWF J+2..J+10 (carte de Risque, 10-12 s à froid) → persiste les caches durables
     # ecmwf-day-slots (J+2/J+3) / ecmwf-trend-day (J+4+). En dernier (après compact+outlook,
     # prioritaires) car c'est le plus long à froid.
@@ -18973,6 +18981,14 @@ def _fr_radar_blend_compute() -> None:
     with _fr_blend_lock:
         _fr_blend.update(base_time=latest, speed_kmh=round(speed_kmh), frames=frames,
                          times=blend_times, advected=advected, flow_ds=flow_ds)
+    # P2d-style : pré-calcule les shapes des frames blend (nowcast advecté) dès leur génération
+    # → le mode chasse les reçoit en cache (plus d'attente au 1er affichage / au switch d'onglet).
+    _bgen = str(latest)
+    for _b_iso, _b_png in frames.items():
+        try:
+            _fr_blend_shapes_payload(_b_iso, _b_png, _bgen)
+        except Exception:
+            pass
 
 
 # ── PONT blend/radar → AROME-PI : morph gaté + fondu pondéré par skill ────────────
