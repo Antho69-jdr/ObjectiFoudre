@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.191"
+APP_VERSION = "1.3.192"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15124,6 +15124,138 @@ async def meteofrance_grib_france_day_cache(payload: MeteoFranceGribCacheStatusR
     if requested_render and result.get("ok"):
         result = _project_grib_result_for_render(result)
     return result
+
+
+# ── P1a : payload compact (géométrie statique + valeurs par créneau) ───────────
+# La grille France (~2636 cellules) est DÉTERMINISTE : zone/lat/lon/dimensions
+# identiques à chaque créneau et chaque jour ; seules les VALEURS changent. On sert
+# donc la géométrie UNE fois (asset caché, versionné), et l'endpoint compact ne
+# renvoie que des tableaux de valeurs alignés sur l'ordre canonique de la géométrie
+# → ~40× plus léger que les cellules brutes (~2,6 Mo/créneau). Réutilise le chemin de
+# service (donc l'archive durable de Phase 2) : lecture pure, aucun recalcul de score.
+_FRANCE_GRID_GEOMETRY_CACHE: dict[str, Any] | None = None
+_FRANCE_GRID_GEOMETRY_LOCK = threading.Lock()
+# (clé compacte, champ source de la cellule, décimales d'arrondi) ; ordre stable.
+_COMPACT_VALUE_FIELDS: tuple[tuple[str, str, int], ...] = (
+    ("score", "trigger_score", 0),
+    ("conf", "confidence_score", 0),
+    ("cape", "mucape", 0),
+    ("gust", "wind_gusts_10m", 1),
+    ("temp", "temp_c", 1),
+    ("dew", "dewpoint_c", 1),
+)
+
+
+def _france_grid_geometry() -> dict[str, Any]:
+    global _FRANCE_GRID_GEOMETRY_CACHE
+    if _FRANCE_GRID_GEOMETRY_CACHE is not None:
+        return _FRANCE_GRID_GEOMETRY_CACHE
+    with _FRANCE_GRID_GEOMETRY_LOCK:
+        if _FRANCE_GRID_GEOMETRY_CACHE is not None:
+            return _FRANCE_GRID_GEOMETRY_CACHE
+        points = _build_meteofrance_france_grid_points()
+        zones = [str(p.zone) for p in points]
+        lat = [round(float(p.lat), 5) for p in points]
+        lon = [round(float(p.lon), 5) for p in points]
+        width = [round(float(p.cell_width_deg), 6) for p in points]
+        height = round(float(points[0].cell_height_deg), 6) if points else 0.0
+        sig = json.dumps([zones, lat, lon, width, height], separators=(",", ":"))
+        version = hashlib.sha256(sig.encode("utf-8")).hexdigest()[:16]
+        geom = {
+            "ok": True,
+            "version": version,
+            "count": len(points),
+            "cell_height_deg": height,
+            "zones": zones,
+            "lat": lat,
+            "lon": lon,
+            "cell_width_deg": width,
+        }
+        _FRANCE_GRID_GEOMETRY_CACHE = geom
+        return geom
+
+
+@app.get("/api/meteofrance/france-grid-geometry")
+async def france_grid_geometry(response: Response) -> dict[str, Any]:
+    """Géométrie STATIQUE de la grille France (zone/lat/lon/largeur par cellule),
+    envoyée une seule fois. Versionnée → cache long côté client ; ne change que si la
+    grille change. Base du payload compact (les valeurs par créneau s'y alignent)."""
+    geom = await asyncio.to_thread(_france_grid_geometry)
+    response.headers["Cache-Control"] = "public, max-age=86400"
+    response.headers["ETag"] = f'"{geom["version"]}"'
+    return geom
+
+
+def _serve_france_day_compact_sync(target_date: Date, grid: str | None, token: str | None) -> dict[str, Any]:
+    geom = _france_grid_geometry()
+    zones = geom["zones"]
+    zidx = {zone: i for i, zone in enumerate(zones)}
+    n = len(zones)
+    served = _serve_france_day_models_sync(target_date, grid, METEOFRANCE_SLOT_GRID_CORE_DETAIL, token)
+    if not served.get("ok"):
+        return {
+            "ok": False,
+            "status": served.get("status") or 404,
+            "date": target_date.isoformat(),
+            "message": served.get("message") or "Aucune grille France en cache pour ce jour.",
+        }
+    payload = served.get("payload") if isinstance(served.get("payload"), dict) else {}
+    days = payload.get("days") if isinstance(payload.get("days"), list) else []
+    day = days[0] if days else {}
+    day_slots = day.get("slots") if isinstance(day, dict) else []
+    cached_hours = served.get("cached_hours") or []
+    base_meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    out_slots: list[dict[str, Any]] = []
+    for pos, slot in enumerate(day_slots if isinstance(day_slots, list) else []):
+        if not isinstance(slot, dict):
+            continue
+        hour = cached_hours[pos] if pos < len(cached_hours) else pos
+        cells = slot.get("cells") if isinstance(slot.get("cells"), list) else []
+        arrs: dict[str, list] = {ck: [None] * n for ck, _s, _r in _COMPACT_VALUE_FIELDS}
+        provider = None
+        for cell in cells:
+            if not isinstance(cell, dict):
+                continue
+            i = zidx.get(cell.get("zone"))
+            if i is None:
+                continue
+            if provider is None:
+                provider = cell.get("source_provider")
+            for ck, src, rnd in _COMPACT_VALUE_FIELDS:
+                v = cell.get(src)
+                if v is None:
+                    continue
+                try:
+                    arrs[ck][i] = int(round(float(v))) if rnd == 0 else round(float(v), rnd)
+                except (TypeError, ValueError):
+                    arrs[ck][i] = None
+        out_slots.append({
+            "hour": int(hour),
+            "slot_key": slot.get("slot_key") or f"h{int(hour):02d}",
+            "selected_time_iso": slot.get("selected_time_iso"),
+            "provider": provider or base_meta.get("source_provider"),
+            **arrs,
+        })
+    return {
+        "ok": True,
+        "status": 200,
+        "geometry_version": geom["version"],
+        "count": n,
+        "date": target_date.isoformat(),
+        "cached_hours": [int(h) for h in cached_hours],
+        "history": bool(base_meta.get("history")),
+        "served_from_archive": bool(base_meta.get("served_from_archive")),
+        "slots": out_slots,
+    }
+
+
+@app.post("/api/meteofrance/grib-france-day-compact")
+async def meteofrance_grib_france_day_compact(payload: MeteoFranceGribCacheStatusRequest) -> dict[str, Any]:
+    """Lot compact d'un jour France : la géométrie est servie à part (/france-grid-geometry) ;
+    ici on ne renvoie QUE les valeurs par cellule (score/confiance/cape/rafale/temp/rosée), en
+    tableaux alignés sur l'ordre canonique de la géométrie → ~40× plus léger que le render.
+    Lecture pure via le chemin de service (archive Phase 2), aucun recalcul de score."""
+    return await asyncio.to_thread(_serve_france_day_compact_sync, payload.date, payload.grid, payload.token)
 
 
 def _build_history_day_bytes(date_str: str) -> bytes:
