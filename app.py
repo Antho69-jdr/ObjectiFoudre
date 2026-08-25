@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.197"
+APP_VERSION = "1.3.198"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16042,6 +16042,28 @@ def _prewarm_once() -> None:
         _stargaze_outlook_sync()
     except Exception:
         pass
+    # Jours ECMWF J+2..J+10 (carte de Risque, 10-12 s à froid) → persiste les caches durables
+    # ecmwf-day-slots (J+2/J+3) / ecmwf-trend-day (J+4+). En dernier (après compact+outlook,
+    # prioritaires) car c'est le plus long à froid.
+    try:
+        run = _ecmwf_latest_trend_run(today)
+    except Exception:
+        run = None
+    if run is not None:
+        run_date, run_hour = run
+        slots_days = set(ECMWF_SLOTS_DAYS_AHEAD)
+        lo, hi = min(ECMWF_SLOTS_DAYS_AHEAD), max(ECMWF_TREND_DAYS_AHEAD)
+        for off in range(lo, hi + 1):
+            if _prewarm_stop.is_set():
+                return
+            day = today + timedelta(days=off)
+            try:
+                if off in slots_days:
+                    _ecmwf_build_day_slots_sync(day, run_date, run_hour)
+                else:
+                    _ecmwf_build_trend_day_sync(day, run_date, run_hour)
+            except Exception:
+                pass
 
 
 def _prewarm_loop() -> None:
