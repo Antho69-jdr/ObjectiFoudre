@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.200"
+APP_VERSION = "1.3.201"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -18264,6 +18264,7 @@ def _fr_radar_poll_once(api_key: str) -> tuple[int, int]:
     if status != 200 or not raw or raw[:2] != b"\x1f\x8b":
         raise RuntimeError(f"paquet radar HTTP {status}")
     new_count = 0
+    new_frames: list[tuple[str, bytes]] = []
     latest_msg: dict[str, Any] | None = None
     tf = tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz")
     for member in tf.getmembers():
@@ -18298,6 +18299,7 @@ def _fr_radar_poll_once(api_key: str) -> tuple[int, int]:
             continue
         with _fr_radar_lock:
             _fr_radar_frames[msg["time"]] = png
+        new_frames.append((msg["time"], png))
         new_count += 1
     # plans « au point » de la mosaïque la plus récente du paquet
     if latest_msg is not None:
@@ -18312,6 +18314,13 @@ def _fr_radar_poll_once(api_key: str) -> tuple[int, int]:
             if t is None or (now - t).total_seconds() > FR_RADAR_HISTORY_SECONDS:
                 _fr_radar_frames.pop(iso, None)
         total = len(_fr_radar_frames)
+    # P2d-style : pré-calcule les shapes (isobandes shapely, ~5 s/frame) des NOUVELLES frames en
+    # fond dès l'ingestion → le mode chasse les reçoit en cache (fini l'attente ~19 s au 1er affichage).
+    for f_iso, f_png in new_frames:
+        try:
+            _fr_radar_shapes_payload(f_iso, f_png)
+        except Exception:
+            pass
     return new_count, total
 
 
@@ -18328,6 +18337,7 @@ def _fr_radar_poll_cible_once(api_key: str) -> tuple[int, int]:
     if not msg:
         raise RuntimeError("mosaïque ciblée : décodage BUFR vide")
     new_count = 0
+    new_png: bytes | None = None
     with _fr_radar_lock:
         already = msg["time"] in _fr_radar_frames
     if not already:
@@ -18335,6 +18345,7 @@ def _fr_radar_poll_cible_once(api_key: str) -> tuple[int, int]:
         if png:
             with _fr_radar_lock:
                 _fr_radar_frames[msg["time"]] = png
+            new_png = png
             new_count = 1
         planes = _fr_radar_extract_planes(msg)
         if planes is not None:
@@ -18346,6 +18357,12 @@ def _fr_radar_poll_cible_once(api_key: str) -> tuple[int, int]:
             if t is None or (now - t).total_seconds() > FR_RADAR_HISTORY_SECONDS:
                 _fr_radar_frames.pop(iso, None)
         total = len(_fr_radar_frames)
+    # P2d-style : pré-calcule les shapes de la nouvelle frame en fond → client en cache.
+    if new_png is not None:
+        try:
+            _fr_radar_shapes_payload(msg["time"], new_png)
+        except Exception:
+            pass
     return new_count, total
 
 
