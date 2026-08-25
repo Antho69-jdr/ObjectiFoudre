@@ -134,6 +134,25 @@
       }
     }
 
+    // P4 : la carte de base est-elle COUVERTE par une page plein écran (Risque/Radar/Étoiles/
+    // Historique/Forum/Spots…) ? Si oui, son polling de fond (statut préchargement/automation) est
+    // inutile → on RALENTIT la cadence (jamais d'arrêt : au retour, loadAromeFranceData rafraîchit).
+    // Repli sûr : un signal erroné ne change QUE la cadence, jamais la donnée.
+    function isBaseMapCovered() {
+      try {
+        var b = document.body;
+        if (b.classList.contains('chase-mode') || b.classList.contains('stargaze-mode')
+          || b.classList.contains('forum-open') || b.classList.contains('history-open')
+          || b.classList.contains('spots-open')) return true;
+        var ids = ['predictionPage', 'historyPage', 'forumPage', 'spotsListPage', 'maintenancePage'];
+        for (var i = 0; i < ids.length; i++) {
+          var elx = document.getElementById(ids[i]);
+          if (elx && elx.offsetParent !== null && getComputedStyle(elx).display !== 'none') return true;
+        }
+      } catch (_) {}
+      return false;
+    }
+
     async function pollMeteoFranceServerAutomationStatus({ immediate = false, quiet = true } = {}) {
       stopMeteoFranceServerAutomationPolling();
       const fetchToken = ++mfServerAutomationFetchToken;
@@ -146,7 +165,7 @@
         const currentJob = state.current_job || {};
         const cooldownSeconds = Number(data?.quota_cooldown_seconds || state?.quota_cooldown_seconds || 0);
         const running = Boolean(state.running || currentJob.running || cooldownSeconds > 0);
-        const nextDelay = document.visibilityState === 'visible'
+        const nextDelay = (document.visibilityState === 'visible' && !isBaseMapCovered())
           ? (running ? METEOFRANCE_SERVER_POLL_RUNNING_MS : METEOFRANCE_SERVER_POLL_IDLE_MS)
           : METEOFRANCE_SERVER_POLL_HIDDEN_MS;
         mfServerAutomationPollTimer = window.setTimeout(() => {
@@ -481,7 +500,7 @@
         renderMeteoFrancePreloadProgress(data);
         if (data.running && mfPreloadActiveJobKey === jobKey) {
           if (!hasQuotaCooldown) clearMeteoFranceQuotaCooldownBadge();
-          mfPreloadPollTimer = setTimeout(() => pollMeteoFrancePreloadProgress(jobKey), METEOFRANCE_PRELOAD_POLL_RUNNING_MS);
+          mfPreloadPollTimer = setTimeout(() => pollMeteoFrancePreloadProgress(jobKey), isBaseMapCovered() ? METEOFRANCE_SERVER_POLL_HIDDEN_MS : METEOFRANCE_PRELOAD_POLL_RUNNING_MS);
         } else {
           stopMeteoFrancePreloadPolling();
           const duration = formatMeteoFranceDuration(meteoFrancePreloadElapsedMs(data));
