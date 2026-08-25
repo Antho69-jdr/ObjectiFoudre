@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.194"
+APP_VERSION = "1.3.195"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -3048,6 +3048,9 @@ def _read_lightning_archive(date_str: str) -> dict[str, Any] | None:
 # Caches (invalidés quand un créneau prévu est archivé, ou la foudre re-collectée).
 _forecast_cells_cache: dict[str, list[dict[str, Any]]] = {}
 _verification_cache: dict[str, dict[str, Any]] = {}
+# P2b : TTL du cache DURABLE de vérification (volume). La clé encode date+seuil+observation
+# → la staleness est bornée par ceux-ci, pas par le temps ; TTL = fenêtre de rétention.
+_HISTORY_VERIFICATION_DISK_TTL_SECONDS = max(86400, OBJECTIFOUDRE_HISTORY_RETENTION_DAYS * 86400)
 
 
 def _forecast_day_cells(date_str: str) -> list[dict[str, Any]]:
@@ -3320,6 +3323,22 @@ def _build_lightning_archive_for_date(
     return {"ok": True, "date": date_str, "flash_total": total, "touched_cells": len(per_cell), "final": record["final"], "source": source}
 
 
+def _verification_disk_key(date_str: str, lightning: dict[str, Any]) -> str:
+    # Clé du cache durable : la vérif change si le SEUIL actif change (réentraînement) ou si
+    # l'observation foudre change (jour en cours re-collecté). Pour un jour passé finalisé elle
+    # est stable → survit aux MAJ. Un nouveau seuil produit une nouvelle clé (pas de stale servi).
+    return (f"{date_str}|thr={int(_active_score_threshold)}"
+            f"|nb={verification.DEFAULT_NEIGHBORHOOD_KM}"
+            f"|obs={lightning.get('generated_at') or ''}")
+
+
+def _verification_remember(date_str: str, result: dict[str, Any]) -> dict[str, Any]:
+    _verification_cache[date_str] = result
+    while len(_verification_cache) > 16:
+        _verification_cache.pop(next(iter(_verification_cache)))
+    return result
+
+
 def _compute_day_verification(date_str: str) -> dict[str, Any]:
     cached = _verification_cache.get(date_str)
     if cached is not None:
@@ -3332,6 +3351,13 @@ def _compute_day_verification(date_str: str) -> dict[str, Any]:
             "reason": "no_observation",
             "message": "Pas encore de foudre observée archivée pour cette date.",
         }
+    # P2b : cache DURABLE (volume) — après une MAJ le cache RAM est vide → on relit la vérif
+    # déjà calculée pour ce (date, seuil, observation) au lieu de refaire ~21 s d'assemblage
+    # archive + appariement de voisinage.
+    disk_key = _verification_disk_key(date_str, lightning)
+    disk = _read_meteofrance_local_persistent_cache("history-verification", disk_key, _HISTORY_VERIFICATION_DISK_TTL_SECONDS)
+    if disk is not None and isinstance(disk.get("payload"), dict) and disk["payload"].get("ok"):
+        return _verification_remember(date_str, disk["payload"])
     cells = _forecast_day_cells(date_str)
     if not cells:
         return {
@@ -3349,10 +3375,9 @@ def _compute_day_verification(date_str: str) -> dict[str, Any]:
     result["flash_total"] = lightning.get("flash_total")
     result["observation_source"] = lightning.get("source")
     result["observation_generated_at"] = lightning.get("generated_at")
-    _verification_cache[date_str] = result
-    while len(_verification_cache) > 16:
-        _verification_cache.pop(next(iter(_verification_cache)))
-    return result
+    if result.get("ok"):
+        _write_meteofrance_local_persistent_cache("history-verification", disk_key, result)
+    return _verification_remember(date_str, result)
 
 
 # --- Auto-calibration & apprentissage (boucle fermée, cf. learning.py) ---------
