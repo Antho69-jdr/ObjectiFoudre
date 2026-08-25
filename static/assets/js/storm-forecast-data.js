@@ -136,7 +136,112 @@ function predictionTrendDailyCells(day) {
   return out;
 }
 
+// P1 — Géométrie STATIQUE de la grille France (zone/lat/lon/dimensions), servie une
+// seule fois puis cachée (HTTP max-age + mémoire). Base du payload compact : les valeurs
+// par créneau s'y alignent → ~40× moins de données qu'en cellules brutes.
+let PREDICTION_GEOMETRY = null;
+let PREDICTION_GEOMETRY_PENDING = null;
+async function predictionEnsureGeometry() {
+  if (PREDICTION_GEOMETRY) return PREDICTION_GEOMETRY;
+  if (PREDICTION_GEOMETRY_PENDING) return PREDICTION_GEOMETRY_PENDING;
+  PREDICTION_GEOMETRY_PENDING = (async () => {
+    try {
+      const r = await fetch('/api/meteofrance/france-grid-geometry');
+      const g = await r.json().catch(() => null);
+      if (g && g.ok && Array.isArray(g.zones) && g.zones.length) { PREDICTION_GEOMETRY = g; return g; }
+    } catch (_) { /* repli */ }
+    return null;
+  })();
+  try { return await PREDICTION_GEOMETRY_PENDING; } finally { PREDICTION_GEOMETRY_PENDING = null; }
+}
+
+// Reconstruit un jour à la MÊME forme que le payload render (day.slots[].cells[]) à partir
+// de la géométrie statique + des valeurs compactes → tout le pipeline aval (agrégation,
+// lissage, rendu, survol, sévérité, signature de cache) fonctionne inchangé.
+function predictionRehydrateDay(iso, compact, geom) {
+  const zones = geom.zones, lat = geom.lat, lon = geom.lon, wArr = geom.cell_width_deg, h = geom.cell_height_deg;
+  const n = zones.length;
+  const slots = (Array.isArray(compact.slots) ? compact.slots : []).map((cs) => {
+    const score = cs.score || [], conf = cs.conf || [], cape = cs.cape || [], gust = cs.gust || [], temp = cs.temp || [], dew = cs.dew || [];
+    const cells = [];
+    let sum = 0, cnt = 0, max = 0;
+    for (let i = 0; i < n; i += 1) {
+      const s = score[i];
+      if (s === null || s === undefined) continue;
+      cells.push({
+        zone: zones[i], lat: lat[i], lon: lon[i],
+        cell_height_deg: h, cell_width_deg: wArr[i],
+        trigger_score: s, confidence_score: conf[i],
+        mucape: cape[i], wind_gusts_10m: gust[i], temp_c: temp[i], dewpoint_c: dew[i],
+        source_provider: cs.provider || 'meteofrance_arome_grib',
+      });
+      sum += s; cnt += 1; if (s > max) max = s;
+    }
+    return {
+      slot_key: cs.slot_key,
+      selected_time_iso: cs.selected_time_iso || null,
+      prediction_day_key: iso,
+      summary: { max_score: max, mean_score: cnt ? Math.round(sum / cnt) : 0 },
+      cells,
+    };
+  });
+  return {
+    day_key: iso, day_label: iso, day_index: 0,
+    slots,
+    meta: {
+      source_provider: 'meteofrance_arome_grib', provider: 'meteofrance_arome_grib',
+      france_grid: true, grid_scope: 'france', country_mask: 'france',
+      cache_only: true, detail_level: 'render', compact: true,
+      history: !!compact.history, served_from_archive: !!compact.served_from_archive,
+      geometry_version: compact.geometry_version,
+    },
+  };
+}
+
+async function predictionFetchHourlyDayCompact(dateIso) {
+  const iso = normalizeDateIso(dateIso);
+  const geom = await predictionEnsureGeometry();
+  if (!geom) return null;
+  const baseBody = {
+    lat: currentCenter?.lat ?? 46.65,
+    lon: currentCenter?.lon ?? 2.45,
+    label: currentCenter?.label || 'France entière',
+    date: iso,
+    cache_only: true,
+  };
+  const body = typeof withMeteoFranceToken === 'function' ? withMeteoFranceToken(baseBody, '') : baseBody;
+  const response = await fetch('/api/meteofrance/grib-france-day-compact', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (typeof syncMeteoFranceQuotaCooldown === 'function') syncMeteoFranceQuotaCooldown(data);
+  if (!data?.ok || !Array.isArray(data.slots) || !data.slots.length) return null;
+  let useGeom = geom;
+  if (data.geometry_version && geom.version && data.geometry_version !== geom.version) {
+    // La grille a changé côté serveur → on recharge la géométrie et on réessaie une fois.
+    PREDICTION_GEOMETRY = null;
+    useGeom = await predictionEnsureGeometry();
+    if (!useGeom || useGeom.version !== data.geometry_version) return null;
+  }
+  const day = predictionRehydrateDay(iso, data, useGeom);
+  PREDICTION_DAY_STORE.set(iso, day);
+  return day;
+}
+
 async function predictionFetchHourlyDay(dateIso) {
+  // P1 : chemin COMPACT (géométrie statique + valeurs par créneau, ~40× plus léger).
+  // Repli sur le render complet si la géométrie ou le compact échoue → dégradation sûre,
+  // aucune régression possible d'affichage.
+  try {
+    const compact = await predictionFetchHourlyDayCompact(dateIso);
+    if (compact) return compact;
+  } catch (_) { /* repli render */ }
+  return predictionFetchHourlyDayRender(dateIso);
+}
+
+async function predictionFetchHourlyDayRender(dateIso) {
   const iso = normalizeDateIso(dateIso);
   const baseBody = {
     lat: currentCenter?.lat ?? 46.65,
