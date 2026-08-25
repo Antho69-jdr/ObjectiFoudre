@@ -128,6 +128,91 @@
       return shell;
     }
 
+    // ── Préchargement COMPACT de J+1 (carte de base) ──────────────────────────
+    // La grille de la carte de base ne colore que par trigger_score et n'utilise que
+    // zone/lat/lon/dims/trigger_score/confidence_score (grid-geojson.js) ; les 24 métriques
+    // du détail sont fetchées AU CLIC (grib-france-cell-details). Donc le payload compact
+    // (géométrie statique + valeurs, ~1,7 Mo au lieu de ~14-62 Mo) suffit à afficher J+1. On
+    // le précharge EN FOND dans le cache mémoire → naviguer vers J+1 est instantané. Purement
+    // ADDITIF : ne touche pas le chargement de J0 ; repli implicite (si absent, chargement normal).
+    let aromeFranceGeometry = null;
+    let aromeFranceGeometryPending = null;
+    const aromeFrancePrefetchedDates = new Set();
+
+    async function ensureAromeFranceGeometry() {
+      if (aromeFranceGeometry) return aromeFranceGeometry;
+      if (aromeFranceGeometryPending) return aromeFranceGeometryPending;
+      aromeFranceGeometryPending = (async () => {
+        try {
+          const r = await fetch('/api/meteofrance/france-grid-geometry');
+          const g = await r.json().catch(() => null);
+          if (g && g.ok && Array.isArray(g.zones) && g.zones.length) { aromeFranceGeometry = g; return g; }
+        } catch (_) { /* repli */ }
+        return null;
+      })();
+      try { return await aromeFranceGeometryPending; } finally { aromeFranceGeometryPending = null; }
+    }
+
+    function rehydrateAromeFranceCompactDay(iso, compact, geom) {
+      const zones = geom.zones, lat = geom.lat, lon = geom.lon, wArr = geom.cell_width_deg, h = geom.cell_height_deg;
+      const n = zones.length;
+      const slots = (Array.isArray(compact.slots) ? compact.slots : []).map((cs) => {
+        const score = cs.score || [], conf = cs.conf || [], cape = cs.cape || [], gust = cs.gust || [], temp = cs.temp || [], dew = cs.dew || [];
+        const cells = [];
+        for (let i = 0; i < n; i += 1) {
+          const s = score[i];
+          if (s === null || s === undefined) continue;
+          cells.push({
+            zone: zones[i], lat: lat[i], lon: lon[i],
+            cell_height_deg: h, cell_width_deg: wArr[i],
+            trigger_score: s, confidence_score: conf[i],
+            mucape: cape[i], wind_gusts_10m: gust[i], temp_c: temp[i], dewpoint_c: dew[i],
+            source_provider: cs.provider || 'meteofrance_arome_grib',
+          });
+        }
+        return { slot_key: cs.slot_key, selected_time_iso: cs.selected_time_iso || null, cells };
+      });
+      return { day_key: iso, day_label: formatAromeShellDayLabel(iso), day_index: 0, slots };
+    }
+
+    async function prefetchAromeFranceCompactDay(dateIso, centerToken) {
+      try {
+        const key = normalizeDateIso(dateIso);
+        if (!key || aromeFrancePrefetchedDates.has(key) || getCachedAromeFranceDay(key)) return;
+        aromeFrancePrefetchedDates.add(key);
+        const geom = await ensureAromeFranceGeometry();
+        if (!geom || centerToken !== centerChangeToken) { aromeFrancePrefetchedDates.delete(key); return; }
+        const baseBody = { lat: currentCenter?.lat ?? 46.65, lon: currentCenter?.lon ?? 2.45, label: currentCenter?.label || 'France entière', date: key, cache_only: true };
+        const body = typeof withMeteoFranceToken === 'function' ? withMeteoFranceToken(baseBody, '') : baseBody;
+        const resp = await fetch('/api/meteofrance/grib-france-day-compact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (centerToken !== centerChangeToken) return;
+        const data = await resp.json().catch(() => ({}));
+        if (!data?.ok || !Array.isArray(data.slots) || !data.slots.length
+          || (data.geometry_version && geom.version && data.geometry_version !== geom.version)) {
+          aromeFrancePrefetchedDates.delete(key);
+          return;
+        }
+        const day = rehydrateAromeFranceCompactDay(key, data, geom);
+        const cached = normalizeAromeFranceDayForCache(day, key);
+        if (cached && aromeFranceDayMemoryCache instanceof Map && !getCachedAromeFranceDay(key)) {
+          aromeFranceDayMemoryCache.set(cached.day_key, cached);
+          trimAromeFranceDayMemoryCache();
+        }
+      } catch (_) { /* non-fatal : la navigation retombera sur le chargement normal */ }
+    }
+
+    function scheduleAromeFranceNextDayPrefetch(centerToken) {
+      try {
+        const dates = (typeof getAromeSelectableDates === 'function') ? getAromeSelectableDates().map(normalizeDateIso) : [];
+        const idx = dates.indexOf(normalizeDateIso(selectedBaseDate));
+        const next = idx >= 0 && idx + 1 < dates.length ? dates[idx + 1] : null;
+        if (!next) return;
+        window.setTimeout(() => {
+          if (centerToken === centerChangeToken) prefetchAromeFranceCompactDay(next, centerToken);
+        }, 2500);
+      } catch (_) { /* non-fatal */ }
+    }
+
     function rememberMeteoFranceGribCacheStatus(dateIso = selectedBaseDate, keys = []) {
       if (!(aromeFranceCacheStatusMemory instanceof Map)) return false;
       const cleanKeys = Array.from(new Set((Array.isArray(keys) ? keys : []).filter((key) => /^h\d{2}$/.test(String(key)))));
@@ -251,6 +336,8 @@
             // Journée hydratée (créneaux en cache chargés) : on ferme le loader
             // d'ouverture. Idempotent — sans effet sur les rafraîchissements ultérieurs.
             if (centerToken === centerChangeToken) hideAppLoader();
+            // Précharge J+1 en fond (compact, léger) → navigation instantanée vers demain.
+            if (centerToken === centerChangeToken) scheduleAromeFranceNextDayPrefetch(centerToken);
           }
         }, memoryPayload ? 0 : 20);
         return payload;
