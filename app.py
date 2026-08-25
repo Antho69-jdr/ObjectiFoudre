@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.196"
+APP_VERSION = "1.3.197"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16012,6 +16012,66 @@ async def _accounts_startup() -> None:
         await asyncio.to_thread(forum.init_db)
     except Exception:  # noqa: BLE001 - non bloquant : l'app tourne sans forum
         pass
+
+
+# ── P2d : réchauffeur en fond ─────────────────────────────────────────────────
+# Les caches durables (Phase 2 + P1/P2) rendent instantané le 2e accès ET l'après-MAJ, mais la
+# 1re consultation PAR RUN reste à froid (assemblage/calcul). Ce thread pré-assemble d'avance, à
+# intervalle régulier, les résultats les plus consultés → leurs caches durables restent chauds et
+# la 1re consultation n'est JAMAIS à froid. Idempotent, non-fatal, borné.
+OBJECTIFOUDRE_PREWARM_ENABLED = _env_flag("OBJECTIFOUDRE_PREWARM", True)
+OBJECTIFOUDRE_PREWARM_INTERVAL_SECONDS = _env_int("OBJECTIFOUDRE_PREWARM_INTERVAL_SECONDS", 300, min_value=60)
+_prewarm_thread: threading.Thread | None = None
+_prewarm_stop = threading.Event()
+
+
+def _prewarm_once() -> None:
+    today = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    # Jour compact J0/J+1 (carte de Risque) → assemble + persiste le cache "france-day-compact".
+    for off in (0, 1):
+        if _prewarm_stop.is_set():
+            return
+        try:
+            _serve_france_day_compact_sync(today + timedelta(days=off), None, None)
+        except Exception:
+            pass
+    # Outlook Étoiles → persiste le cache "stargaze-outlook".
+    if _prewarm_stop.is_set():
+        return
+    try:
+        _stargaze_outlook_sync()
+    except Exception:
+        pass
+
+
+def _prewarm_loop() -> None:
+    # Laisse le préchargement des créneaux démarrer avant le 1er réchauffage.
+    if _prewarm_stop.wait(45):
+        return
+    while True:
+        try:
+            _prewarm_once()
+        except Exception:
+            pass
+        if _prewarm_stop.wait(OBJECTIFOUDRE_PREWARM_INTERVAL_SECONDS):
+            return
+
+
+@app.on_event("startup")
+def _startup_prewarm() -> None:
+    global _prewarm_thread
+    if not OBJECTIFOUDRE_PREWARM_ENABLED:
+        return
+    if _prewarm_thread is not None and _prewarm_thread.is_alive():
+        return
+    _prewarm_stop.clear()
+    _prewarm_thread = threading.Thread(target=_prewarm_loop, daemon=True, name="prewarm")
+    _prewarm_thread.start()
+
+
+@app.on_event("shutdown")
+def _shutdown_prewarm() -> None:
+    _prewarm_stop.set()
 
 
 def _request_base_url(request: Request) -> str:
