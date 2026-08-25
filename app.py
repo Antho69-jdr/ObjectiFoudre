@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.193"
+APP_VERSION = "1.3.194"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4461,6 +4461,9 @@ async def stargaze_agenda(year: int | None = Query(None, ge=2020, le=2035)) -> d
 _STARGAZE_OUTLOOK_LOCK = threading.Lock()
 _STARGAZE_OUTLOOK_CACHE: dict[str, Any] = {"key": None, "ts": 0.0, "data": None}
 _STARGAZE_OUTLOOK_TTL_SECONDS = 3600
+# P2 : cache DURABLE sur le volume (survit aux MAJ). Clé = run ECMWF → un nouveau run
+# invalide naturellement ; TTL large car la staleness est bornée par le run, pas le temps.
+_STARGAZE_OUTLOOK_DISK_TTL_SECONDS = 86400
 
 
 def _ecmwf_tcc_grid(run_date: Date, run_hour: int, step_hours: int,
@@ -4507,6 +4510,14 @@ def _stargaze_outlook_sync() -> dict[str, Any]:
         c = _STARGAZE_OUTLOOK_CACHE
         if c["data"] is not None and c["key"] == cache_key and (time.time() - c["ts"]) < _STARGAZE_OUTLOOK_TTL_SECONDS:
             return c["data"]
+    # P2 : après une MAJ le cache RAM est vide → on relit le résultat déjà calculé pour CE
+    # run ECMWF sur le volume durable, au lieu de refaire ~12 s de fetch/décodage ECMWF.
+    disk = _read_meteofrance_local_persistent_cache("stargaze-outlook", cache_key, _STARGAZE_OUTLOOK_DISK_TTL_SECONDS)
+    if disk is not None and isinstance(disk.get("payload"), dict):
+        data = disk["payload"]
+        with _STARGAZE_OUTLOOK_LOCK:
+            _STARGAZE_OUTLOOK_CACHE.update(key=cache_key, ts=time.time(), data=data)
+        return data
 
     darkgrid = _stargaze_darkgrid()
     points = _build_meteofrance_france_grid_points()
@@ -4585,6 +4596,8 @@ def _stargaze_outlook_sync() -> dict[str, Any]:
         data["message"] = "Prévision nébulosité ECMWF indisponible pour l'instant."
     with _STARGAZE_OUTLOOK_LOCK:
         _STARGAZE_OUTLOOK_CACHE.update(key=cache_key, ts=time.time(), data=data)
+    if data.get("ok"):
+        _write_meteofrance_local_persistent_cache("stargaze-outlook", cache_key, data)
     return data
 
 
