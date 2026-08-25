@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.189"
+APP_VERSION = "1.3.190"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -14896,11 +14896,16 @@ def _project_grib_result_for_render(result: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _serve_france_slot_from_archive(target_date: Date, hour: int) -> dict[str, Any] | None:
-    """Repli durable pour un créneau France d'un jour PASSÉ absent du cache live :
-    on relit le créneau archivé (history/, rétention 180 j) plutôt que de le préchauffer.
-    L'archive brute garde les cellules COMPLÈTES → la frise ET les détails de cellule
-    fonctionnent. Le payload a la même forme qu'un résultat live ; le rendu l'accepte déjà."""
+def _serve_france_slot_from_archive(target_date: Date, hour: int, *, current_day: bool = False) -> dict[str, Any] | None:
+    """Repli durable pour un créneau France absent du cache live : on relit le créneau
+    archivé (history/, scoré, rétention 180 j) plutôt que de le recalculer. Sert AUSSI le
+    jour courant/à venir quand le cache TTL est vide (expiration 6 h ou redéploiement) —
+    lecture pure, aucun re-fetch/décodage/scoring. L'archive brute garde les cellules
+    COMPLÈTES → la frise ET les détails de cellule fonctionnent. Le payload a la même forme
+    qu'un résultat live ; le rendu l'accepte déjà.
+    `current_day=True` (jour NON passé) → on ne pose PAS le flag `history` (sinon le front le
+    traiterait comme un jour passé) : marqueur dédié `served_from_archive`, source_label
+    d'origine préservé. Le chemin jour-passé reste identique (Historique intact)."""
     if not OBJECTIFOUDRE_HISTORY_ENABLED:
         return None
     path = _history_slot_path(target_date.isoformat(), hour)
@@ -14914,6 +14919,11 @@ def _serve_france_slot_from_archive(target_date: Date, hour: int) -> dict[str, A
     if not isinstance(payload, dict):
         return None
     base_meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    if current_day:
+        # Jour courant/à venir servi depuis l'archive durable (cache TTL vide) : ce n'est PAS
+        # de l'historique → flag dédié, on préserve le source_label AROME/ARPEGE d'origine.
+        payload = {**payload, "meta": {**base_meta, "served_from_archive": True}}
+        return {"ok": True, "status": 200, "served_from_archive": True, "cache_hit": True, "payload": payload}
     payload = {**payload, "meta": {**base_meta, "history": True, "source_label": "Historique ObjectiFoudre (archive)"}}
     return {"ok": True, "status": 200, "history": True, "cache_hit": True, "payload": payload}
 
@@ -14938,10 +14948,12 @@ def _serve_france_slot_models_sync(target_date: Date, hour: int, grid: str | Non
         if result.get("ok"):
             return result
     today = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
-    if target_date < today:
-        archived = _serve_france_slot_from_archive(target_date, hour)
-        if archived:
-            return archived
+    # Repli durable : jour PASSÉ (historique) OU jour courant/à venir dont le cache TTL est
+    # vide (expiration 6 h / redéploiement). L'archive tient déjà la grille scorée → lecture
+    # pure, sans re-fetch/décodage/scoring ; le préchargement rafraîchit en fond.
+    archived = _serve_france_slot_from_archive(target_date, hour, current_day=(target_date >= today))
+    if archived:
+        return archived
     return last_result or {"ok": False, "status": 404, "message": "Aucune grille France en cache pour ce créneau."}
 
 
