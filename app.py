@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.195"
+APP_VERSION = "1.3.196"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15224,11 +15224,39 @@ async def france_grid_geometry(response: Response) -> dict[str, Any]:
     return geom
 
 
+# P2c : cache DURABLE du jour compact DÉJÀ ASSEMBLÉ. P1 a allégé le POIDS (compact), mais
+# chaque consultation à froid ré-assemblait les 24 créneaux depuis l'archive (~5-20 s selon
+# l'état du cache RAM) — « le serveur ne fournit pas la page déjà calculée ». Signature d'archive
+# cheap (nb créneaux + mtime max) → un nouveau run AROME réécrit un créneau → invalide le cache.
+_FRANCE_DAY_COMPACT_DISK_TTL_SECONDS = 24 * 3600
+
+
+def _france_day_archive_signature(date_str: str) -> str | None:
+    try:
+        base = OBJECTIFOUDRE_HISTORY_DIR / "france" / date_str
+        files = sorted(base.glob("h*.json.gz")) if base.is_dir() else []
+        if not files:
+            return None
+        newest = max(int(f.stat().st_mtime) for f in files)
+        return f"{len(files)}:{newest}"
+    except Exception:
+        return None
+
+
 def _serve_france_day_compact_sync(target_date: Date, grid: str | None, token: str | None) -> dict[str, Any]:
     geom = _france_grid_geometry()
     zones = geom["zones"]
     zidx = {zone: i for i, zone in enumerate(zones)}
     n = len(zones)
+    day_sig = _france_day_archive_signature(target_date.isoformat())
+    compact_key = f"{target_date.isoformat()}|{grid or 'auto'}|g{geom['version']}|{day_sig or 'live'}"
+    if day_sig:
+        cached = _read_meteofrance_local_persistent_cache(
+            "france-day-compact", compact_key, _FRANCE_DAY_COMPACT_DISK_TTL_SECONDS)
+        if cached is not None and isinstance(cached.get("payload"), dict) and cached["payload"].get("ok"):
+            out = dict(cached["payload"])
+            out["compact_cache_hit"] = True
+            return out
     served = _serve_france_day_models_sync(target_date, grid, METEOFRANCE_SLOT_GRID_CORE_DETAIL, token)
     if not served.get("ok"):
         return {
@@ -15274,7 +15302,7 @@ def _serve_france_day_compact_sync(target_date: Date, grid: str | None, token: s
             "provider": provider or base_meta.get("source_provider"),
             **arrs,
         })
-    return {
+    result = {
         "ok": True,
         "status": 200,
         "geometry_version": geom["version"],
@@ -15285,6 +15313,10 @@ def _serve_france_day_compact_sync(target_date: Date, grid: str | None, token: s
         "served_from_archive": bool(base_meta.get("served_from_archive")),
         "slots": out_slots,
     }
+    # Persiste le jour compact assemblé (mostly-complete) → consultations suivantes = lecture pure.
+    if day_sig and len(out_slots) >= 20:
+        _write_meteofrance_local_persistent_cache("france-day-compact", compact_key, result)
+    return result
 
 
 @app.post("/api/meteofrance/grib-france-day-compact")
