@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.203"
+APP_VERSION = "1.3.204"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -15328,16 +15328,45 @@ async def meteofrance_grib_france_day_compact(payload: MeteoFranceGribCacheStatu
     return await asyncio.to_thread(_serve_france_day_compact_sync, payload.date, payload.grid, payload.token)
 
 
-def _build_history_day_bytes(date_str: str) -> bytes:
-    """Build the slim day once, serialize to JSON bytes and memo-cache them, so
-    later opens are served instantly (no re-decompression / re-serialization)."""
-    payload = _get_history_france_day_sync(date_str, slim=True)
-    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+def _history_day_bytes_disk_path(date_str: str) -> Path:
+    return OBJECTIFOUDRE_HISTORY_DIR / "day_cache" / f"{date_str}.json.gz"
+
+
+def _remember_history_day_bytes(date_str: str, data: bytes) -> bytes:
     with _history_day_cache_lock:
         _history_day_bytes_cache[date_str] = data
         # borne mémoire : on ne garde que les dates récemment consultées
         while len(_history_day_bytes_cache) > 12:
             _history_day_bytes_cache.pop(next(iter(_history_day_bytes_cache)))
+    return data
+
+
+def _build_history_day_bytes(date_str: str) -> bytes:
+    """Build the slim day once, serialize to JSON bytes and memo-cache them, so
+    later opens are served instantly (no re-decompression / re-serialization).
+    P2-style : cache DURABLE (gzip sur le volume) du jour assemblé — l'assemblage (24 gz
+    + projection slim) coûte ~12 s à froid ; on le persiste, invalidé par la signature
+    d'archive (un nouveau run réécrit un créneau → nouvelle sig). Ne persiste que les jours
+    PASSÉS (finalisés, immuables) pour éviter la churn du jour courant."""
+    sig = _france_day_archive_signature(date_str)
+    disk_path = _history_day_bytes_disk_path(date_str)
+    if sig and disk_path.exists():
+        try:
+            rec = _read_history_gzip(disk_path)
+        except Exception:
+            rec = None
+        if isinstance(rec, dict) and rec.get("sig") == sig and isinstance(rec.get("payload"), dict):
+            data = json.dumps(rec["payload"], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            return _remember_history_day_bytes(date_str, data)
+    payload = _get_history_france_day_sync(date_str, slim=True)
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    _remember_history_day_bytes(date_str, data)
+    today_iso = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date().isoformat()
+    if sig and date_str < today_iso:
+        try:
+            _write_history_gzip(disk_path, {"sig": sig, "date": date_str, "payload": payload})
+        except Exception:
+            pass
     return data
 
 
