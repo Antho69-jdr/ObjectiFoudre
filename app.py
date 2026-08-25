@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.190"
+APP_VERSION = "1.3.191"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -9429,9 +9429,17 @@ def _build_meteofrance_grib_slot_grid_sync(
             "cache_hit": False,
         }
         _set_cached_value(cache_key, result)
-        _write_meteofrance_local_persistent_cache(cache_namespace, cache_key, result)
         if cache_namespace == "grib-france-slot-grid":
+            # Phase 3 (dédup) : la grille France scorée est déjà persistée DURABLEMENT dans
+            # l'archive (history/), désormais source de service ET repli (Phase 2,
+            # _serve_france_slot_from_archive). On NE la ré-écrit donc PLUS dans le cache TTL
+            # disque : doublon pur (churn d'écritures + page-cache = métrique mémoire Railway),
+            # d'autant que ce dossier cache n'est même pas sur le volume durable. La RAM
+            # (_set_cached_value ci-dessus) reste l'accélérateur chaud, entretenu par le
+            # préchargement ; la couverture (RAM→archive) et le service restent corrects.
             _archive_france_slot_grid(result)
+        else:
+            _write_meteofrance_local_persistent_cache(cache_namespace, cache_key, result)
         return result
     except Exception as exc:
         failure = _meteofrance_failure_result(exc, target)
