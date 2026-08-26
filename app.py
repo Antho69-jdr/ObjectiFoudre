@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.206"
+APP_VERSION = "1.3.207"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -8882,7 +8882,8 @@ def _enrich_field_values_with_wcs(field_values: dict[str, Any], slot_dt: datetim
     # eccodes). Avant : 4 requêtes séquentielles par heure. Chaque champ reste NON-FATAL.
     field_keys = ["convective_inhibition", "mucape", "t500_k", "surface_pressure"]
     if want_shear:
-        field_keys += ["u_500hpa", "v_500hpa"]
+        # u/v 500 hPa = cisaillement profond ; + 925/850 hPa = profil basse couche pour l'hélicité 0-1 km.
+        field_keys += ["u_500hpa", "v_500hpa", "u_925hpa", "v_925hpa", "u_850hpa", "v_850hpa"]
 
     def _fetch_one(field_key: str) -> tuple[str, dict[str, float] | None]:
         try:
@@ -8912,8 +8913,14 @@ def _enrich_field_values_with_wcs(field_values: dict[str, Any], slot_dt: datetim
     if want_shear:
         u500 = results.get("u_500hpa") or {}
         v500 = results.get("v_500hpa") or {}
+        u925 = results.get("u_925hpa") or {}
+        v925 = results.get("v_925hpa") or {}
+        u850 = results.get("u_850hpa") or {}
+        v850 = results.get("v_850hpa") or {}
         if u500 and v500:
             shear: dict[str, float] = {}
+            srh: dict[str, float] = {}
+            have_profile = bool(u925 and v925 and u850 and v850)
             for p in points:
                 z = p.zone
                 spd, drc = wind_spd.get(z), wind_dir.get(z)
@@ -8923,8 +8930,16 @@ def _enrich_field_values_with_wcs(field_values: dict[str, Any], slot_dt: datetim
                 dr = math.radians(drc)
                 u10, v10 = -spd * math.sin(dr), -spd * math.cos(dr)  # convention météo (dir = provenance)
                 shear[z] = round(math.hypot(u5 - u10, v5 - v10), 2)
+                # Hélicité 0-1 km (SRH) : profil 10 m / 925 / 850 hPa + mouvement Bunkers (via u/v 500).
+                if have_profile:
+                    srh_val = weather_logic.storm_relative_helicity_0_1km(
+                        u10, v10, u925.get(z), v925.get(z), u850.get(z), v850.get(z), u5, v5)
+                    if srh_val is not None:
+                        srh[z] = round(srh_val, 1)
             if shear:
                 field_values["shear_ms"] = shear
+            if srh:
+                field_values["srh_01km"] = srh
 
 
 def _build_meteofrance_grib_slot_grid_sync(
@@ -9373,6 +9388,7 @@ def _build_meteofrance_grib_slot_grid_sync(
                 "dew_point_2m": [dewpoint_c],
                 "convective_inhibition": [field_values.get("convective_inhibition", {}).get(zone)],
                 "shear_ms": [field_values.get("shear_ms", {}).get(zone)],
+                "srh_01km": [field_values.get("srh_01km", {}).get(zone)],  # hélicité 0-1 km (sévérité)
                 # Indice de soulèvement (rehausse le score quand l'instabilité d'altitude dépasse
                 # la CAPE de surface) : T500 environnement + pression de surface (ARPEGE WCS).
                 "t500_k": [field_values.get("t500_k", {}).get(zone)],

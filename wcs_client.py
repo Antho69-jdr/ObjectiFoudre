@@ -47,6 +47,11 @@ COVERAGE_REGISTRY: dict[str, tuple[str, str, int | None]] = {
     "cape_ins": ("arome", "CAPE_INS__GROUND", None),
     "u_500hpa": ("arpege", "U_COMPONENT_OF_WIND__ISOBARIC_SURFACE", 500),
     "v_500hpa": ("arpege", "V_COMPONENT_OF_WIND__ISOBARIC_SURFACE", 500),
+    # Vents basse couche 925/850 hPa (≈ 750 m / 1500 m) : profil pour l'hélicité 0-1 km (SRH).
+    "u_925hpa": ("arpege", "U_COMPONENT_OF_WIND__ISOBARIC_SURFACE", 925),
+    "v_925hpa": ("arpege", "V_COMPONENT_OF_WIND__ISOBARIC_SURFACE", 925),
+    "u_850hpa": ("arpege", "U_COMPONENT_OF_WIND__ISOBARIC_SURFACE", 850),
+    "v_850hpa": ("arpege", "V_COMPONENT_OF_WIND__ISOBARIC_SURFACE", 850),
     # Indice de soulèvement : T500 environnement (ARPEGE isobare) + pression de surface pour
     # la parcelle. La T2m/Td2m de la parcelle vient des paquets AROME (déjà en grille).
     "t500_k": ("arpege", "TEMPERATURE__ISOBARIC_SURFACE", 500),

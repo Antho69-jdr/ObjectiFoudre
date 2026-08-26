@@ -740,20 +740,74 @@ def score_shear(shear_ms: float | None) -> int | None:
     ])
 
 
-def score_structure(cape_s: int | None, shear_s: int | None) -> int | None:
+# --- Hélicité relative à l'orage (SRH 0-1 km) : potentiel de ROTATION / supercellule ----------
+# Le cisaillement de MODULE (bulk shear 0-6 km) mesure l'intensité du cisaillement mais RATE le
+# VIREMENT directionnel du vent avec l'altitude — or c'est ce virement (la rotation de l'hodographe)
+# qui distingue une supercellule/mésocyclone d'un orage multicellulaire. La SRH le capture. On la
+# calcule sur 0-1 km (le pairage naturel du MLCAPE, façon indice STP). Requiert un profil de vent
+# basse couche (10 m + 925 + 850 hPa, ARPEGE WCS) + un mouvement d'orage (Bunkers). AXE SÉVÉRITÉ :
+# n'entre PAS dans le trigger (probabilité de foudre), seulement dans le score de STRUCTURE.
+_BUNKERS_DEVIATION_MS = 7.5
+
+def _bunkers_right_mover(u10: float, v10: float, u500: float, v500: float) -> tuple[float, float]:
+    """Mouvement de la supercellule déviante droite (Bunkers) : vent moyen 0-6 km (≈ moyenne
+    surface/500 hPa) + 7,5 m/s perpendiculaire À DROITE du vecteur cisaillement 0-6 km."""
+    mu, mv = 0.5 * (u10 + u500), 0.5 * (v10 + v500)
+    su, sv = u500 - u10, v500 - v10
+    smag = math.hypot(su, sv)
+    if smag < 1e-6:
+        return mu, mv
+    return mu + _BUNKERS_DEVIATION_MS * (sv / smag), mv + _BUNKERS_DEVIATION_MS * (-su / smag)
+
+def storm_relative_helicity_0_1km(
+    u10: float | None, v10: float | None, u925: float | None, v925: float | None,
+    u850: float | None, v850: float | None, u500: float | None, v500: float | None,
+) -> float | None:
+    """SRH 0-1 km (m²/s²) : hélicité relative à l'orage, aire balayée par le vent relatif dans
+    l'hodographe 0-1 km. Profil surface (~0 m) → 925 hPa (~750 m) → 1 km (interpolé 925/850).
+    Mouvement d'orage = Bunkers droite. None si une composante manque."""
+    vals = (u10, v10, u925, v925, u850, v850, u500, v500)
+    if any(v is None for v in vals) or not all(math.isfinite(float(v)) for v in vals):
+        return None
+    cu, cv = _bunkers_right_mover(float(u10), float(v10), float(u500), float(v500))
+    z925, z850 = 750.0, 1500.0
+    f = (1000.0 - z925) / (z850 - z925)                 # interpolation linéaire vers 1 km
+    u1, v1 = float(u925) + f * (float(u850) - float(u925)), float(v925) + f * (float(v850) - float(v925))
+    profile = [(float(u10), float(v10)), (float(u925), float(v925)), (u1, v1)]  # sfc, 925, 1 km
+    srh = 0.0
+    for (ua, va), (ub, vb) in zip(profile, profile[1:]):
+        srh += (ub - cu) * (va - cv) - (ua - cu) * (vb - cv)   # aire balayée (Davies-Jones)
+    return srh
+
+def score_srh(srh_value: float | None) -> int | None:
+    """Score de rotation 0-100 depuis |SRH| 0-1 km (m²/s²). Seuils opérationnels : ~100-150 =
+    supercellules possibles, 150-250 = fort (plage tornadique significative), >300 = extrême.
+    On note la MAGNITUDE (rotation présente quel que soit le sens = organisation)."""
+    if srh_value is None or not math.isfinite(srh_value):
+        return None
+    return piecewise_score(abs(float(srh_value)), [
+        (0, 0), (50, 15), (100, 35), (150, 55), (250, 80), (400, 100),
+    ])
+
+
+def score_structure(cape_s: int | None, shear_s: int | None, srh_s: int | None = None) -> int | None:
     """Score d'ORGANISATION / sévérité potentielle (0-100), DISTINCT de la probabilité
-    d'initiation. Un orage peut être probable mais désorganisé (pulse, cisaillement
-    faible), ou moins probable mais violent (supercellule, fort cisaillement) — c'est
-    l'info de décision du chasseur (« ça vaut le déplacement ? »). Le cisaillement 0-6 km
-    est le DISCRIMINANT ; la CAPE est le prérequis (sans instabilité, rien à organiser)
-    et un amplificateur. Retourne None si le cisaillement est indisponible (organisation
-    indéterminable) — l'UI n'affiche alors pas de verdict d'organisation."""
+    d'initiation. Un orage peut être probable mais désorganisé (pulse, cisaillement/rotation
+    faibles), ou moins probable mais violent (supercellule) — c'est l'info de décision du
+    chasseur (« ça vaut le déplacement ? »). La CAPE est le prérequis (sans instabilité, rien
+    à organiser) et un amplificateur. L'ORGANISATION croise le cisaillement 0-6 km (module) et,
+    quand elle est disponible, l'hélicité 0-1 km (SRH = virement directionnel, meilleur
+    discriminant supercellulaire). Retourne None si le cisaillement est indisponible."""
     if shear_s is None or cape_s is None:
         return None
     if cape_s < 20:                      # instabilité insuffisante : pas d'orage à organiser
         return 0
     cape_factor = 0.7 + 0.3 * min(1.0, max(0.0, (cape_s - 20) / 55.0))
-    return clamp(shear_s * cape_factor)
+    # SRH indisponible (WCS échoué / ECMWF J+2+) → repli sur le cisaillement seul (comportement
+    # d'origine, non-régression stricte). Présente → l'hélicité domine (0,55) car elle discrimine
+    # mieux la supercellule que le module du cisaillement (0,45).
+    organization = shear_s if srh_s is None else clamp(0.45 * shear_s + 0.55 * srh_s)
+    return clamp(organization * cape_factor)
 
 
 # Paliers du score de structure → étiquette d'organisation (UI + résumé).
@@ -951,6 +1005,7 @@ def compute_initiation(
     cloud_high: float | None = None,
     boundary_layer_height_m: float | None = None,
     shear_ms: float | None = None,
+    srh_01km: float | None = None,
 ) -> tuple[int, dict[str, float | int | None]]:
     cape_s = score_cape(cape)
     dew_s = score_dewpoint(dewpoint_c)
@@ -999,6 +1054,14 @@ def compute_initiation(
     deep_layer_shear = (
         max(0.0, float(shear_ms))
         if shear_ms is not None and math.isfinite(float(shear_ms))
+        else None
+    )
+    # Hélicité 0-1 km : AXE SÉVÉRITÉ (potentiel de rotation/supercellule). Scorée et exposée pour
+    # le score de STRUCTURE ; n'entre PAS dans le trigger (probabilité d'initiation).
+    srh_s = score_srh(srh_01km)
+    srh_value = (
+        round(float(srh_01km), 1)
+        if srh_01km is not None and math.isfinite(float(srh_01km))
         else None
     )
 
@@ -1068,6 +1131,8 @@ def compute_initiation(
         'boundary_layer_height_m': round(boundary_layer_height, 0) if boundary_layer_height is not None else None,
         'shear_component': shear_s,
         'deep_layer_shear_ms': round(deep_layer_shear, 1) if deep_layer_shear is not None else None,
+        'srh_component': srh_s,
+        'srh_01km': srh_value,
     }
 
 
@@ -1728,6 +1793,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
         wetbulb = float(wet_raw) if wet_raw is not None else float(_wet_bulb_stull_c(temp, rh2m) or 0.0)
         cin = optional_hourly_float(hourly, ["convective_inhibition", "cin", "cin_jkg"], idx)
         shear_input = optional_hourly_float(hourly, ["shear_ms", "shear"], idx)
+        srh_input = optional_hourly_float(hourly, ["srh_01km", "srh"], idx)  # hélicité 0-1 km (sévérité)
         cloud_low_raw = _hourly_value(hourly.get("cloud_cover_low"), idx)
         cloud_mid_raw = _hourly_value(hourly.get("cloud_cover_mid"), idx)
         cloud_high_raw = _hourly_value(hourly.get("cloud_cover_high"), idx)
@@ -1774,6 +1840,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
             cloud_high=cloud_high,
             boundary_layer_height_m=boundary_layer_height,
             shear_ms=shear_input,
+            srh_01km=srh_input,
         )
 
         metrics.append(
@@ -1881,6 +1948,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     "wind_gusts_10m_ms": round_optional(metric.get("gusts"), 1),
                     "convective_inhibition_jkg": round_optional(metric.get("cin"), 1),
                     "deep_layer_shear_ms": round_optional(metric.get("deep_layer_shear_ms"), 1),
+                    "srh_01km_m2s2": round_optional(metric.get("srh_01km"), 0),
                     "surface_convergence_1e4s": round_optional(metric.get("surface_convergence_1e4s"), 2),
                     "cloud_cover_low": round_optional(metric.get("cloud_low"), 1),
                     "cloud_cover_mid": round_optional(metric.get("cloud_mid"), 1),
@@ -1905,6 +1973,8 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                         "precipitation_rate_mm_h": metric.get("precipitation_rate"),
                         "gust_potential": metric.get("gust_potential_component"),
                         "deep_layer_shear": metric.get("shear_component"),
+                        "srh_component": metric.get("srh_component"),
+                        "srh_01km": metric.get("srh_01km"),
                         "deep_layer_shear_ms": metric.get("deep_layer_shear_ms"),
                         "convective_activity": metric.get("convective_activity_component"),
                         "timing": metric["timing"],
@@ -1940,7 +2010,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     cell_height_deg=point.cell_height_deg,
                     cell_width_deg=point.cell_width_deg,
                     trigger_score=storm_probability,
-                    structure_score=score_structure(metric.get("cape_component"), metric.get("shear_component")),
+                    structure_score=score_structure(metric.get("cape_component"), metric.get("shear_component"), metric.get("srh_component")),
                     chase_quality_score=0,
                     stability_score=confidence_score,
                     confidence_score=confidence_score,
