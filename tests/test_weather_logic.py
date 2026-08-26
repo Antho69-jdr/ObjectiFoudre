@@ -306,8 +306,13 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(row.precipitable_water, 32)
         self.assertEqual(row.metrics_used["precipitable_water_kg_m2"], 32)
         self.assertIsNotNone(row.metric_scores["precipitable_water_score"])
-        self.assertEqual(row.shortwave_radiation, 520)
-        self.assertEqual(row.metrics_used["shortwave_radiation_w_m2"], 520)
+        # Le flux net AROME brut (520, en réalité un cumul J/m² inexploitable) est REMPLACÉ par
+        # l'ensoleillement estimé honnête (ciel clair × nébulosité) — cf. estimated_insolation_w_m2.
+        expected_insol = round(wl.estimated_insolation_w_m2(
+            wl.dt_from_iso("2026-05-08T15:00:00+02:00"), 45.0, 4.0, 25, 30, 40), 1)
+        self.assertNotEqual(row.shortwave_radiation, 520)
+        self.assertEqual(row.shortwave_radiation, expected_insol)
+        self.assertEqual(row.metrics_used["shortwave_radiation_w_m2"], expected_insol)
         self.assertIsNotNone(row.metric_scores["shortwave_radiation_score"])
 
     def test_grid_rows_expose_surface_convergence_trigger_proxy(self):

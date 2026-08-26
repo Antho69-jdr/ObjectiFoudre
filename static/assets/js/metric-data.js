@@ -31,7 +31,7 @@
       },
       shortwave_radiation: {
         label: 'Rayonnement court',
-        explain: 'Flux net de rayonnement court prévu par AROME. Il sert de proxy de chauffage de surface et complète le timing horaire.'
+        explain: 'Ensoleillement de surface estimé : irradiance de ciel clair (hauteur du soleil) modulée par la nébulosité prévue. Mesure le chauffage diurne et complète le timing horaire.'
       },
       vapour_pressure_deficit: {
         label: 'VPD',

@@ -363,7 +363,7 @@
       },
       shortwave_radiation: {
         label: 'Rayonnement', suffix: ' W/m²', scoreKey: 'shortwave_radiation_score',
-        definition: 'Flux net de rayonnement court prévu par AROME. Il sert de lecture du chauffage diurne réellement prévu.',
+        definition: 'Ensoleillement de surface estimé : irradiance de ciel clair (hauteur du soleil) modulée par la nébulosité prévue. Lecture du chauffage diurne — fort par ciel dégagé en milieu de journée, faible sous les nuages ou en début et fin de journée.',
         scale: '< 120 faible · 120-250 limité · 250-400 correct · 400-600 favorable · > 600 fort.',
       },
       precipitation_rate: {

@@ -12,6 +12,7 @@ import urllib.request
 from dataclasses import asdict, dataclass
 from datetime import date as Date
 from datetime import datetime
+from datetime import timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Iterable
@@ -1231,6 +1232,55 @@ def apply_lifted_index_boost(score: int, lifted_index_value: float | None) -> in
     return _lifted_index_boost(score, lifted_index_value, gain)
 
 
+# --- Ensoleillement de surface estimé (W/m²) -----------------------------------------------
+# Le champ AROME "flux net rayonnement court" (paquet SP3) est un CUMUL en J/m² (~million) que le
+# barème W/m² (0-800) ne peut pas exploiter : la composante `shortwave_radiation` restait figée à
+# 100 en journée (drapeau "il fait jour"), et la valeur affichée était absurde (ex. "1 860 125 W/m²").
+# On le remplace par un ensoleillement HONNÊTE, calculé sans ce champ : irradiance ciel clair
+# (Haurwitz, fonction de la hauteur solaire) modulée par la nébulosité (recouvrement aléatoire des
+# 3 étages → transmission Kasten–Czeplak). Vraie cloche diurne, faible sous les nuages. Mesuré en
+# held-out (10 j, foudre observée) : effet quasi neutre sur le score (Δ AUC ≈ -0,003), choisi pour
+# la COHÉRENCE et l'HONNÊTETÉ (même valeur vraie dans le score et à l'affichage).
+def _solar_altitude_deg(dt: datetime, lat: float, lon: float) -> float:
+    """Altitude solaire (degrés). Convertit un dt aware en UTC (la formule attend de l'UTC) ;
+    identique à stargaze._sun_alt_deg (NOAA : déclinaison + équation du temps)."""
+    d = dt.astimezone(timezone.utc) if dt.tzinfo is not None else dt
+    doy = d.timetuple().tm_yday
+    fh = d.hour + d.minute / 60.0 + d.second / 3600.0
+    g = 2 * math.pi / 365.0 * (doy - 1 + (fh - 12) / 24.0)
+    decl = (0.006918 - 0.399912 * math.cos(g) + 0.070257 * math.sin(g)
+            - 0.006758 * math.cos(2 * g) + 0.000907 * math.sin(2 * g)
+            - 0.002697 * math.cos(3 * g) + 0.00148 * math.sin(3 * g))
+    eq = 229.18 * (0.000075 + 0.001868 * math.cos(g) - 0.032077 * math.sin(g)
+                   - 0.014615 * math.cos(2 * g) - 0.040849 * math.sin(2 * g))
+    tst = (fh * 60 + eq + 4 * lon) % 1440
+    ha = math.radians(tst / 4.0 - 180.0)
+    latr = math.radians(lat)
+    s = math.sin(latr) * math.sin(decl) + math.cos(latr) * math.cos(decl) * math.cos(ha)
+    return math.degrees(math.asin(max(-1.0, min(1.0, s))))
+
+
+def estimated_insolation_w_m2(
+    dt: datetime, lat: float, lon: float,
+    cloud_low: float | None, cloud_mid: float | None, cloud_high: float | None,
+) -> float:
+    """Ensoleillement de surface estimé (W/m², 0 la nuit → ~900 par ciel clair de midi). Ciel clair
+    (Haurwitz) × transmission nuageuse. Nuages absents → traités comme ciel clair (transmission 1)."""
+    sinh = math.sin(math.radians(max(0.0, _solar_altitude_deg(dt, lat, lon))))
+    if sinh <= 1e-3:
+        return 0.0
+    i_clear = 1098.0 * sinh * math.exp(-0.059 / sinh)   # irradiance globale ciel clair (Haurwitz)
+
+    def _frac(x: float | None) -> float:
+        if x is None or not math.isfinite(float(x)):
+            return 0.0
+        return min(1.0, max(0.0, float(x) / 100.0))
+
+    total = 1.0 - (1.0 - _frac(cloud_low)) * (1.0 - _frac(cloud_mid)) * (1.0 - _frac(cloud_high))
+    transmission = 1.0 - 0.75 * (total ** 3.4)          # Kasten–Czeplak
+    return max(0.0, i_clear * transmission)
+
+
 def score_from_archived_cell(cell: dict, weights: dict[str, float] | None = None) -> int | None:
     """Re-score une cellule ARCHIVÉE (metric_scores + champs bruts) via le pipeline COMPLET,
     à l'identique de compute_initiation : mélange[weights] → gates → modificateurs → puis
@@ -1665,8 +1715,11 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
         precipitation_rate = float(precipitation_raw) if precipitation_raw is not None else None
         precipitable_water_raw = _hourly_value(hourly.get("precipitable_water"), idx)
         precipitable_water = float(precipitable_water_raw) if precipitable_water_raw is not None else None
-        shortwave_raw = _hourly_value(hourly.get("shortwave_radiation"), idx)
-        shortwave_radiation = float(shortwave_raw) if shortwave_raw is not None else None
+        # Le champ AROME "shortwave_radiation" (flux net cumulé, J/m²) est inexploitable par le
+        # barème W/m². On garde seulement sa PRÉSENCE (jours AROME) puis, après lecture des étages
+        # nuageux ci-dessous, on le remplace par un ensoleillement estimé honnête. Jours sans ce
+        # champ (tendance ECMWF J+2+) → shortwave None → chauffage = timing (comportement inchangé).
+        shortwave_present = _hourly_value(hourly.get("shortwave_radiation"), idx) is not None
         rh_raw = _hourly_value(hourly.get("relative_humidity_2m"), idx)
         rh2m = float(rh_raw) if rh_raw is not None else float(_relative_humidity_from_dewpoint_c(temp, dew) or 0.0)
         vpd_raw = _hourly_value(hourly.get("vapour_pressure_deficit"), idx)
@@ -1683,6 +1736,11 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
         cloud_low = float(cloud_low_raw) if cloud_low_raw is not None else None
         cloud_mid = float(cloud_mid_raw) if cloud_mid_raw is not None else None
         cloud_high = float(cloud_high_raw) if cloud_high_raw is not None else None
+        # Ensoleillement estimé honnête (ciel clair × nébulosité) en remplacement du flux AROME cumulé.
+        shortwave_radiation = (
+            estimated_insolation_w_m2(dt, point.lat, point.lon, cloud_low, cloud_mid, cloud_high)
+            if shortwave_present else None
+        )
         blh_raw = _hourly_value(hourly.get("boundary_layer_height"), idx)
         boundary_layer_height = float(blh_raw) if blh_raw is not None else None
         gusts = float(_hourly_value(hourly.get("wind_gusts_10m"), idx) or 0.0)

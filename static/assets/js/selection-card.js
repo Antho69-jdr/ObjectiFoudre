@@ -250,7 +250,13 @@
       loadWindProfile(p);
       if (dRh) dRh.textContent = safe(p.relative_humidity_2m, ' %');
       if (dPrecipitableWater) dPrecipitableWater.textContent = safe(p.precipitable_water, ' kg/m²');
-      if (dShortwave) dShortwave.textContent = safe(p.shortwave_radiation, ' W/m²');
+      // Garde-fou : les jours archivés AVANT l'ensoleillement estimé portent l'ancien flux net
+      // AROME cumulé (J/m², ~million) — aberrant en W/m². On l'occulte plutôt que d'afficher un
+      // mensonge. Les jours récents portent l'ensoleillement honnête (0-~900 W/m²).
+      if (dShortwave) {
+        const sw = (p.shortwave_radiation != null && p.shortwave_radiation > 1500) ? null : p.shortwave_radiation;
+        dShortwave.textContent = safe(sw, ' W/m²');
+      }
       if (typeof dPrecipRate !== 'undefined' && dPrecipRate) dPrecipRate.textContent = safe(p.precipitation_rate, ' mm/h');
       if (dVpd) dVpd.textContent = safe(p.vapour_pressure_deficit);
       if (dWetbulb) dWetbulb.textContent = safe(p.wet_bulb_temperature_2m, ' °C');
