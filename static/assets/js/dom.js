@@ -76,6 +76,7 @@ const closeDetailsBtn = document.getElementById('closeDetailsBtn');
 const dCape = document.getElementById('dCape');
 const dCin = document.getElementById('dCin');
 const dShear = document.getElementById('dShear');
+const dSrh = document.getElementById('dSrh');
 const dRh = document.getElementById('dRh');
 const dPrecipitableWater = document.getElementById('dPrecipitableWater');
 const dShortwave = document.getElementById('dShortwave');

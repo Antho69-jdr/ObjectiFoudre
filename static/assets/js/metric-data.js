@@ -33,6 +33,10 @@
         label: 'Rayonnement court',
         explain: 'Ensoleillement de surface estimé : irradiance de ciel clair (hauteur du soleil) modulée par la nébulosité prévue. Mesure le chauffage diurne et complète le timing horaire.'
       },
+      srh_01km: {
+        label: 'Hélicité 0-1 km',
+        explain: 'Hélicité relative à l’orage sur 0-1 km : potentiel de ROTATION (virement directionnel du vent avec l’altitude), le signe distinctif des supercellules. Complète le cisaillement, qui n’en mesure que l’intensité. Potentiel physique estimé, non une prévision de supercellule.'
+      },
       vapour_pressure_deficit: {
         label: 'VPD',
         explain: 'Vapour Pressure Deficit, un indicateur de sécheresse de l’air. Un VPD trop élevé traduit souvent une basse couche plus sèche et moins favorable au déclenchement.'

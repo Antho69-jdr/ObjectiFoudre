@@ -247,6 +247,7 @@
       if (dCape) dCape.textContent = safe(p.mucape);
       if (dCin) dCin.textContent = safe(p.convective_inhibition, ' J/kg');
       if (dShear) dShear.textContent = safe(p.shear_ms, ' m/s');
+      if (dSrh) dSrh.textContent = safe(p.srh_01km, ' m²/s²');
       loadWindProfile(p);
       if (dRh) dRh.textContent = safe(p.relative_humidity_2m, ' %');
       if (dPrecipitableWater) dPrecipitableWater.textContent = safe(p.precipitable_water, ' kg/m²');
@@ -282,6 +283,7 @@
       if (dRh) applyMetricTone(dRh, 'relative_humidity_2m', p.relative_humidity_2m);
       if (dPrecipitableWater) applyMetricTone(dPrecipitableWater, 'precipitable_water', p.precipitable_water);
       if (dShortwave) applyMetricTone(dShortwave, 'shortwave_radiation', p.shortwave_radiation);
+      if (dSrh) applyMetricTone(dSrh, 'srh_01km', p.srh_01km);
       if (typeof dPrecipRate !== 'undefined' && dPrecipRate) applyMetricTone(dPrecipRate, 'precipitation_rate', p.precipitation_rate);
       if (dVpd) applyMetricTone(dVpd, 'vapour_pressure_deficit', p.vapour_pressure_deficit);
       if (dWetbulb) applyMetricTone(dWetbulb, 'wet_bulb_temperature_2m', p.wet_bulb_temperature_2m);

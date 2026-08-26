@@ -27,6 +27,8 @@ function metricTone(metricKey, rawValue) {
           return value >= 12 ? 'positive' : value < 6 ? 'negative' : 'neutral';
         case 'surface_convergence_1e4s':
           return value >= 0.5 ? 'positive' : value < -0.5 ? 'negative' : 'neutral';
+        case 'srh_01km':
+          return Math.abs(value) >= 150 ? 'positive' : 'neutral';  // rotation notable = mis en avant
         case 'wind_speed_10m':
         case 'wind_direction_10m':
         case 'cloud_cover_low':

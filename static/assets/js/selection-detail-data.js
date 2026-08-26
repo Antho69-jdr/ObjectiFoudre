@@ -340,6 +340,7 @@
       dWindSpeed: 'wind_speed_10m',
       dWindDirection: 'wind_direction_10m',
       dSurfaceConvergence: 'surface_convergence_1e4s',
+      dSrh: 'srh_01km',
       dCloudLow: 'cloud_cover_low',
       dCloudMid: 'cloud_cover_mid',
       dCloudHigh: 'cloud_cover_high',
@@ -365,6 +366,11 @@
         label: 'Rayonnement', suffix: ' W/m²', scoreKey: 'shortwave_radiation_score',
         definition: 'Ensoleillement de surface estimé : irradiance de ciel clair (hauteur du soleil) modulée par la nébulosité prévue. Lecture du chauffage diurne — fort par ciel dégagé en milieu de journée, faible sous les nuages ou en début et fin de journée.',
         scale: '< 120 faible · 120-250 limité · 250-400 correct · 400-600 favorable · > 600 fort.',
+      },
+      srh_01km: {
+        label: 'Hélicité 0-1 km', suffix: ' m²/s²', scoreKey: 'srh_score',
+        definition: 'Hélicité relative à l’orage sur 0-1 km : potentiel de rotation (virement directionnel du vent avec l’altitude), signature des supercellules. Complète le cisaillement, qui n’en mesure que l’intensité. Potentiel physique estimé, pas une prévision de supercellule.',
+        scale: '< 50 négligeable · 50-100 faible · 100-150 supercellules possibles · 150-250 fort · > 300 extrême.',
       },
       precipitation_rate: {
         label: 'Précipitation', suffix: ' mm/h', scoreKey: 'precipitation_score',

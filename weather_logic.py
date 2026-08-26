@@ -264,6 +264,7 @@ class OutputRow:
     category_breakdown: dict[str, dict[str, int]]
     diagnostics: list[str]
     summary: str
+    srh_01km: float | None = None   # hélicité 0-1 km (m²/s²) — potentiel de rotation (sévérité)
 
 
 def build_grid(center_lat: float = DEFAULT_CENTER_LAT, center_lon: float = DEFAULT_CENTER_LON, zone_prefix: str = DEFAULT_CENTER_LABEL) -> list[Point]:
@@ -1927,6 +1928,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     "surface_trigger_score": metric.get("surface_trigger_component"),
                     "cloud_trigger_score": metric.get("cloud_trigger_component"),
                     "boundary_layer_score": metric.get("boundary_layer_component"),
+                    "srh_score": metric.get("srh_component"),  # rotation 0-1 km (sévérité)
                     "clear_sky_penalty_score": metric.get("clear_sky_penalty", 0),
                     # Valeur BRUTE (K, peut être négative) — pas un score 0-100 — archivée pour que
                     # l'autocalibration apprenne la force du boost LI depuis l'historique.
@@ -2041,6 +2043,7 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                     category_breakdown=category_breakdown,
                     diagnostics=diagnostics,
                     summary=summary,
+                    srh_01km=round_optional(metric.get("srh_01km"), 0),
                 )
 
                 score_key = storm_probability * 100000 + raw_trigger * 100 + confidence_score
