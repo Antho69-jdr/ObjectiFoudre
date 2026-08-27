@@ -70,9 +70,7 @@
   function isAdmin() {
     try { return document.documentElement.classList.contains('objf-admin'); } catch (e) { return false; }
   }
-  function adminSecret() {
-    try { return localStorage.getItem('objfAdminSecret') || ''; } catch (e) { return ''; }
-  }
+  // Admin = compte connecté (classe objf-admin) ; requêtes authentifiées par le cookie de session.
   function promptLogin() { var b = document.getElementById('accountBtn'); if (b) b.click(); }
   function scrollTop() { if (bodyEl) bodyEl.scrollTop = 0; }
   function scrollBottom() { if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight; }
@@ -354,7 +352,7 @@
   }
   function moderateTopic(action) {
     var url = '/api/forum/topic/' + encodeURIComponent(currentTopicId) + '/moderate?action='
-      + encodeURIComponent(action) + '&secret=' + encodeURIComponent(adminSecret());
+      + encodeURIComponent(action);
     apiSend(url, 'POST', {}).then(function (res) {
       if (!res || res.ok === false) { window.alert((res && res.error) || 'Échec de la modération.'); return; }
       if (action === 'hide') { currentCat ? openCategory(currentCat.id) : loadHome(); }
@@ -362,7 +360,7 @@
     });
   }
   function hidePost(postId) {
-    var url = '/api/forum/post/' + encodeURIComponent(postId) + '/hide?secret=' + encodeURIComponent(adminSecret());
+    var url = '/api/forum/post/' + encodeURIComponent(postId) + '/hide';
     apiSend(url, 'POST', {}).then(function (res) {
       if (!res || !res.ok) { window.alert((res && res.error) || 'Échec.'); return; }
       openThread(currentTopicId);

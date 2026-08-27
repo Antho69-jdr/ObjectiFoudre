@@ -342,6 +342,9 @@
 
     // re-synchro quand le compte change (connexion/déconnexion via la modale)
     window.addEventListener('objf:account-changed', syncFromAccount);
+    // l'accès admin (classe objf-admin) est résolu après /api/account/me → re-render la feuille
+    // « Plus » pour afficher/masquer l'entrée Télémétrie & maintenance.
+    document.addEventListener('of-admin-changed', function () { try { renderSheet(); } catch (e) {} });
 
     // Bandeau desktop : le logo ramène à la carte (ferme la surface ouverte, sort
     // du mode chasse/étoile), puis rafraîchit l'onglet actif.

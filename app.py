@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.210"
+APP_VERSION = "1.3.211"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -1819,6 +1819,15 @@ METEOFRANCE_CORSICA_POLYGON = [
 
 
 app = FastAPI(title="ObjectiFoudre", version=APP_VERSION)
+
+
+async def _admin_secret_dep(request: Request) -> None:
+    """Dépendance FastAPI : accès ADMIN réservé au COMPTE connecté dont l'e-mail (vérifié) figure
+    dans OBJECTIFOUDRE_ADMIN_EMAILS. Plus de secret d'URL. Défini TÔT (avant tout décorateur qui
+    l'utilise) ; son corps délègue à _require_admin_account, résolu au runtime (défini plus bas)."""
+    await _require_admin_account(request)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -4804,18 +4813,15 @@ async def api_spots_owner_delete(spot_id: str, request: Request) -> dict[str, An
     return {"ok": True, "deleted": True}
 
 
-@app.get("/api/spots/pending")
-async def api_spots_pending(secret: str | None = Query(None)) -> dict[str, Any]:
-    """[admin] Spots en attente de modération (secret serveur requis)."""
-    _validate_server_admin_secret(secret or "")
+@app.get("/api/spots/pending", dependencies=[Depends(_admin_secret_dep)])
+async def api_spots_pending() -> dict[str, Any]:
+    """[admin] Spots en attente de modération (compte admin requis)."""
     return {"ok": True, "spots": await asyncio.to_thread(spots.list_all, "pending")}
 
 
-@app.post("/api/spots/{spot_id}/moderate")
-async def api_spots_moderate(spot_id: str, action: str = Query(...),
-                             secret: str | None = Query(None)) -> dict[str, Any]:
+@app.post("/api/spots/{spot_id}/moderate", dependencies=[Depends(_admin_secret_dep)])
+async def api_spots_moderate(spot_id: str, action: str = Query(...)) -> dict[str, Any]:
     """[admin] Modération manuelle d'un spot : action ∈ {approve, reject, delete}."""
-    _validate_server_admin_secret(secret or "")
     try:
         res = await asyncio.to_thread(spots.moderate, spot_id, action)
     except spots.SpotError as exc:
@@ -4823,13 +4829,11 @@ async def api_spots_moderate(spot_id: str, action: str = Query(...),
     return {"ok": True, "result": res}
 
 
-@app.post("/api/spots/import")
-async def api_spots_import(payload: dict[str, Any], background_tasks: BackgroundTasks,
-                           secret: str | None = Query(None)) -> dict[str, Any]:
+@app.post("/api/spots/import", dependencies=[Depends(_admin_secret_dep)])
+async def api_spots_import(payload: dict[str, Any], background_tasks: BackgroundTasks) -> dict[str, Any]:
     """[admin] Import en masse de spots (ex. liste Google Maps exportée). Corps :
     { "spots": [{name, lon, lat, notes|note}], "status": "approved"|"pending" }.
     Bypass le rate-limit, dédoublonne, calcule l'horizon de chaque spot en tâche de fond."""
-    _validate_server_admin_secret(secret or "")
     items = payload.get("spots") if isinstance(payload, dict) else None
     if not isinstance(items, list):
         return {"ok": False, "error": "Corps invalide : { spots: [...] } attendu."}
@@ -4845,11 +4849,9 @@ async def api_spots_import(payload: dict[str, Any], background_tasks: Background
     return {"ok": True, "created": len(res["created"]), "skipped": res["skipped"]}
 
 
-@app.post("/api/spots/{spot_id}/update")
-async def api_spots_update(spot_id: str, payload: dict[str, Any], background_tasks: BackgroundTasks,
-                           secret: str | None = Query(None)) -> dict[str, Any]:
+@app.post("/api/spots/{spot_id}/update", dependencies=[Depends(_admin_secret_dep)])
+async def api_spots_update(spot_id: str, payload: dict[str, Any], background_tasks: BackgroundTasks) -> dict[str, Any]:
     """[admin] Modifie un spot (nom, notes, position). Recalcule l'horizon si la position change."""
-    _validate_server_admin_secret(secret or "")
     try:
         updated = await asyncio.to_thread(
             spots.update_spot, spot_id,
@@ -4863,11 +4865,10 @@ async def api_spots_update(spot_id: str, payload: dict[str, Any], background_tas
     return {"ok": True, "spot": {k: updated[k] for k in ("id", "name", "lon", "lat", "notes", "status", "inner_radius_m")}}
 
 
-@app.post("/api/spots/recompute")
-async def api_spots_recompute(background_tasks: BackgroundTasks, secret: str | None = Query(None)) -> dict[str, Any]:
+@app.post("/api/spots/recompute", dependencies=[Depends(_admin_secret_dep)])
+async def api_spots_recompute(background_tasks: BackgroundTasks) -> dict[str, Any]:
     """[admin] Recalcule l'horizon de tous les spots (ex. après ajout de l'obstruction proche).
     Vide le cache de chaque point + relance le calcul en tâche de fond (sérialisé)."""
-    _validate_server_admin_secret(secret or "")
     all_spots = await asyncio.to_thread(spots.list_all)
     for s in all_spots:
         horizon.clear_cached(s["lon"], s["lat"])
@@ -5058,11 +5059,9 @@ async def api_forum_delete_post(post_id: str, request: Request) -> dict[str, Any
     return {"ok": True, **res}
 
 
-@app.post("/api/forum/topic/{topic_id}/moderate")
-async def api_forum_moderate_topic(topic_id: str, action: str = Query(...),
-                                   secret: str | None = Query(None)) -> dict[str, Any]:
+@app.post("/api/forum/topic/{topic_id}/moderate", dependencies=[Depends(_admin_secret_dep)])
+async def api_forum_moderate_topic(topic_id: str, action: str = Query(...)) -> dict[str, Any]:
     """[admin] Modère un sujet : action ∈ {pin, unpin, lock, unlock, hide}."""
-    _validate_server_admin_secret(secret or "")
     try:
         res = await asyncio.to_thread(forum.moderate_topic, topic_id, action)
     except forum.ForumError as exc:
@@ -5070,10 +5069,9 @@ async def api_forum_moderate_topic(topic_id: str, action: str = Query(...),
     return res
 
 
-@app.post("/api/forum/post/{post_id}/hide")
-async def api_forum_hide_post(post_id: str, secret: str | None = Query(None)) -> dict[str, Any]:
+@app.post("/api/forum/post/{post_id}/hide", dependencies=[Depends(_admin_secret_dep)])
+async def api_forum_hide_post(post_id: str) -> dict[str, Any]:
     """[admin] Masque un message."""
-    _validate_server_admin_secret(secret or "")
     try:
         res = await asyncio.to_thread(forum.moderate_post_hide, post_id)
     except forum.ForumError as exc:
@@ -12045,10 +12043,8 @@ def _validate_server_admin_secret(secret: str) -> None:
         raise HTTPException(status_code=403, detail='Secret de prechargement serveur invalide.')
 
 
-async def _admin_secret_dep(secret: str | None = Query(None)) -> None:
-    """Dépendance FastAPI : verrouille une route derrière OBJECTIFOUDRE_PRELOAD_SECRET
-    (?secret=…). Utilisée sur tout l'outillage admin/diagnostic avant la bêta publique."""
-    _validate_server_admin_secret(secret or "")
+# _admin_secret_dep est défini plus haut (juste après la création de `app`) car il est référencé
+# dans des décorateurs situés avant ce point.
 
 
 def _server_arome_preload_dates(reference_date: Date | None = None, raw_value: str | None = None) -> list[Date]:
@@ -16186,6 +16182,30 @@ async def _account_current_user(request: Request) -> dict[str, Any] | None:
     return await asyncio.to_thread(accounts.user_by_session, token)
 
 
+def _admin_emails() -> set[str]:
+    """E-mails administrateurs autorisés (OBJECTIFOUDRE_ADMIN_EMAILS, séparés par virgule),
+    normalisés en minuscules (comme accounts.clean_email)."""
+    raw = os.environ.get("OBJECTIFOUDRE_ADMIN_EMAILS", "")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def _is_admin_user(user: dict[str, Any] | None) -> bool:
+    """Admin = compte connecté, e-mail VÉRIFIÉ, présent dans l'allowlist. Aucun secret d'URL."""
+    if not user or not user.get("email_verified"):
+        return False
+    email = str(user.get("email") or "").strip().lower()
+    return bool(email) and email in _admin_emails()
+
+
+async def _require_admin_account(request: Request) -> dict[str, Any]:
+    """Exige une session dont le compte est administrateur (sinon 403). Source unique de vérité
+    de l'accès admin, remplace le secret serveur."""
+    user = await _account_current_user(request)
+    if not _is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Accès administrateur requis (compte non autorisé).")
+    return user
+
+
 def _oauth_exchange_userinfo(provider: str, code: str, redirect_uri: str) -> dict[str, Any]:
     """Échange le code contre un access_token puis lit le profil OpenID (sub/email/name)."""
     conf = _OAUTH_PROVIDERS[provider]
@@ -16451,6 +16471,7 @@ async def account_me(request: Request) -> dict[str, Any]:
     return {"ok": True, "authenticated": bool(user),
             "google_configured": oauth.get("google", False),   # compat front historique
             "oauth": oauth, "email_enabled": mailer.configured(),
+            "is_admin": _is_admin_user(user),
             "user": accounts.private_view(user) if user else None}
 
 
@@ -16923,10 +16944,9 @@ async def server_command(payload: ServerCommandRequest) -> dict[str, Any]:
         return {"ok": False, "lines": [f"erreur : {type(exc).__name__}: {str(exc)[:200]}"]}
 
 
-@app.get("/api/history/inventory")
-async def history_inventory(secret: str = Query(...)) -> dict[str, Any]:
+@app.get("/api/history/inventory", dependencies=[Depends(_admin_secret_dep)])
+async def history_inventory() -> dict[str, Any]:
     """Liste {chemin relatif: taille} de l'historique — sert au diff de migration."""
-    _validate_server_admin_secret(secret)
 
     def scan() -> dict[str, int]:
         out: dict[str, int] = {}
@@ -16941,11 +16961,10 @@ async def history_inventory(secret: str = Query(...)) -> dict[str, Any]:
     return {"ok": True, "count": len(files), "total_bytes": sum(files.values()), "files": files}
 
 
-@app.post("/api/history/import")
+@app.post("/api/history/import", dependencies=[Depends(_admin_secret_dep)])
 async def history_import(request: Request, path: str = Query(..., min_length=1, max_length=300),
-                         secret: str = Query(...), overwrite: bool = Query(False)) -> dict[str, Any]:
+                         overwrite: bool = Query(False)) -> dict[str, Any]:
     """Dépose UN fichier d'historique (corps binaire brut). Idempotent sans overwrite."""
-    _validate_server_admin_secret(secret)
     target = _history_safe_rel(path)
     if target.exists() and not overwrite:
         return {"ok": True, "path": path, "skipped": True}
@@ -20267,15 +20286,13 @@ async def fr_radar_point(
     return await asyncio.to_thread(_fr_radar_point_sync, lat, lon)
 
 
-@app.post('/api/server/arome-automation-start')
+@app.post('/api/server/arome-automation-start', dependencies=[Depends(_admin_secret_dep)])
 async def server_arome_automation_start(payload: ServerAromeAutomationRequest) -> dict[str, Any]:
-    _validate_server_admin_secret(payload.secret)
     return await asyncio.to_thread(_start_server_arome_automation_thread, manual=True)
 
 
-@app.post('/api/server/arome-automation-stop')
+@app.post('/api/server/arome-automation-stop', dependencies=[Depends(_admin_secret_dep)])
 async def server_arome_automation_stop(payload: ServerAromeAutomationRequest) -> dict[str, Any]:
-    _validate_server_admin_secret(payload.secret)
     await asyncio.to_thread(_stop_server_arome_automation_thread)
     _update_server_arome_automation_state(
         enabled=False,
@@ -20286,9 +20303,8 @@ async def server_arome_automation_stop(payload: ServerAromeAutomationRequest) ->
     return await asyncio.to_thread(_server_arome_automation_status)
 
 
-@app.post('/api/server/arome-preload-now')
+@app.post('/api/server/arome-preload-now', dependencies=[Depends(_admin_secret_dep)])
 async def server_arome_preload_now(payload: ServerAromePreloadNowRequest) -> dict[str, Any]:
-    _validate_server_admin_secret(payload.secret)
     api_key = _server_meteofrance_api_key_required()
     target_date = payload.date or datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
     requested_grid = payload.grid if payload.grid is not None else OBJECTIFOUDRE_AUTO_PRELOAD_GRID

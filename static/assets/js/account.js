@@ -284,7 +284,10 @@
     var acts = el('div', 'account-actions');
     var out = el('button', 'account-btn ghost', 'Se déconnecter'); out.type = 'button';
     out.addEventListener('click', function () {
-      jsend('/api/auth/logout', 'POST').then(function () { state.user = null; cacheMap(null); state.authMode = 'login'; refreshBtn(); render(); reloadSpots(); toast('Déconnecté'); });
+      jsend('/api/auth/logout', 'POST').then(function () { state.user = null; cacheMap(null); state.authMode = 'login';
+        // Déconnexion → retirer l'accès admin (classe + notification des modules).
+        try { document.documentElement.classList.remove('objf-admin'); document.dispatchEvent(new CustomEvent('of-admin-changed', { detail: { admin: false } })); } catch (e) {}
+        refreshBtn(); render(); reloadSpots(); toast('Déconnecté'); });
     });
     var del = el('button', 'account-btn del', 'Supprimer mon compte'); del.type = 'button';
     del.addEventListener('click', function () {
@@ -380,6 +383,14 @@
       state.emailEnabled = !!(r && r.email_enabled);
       cacheMap(state.user && state.user.prefs ? state.user.prefs.default_map : null);
       applyDefaultMap(state.user && state.user.prefs ? state.user.prefs.default_map : null);
+      // ADMIN lié au compte : la classe `objf-admin` pilote toute la visibilité admin. On la
+      // (dé)pose selon is_admin (serveur) et on notifie les modules qui en dépendent (barre du
+      // bas, boutons learning de l'historique, outils spots) pour qu'ils réappliquent leur état.
+      try {
+        var isAdmin = !!(r && r.is_admin);
+        document.documentElement.classList.toggle('objf-admin', isAdmin);
+        document.dispatchEvent(new CustomEvent('of-admin-changed', { detail: { admin: isAdmin } }));
+      } catch (e) {}
       refreshBtn();
     }).catch(function () {});
   }

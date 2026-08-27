@@ -740,12 +740,12 @@
     document.body.classList.remove('spots-open');
   }
 
-  // admin : réutilise le mécanisme existant (?admin=<secret> → classe objf-admin + objfAdminSecret)
+  // admin : classe objf-admin posée par account.js selon /api/account/me (is_admin)
   function isAdmin() { try { return document.documentElement.classList.contains('objf-admin'); } catch (e) { return false; } }
-  function adminSecret() { try { return localStorage.getItem('objfAdminSecret') || ''; } catch (e) { return ''; } }
+  // Admin = compte connecté (classe objf-admin) ; requêtes authentifiées par le cookie de session.
 
   function moderate(spotId, action, row) {
-    var qs = '?secret=' + encodeURIComponent(adminSecret()) + '&action=' + action;
+    var qs = '?action=' + action;
     if (row) row.style.opacity = '.5';
     return fetch('/api/spots/' + spotId + '/moderate' + qs, { method: 'POST' })
       .then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
@@ -763,7 +763,7 @@
     sec.setAttribute('aria-label', 'Modération des spots');
     sec.textContent = 'Chargement des spots en attente…';
     container.appendChild(sec);
-    fetch('/api/spots/pending?secret=' + encodeURIComponent(adminSecret()))
+    fetch('/api/spots/pending')
       .then(function (r) { return r.ok ? r.json() : { ok: false, status: r.status }; })
       .then(function (d) {
         sec.innerHTML = '';
@@ -808,7 +808,7 @@
   function recomputeAll() {
     if (!confirm('Recalculer l\'horizon de tous les spots (obstruction proche incluse) ? Quelques minutes en arrière-plan.')) return;
     toast('Recalcul lancé…');
-    fetch('/api/spots/recompute?secret=' + encodeURIComponent(adminSecret()), { method: 'POST' })
+    fetch('/api/spots/recompute', { method: 'POST' })
       .then(function (r) { return r.ok ? r.json() : { ok: false }; })
       .then(function (res) { toast(res && res.ok ? (res.recomputing + ' spots en recalcul…') : 'Refusé (secret admin ?)', 4500); })
       .catch(function () { toast('Réseau indisponible.'); });
@@ -837,7 +837,7 @@
       if (!payloadSpots.length) { toast('Format non reconnu (attendu : name, lon, lat).'); return; }
       if (!confirm('Importer ' + payloadSpots.length + ' spot(s) comme APPROUVÉS (visibles publiquement) ?')) return;
       toast('Import en cours…');
-      fetch('/api/spots/import?secret=' + encodeURIComponent(adminSecret()), {
+      fetch('/api/spots/import', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ spots: payloadSpots, status: 'approved' }),
       }).then(function (r) { return r.ok ? r.json() : { ok: false, status: r.status }; })
@@ -1009,7 +1009,7 @@
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) { err.textContent = 'Coordonnées invalides.'; return; }
       var btn = modal.querySelector('.save'); btn.disabled = true; btn.textContent = '…';
       var url = owner ? ('/api/spots/' + spot.id + '/owner-update')
-                      : ('/api/spots/' + spot.id + '/update?secret=' + encodeURIComponent(adminSecret()));
+                      : ('/api/spots/' + spot.id + '/update');
       fetch(url, {
         method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name, notes: notes, lat: lat, lon: lon, inner_radius_m: Math.round(+innerEl.value || 0) }),

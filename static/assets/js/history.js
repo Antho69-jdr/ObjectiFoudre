@@ -835,11 +835,9 @@
     }
   }
 
-  // Secret admin (mode admin : /?admin=<secret> une fois) — les commandes learning
-  // sont refusées côté serveur sans lui ; les boutons sont masqués pour le public.
-  function adminSecretQS() {
-    try { const s = localStorage.getItem('objfAdminSecret'); return s ? `?secret=${encodeURIComponent(s)}` : ''; } catch (_) { return ''; }
-  }
+  // Admin = compte connecté (email dans OBJECTIFOUDRE_ADMIN_EMAILS). Les commandes learning sont
+  // authentifiées par le COOKIE de session (envoyé d'office en same-origin) ; plus de secret d'URL.
+  function adminSecretQS() { return ''; }
 
   async function retrainLearning() {
     if (!learningEl) return;
@@ -1104,9 +1102,16 @@
 
   // Boutons de pilotage du modèle : ADMIN uniquement (masqués pour le public,
   // et refusés côté serveur sans le secret de toute façon).
-  const isAdminUI = document.documentElement.classList.contains('objf-admin');
-  if (learningRetrainBtn) { learningRetrainBtn.hidden = !isAdminUI; learningRetrainBtn.addEventListener('click', retrainLearning); }
-  if (learningRevertBtn) { learningRevertBtn.hidden = !isAdminUI; learningRevertBtn.addEventListener('click', revertLearning); }
+  function applyLearningAdminUI() {
+    const on = document.documentElement.classList.contains('objf-admin');
+    if (learningRetrainBtn) learningRetrainBtn.hidden = !on;
+    if (learningRevertBtn) learningRevertBtn.hidden = !on;
+  }
+  if (learningRetrainBtn) learningRetrainBtn.addEventListener('click', retrainLearning);
+  if (learningRevertBtn) learningRevertBtn.addEventListener('click', revertLearning);
+  applyLearningAdminUI();
+  // L'accès admin est résolu après /api/account/me (async) → réappliquer à ce moment.
+  document.addEventListener('of-admin-changed', applyLearningAdminUI);
 
   const calToggleBtn = document.getElementById('historyCalToggle');
   if (calToggleBtn) {

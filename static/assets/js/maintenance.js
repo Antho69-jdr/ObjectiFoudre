@@ -12,7 +12,7 @@
   let timer = null;
   let token = 0;
 
-  function secret() { try { return localStorage.getItem('objfAdminSecret') || ''; } catch (_) { return ''; } }
+  // Admin = compte connecté (cookie de session, envoyé d'office). Plus de secret d'URL.
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
   let logTimer = null;
@@ -37,10 +37,10 @@
   async function load() {
     const mine = ++token;
     try {
-      const r = await fetch(`/api/server/telemetry?secret=${encodeURIComponent(secret())}`);
+      const r = await fetch(`/api/server/telemetry`);
       if (mine !== token) return;
       if (!r.ok) {
-        grid.innerHTML = card('Accès refusé', `<div class="mnt-err">Télémétrie inaccessible (HTTP ${r.status}). Le mode admin est requis : visite <code>/?admin=&lt;secret&gt;</code>.</div>`, 'bad');
+        grid.innerHTML = card('Accès refusé', `<div class="mnt-err">Télémétrie inaccessible (HTTP ${r.status}). Connecte-toi avec ton compte administrateur pour accéder à la maintenance.</div>`, 'bad');
         if (refreshEl) refreshEl.textContent = '';
         return;
       }
@@ -227,7 +227,7 @@
   async function runCommand(cmd, echo) {
     if (echo !== false) termPrint('› ' + cmd, 'mnt-term-cmd');
     try {
-      const r = await fetch(`/api/server/command?secret=${encodeURIComponent(secret())}`, {
+      const r = await fetch(`/api/server/command`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cmd }),
       });
       const d = await r.json().catch(() => ({}));
@@ -263,7 +263,7 @@
     if (!logsBody) return;
     const lvl = logsErrors && logsErrors.checked ? 'errors' : 'all';
     try {
-      const r = await fetch(`/api/server/logs?limit=200&level=${lvl}&secret=${encodeURIComponent(secret())}`);
+      const r = await fetch(`/api/server/logs?limit=200&level=${lvl}`);
       if (!r.ok) { logsBody.innerHTML = `<div class="mnt-err">Logs inaccessibles (HTTP ${r.status}).</div>`; return; }
       const d = await r.json();
       const stick = logsBody.scrollTop + logsBody.clientHeight >= logsBody.scrollHeight - 20;
@@ -294,7 +294,7 @@
     if (!reportsList) return;
     reportsList.innerHTML = '<div class="mnt-muted">Chargement…</div>';
     try {
-      const r = await fetch(`/api/server/reports?limit=200&secret=${encodeURIComponent(secret())}`);
+      const r = await fetch(`/api/server/reports?limit=200`);
       if (!r.ok) { reportsList.innerHTML = `<div class="mnt-err">Inaccessible (HTTP ${r.status}).</div>`; return; }
       const d = await r.json();
       const items = d.reports || [];
@@ -317,7 +317,7 @@
   reportsClear?.addEventListener('click', async () => {
     if (!window.confirm('Vider tous les rapports de bugs/plantages ?')) return;
     try {
-      await fetch(`/api/server/reports/clear?secret=${encodeURIComponent(secret())}`, { method: 'POST' });
+      await fetch(`/api/server/reports/clear`, { method: 'POST' });
       await loadReports();
       load();
     } catch (_) { /* ignore */ }
