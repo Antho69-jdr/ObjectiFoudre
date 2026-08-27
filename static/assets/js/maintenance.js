@@ -16,7 +16,9 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
   let logTimer = null;
+  function isAdmin() { try { return document.documentElement.classList.contains('objf-admin'); } catch (e) { return false; } }
   function openPage() {
+    if (!isAdmin()) return;   // défense : la page maintenance n'est accessible qu'en compte admin
     page.setAttribute('aria-hidden', 'false');
     load();
     loadLogs();
@@ -33,6 +35,8 @@
   openBtn?.addEventListener('click', openPage);
   closeBtn?.addEventListener('click', closePage);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && page.getAttribute('aria-hidden') === 'false') closePage(); });
+  // Perte de l'accès admin (déconnexion) → fermer la page maintenance si elle est ouverte.
+  document.addEventListener('of-admin-changed', (e) => { if (!(e.detail && e.detail.admin)) closePage(); });
 
   async function load() {
     const mine = ++token;
