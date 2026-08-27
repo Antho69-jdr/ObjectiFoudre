@@ -147,6 +147,6 @@
    mais ne surcharge rien — #app est block par defaut — donc 0 !important.) */
 body.mobile-blocked { overflow: hidden; }
 body.mobile-blocked #app { pointer-events: none; user-select: none; }
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   body.mobile-blocked #app { display: block; }
 }

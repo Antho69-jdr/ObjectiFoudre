@@ -174,7 +174,7 @@ body.chase-mode .meta-stack .meta-version {
    coins HAUT arrondis, collee au-dessus de la meta-strip. La frise interne
    s'etire (plus de cap 1120px). On ne fait que la geometrie ; la teinte rouge
    (bg/bordure) vient du base. */
-@media (min-width: 1025px) {
+@media (min-width: 1025px) and (pointer: fine) {
   .chase-overlay {
     left: 0; right: 0;
     width: auto; max-width: none;
@@ -448,7 +448,7 @@ body.mobile-ui .chase-popup .maplibregl-popup-close-button {
    left/right 8, radius 24, sans bordure, padding 5/8/6, boutons 38×40, molette
    aux hauteurs du dock (scroller 52, crans 46) — seules les COULEURS chasse
    restent. ===== */
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   .chase-overlay {
     left: max(8px, env(safe-area-inset-left));
     right: max(8px, env(safe-area-inset-right));
@@ -517,7 +517,7 @@ body.mobile-ui .chase-popup .maplibregl-popup-close-button {
 }
 
 /* ===== Tablette (≥768, ≤920) : resserrer le rail de couches a gauche. ===== */
-@media (min-width: 768px) and (max-width: 920px) {
+@media (min-width: 768px) and (max-width: 920px) and (pointer: fine) {
   .chase-layer-rail { left: 10px; }
 }
 
@@ -526,8 +526,8 @@ body.mobile-ui .chase-popup .maplibregl-popup-close-button {
 .chase-frise { transition: opacity var(--dur-base) var(--ease); }
 .chase-overlay.collapsed { transform: translate(-50%, calc(100% + 8px)); }
 .chase-overlay.collapsed .chase-frise { opacity: 0; pointer-events: none; }
-@media (min-width: 1025px) { .chase-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
-@media (max-width: 767px) { .chase-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
+@media (min-width: 1025px) and (pointer: fine) { .chase-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
+@media (max-width: 767px), (pointer: coarse) { .chase-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
 /* Téléphone paysage (écran bas) : frise chasse PLEINE LARGEUR, posée AU-DESSUS du
    rail droit (z-index 36 > rail 35) → le rail passe SOUS la frise (item Trello UI/UX).
    Placé APRÈS le bloc ≤767 (left/right 8) pour gagner par l'ordre. */

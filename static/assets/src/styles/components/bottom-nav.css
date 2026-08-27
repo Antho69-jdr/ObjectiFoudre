@@ -13,7 +13,7 @@
 
 .bnav, .bnav-sheet, .bnav-scrim, .bnav-avatar { display: none; }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   :root { --bottom-nav-h: 58px; }
 
   /* ---- la barre ---- */

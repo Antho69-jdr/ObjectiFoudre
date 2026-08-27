@@ -102,7 +102,7 @@
 /* Cible tactile confortable sur téléphone (onglet période). Spécificité 0,3,0
    pour battre `body.mobile-ui .prediction-period-tab`. (Le bouton télécharger +
    les fermetures sont traités dans prediction-page-layout.css / close-buttons.css.) */
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   body.mobile-ui .prediction-period-tabs .prediction-period-tab { min-height: 42px; }
 }
 

@@ -152,7 +152,7 @@
 }
 
 /* ── Smartphone : sheet plus fin, contexte CAPE rendu visible ── */
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   #selectionCard.selection-card {
     padding: 10px 12px;
   }

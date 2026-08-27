@@ -39,7 +39,7 @@ body.stargaze-mode #stargazeLayerRail { display: flex; }
   border-color: rgba(251, 191, 36, 0.55);
   color: #ffe9b0;
 }
-@media (max-width: 767px) { .stargaze-layer-rail { left: 8px; gap: 8px; } }
+@media (max-width: 767px), (pointer: coarse) { .stargaze-layer-rail { left: 8px; gap: 8px; } }
 
 /* Modale « Couches » : ancrée à droite du rail gauche (mode étoile). Recolore le champ
    selon les critères cochés (multi-sélection). */
@@ -94,7 +94,7 @@ body.stargaze-mode #stargazeLayerRail { display: flex; }
 .sg-layer-subs { display: none; flex-direction: column; padding-left: 15px; }
 .sg-layer-subs.open { display: flex; }
 .sg-layer-sub { font-size: var(--fs-12); }
-@media (max-width: 767px) { .sg-layers-panel { left: 56px; width: min(232px, calc(100vw - 66px)); } }
+@media (max-width: 767px), (pointer: coarse) { .sg-layers-panel { left: 56px; width: min(232px, calc(100vw - 66px)); } }
 
 /* En mode chasse d'étoile : masquer l'UI de score de base + les badges horaires
    (remplacés par #stargazeTopInfo). Dock masqué en visibility (garde la mise en
@@ -272,7 +272,7 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
   -webkit-backdrop-filter: var(--glass-blur);
   overflow: visible;
 }
-@media (min-width: 1025px) {
+@media (min-width: 1025px) and (pointer: fine) {
   .stargaze-overlay {
     left: 0; right: 0;
     width: auto; max-width: none;
@@ -511,7 +511,7 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 .sg-a-phase { display: inline-flex; align-items: center; gap: 6px; }
 .sg-a-moonicon { width: 12px; height: 12px; box-shadow: 0 0 4px rgba(251, 191, 36, 0.3); }
 .sg-a-loading { padding: 18px 14px; color: rgba(242, 232, 208, 0.75); }
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   .sg-agenda-panel { width: calc(100vw - 16px); max-height: 80vh; font-size: var(--fs-12); }
   .sg-agenda-cols, .sg-a-row { padding-left: 8px; padding-right: 8px; }
 }
@@ -530,7 +530,7 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 }
 
 /* ===== Mobile (<768) : carte flottante arrondie (comme le dock mobile) ===== */
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   .stargaze-overlay {
     left: max(8px, env(safe-area-inset-left));
     right: max(8px, env(safe-area-inset-right));
@@ -564,8 +564,8 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 .stargaze-frise { transition: opacity var(--dur-base) var(--ease); }
 .stargaze-overlay.collapsed { transform: translate(-50%, calc(100% + 8px)); }
 .stargaze-overlay.collapsed .stargaze-frise { opacity: 0; pointer-events: none; }
-@media (min-width: 1025px) { .stargaze-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
-@media (max-width: 767px) { .stargaze-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
+@media (min-width: 1025px) and (pointer: fine) { .stargaze-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
+@media (max-width: 767px), (pointer: coarse) { .stargaze-overlay.collapsed { transform: translateY(calc(100% + 8px)); } }
 /* Téléphone paysage (écran bas) : frise étoile PLEINE LARGEUR, posée AU-DESSUS du
    rail droit (z-index 36 > rail 35) → le rail passe SOUS la frise (item Trello UI/UX).
    Placé APRÈS le bloc ≤767 (left/right 8) pour gagner par l'ordre. */
@@ -659,7 +659,7 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 .sg-dome-frise-labs { display: flex; justify-content: space-between; padding: 5px 1px 0; }
 .sg-dome-frise-lab { font-size: 10px; color: #6c7d97; font-variant-numeric: tabular-nums; transition: color 0.12s; }
 .sg-dome-frise-lab.active { color: #f4d06a; font-weight: 700; }
-@media (max-width: 767px) { .sg-dome { max-width: 100%; } .sg-dome-legend { grid-template-columns: 1fr; } .sg-dome-frise-lab { font-size: 9px; } }
+@media (max-width: 767px), (pointer: coarse) { .sg-dome { max-width: 100%; } .sg-dome-legend { grid-template-columns: 1fr; } .sg-dome-frise-lab { font-size: 9px; } }
 
 /* ── « Autour de moi » (item 3) : feuille en bas — géoloc + rayon + résultats ── */
 .sg-geo-sheet {

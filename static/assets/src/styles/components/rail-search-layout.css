@@ -236,7 +236,7 @@ body.mobile-ui .right-rail-stack {
     }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   body.mobile-ui .right-rail-scroll {
       position: fixed !important;
       top: calc(56px + env(safe-area-inset-top)) !important;

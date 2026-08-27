@@ -157,7 +157,7 @@
 .alerts-item-name { color: #d3dde8; }
 
 /* Mobile : feuille du bas. */
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   /* PLEIN ÉCRAN (demande Anthony) : la carte remplit l'écran et réserve la hauteur
      de la barre du bas (visible par-dessus) pour ne rien masquer. */
   .account-modal { align-items: stretch; padding: 0; }

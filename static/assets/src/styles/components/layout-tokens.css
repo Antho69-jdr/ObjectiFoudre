@@ -45,13 +45,13 @@
   --timeline-height-px: 64px;
   --timeline-strip-h: 64px;
 }
-@media (min-width: 768px) and (max-width: 1024px) {
+@media (min-width: 768px) and (max-width: 1024px) and (pointer: fine) {
   body.mobile-ui {
     --mobile-meta-h: 46px;
     --timeline-height-px: 74px;
   }
 }
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   body.mobile-ui {
     --mobile-meta-h: 43px;
     --timeline-height-px: 66px;
@@ -77,7 +77,7 @@
     --rail-btn-size: var(--touch-rail-size);
   }
 }
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   body.mobile-ui {
     --touch-meta-h: 34px;
     --touch-timeline-h: 82px;
@@ -88,10 +88,10 @@
     --timeline-height-px: var(--touch-timeline-h);
   }
 }
-@media (min-width: 768px) and (max-width: 1024px) {
+@media (min-width: 768px) and (max-width: 1024px) and (pointer: fine) {
   body.mobile-ui { --mobile-meta-h: 30px; --meta-height-px: 30px; }
 }
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   body.mobile-ui {
     --timeline-height-px: 72px;
     --touch-timeline-h: 72px;

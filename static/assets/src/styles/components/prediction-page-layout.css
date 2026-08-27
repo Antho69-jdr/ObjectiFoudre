@@ -12,7 +12,7 @@
    @1440 (plein-écran) + @390 (compaction). Les widgets .history-* restent legacy.
    Cf. project-chantier-ui (Tier 4). */
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   body.mobile-ui .prediction-page {
     padding: 0;
     place-items: stretch;
@@ -256,7 +256,7 @@
    2 colonnes (carte | analyse), qui fonctionne bien à cette largeur.
    Scopé #predictionPage (1,x,0) → n'affecte PAS le header Historique (contenu
    différent) et bat la tactile body.mobile-ui button (0,1,1). */
-@media (min-width: 768px) and (max-width: 1024px) {
+@media (min-width: 768px) and (max-width: 1024px) and (pointer: fine) {
   #predictionPage .prediction-page-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

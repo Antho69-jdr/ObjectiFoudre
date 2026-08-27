@@ -80,12 +80,12 @@
 /* --- Modificateurs responsive du rail --------------------------------- */
 
 /* Tablette : rail un peu plus compact */
-@media (min-width: 601px) and (max-width: 1024px) {
+@media (min-width: 601px) and (max-width: 1024px) and (pointer: fine) {
   :root { --rail-btn-size: 44px; --right-rail-width: 44px; }
 }
 
 /* Mobile : rail compact, collé au bord, espacement resserré */
-@media (max-width: 600px) {
+@media (max-width: 600px), (pointer: coarse) {
   :root {
     --rail-btn-size: 42px;
     --right-rail-width: 42px;

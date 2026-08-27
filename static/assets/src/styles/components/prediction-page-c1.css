@@ -19,7 +19,7 @@
 /* Wrapper dock : transparent hors desktop → 0 impact mobile/tablette. */
 .prediction-dock { display: contents; }
 
-@media (min-width: 1025px) {
+@media (min-width: 1025px) and (pointer: fine) {
   /* --- coquille = fond de carte plein cadre --- */
   #predictionPage .prediction-page-shell {
     display: block;

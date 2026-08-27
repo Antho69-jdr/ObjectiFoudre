@@ -42,7 +42,7 @@
 #accountBtn svg { width: 20px; height: 20px; }
 #accountBtn.has-avatar { font-size: 15px; font-weight: 800; }
 
-@media (min-width: 1025px) {
+@media (min-width: 1025px) and (pointer: fine) {
   :root { --app-header-h: 58px; }
 
   /* --- barre de fond « verre fondu » (pleine largeur, purement visuelle) --- */

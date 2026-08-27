@@ -141,7 +141,7 @@ body.mobile-ui .selection-card {
   bottom: calc(140px + env(safe-area-inset-bottom)) !important;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   #selectionCard.selection-card,
     .selection-card#selectionCard {
       width: min(320px, calc(100vw - 90px));
@@ -225,7 +225,7 @@ body.mobile-ui .selection-card {
     }
 }
 
-@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) and (pointer: fine) {
   #selectionCard {
       top: auto !important;
       bottom: 120px !important;
@@ -281,7 +281,7 @@ body.mobile-ui .selection-card {
    migré VERBATIM de responsive.css (FINAL retrait CSS legacy). `#selectionCard
    .icon-btn` (1,1,0) bat close-buttons.css `#closeSelectionBtn` (1,0,0) → fixe
    #closeSelectionBtn à 38px au mobile (cf. #6B). !important porteurs. */
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   #selectionCard .icon-btn,
   #closeSelectionBtn {
     width: 38px !important;

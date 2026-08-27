@@ -355,7 +355,7 @@ body.mobile-ui #detailsModal.details-modal.visible {
     padding: calc(14px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom));
   }
 }
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   body.mobile-ui #detailsModal.details-modal {
     width: calc(100vw - 12px);
     height: calc(100svh - 16px);

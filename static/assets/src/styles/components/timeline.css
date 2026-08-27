@@ -395,7 +395,7 @@ body.stargaze-mode #stargazeSlots {
    ============================================================================ */
 .timeline-wheel { display: none; }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   /* Dock tactile FLOTTANT : centré (left:50% + translateX de la base), large
      pour laisser de la place à la molette, posé près du bas (la barre meta est
      masquée ≤1024, cf. theme.css → pas besoin de la dégager). */
@@ -657,7 +657,7 @@ body.stargaze-mode #stargazeSlots {
 /* Desktop (≥1025) : frise PLEINE LARGEUR, bord à bord, posée au-dessus de la
    barre meta (qui reste affichée sur desktop). Tablette (768-1024) garde le dock
    FLOTTANT centré de la base. */
-@media (min-width: 1025px) {
+@media (min-width: 1025px) and (pointer: fine) {
   .timeline-dock {
     left: 0;
     right: 0;

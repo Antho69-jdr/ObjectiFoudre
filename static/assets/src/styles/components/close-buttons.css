@@ -93,7 +93,7 @@
   max-height: 22px;
   font-size: var(--fs-14);
 }
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   #closeDetailsBtn,
   #closeDrawerBtn,
   #predictionPageCloseBtn,
