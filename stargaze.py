@@ -252,11 +252,20 @@ def day_events(day_start_utc: datetime, lat: float, lon: float) -> dict:
             "moon_illumination": moon["illumination"], "moon_phase": moon["phase_name"]}
 
 
-def observation_score(darkness: int, cloud_total_pct: float, moon_darkness: float) -> int:
-    """Score d'observation 0..100 : obscurité du site × ciel dégagé × phase de Lune.
-    darkness 0..100 (site) ; cloud_total_pct 0..100 (couverture, AROME) ; moon_darkness 0..1.
-    Le ciel dégagé est éliminatoire ; la Lune module ; l'obscurité du site pondère."""
+def moon_light_factor(illumination: float, moon_alt_deg: float) -> float:
+    """Facteur de pollution lunaire 0..1 (1 = aucun impact). La Lune ne pollue que LEVÉE :
+    présence = 0 sous l'horizon → 1 haut dans le ciel ; l'intensité dépend de son illumination
+    (pleine lune haute ≈ 0,55). Miroir EXACT du modèle front (stargaze.js factorScoreColorExpr),
+    pour que le score global et le filtre « Lune » soient cohérents."""
+    presence = max(0.0, min(1.0, (moon_alt_deg + 2.0) / 22.0))
+    return 1.0 - 0.45 * max(0.0, min(1.0, illumination)) * presence
+
+
+def observation_score(darkness: int, cloud_total_pct: float, moon_factor: float) -> int:
+    """Score d'observation 0..100 : obscurité du site × ciel dégagé × Lune.
+    darkness 0..100 (site) ; cloud_total_pct 0..100 (couverture) ; moon_factor 0..1 (cf.
+    moon_light_factor : intensité × présence au-dessus de l'horizon). Le ciel dégagé est
+    éliminatoire ; la Lune module ; l'obscurité du site pondère."""
     clear = max(0.0, 1.0 - cloud_total_pct / 100.0)
-    moon_factor = 0.55 + 0.45 * moon_darkness       # pleine lune 0,55 → nouvelle 1,0
     site = darkness / 100.0
     return int(round(max(0.0, min(100.0, 100.0 * clear * moon_factor * site))))

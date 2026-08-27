@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.209"
+APP_VERSION = "1.3.210"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4308,6 +4308,7 @@ def _stargaze_tonight() -> dict[str, Any]:
 
     moon = dict(stargaze.moon_phase(now))
     md = float(moon["darkness"])
+    illum = float(moon.get("illumination", 0.5))
     night = stargaze.astronomical_night(now, METEOFRANCE_FRANCE_GRID_CENTER_LAT,
                                         METEOFRANCE_FRANCE_GRID_CENTER_LON)
     hours = _stargaze_night_hours(now)
@@ -4352,6 +4353,8 @@ def _stargaze_tonight() -> dict[str, Any]:
             clouds_lo.append(None); clouds_mi.append(None); clouds_hi.append(None)
             continue
         any_available = True
+        # Facteur lune HORAIRE : la Lune ne pollue que levée (moon_alt de ce créneau) × intensité.
+        moon_factor = stargaze.moon_light_factor(illum, float(hslot.get("moon_alt", -90.0)))
         srow: list[int | None] = [None] * n
         crow: list[int | None] = [None] * n
         lorow: list[int | None] = [None] * n
@@ -4362,7 +4365,7 @@ def _stargaze_tonight() -> dict[str, Any]:
             if i is None:
                 continue
             ct = cm["t"]
-            sc = stargaze.observation_score(darkness_arr[i], ct, md)
+            sc = stargaze.observation_score(darkness_arr[i], ct, moon_factor)
             srow[i] = sc
             crow[i] = int(round(ct))
             lorow[i] = None if cm["lo"] is None else int(round(cm["lo"]))
@@ -4569,6 +4572,10 @@ def _stargaze_outlook_sync() -> dict[str, Any]:
         cloudmap = _ecmwf_tcc_grid(run_date, run_hour, step, points, indices_cache)
         moon = stargaze.moon_phase(instant)
         md = float(moon["darkness"])
+        # Facteur lune au cœur de la nuit (00 UTC) : intensité × présence au-dessus de l'horizon.
+        moon_factor = stargaze.moon_light_factor(
+            float(moon.get("illumination", 0.5)),
+            stargaze._moon_alt_deg(instant, METEOFRANCE_FRANCE_GRID_CENTER_LAT, METEOFRANCE_FRANCE_GRID_CENTER_LON))
         night = stargaze.astronomical_night(
             datetime(evening.year, evening.month, evening.day, 12, 0, tzinfo=timezone.utc),
             METEOFRANCE_FRANCE_GRID_CENTER_LAT, METEOFRANCE_FRANCE_GRID_CENTER_LON)
@@ -4580,7 +4587,7 @@ def _stargaze_outlook_sync() -> dict[str, Any]:
                 i = zone_index.get(zone)
                 if i is None:
                     continue
-                sc = stargaze.observation_score(darkness_arr[i], ct, md)
+                sc = stargaze.observation_score(darkness_arr[i], ct, moon_factor)
                 scores[i] = sc
                 clouds[i] = int(round(ct))
                 best_score[i] = sc
