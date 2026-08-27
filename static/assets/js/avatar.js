@@ -60,9 +60,12 @@
   function applyToButton(node, avatarId, pseudo) {
     if (!node) return;
     var p = resolve(avatarId);
-    if (p) { node.style.background = GRAD[p.grad]; node.innerHTML = ICON[p.icon]; node.classList.add('has-avatar'); }
-    else if (pseudo) { node.style.background = hashGrad(pseudo); node.textContent = initialOf(pseudo); node.classList.add('has-avatar'); }
-    else { node.style.background = ''; node.innerHTML = ICON.user; node.classList.remove('has-avatar'); }
+    // Fond posé en inline !important : sur le bandeau desktop, la règle
+    // `#rightRailScroll .grid-focus-btn{background:transparent!important}` écraserait un fond inline
+    // simple (avatar tout noir). L'inline !important bat le !important auteur → le dégradé s'affiche.
+    if (p) { node.style.setProperty('background', GRAD[p.grad], 'important'); node.innerHTML = ICON[p.icon]; node.classList.add('has-avatar'); }
+    else if (pseudo) { node.style.setProperty('background', hashGrad(pseudo), 'important'); node.textContent = initialOf(pseudo); node.classList.add('has-avatar'); }
+    else { node.style.removeProperty('background'); node.innerHTML = ICON.user; node.classList.remove('has-avatar'); }
   }
   // Sélecteur pour la modale compte (aperçu + galerie + import désactivé).
   function pickerHTML(selectedId, pseudo) {
