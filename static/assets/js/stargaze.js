@@ -376,9 +376,18 @@
 
   // Changement d'heure = SEULEMENT l'expression de couleur → quasi-instantané.
   // Des couches cochées → score des critères sélectionnés ; sinon score global.
+  // Tous les critères cochés = la vue complète : on repasse sur le score GLOBAL (colorExpr,
+  // source de vérité, qui inclut l'obscurité du site, la nébulosité et la Lune par intensité) —
+  // sinon le PRODUIT reconstruit des facteurs (Lune horaire, nuages par étage) diverge du score
+  // backend et « tous filtres » ≠ « aucun filtre ». Le produit ne sert donc qu'aux SOUS-ensembles.
+  function allLayers() {
+    const s = layerSel;
+    return s.light && s.moon && s.cloudLo && s.cloudMi && s.cloudHi;
+  }
   function paintHour(hi) {
     if (!map.getLayer(QUALITY_LYR)) return;
-    const expr = degraded ? colorExprDk() : (anyLayer() ? factorScoreColorExpr(hi) : colorExpr(hi));
+    const expr = degraded ? colorExprDk()
+      : ((anyLayer() && !allLayers()) ? factorScoreColorExpr(hi) : colorExpr(hi));
     try { map.setPaintProperty(QUALITY_LYR, 'fill-color', expr); } catch (_) {}
   }
 
