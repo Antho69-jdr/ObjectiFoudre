@@ -646,7 +646,11 @@
    cellules d'une grille 2 colonnes (cf. bloc @media landscape plus bas). */
 .history-analysis-cat { display: contents; }
 
-@media (max-width: 920px), (max-height: 600px) {
+/* Empilement 1 colonne : téléphones (≤920) uniquement. Le volet « écran court »
+   (max-height:600) est RETIRÉ ici pour ne pas empiler une tablette large en paysage
+   court (Galaxy Tab S7+ ≈ 959×600) — celle-ci prend le layout desktop (bloc landscape
+   large plus bas). */
+@media (max-width: 920px) {
   #historyPage .history-page-body {
     grid-template-columns: 1fr;
     display: flex;
@@ -752,7 +756,7 @@
   }
   #historyPage .prediction-analysis-panel { border-top: 0; padding-top: 0; }
 }
-@media (orientation: landscape) and (max-height: 600px) {
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 920px) {
   #historyPage .history-cal-toggle { display: none; }
   /* Rangée 1 = carte|calendrier sur ~un plein écran (carte grande) ; puis, en
      défilant : Vérification pleine largeur, puis Synthèse+Auto-calibration en 2
@@ -899,7 +903,11 @@
    inchangés (aucune de ces règles ne les touche). Selecteurs #historyPage (1,1,0)
    qui battent la base à classes nues. Cf. tâches 2 & 3 de la refonte historique.
    ════════════════════════════════════════════════════════════════════════════ */
-@media (min-width: 921px) and (min-height: 601px) {
+/* Layout DESKTOP 3 colonnes (agenda|verif · carte · analyse). S'applique aux écrans
+   larges hauts ET aux écrans larges EN PAYSAGE même courts (tablettes type Galaxy
+   Tab S7+ ≈ 959×600 en paysage) → plus de « carte plein écran » sur tablette. */
+@media (min-width: 921px) and (min-height: 601px),
+       (min-width: 921px) and (orientation: landscape) {
   /* Colonne 1 ÉLARGIE : elle accueille l'agenda PUIS la Vérification, empilés.
      La grille passe à 2 rangées ; la carte (player) et le panneau d'analyse
      s'étendent sur les 2 rangées, l'agenda occupe la rangée haute et la
