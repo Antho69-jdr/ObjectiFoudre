@@ -646,11 +646,12 @@
    cellules d'une grille 2 colonnes (cf. bloc @media landscape plus bas). */
 .history-analysis-cat { display: contents; }
 
-/* Empilement 1 colonne : téléphones (≤920) uniquement. Le volet « écran court »
-   (max-height:600) est RETIRÉ ici pour ne pas empiler une tablette large en paysage
-   court (Galaxy Tab S7+ ≈ 959×600) — celle-ci prend le layout desktop (bloc landscape
-   large plus bas). */
-@media (max-width: 920px) {
+/* Empilement 1 colonne = TÉLÉPHONES : portrait étroit (≤920 en portrait) OU écran très
+   court (≤479px de haut = téléphone en paysage). La LARGEUR seule ne sépare pas tablette
+   et grand téléphone (Tab S7+ paysage ≈918px vs iPhone Max paysage ≈932px) → on discrimine
+   par la HAUTEUR : une tablette en paysage fait ≥480px de haut et prend le layout desktop
+   (bloc landscape plus bas). */
+@media (max-width: 920px) and (orientation: portrait), (max-height: 479px) {
   #historyPage .history-page-body {
     grid-template-columns: 1fr;
     display: flex;
@@ -756,7 +757,7 @@
   }
   #historyPage .prediction-analysis-panel { border-top: 0; padding-top: 0; }
 }
-@media (orientation: landscape) and (max-height: 600px) and (max-width: 920px) {
+@media (orientation: landscape) and (max-height: 479px) {
   #historyPage .history-cal-toggle { display: none; }
   /* Rangée 1 = carte|calendrier sur ~un plein écran (carte grande) ; puis, en
      défilant : Vérification pleine largeur, puis Synthèse+Auto-calibration en 2
@@ -907,7 +908,7 @@
    larges hauts ET aux écrans larges EN PAYSAGE même courts (tablettes type Galaxy
    Tab S7+ ≈ 959×600 en paysage) → plus de « carte plein écran » sur tablette. */
 @media (min-width: 921px) and (min-height: 601px),
-       (min-width: 921px) and (orientation: landscape) {
+       (orientation: landscape) and (min-width: 700px) and (min-height: 480px) {
   /* Colonne 1 ÉLARGIE : elle accueille l'agenda PUIS la Vérification, empilés.
      La grille passe à 2 rangées ; la carte (player) et le panneau d'analyse
      s'étendent sur les 2 rangées, l'agenda occupe la rangée haute et la
