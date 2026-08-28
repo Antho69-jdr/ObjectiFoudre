@@ -914,6 +914,11 @@
      s'étendent sur les 2 rangées, l'agenda occupe la rangée haute et la
      Vérification la rangée basse de la colonne 1. */
   #historyPage .history-page-body {
+    /* display:grid EXPLICITE : le corps porte AUSSI la classe .prediction-page-body, et le bloc
+       mobile `body.mobile-ui .prediction-page-body{display:flex}` (déclenché sur tablette tactile
+       depuis la passe pointer) l'empilait sinon → grille ignorée, carte plein écran. La
+       spécificité ID (#historyPage) bat celle du bloc mobile (classes). */
+    display: grid;
     grid-template-columns: minmax(250px, 330px) minmax(0, 1.35fr) minmax(240px, 0.72fr);
     grid-template-rows: min-content minmax(0, 1fr);
     grid-template-areas:
