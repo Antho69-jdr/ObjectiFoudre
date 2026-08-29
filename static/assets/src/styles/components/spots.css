@@ -445,7 +445,8 @@ body.mobile-ui .ofspot-modal-row .del { flex: 1 1 auto; }
 .ofd-card { background: #121a25; border: 1px solid #22303f; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px; }
 .ofd-card-h { display: flex; align-items: center; justify-content: space-between; }
 .ofd-rk { width: 22px; height: 22px; border-radius: 7px; background: rgba(70, 192, 230, 0.16); color: #9fd8ec; font: 700 12px/22px "IBM Plex Mono", monospace; text-align: center; }
-.ofd-sc { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ofd-sc { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; margin-left: auto; }
+.ofd-kind { font-size: 11.5px; font-weight: 600; color: #9fd8ec; background: rgba(70, 192, 230, 0.12); border: 1px solid color-mix(in srgb, #46c0e6 30%, transparent); border-radius: 999px; padding: 2px 9px; margin-left: 8px; }
 .ofd-meta { font-family: ui-monospace, monospace; font-size: 12px; color: #9fb0c8; }
 .ofd-acts { display: flex; gap: 8px; }
 .ofd-mini { min-width: 0 !important; min-height: 0 !important; flex: 1 1 0; font: inherit; font-size: 12.5px; font-weight: 700; border-radius: 8px; padding: 8px 10px; cursor: pointer; border: 1px solid #2a3a4c; background: #0f1620; color: #cfe0ee; }

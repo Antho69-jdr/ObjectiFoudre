@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.227"
+APP_VERSION = "1.3.228"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4711,10 +4711,13 @@ def _spot_road_access(lon: float, lat: float) -> dict | None:
     if not isinstance(dist, (int, float)) or dist < 0:
         return None
     road_dist_m = round(float(dist))
+    loc = wps[0].get("location") or []
     return {
         "road_dist_m": road_dist_m,
         "walk_min": round(road_dist_m / (_WALK_MPS * 60.0), 1),
         "road_name": (wps[0].get("name") or None),
+        "snap_lon": (float(loc[0]) if len(loc) == 2 else None),
+        "snap_lat": (float(loc[1]) if len(loc) == 2 else None),
     }
 
 
@@ -4747,8 +4750,93 @@ _DISCOVER_ROAD_MAX = 800      # m : distance max à une route carrossable (filtr
 _DISCOVER_SHORTLIST = 15      # nb de candidats raffinés (coûteux)
 _DISCOVER_RESULTS = 6         # nb de spots proposés
 _DISCOVER_MIN_SEP_KM = 4.0    # écart mini entre candidats (couvrir la zone)
+_DISCOVER_ACCESS_MAX = 800    # m : distance max à un point d'accès PUBLIC (sinon écarté)
 _discover_jobs: dict[str, dict] = {}
 _discover_lock = threading.Lock()
+
+# Accès public (OpenStreetMap / Overpass) : discrimine les zones accessibles au public des
+# terrains privés (champs, cours de ferme…). On accroche le spot au point d'accès public le
+# plus proche (route/chemin/piste ouverte/parking/belvédère) et on ÉCARTE les zones dont le
+# seul accès proche est privé (pistes agricoles non balisées, access=private).
+_OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+_ACCESS_BLOCK = {"private", "no", "customers", "permit", "agricultural", "forestry", "delivery", "military"}
+_ACCESS_OK = {"yes", "permissive", "designated", "public", "customers?"}
+_HW_ROAD = {"residential", "unclassified", "service", "tertiary", "secondary", "living_street", "road"}
+_HW_PATH = {"path", "footway", "cycleway", "bridleway", "pedestrian"}
+
+
+def _hav_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1); dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _overpass_public_access(lat: float, lon: float, max_m: int = _DISCOVER_ACCESS_MAX) -> dict | None:
+    """Point d'accès PUBLIC le plus proche (OSM). Renvoie {lat, lon, dist_m, kind} ou None si
+    rien de public à proximité (→ zone considérée privée). Pistes `highway=track` NON balisées
+    exclues (souvent agricoles privées) ; `access` privé exclu partout. Best-effort (None si KO)."""
+    q = ("[out:json][timeout:25];("
+         f'way(around:{max_m},{lat},{lon})[highway];'
+         f'node(around:{max_m},{lat},{lon})[amenity=parking];'
+         f'way(around:{max_m},{lat},{lon})[amenity=parking];'
+         f'node(around:{max_m},{lat},{lon})[tourism~"^(viewpoint|picnic_site|camp_site)$"];'
+         f'way(around:{max_m},{lat},{lon})[leisure=park];'
+         ");out tags geom;")
+    try:
+        body = urllib.parse.urlencode({"data": q}).encode()
+        req = urllib.request.Request(_OVERPASS_URL, data=body, headers={"User-Agent": f"ObjectiFoudre/{APP_VERSION}"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 - Overpass indispo → l'appelant se rabat sur OSRM
+        return None
+    best = None  # (dist_m, lat, lon, kind)
+    for el in data.get("elements", []):
+        tags = el.get("tags") or {}
+        access = (tags.get("access") or "").lower()
+        if access in _ACCESS_BLOCK:
+            continue
+        hw = tags.get("highway")
+        if tags.get("tourism") == "viewpoint":
+            kind = "belvédère"
+        elif tags.get("tourism") == "picnic_site":
+            kind = "aire de pique-nique"
+        elif tags.get("tourism") == "camp_site":
+            kind = "camping"
+        elif tags.get("amenity") == "parking":
+            kind = "parking"
+        elif tags.get("leisure") == "park":
+            kind = "parc"
+        elif hw == "track":
+            if access not in _ACCESS_OK:   # piste agricole non balisée → considérée privée
+                continue
+            kind = "piste ouverte"
+        elif hw in _HW_PATH:
+            if (tags.get("foot") or "").lower() in {"no", "private"}:
+                continue
+            kind = "chemin"
+        elif hw in _HW_ROAD:
+            kind = "route"
+        else:
+            continue
+        if el.get("type") == "node":
+            d = _hav_m(lat, lon, el["lat"], el["lon"]); plat, plon = el["lat"], el["lon"]
+        else:
+            geom = el.get("geometry") or []
+            near = None
+            for g in geom:
+                dd = _hav_m(lat, lon, g["lat"], g["lon"])
+                if near is None or dd < near[0]:
+                    near = (dd, g["lat"], g["lon"])
+            if not near:
+                continue
+            d, plat, plon = near
+        if best is None or d < best[0]:
+            best = (d, plat, plon, kind)
+    if not best:
+        return None
+    return {"lat": round(best[1], 6), "lon": round(best[2], 6), "dist_m": int(round(best[0])), "kind": best[3]}
 
 
 def _discover_grid(lat: float, lon: float, radius_km: float) -> list[tuple[float, float]]:
@@ -4797,12 +4885,46 @@ def _discover_thin(cands: list[tuple], min_sep_km: float, cap: int) -> list[tupl
 
 
 def _discover_score(r: dict, alt_min: float, alt_max: float) -> int:
-    """Score combiné 0..100 : obscurité 40 % · horizon 30 % · proximité route 15 % · altitude 15 %."""
+    """Score combiné 0..100 : obscurité 40 % · horizon 30 % · accès public 15 % · altitude 15 %."""
     dk = r["darkness"] / 100.0
     op = r["openness"] / 100.0
-    road_s = max(0.0, 1.0 - r["road_dist_m"] / float(_DISCOVER_ROAD_MAX))
+    acc = max(0.0, 1.0 - r["access_dist_m"] / float(_DISCOVER_ACCESS_MAX))
     alt = 0.5 if alt_max <= alt_min or r.get("z0") is None else (r["z0"] - alt_min) / (alt_max - alt_min)
-    return int(round(100 * (0.40 * dk + 0.30 * op + 0.15 * road_s + 0.15 * alt)))
+    return int(round(100 * (0.40 * dk + 0.30 * op + 0.15 * acc + 0.15 * alt)))
+
+
+def _discover_refine(lo: float, la: float) -> dict | None:
+    """Raffine un candidat : l'accroche au point d'accès PUBLIC le plus proche (Overpass ; repli
+    OSRM route carrossable), puis évalue obscurité + horizon À CE POINT (là où on observera).
+    Renvoie None si aucun accès public à proximité (zone privée) ou conditions insuffisantes."""
+    acc = _overpass_public_access(la, lo)
+    if acc:
+        alo, ala, adist, akind = acc["lon"], acc["lat"], acc["dist_m"], acc["kind"]
+    else:
+        osrm = _spot_road_access(lo, la)   # repli : route carrossable (publique) la plus proche
+        if not osrm or osrm.get("snap_lat") is None:
+            return None
+        rd = osrm.get("road_dist_m")
+        if rd is None or rd > _DISCOVER_ACCESS_MAX:
+            return None
+        alo, ala, adist, akind = osrm["snap_lon"], osrm["snap_lat"], int(rd), "route (à confirmer)"
+    if adist > _DISCOVER_ACCESS_MAX:
+        return None
+    dk_acc = stargaze.darkness_at(alo, ala)
+    if dk_acc < _DISCOVER_DARK_MIN:
+        return None
+    try:
+        scan = horizon.cached_horizon_scan(alo, ala)
+    except Exception:  # noqa: BLE001 - point écarté si l'horizon échoue
+        return None
+    openness = scan.get("openness"); z0 = scan.get("z0")
+    if openness is None or openness < _DISCOVER_OPEN_MIN:
+        return None
+    return {
+        "lon": round(alo, 5), "lat": round(ala, 5), "darkness": int(dk_acc),
+        "openness": int(round(openness)), "z0": (round(z0) if z0 is not None else None),
+        "access_dist_m": int(adist), "access_kind": akind,
+    }
 
 
 def _discover_worker(job_id: str, lat: float, lon: float, radius_km: float) -> None:
@@ -4822,26 +4944,16 @@ def _discover_worker(job_id: str, lat: float, lon: float, radius_km: float) -> N
             if j:
                 j["total"] = len(shortlist)
         results: list[dict] = []
+        seen: list[tuple[float, float]] = []   # dédup des points d'accès (2 candidats → même route)
         for idx, (dk, lo, la) in enumerate(shortlist):
-            openness = z0 = None
-            try:
-                scan = horizon.cached_horizon_scan(lo, la)
-                openness = scan.get("openness")
-                z0 = scan.get("z0")
-            except Exception:  # noqa: BLE001 - point écarté si l'horizon échoue
-                pass
+            r = _discover_refine(lo, la)
             bump(idx + 1)
-            if openness is None or openness < _DISCOVER_OPEN_MIN:
+            if not r:
                 continue
-            access = _spot_road_access(lo, la)
-            road = access.get("road_dist_m") if access else None
-            if road is None or road > _DISCOVER_ROAD_MAX:
-                continue
-            results.append({
-                "lon": round(lo, 5), "lat": round(la, 5), "darkness": int(dk),
-                "openness": int(round(openness)), "z0": (round(z0) if z0 is not None else None),
-                "road_dist_m": int(road), "walk_min": (access.get("walk_min") if access else None),
-            })
+            if any(_hav_m(r["lat"], r["lon"], s[0], s[1]) < _DISCOVER_MIN_SEP_KM * 1000.0 for s in seen):
+                continue   # deux zones voisines accrochées au même accès → on n'en garde qu'un
+            seen.append((r["lat"], r["lon"]))
+            results.append(r)
         alts = [r["z0"] for r in results if r["z0"] is not None]
         amin, amax = (min(alts), max(alts)) if alts else (0.0, 0.0)
         for r in results:
