@@ -360,3 +360,58 @@ body.mobile-ui .ofspot-modal-row .del { flex: 1 1 auto; }
 .ofspot-card-author { font-size: 11.5px; color: #8ba0b8; }
 .ofspot-card-abtn.share { color: #46c0e6; border-color: color-mix(in srgb, #46c0e6 40%, #22303f); }
 .ofspot-card-abtn.share:hover { border-color: #46c0e6; }
+
+/* ═══ Barre tri/filtre/vues + « Y aller » (deep-links GPS) + vue liste (v1.3.223) ═══
+   Les petits boutons portent min-width:0!important pour battre body.mobile-ui button
+   {min-width:88px} (cible tactile) — sinon chips/segments s'étirent. Accent = #46c0e6. */
+.ofspot-ctrls { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; padding: 12px; background: #0f1620; border: 1px solid #22303f; border-radius: 12px; }
+.ofspot-ctrl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.ofspot-ctrl-lab { flex: 0 0 auto; width: 62px; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #6f8298; }
+.ofspot-ctrl-hint { font-size: 12px; color: #7c93ad; }
+.ofspot-seg { display: inline-flex; border: 1px solid #2a3a4c; border-radius: 9px; overflow: hidden; }
+.ofspot-seg-btn { min-width: 0 !important; min-height: 0 !important; font: inherit; font-size: 12.5px; font-weight: 600; color: #b7c6d6; background: #121a25; border: 0; padding: 7px 13px; cursor: pointer; transition: 0.12s; }
+.ofspot-seg-btn + .ofspot-seg-btn { border-left: 1px solid #2a3a4c; }
+.ofspot-seg-btn.on { background: color-mix(in srgb, #46c0e6 22%, #121a25); color: #d8f1fa; }
+.ofspot-seg-btn:hover:not(.on) { background: #17222f; }
+.ofspot-chip { min-width: 0 !important; min-height: 0 !important; font: inherit; font-size: 12.5px; font-weight: 600; color: #b7c6d6; background: #121a25; border: 1px solid #2a3a4c; border-radius: 999px; padding: 6px 12px; cursor: pointer; transition: 0.12s; }
+.ofspot-chip:hover { border-color: #46c0e6; }
+.ofspot-chip.on { background: color-mix(in srgb, #46c0e6 20%, #121a25); border-color: #46c0e6; color: #d8f1fa; }
+.ofspot-chip.dir { padding: 6px 10px; min-width: 34px !important; text-align: center; }
+.ofspot-chip.clear { color: #e8725a; border-color: color-mix(in srgb, #e8725a 40%, #2a3a4c); }
+.ofspot-chip.needs-geo { opacity: 0.78; }
+.ofspot-chip:focus-visible, .ofspot-seg-btn:focus-visible { outline: 2px solid #46c0e6; outline-offset: 1px; }
+.ofspot-geo-btn { min-width: 0 !important; min-height: 0 !important; display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12.5px; font-weight: 600; color: #b7c6d6; background: #121a25; border: 1px solid #2a3a4c; border-radius: 999px; padding: 6px 13px; cursor: pointer; }
+.ofspot-geo-btn.on { color: #7fe0b0; border-color: color-mix(in srgb, #3fce97 45%, #2a3a4c); background: color-mix(in srgb, #3fce97 12%, #121a25); }
+.ofspot-geo-btn:hover { border-color: #46c0e6; }
+.ofspot-dist-slider { flex: 1 1 120px; min-width: 100px; accent-color: #46c0e6; height: 20px; cursor: pointer; }
+.ofspot-dist-lbl { font-size: 12px; font-weight: 600; color: #8ff0da; min-width: 70px; }
+
+.ofspot-card-go { display: flex; align-items: center; gap: 8px; padding: 0 12px 12px; }
+.ofspot-card-km { font-size: 12px; font-weight: 600; color: #9fd8ec; }
+.ofspot-gps-btn { min-width: 0 !important; min-height: 0 !important; margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12.5px; font-weight: 700; color: #08222c; background: #46c0e6; border: 0; border-radius: 999px; padding: 7px 14px; cursor: pointer; transition: filter 0.12s; }
+.ofspot-gps-btn:hover { filter: brightness(1.07); }
+.ofspot-gps-btn span { font-size: 11px; }
+.ofspot-gps-btn:focus-visible { outline: 2px solid #46c0e6; outline-offset: 2px; }
+
+.ofspot-gps-menu { position: fixed; z-index: 10050; min-width: 168px; padding: 6px; background: #131c28; border: 1px solid #2c3d50; border-radius: 12px; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5); display: flex; flex-direction: column; gap: 2px; }
+.ofspot-gps-item { min-width: 0 !important; min-height: 0 !important; text-align: left; font: inherit; font-size: 13.5px; font-weight: 600; color: #e9eff7; background: transparent; border: 0; border-radius: 8px; padding: 9px 11px; cursor: pointer; }
+.ofspot-gps-item:hover { background: color-mix(in srgb, #46c0e6 16%, #131c28); }
+.ofspot-gps-item:focus-visible { outline: 2px solid #46c0e6; outline-offset: -1px; }
+
+.ofspot-tbl-list { display: flex; flex-direction: column; gap: 6px; }
+.ofspot-lrow { display: flex; align-items: center; gap: 8px; background: #121a25; border: 1px solid #22303f; border-radius: 11px; padding: 8px 10px; transition: border-color 0.12s; }
+.ofspot-lrow:hover { border-color: #46c0e6; }
+.ofspot-lrow-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; text-align: left; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 2px; }
+.ofspot-lrow-main:focus-visible { outline: 2px solid #46c0e6; outline-offset: 2px; border-radius: 8px; }
+.ofspot-lrow-badge { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-size: 13.5px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ofspot-lrow-badge.pending { color: #8ba0b8; background: #1a2431; }
+.ofspot-lrow-body { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ofspot-lrow-name { font-size: 14px; font-weight: 600; color: #e9eff7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ofspot-lrow-meta { font-size: 12px; color: #8ba0b8; }
+.ofspot-lrow-gps { flex: 0 0 auto; }
+
+.ofspot-panel-go { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.ofspot-panel-km { font-size: 12.5px; font-weight: 600; color: #9fd8ec; }
+.ofspot-panel-go-btn { min-width: 0 !important; min-height: 0 !important; margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 13px; font-weight: 700; color: #08222c; background: #46c0e6; border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; }
+.ofspot-panel-go-btn:hover { filter: brightness(1.07); }
+.ofspot-panel-go-btn span { font-size: 11px; }

@@ -153,6 +153,24 @@
   var account = { loggedIn: false };
   var tableView = 'public';   // page tableau : 'public' | 'mine'
 
+  // ── barre tri/filtre/vues de la page « Mes spots » (préférences persistées) ──
+  var spotsView = 'gallery';    // 'gallery' | 'list'
+  var spotsSort = 'score';      // 'score'|'near'|'far'|'az'|'za'|'dir'|'date'
+  var spotsDirFilter = {};      // {N:true,…} : directions dégagées exigées (multi)
+  var spotsMaxKm = 0;           // 0 = pas de filtre distance
+  var myGeo = null;             // { lat, lon } de « ma position » (géoloc navigateur)
+  var gpsMenuEl = null;         // menu déroulant « Y aller » ouvert (deep-links)
+  try {
+    var _spv = JSON.parse(localStorage.getItem('of_spots_view') || '{}');
+    if (_spv.view) spotsView = _spv.view;
+    if (_spv.sort) spotsSort = _spv.sort;
+    if (typeof _spv.maxKm === 'number') spotsMaxKm = _spv.maxKm;
+    if (_spv.dir && typeof _spv.dir === 'object') spotsDirFilter = _spv.dir;
+  } catch (e) {}
+  function saveSpotsPrefs() {
+    try { localStorage.setItem('of_spots_view', JSON.stringify({ view: spotsView, sort: spotsSort, maxKm: spotsMaxKm, dir: spotsDirFilter })); } catch (e) {}
+  }
+
   // Statut d'un spot possédé → libellé/couleur/aide (piloté les puces & actions propriétaire).
   function statusMeta(st) {
     return ({
@@ -377,6 +395,7 @@
       map.getSource(VIS_SRC).setData({ type: 'FeatureCollection', features: [] });
     }
     selectedSpotId = null;
+    closeGpsMenu();
     if (panelEl) panelEl.classList.remove('show');
   }
 
@@ -659,6 +678,12 @@
       pend.textContent = 'Champ de vision en cours de calcul…'; panelEl.appendChild(pend);
     }
     if (spot.notes) { var nt = document.createElement('div'); nt.className = 'ofspot-notes'; nt.textContent = spot.notes; panelEl.appendChild(nt); }
+    // « Y aller » (itinéraire GPS) + distance depuis ma position si géolocalisé.
+    var pgo = document.createElement('div'); pgo.className = 'ofspot-panel-go';
+    var pkm = spotKm(spot);
+    if (pkm != null) { var pks = document.createElement('span'); pks.className = 'ofspot-panel-km'; pks.textContent = kmTxt(pkm) + ' de moi'; pgo.appendChild(pks); }
+    pgo.appendChild(gpsButton(spot, 'ofspot-panel-go-btn'));
+    panelEl.appendChild(pgo);
     if (spot._mine) panelEl.appendChild(ownerActions(spot));
     if (isAdmin()) {
       var acts = document.createElement('div'); acts.className = 'ofspot-panel-admin';
@@ -738,6 +763,7 @@
     var pg = document.getElementById('spotsListPage');
     if (pg) pg.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('spots-open');
+    closeGpsMenu();
   }
 
   // admin : classe objf-admin posée par account.js selon /api/account/me (is_admin)
@@ -852,10 +878,204 @@
     reader.readAsText(file);
   }
 
+  // ── « Y aller » : itinéraire vers le spot dans l'app GPS du choix (deep-links) ──
+  // Zéro API/clé : on ouvre un lien d'itinéraire que l'app GPS (ou le navigateur sur PC)
+  // intercepte. Le routage/ETA/trafic sont fournis par l'app GPS. Apple Plans → iOS only.
+  function isIOS() {
+    try { return /iP(hone|ad|od)/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+    catch (e) { return false; }
+  }
+  function gpsTargets(spot) {
+    var q = spot.lat + ',' + spot.lon;
+    var t = [
+      { label: 'Google Maps', url: 'https://www.google.com/maps/dir/?api=1&destination=' + q },
+      { label: 'Waze', url: 'https://waze.com/ul?ll=' + q + '&navigate=yes' },
+      { label: 'Mappy', url: 'https://fr.mappy.com/plan#/?q=' + encodeURIComponent(q) },
+    ];
+    if (isIOS()) t.push({ label: 'Plans (Apple)', url: 'https://maps.apple.com/?daddr=' + q });
+    return t;
+  }
+  function closeGpsMenu() {
+    if (gpsMenuEl) { gpsMenuEl.remove(); gpsMenuEl = null; document.removeEventListener('pointerdown', gpsMenuOutside, true); document.removeEventListener('keydown', gpsMenuKey, true); }
+  }
+  function gpsMenuOutside(ev) { if (gpsMenuEl && !gpsMenuEl.contains(ev.target)) closeGpsMenu(); }
+  function gpsMenuKey(ev) { if (ev.key === 'Escape') closeGpsMenu(); }
+  function openGpsMenu(spot, anchor) {
+    if (gpsMenuEl) { closeGpsMenu(); return; }
+    var menu = document.createElement('div'); menu.className = 'ofspot-gps-menu'; menu.setAttribute('role', 'menu');
+    gpsTargets(spot).forEach(function (t) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'ofspot-gps-item'; b.setAttribute('role', 'menuitem');
+      b.textContent = t.label;
+      b.addEventListener('click', function (ev) { ev.stopPropagation(); window.open(t.url, '_blank', 'noopener'); closeGpsMenu(); });
+      menu.appendChild(b);
+    });
+    document.body.appendChild(menu);
+    gpsMenuEl = menu;
+    var r = anchor.getBoundingClientRect(), mw = menu.offsetWidth, mh = menu.offsetHeight;
+    var left = Math.max(8, Math.min(r.left, window.innerWidth - mw - 8));
+    var top = (r.bottom + mh + 8 > window.innerHeight) ? (r.top - mh - 6) : (r.bottom + 6);
+    menu.style.left = left + 'px'; menu.style.top = Math.max(8, top) + 'px';
+    setTimeout(function () { document.addEventListener('pointerdown', gpsMenuOutside, true); document.addEventListener('keydown', gpsMenuKey, true); }, 0);
+  }
+  function gpsButton(spot, cls) {
+    var b = document.createElement('button'); b.type = 'button'; b.className = cls || 'ofspot-gps-btn';
+    b.innerHTML = '<span aria-hidden="true">➤</span> Y aller';
+    b.setAttribute('aria-label', 'Itinéraire GPS vers ' + spot.name);
+    b.addEventListener('click', function (ev) { ev.stopPropagation(); openGpsMenu(spot, b); });
+    return b;
+  }
+
+  // ── « ma position » (géoloc) + distance/direction pour tri & filtres ──
+  function locateMe(cb) {
+    if (!navigator.geolocation) { toast('Géolocalisation indisponible sur cet appareil.'); return; }
+    toast('Localisation…', 1400);
+    navigator.geolocation.getCurrentPosition(
+      function (p) { myGeo = { lat: p.coords.latitude, lon: p.coords.longitude }; if (cb) cb(); },
+      function () { toast('Position refusée ou indisponible.'); if (cb) cb(); },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 });
+  }
+  function spotKm(spot) {
+    if (!myGeo || typeof spot.lon !== 'number' || typeof spot.lat !== 'number') return null;
+    return geoDistM(myGeo.lon, myGeo.lat, spot.lon, spot.lat) / 1000;
+  }
+  function kmTxt(km) { return '~' + (km < 10 ? km.toFixed(1) : Math.round(km)) + ' km'; }
+  function spotDirs(spot) { return bestDirs(dirRatios(spot.horizon)); }   // directions dégagées (labels FR)
+
+  // Applique le filtre (distance + direction) puis le tri courant à une liste de spots.
+  function applySpotsSortFilter(list) {
+    var out = list.slice();
+    if (myGeo && spotsMaxKm > 0) out = out.filter(function (s) { var k = spotKm(s); return k == null || k <= spotsMaxKm; });
+    var dsel = Object.keys(spotsDirFilter).filter(function (k) { return spotsDirFilter[k]; });
+    if (dsel.length) out = out.filter(function (s) { var ds = spotDirs(s); return ds.some(function (d) { return spotsDirFilter[d]; }); });
+    var order = { N: 0, NE: 1, E: 2, SE: 3, S: 4, SO: 5, O: 6, NO: 7 };
+    out.sort(function (a, b) {
+      switch (spotsSort) {
+        case 'near': case 'far': {
+          var ka = spotKm(a), kb = spotKm(b);
+          if (ka == null && kb == null) return 0;
+          if (ka == null) return 1; if (kb == null) return -1;
+          return spotsSort === 'near' ? ka - kb : kb - ka;
+        }
+        case 'az': return String(a.name || '').localeCompare(String(b.name || ''), 'fr');
+        case 'za': return String(b.name || '').localeCompare(String(a.name || ''), 'fr');
+        case 'date': return String(b.created_utc || '').localeCompare(String(a.created_utc || ''));
+        case 'dir': {
+          var la = spotDirs(a)[0], lb = spotDirs(b)[0];
+          return (la == null ? 9 : order[la]) - (lb == null ? 9 : order[lb]);
+        }
+        default: return (b.horizon ? b.horizon.openness : -1) - (a.horizon ? a.horizon.openness : -1);
+      }
+    });
+    return out;
+  }
+
+  // Barre de contrôles (Vue · Tri · Distance · Direction) — persistée localStorage.
+  function ctrlRow(label) {
+    var row = document.createElement('div'); row.className = 'ofspot-ctrl-row';
+    var l = document.createElement('span'); l.className = 'ofspot-ctrl-lab'; l.textContent = label;
+    row.appendChild(l); return row;
+  }
+  function chipBtn(txt, on, fn) {
+    var b = document.createElement('button'); b.type = 'button';
+    b.className = 'ofspot-chip' + (on ? ' on' : ''); b.textContent = txt;
+    if (on) b.setAttribute('aria-pressed', 'true');
+    b.addEventListener('click', fn); return b;
+  }
+  function spotsControls() {
+    var bar = document.createElement('div'); bar.className = 'ofspot-ctrls';
+
+    var vrow = ctrlRow('Vue');
+    var seg = document.createElement('div'); seg.className = 'ofspot-seg';
+    [['gallery', '▦ Galerie'], ['list', '≡ Liste']].forEach(function (v) {
+      var b = document.createElement('button'); b.type = 'button';
+      b.className = 'ofspot-seg-btn' + (spotsView === v[0] ? ' on' : ''); b.textContent = v[1];
+      b.addEventListener('click', function () { if (spotsView !== v[0]) { spotsView = v[0]; saveSpotsPrefs(); renderTable(); } });
+      seg.appendChild(b);
+    });
+    vrow.appendChild(seg); bar.appendChild(vrow);
+
+    var srow = ctrlRow('Tri');
+    [['score', 'Score'], ['near', 'Le + proche'], ['far', 'Le - proche'], ['az', 'A → Z'], ['za', 'Z → A'], ['dir', 'Direction'], ['date', 'Date d\'ajout']].forEach(function (s) {
+      var needGeo = (s[0] === 'near' || s[0] === 'far');
+      var chip = chipBtn(s[1], spotsSort === s[0], function () {
+        spotsSort = s[0]; saveSpotsPrefs();
+        if (needGeo && !myGeo) locateMe(function () { renderTable(); });
+        renderTable();
+      });
+      if (needGeo && !myGeo) chip.classList.add('needs-geo');
+      srow.appendChild(chip);
+    });
+    bar.appendChild(srow);
+
+    var grow = ctrlRow('Distance');
+    var geoBtn = document.createElement('button'); geoBtn.type = 'button'; geoBtn.className = 'ofspot-geo-btn' + (myGeo ? ' on' : '');
+    geoBtn.innerHTML = myGeo ? '📍 Ma position ✓' : '📍 Me localiser';
+    geoBtn.addEventListener('click', function () { locateMe(function () { renderTable(); }); });
+    grow.appendChild(geoBtn);
+    if (myGeo) {
+      var slider = document.createElement('input'); slider.type = 'range'; slider.min = '10'; slider.max = '300'; slider.step = '10';
+      slider.value = String(spotsMaxKm > 0 ? spotsMaxKm : 300); slider.className = 'ofspot-dist-slider';
+      slider.setAttribute('aria-label', 'Rayon de filtrage en km');
+      var lbl = document.createElement('span'); lbl.className = 'ofspot-dist-lbl';
+      var setLbl = function () { lbl.textContent = (Number(slider.value) >= 300 ? 'toutes distances' : '≤ ' + slider.value + ' km'); };
+      setLbl();
+      slider.addEventListener('input', setLbl);
+      slider.addEventListener('change', function () { var v = Number(slider.value); spotsMaxKm = (v >= 300 ? 0 : v); saveSpotsPrefs(); renderTable(); });
+      grow.append(slider, lbl);
+    } else {
+      var hint = document.createElement('span'); hint.className = 'ofspot-ctrl-hint'; hint.textContent = 'pour trier/filtrer par distance';
+      grow.appendChild(hint);
+    }
+    bar.appendChild(grow);
+
+    var drow = ctrlRow('Direction');
+    _DIRLBL.forEach(function (d) {
+      var chip = chipBtn(d, !!spotsDirFilter[d], function () {
+        if (spotsDirFilter[d]) delete spotsDirFilter[d]; else spotsDirFilter[d] = true;
+        saveSpotsPrefs(); renderTable();
+      });
+      chip.classList.add('dir');
+      drow.appendChild(chip);
+    });
+    if (Object.keys(spotsDirFilter).some(function (k) { return spotsDirFilter[k]; })) {
+      var clr = document.createElement('button'); clr.type = 'button'; clr.className = 'ofspot-chip clear'; clr.textContent = '✕ tout';
+      clr.addEventListener('click', function () { spotsDirFilter = {}; saveSpotsPrefs(); renderTable(); });
+      drow.appendChild(clr);
+    }
+    bar.appendChild(drow);
+    return bar;
+  }
+
+  // Vue « Liste » : ligne compacte (score · nom · distance/direction · Y aller).
+  function listRow(spot) {
+    var h = spot.horizon;
+    var row = document.createElement('div'); row.className = 'ofspot-lrow';
+    var main = document.createElement('button'); main.type = 'button'; main.className = 'ofspot-lrow-main';
+    main.setAttribute('aria-label', 'Voir ' + spot.name + ' sur la carte');
+    var badge = document.createElement('span'); badge.className = 'ofspot-lrow-badge';
+    if (h) { badge.style.color = scoreColor(h.openness); badge.style.background = scoreColor(h.openness) + '22'; badge.textContent = Math.round(h.openness); }
+    else { badge.textContent = '…'; badge.classList.add('pending'); }
+    var body = document.createElement('span'); body.className = 'ofspot-lrow-body';
+    var nm = document.createElement('span'); nm.className = 'ofspot-lrow-name'; nm.textContent = spot.name;
+    var meta = document.createElement('span'); meta.className = 'ofspot-lrow-meta';
+    var parts = []; var km = spotKm(spot);
+    if (km != null) parts.push(kmTxt(km));
+    var ds = spotDirs(spot); if (ds.length) parts.push(ds.slice(0, 2).join('/'));
+    else if (h) parts.push(scoreLabel(h.openness));
+    meta.textContent = parts.join(' · ');
+    body.append(nm, meta);
+    main.append(badge, body);
+    main.addEventListener('click', function () { closeSpotsPage(); showVision(spot); });
+    row.appendChild(main);
+    row.appendChild(gpsButton(spot, 'ofspot-lrow-gps'));
+    return row;
+  }
+
   function renderTable() {
     var body = document.getElementById('ofspotTableBody');
     if (!body) return;
     if (!account.loggedIn) tableView = 'public';
+    closeGpsMenu();
     body.innerHTML = '';
     renderModeration(body);
 
@@ -888,11 +1108,26 @@
                                : 'Aucun spot public pour l\'instant. Ajoute le tien !';
       body.appendChild(empty); return;
     }
-    var grid = document.createElement('div'); grid.className = 'ofspot-tbl-grid';
-    list.slice().sort(function (a, b) {
-      return (b.horizon ? b.horizon.openness : -1) - (a.horizon ? a.horizon.openness : -1);
-    }).forEach(function (spot) { grid.appendChild(tableCard(spot, mine)); });
-    body.appendChild(grid);
+    // Barre Vue/Tri/Distance/Direction + application du tri & des filtres courants.
+    body.appendChild(spotsControls());
+    var shown = applySpotsSortFilter(list);
+    var filtered = shown.length !== list.length;
+    count.textContent = (filtered ? shown.length + ' / ' + list.length : list.length) + ' spot' + (list.length > 1 ? 's' : '')
+      + (mine ? '' : (' public' + (list.length > 1 ? 's' : ''))) + (filtered ? ' (filtrés)' : '');
+    if (!shown.length) {
+      var none = document.createElement('div'); none.className = 'ofspot-empty';
+      none.textContent = 'Aucun spot ne correspond aux filtres. Élargis la distance ou les directions.';
+      body.appendChild(none); return;
+    }
+    if (spotsView === 'list') {
+      var lst = document.createElement('div'); lst.className = 'ofspot-tbl-list';
+      shown.forEach(function (spot) { if (mine) spot._mine = true; lst.appendChild(listRow(spot)); });
+      body.appendChild(lst);
+    } else {
+      var grid = document.createElement('div'); grid.className = 'ofspot-tbl-grid';
+      shown.forEach(function (spot) { grid.appendChild(tableCard(spot, mine)); });
+      body.appendChild(grid);
+    }
   }
 
   function tableCard(spot, mine) {
@@ -926,6 +1161,12 @@
       showVision(spot);   // dessine le cercle de vision sur la carte + panneau
     });
     card.appendChild(main);
+    // Bande « Y aller » (+ distance depuis ma position si géolocalisé) sur chaque carte.
+    var go = document.createElement('div'); go.className = 'ofspot-card-go';
+    var km = spotKm(spot);
+    if (km != null) { var kd = document.createElement('span'); kd.className = 'ofspot-card-km'; kd.textContent = kmTxt(km); go.appendChild(kd); }
+    go.appendChild(gpsButton(spot, 'ofspot-gps-btn'));
+    card.appendChild(go);
     if (mine) {
       var oa = document.createElement('div'); oa.className = 'ofspot-card-admin';
       var st = spot.status;
