@@ -150,7 +150,7 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
   /* Rampe INVERSÉE, orientée VERTICALEMENT : excellent (sombre) en haut →
      médiocre (ambre pâle) en bas. Miroir des COLOR_STOPS de stargaze.js. */
   background: linear-gradient(180deg,
-    #100c08, #2e1e0c, #6e4512, #b0741a, #e0a52f, #f4cf6b, #fdf3d0);
+    #2a2150, #33314f, #5a4a3a, #b0741a, #e0a52f, #f4cf6b, #fdf3d0);
 }
 /* Panneau texte déplié — surgit à DROITE du ruban (comme la modale « Couches »). */
 .sg-legend-panel {
@@ -596,7 +596,7 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 .sg-dome-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 15px 16px 10px; }
-.sg-dome-eyebrow { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #6c7d97; font-weight: 600; margin: 0 0 3px; }
+.sg-dome-eyebrow { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #7d8ea8; font-weight: 600; margin: 0 0 3px; }
 .sg-dome-title { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
 .sg-dome-sub { font-size: 12px; color: #9fb0c8; margin: 3px 0 0; }
 /* Bouton fermer HOMOGÈNE (mêmes 36px rond verre + croix SVG que close-buttons.css). */
@@ -643,7 +643,7 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 .sg-dome-moonline b { color: #eaf0fb; font-weight: 600; }
 .sg-dome-bars { display: flex; flex-direction: column; gap: 5px; }
 .sg-dome-bar { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #9fb0c8; }
-.sg-dome-bar .k { width: 56px; flex: none; color: #6c7d97; }
+.sg-dome-bar .k { width: 56px; flex: none; color: #7d8ea8; }
 .sg-dome-track { flex: 1; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
 .sg-dome-fill { display: block; height: 100%; border-radius: 3px; background: #8b96a8; }
 .sg-dome-fill.amber { background: linear-gradient(90deg, #f4b942, #e2892f); }
@@ -657,7 +657,7 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 .sg-dome-frise-prog { position: absolute; left: 0; height: 4px; border-radius: 3px; background: linear-gradient(90deg, #f4b942, #e2892f); pointer-events: none; }
 .sg-dome-frise-thumb { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; background: #f4d06a; border: 2px solid #0e1524; transform: translate(-50%, -50%); box-shadow: 0 0 0 3px rgba(244, 185, 66, 0.18); pointer-events: none; }
 .sg-dome-frise-labs { display: flex; justify-content: space-between; padding: 5px 1px 0; }
-.sg-dome-frise-lab { font-size: 10px; color: #6c7d97; font-variant-numeric: tabular-nums; transition: color 0.12s; }
+.sg-dome-frise-lab { font-size: 10px; color: #7d8ea8; font-variant-numeric: tabular-nums; transition: color 0.12s; }
 .sg-dome-frise-lab.active { color: #f4d06a; font-weight: 700; }
 @media (max-width: 767px), (pointer: coarse) { .sg-dome { max-width: 100%; } .sg-dome-legend { grid-template-columns: 1fr; } .sg-dome-frise-lab { font-size: 9px; } }
 

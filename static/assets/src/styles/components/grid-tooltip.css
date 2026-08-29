@@ -14,7 +14,7 @@
   padding: 9px 11px;
   border-radius: var(--r-chip);
   background: rgba(8, 17, 30, 0.92);
-  border: 1px solid rgba(125, 211, 252, 0.2);
+  border: 1px solid rgba(125, 211, 252, 0.34);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.44);
   color: #e2e8f0;
   font-size: var(--fs-11);

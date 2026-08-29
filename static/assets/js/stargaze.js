@@ -67,7 +67,12 @@
   // Rampe « pollution lumineuse » (INVERSÉE v1.3.175, mockup validé par Anthony) : médiocre =
   // ambre pâle incandescent (halo de ville) → excellent = noir profond (ciel noir). La logique
   // colle à une carte de pollution lumineuse : ce qui « brille » = mauvais coin d'observation.
-  const COLOR_STOPS = [12, '#fdf3d0', 30, '#f4cf6b', 48, '#e0a52f', 62, '#b0741a', 74, '#6e4512', 84, '#2e1e0c', 92, '#100c08'];
+  // Rampe INVERSÉE « pollution lumineuse → crépuscule » : médiocre = ambre pâle incandescent
+  // (halo de ville), excellent = ciel de nuit. Le bout excellent bascule vers un INDIGO de
+  // crépuscule (au lieu du quasi-noir #100c08 précédent, indiscernable du fond de carte navy —
+  // les cellules « excellentes » étaient invisibles). L'indigo reste sombre (« sombre = bon »)
+  // mais se détache du fond par la teinte. Miroir CSS : .sg-legend-bar (stargaze.css).
+  const COLOR_STOPS = [12, '#fdf3d0', 30, '#f4cf6b', 48, '#e0a52f', 62, '#b0741a', 74, '#5a4a3a', 84, '#33314f', 92, '#2a2150'];
   // Recoloration NUIT de la carte de base (comme setChaseMapTint) : les surroundings
   // restent VISIBLES, juste assombris/réchauffés (jamais de bleu). [layer, prop, nuit, normal]
   const STARGAZE_MAP_TINT = [
