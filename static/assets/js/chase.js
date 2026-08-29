@@ -248,7 +248,13 @@
       }
       radarBuiltKeys = targetSet;
       try { src.setData({ type: 'FeatureCollection', features }); } catch (_) {}
-      visibleRadarKey = null;   // le setData efface le feature-state
+      // setData ne garantit PAS l'effacement du feature-state : à chaque reconstruction les `id`
+      // sont RÉASSIGNÉS séquentiellement (le ring buffer + le re-tri par epoch décalent les frames),
+      // or MapLibre CONSERVE l'état `on` pour un id encore présent → il pointe désormais une AUTRE
+      // frame et reste opaque = frame fantôme superposée jusqu'au prochain scrub qui l'éteint. On
+      // efface donc explicitement TOUT l'état de la source avant de repeindre la frame courante.
+      try { map.removeFeatureState({ source: RADAR_SRC }); } catch (_) {}
+      visibleRadarKey = null;
     }
     const cur = frames[cursor];
     const curKey = (cur && isRadarLike(cur)) ? frameShapesKey(cur) : null;
