@@ -665,7 +665,8 @@
       stats.innerHTML = statCell('Altitude', Math.round(h.z0) + ' m') +
         statCell('Horizon moyen', (h.mean_horizon_deg >= 0 ? '+' : '') + h.mean_horizon_deg + '°') +
         statCell('Ciel bas dégagé', h.pct_below_5deg + ' %') +
-        statCell('Relief autour', '+' + (h.denivele_max_m || 0) + ' m');
+        statCell('Relief autour', '+' + (h.denivele_max_m || 0) + ' m') +
+        (accessFull(spot) ? statCell('Route carrossable', accessFull(spot)) : '');
       panelEl.appendChild(stats);
       panelEl.appendChild(buildNearLine(h));
       var leg = document.createElement('div'); leg.className = 'ofspot-panel-legend';
@@ -941,6 +942,21 @@
   function kmTxt(km) { return '~' + (km < 10 ? km.toFixed(1) : Math.round(km)) + ' km'; }
   function spotDirs(spot) { return bestDirs(dirRatios(spot.horizon)); }   // directions dégagées (labels FR)
 
+  // Accès routier (route carrossable la plus proche, calculé côté serveur, best-effort).
+  function accessDist(spot) {
+    var a = spot && spot.access;
+    if (!a || typeof a.road_dist_m !== 'number') return null;
+    var d = a.road_dist_m;
+    return d < 1000 ? (Math.round(d) + ' m') : ((d / 1000).toFixed(1) + ' km');
+  }
+  function accessFull(spot) {
+    var a = spot && spot.access, ds = accessDist(spot);
+    if (!ds) return null;
+    var wm = a.walk_min;
+    var w = (wm == null) ? '' : (wm < 1 ? ' · <1 min à pied' : ' · ~' + Math.round(wm) + ' min à pied');
+    return ds + w;
+  }
+
   // Applique le filtre (distance + direction) puis le tri courant à une liste de spots.
   function applySpotsSortFilter(list) {
     var out = list.slice();
@@ -1062,6 +1078,7 @@
     if (km != null) parts.push(kmTxt(km));
     var ds = spotDirs(spot); if (ds.length) parts.push(ds.slice(0, 2).join('/'));
     else if (h) parts.push(scoreLabel(h.openness));
+    var road = accessDist(spot); if (road) parts.push('🚗 ' + road);
     meta.textContent = parts.join(' · ');
     body.append(nm, meta);
     main.append(badge, body);
@@ -1144,7 +1161,8 @@
     if (h) {
       meta.innerHTML = '<span class="ofspot-card-badge" style="color:' + scoreColor(h.openness) + ';background:' + scoreColor(h.openness) + '22">'
         + Math.round(h.openness) + '/100 · ' + scoreLabel(h.openness) + '</span>'
-        + '<span>' + Math.round(h.z0) + ' m</span><span>relief +' + (h.denivele_max_m || 0) + ' m</span>';
+        + '<span>' + Math.round(h.z0) + ' m</span><span>relief +' + (h.denivele_max_m || 0) + ' m</span>'
+        + (accessDist(spot) ? '<span class="ofspot-card-road">🚗 ' + accessDist(spot) + '</span>' : '');
     } else { meta.textContent = 'horizon en calcul…'; }
     info.append(nm, meta);
     if (mine) {

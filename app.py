@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.223"
+APP_VERSION = "1.3.224"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4686,9 +4686,41 @@ class SpotOwnerUpdateRequest(BaseModel):
     inner_radius_m: float | None = Field(None, ge=0.0, le=300.0)
 
 
+_OSRM_NEAREST = "https://router.project-osrm.org/nearest/v1/driving/{lon},{lat}?number=1"
+_WALK_MPS = 1.4   # vitesse de marche moyenne (~5 km/h) pour estimer le temps de rejointe
+
+
+def _spot_road_access(lon: float, lat: float) -> dict | None:
+    """Distance à la route carrossable la plus proche (OSRM `nearest`, profil voiture) + temps
+    de marche estimé pour la rejoindre. Best-effort : renvoie None si le service ne répond pas
+    (le champ reste absent côté client → rien affiché, jamais bloquant). Calculé UNE fois à
+    l'ingestion et stocké (les spots sont peu nombreux et fixes → aucun souci de quota)."""
+    try:
+        url = _OSRM_NEAREST.format(lon=float(lon), lat=float(lat))
+        req = urllib.request.Request(url, headers={"User-Agent": f"ObjectiFoudre/{APP_VERSION}"})
+        with urllib.request.urlopen(req, timeout=12) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 - réseau/serveur indispo → pas d'accès routier stocké
+        return None
+    if not isinstance(data, dict) or data.get("code") != "Ok":
+        return None
+    wps = data.get("waypoints") or []
+    if not wps or not isinstance(wps[0], dict):
+        return None
+    dist = wps[0].get("distance")
+    if not isinstance(dist, (int, float)) or dist < 0:
+        return None
+    road_dist_m = round(float(dist))
+    return {
+        "road_dist_m": road_dist_m,
+        "walk_min": round(road_dist_m / (_WALK_MPS * 60.0), 1),
+        "road_name": (wps[0].get("name") or None),
+    }
+
+
 def _spot_compute_horizon(spot_id: str, lon: float, lat: float, inner_radius_m: float = 0.0) -> None:
     """Tâche de fond : calcule l'horizon du spot (mode donut si inner_radius_m>0) et l'y
-    attache (best-effort, non-fatal)."""
+    attache (best-effort, non-fatal), puis l'accès routier (distance à la route la plus proche)."""
     try:
         scan = horizon.cached_horizon_scan(lon, lat, inner_radius_m=inner_radius_m)
         summary = {k: scan[k] for k in ("openness", "mean_horizon_deg", "max_horizon_deg",
@@ -4697,6 +4729,10 @@ def _spot_compute_horizon(spot_id: str, lon: float, lat: float, inner_radius_m: 
         summary["azimuths"] = scan["azimuths"]
         spots.attach_horizon(spot_id, summary)
     except Exception:  # noqa: BLE001 - le spot existe déjà, l'horizon se recalcule au besoin
+        pass
+    try:
+        spots.attach_access(spot_id, _spot_road_access(lon, lat))
+    except Exception:  # noqa: BLE001 - accès routier best-effort, jamais bloquant
         pass
 
 

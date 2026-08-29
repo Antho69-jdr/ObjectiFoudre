@@ -102,6 +102,7 @@ def _public_view(s: dict) -> dict:
         "notes": s.get("notes", ""), "created_utc": s.get("created_utc"),
         "inner_radius_m": s.get("inner_radius_m", 0),
         "horizon": s.get("horizon"),
+        "access": s.get("access"),
         "author_kind": author.get("kind", "anon"),
         "author_account_id": author.get("id") if author.get("kind") == "account" else None,
     }
@@ -387,6 +388,19 @@ def attach_horizon(spot_id: str, horizon_summary: dict) -> dict | None:
         if idx is None:
             return None
         spots[idx]["horizon"] = horizon_summary
+        _save(spots)
+        return spots[idx]
+
+
+def attach_access(spot_id: str, access: dict | None) -> dict | None:
+    """Mémorise l'accès routier calculé (distance à la route carrossable la plus proche +
+    temps de marche estimé) sur le spot. Best-effort : `access` peut être None."""
+    with _lock:
+        spots = _load()
+        idx = next((i for i, s in enumerate(spots) if s["id"] == spot_id), None)
+        if idx is None:
+            return None
+        spots[idx]["access"] = access
         _save(spots)
         return spots[idx]
 

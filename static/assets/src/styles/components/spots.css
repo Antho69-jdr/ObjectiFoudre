@@ -415,3 +415,4 @@ body.mobile-ui .ofspot-modal-row .del { flex: 1 1 auto; }
 .ofspot-panel-go-btn { min-width: 0 !important; min-height: 0 !important; margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 13px; font-weight: 700; color: #08222c; background: #46c0e6; border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; }
 .ofspot-panel-go-btn:hover { filter: brightness(1.07); }
 .ofspot-panel-go-btn span { font-size: 11px; }
+.ofspot-card-road { color: #9fd8ec; }
