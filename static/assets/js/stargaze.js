@@ -1132,7 +1132,7 @@
       score, scoreLabel: (score != null ? verdict(score) : '—'),
       moon: {
         illum: (m.illumination != null ? m.illumination : 0), name: (m.phase_name || '—'),
-        up, fade, waning, deg,
+        up, fade, waning, deg, alt,
         rise: (m.moonrise_utc ? fmtHMz(m.moonrise_utc) : '—'),
         set: (m.moonset_utc ? fmtHMz(m.moonset_utc) : '—'),
       },
@@ -1246,7 +1246,8 @@
       + '<button class="sg-dome-close" type="button" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button></div>'
       + '<div class="sg-dome-tabs" id="sgDomeTabs" role="tablist" hidden>'
       + '<button class="sg-dome-tab is-on" id="sgTabCond" type="button" role="tab" aria-selected="true">Conditions</button>'
-      + '<button class="sg-dome-tab" id="sgTabSky" type="button" role="tab" aria-selected="false">Ciel</button></div>'
+      + '<button class="sg-dome-tab" id="sgTabSky" type="button" role="tab" aria-selected="false">Ciel</button>'
+      + '<button class="sg-dome-tab" id="sgTabPhoto" type="button" role="tab" aria-selected="false">📷 Photo</button></div>'
       + '<div class="sg-dome-pane" id="sgDomeCond">'
       + '<div class="sg-dome-wrap"><svg class="sg-dome-svg" id="sgDomeSvg" viewBox="0 0 460 250" role="img" aria-label="Dôme des conditions d\'observation"></svg>'
       + '<div class="sg-dome-verdict"><div class="sg-dome-score" id="sgDomeScore">—</div><div class="sg-dome-scorelbl" id="sgDomeScoreLbl">observation</div></div></div>'
@@ -1259,6 +1260,11 @@
       + '<div class="sg-dome-pane sg-sky-pane" id="sgDomeSky" hidden>'
       + '<svg class="sg-sky-svg" id="sgSkySvg" viewBox="0 0 300 316" role="img" aria-label="Carte du ciel du spot selon son champ de vision"></svg>'
       + '<div class="sg-sky-summary" id="sgSkySummary"></div></div>'
+      + '<div class="sg-dome-pane sg-photo-pane" id="sgDomePhoto" hidden>'
+      + '<div class="sg-photo-ctrls" id="sgPhotoCtrls"></div>'
+      + '<div class="sg-photo-out" id="sgPhotoOut"></div>'
+      + '<div class="sg-photo-note" id="sgPhotoNote"></div>'
+      + '<details class="sg-photo-gear"><summary>Mon matériel</summary><div id="sgPhotoGear"></div></details></div>'
       + '<div class="sg-dome-frise" id="sgDomeFrise" role="slider" aria-label="Heure de la nuit" style="display:none"></div>'
       + '</div>';
     document.body.appendChild(ov);
@@ -1272,11 +1278,15 @@
       cloud: ov.querySelector('#sgDomeCloud'), bortle: ov.querySelector('#sgDomeBortle'), pollFill: ov.querySelector('#sgDomePollFill'),
       frise: ov.querySelector('#sgDomeFrise'),
       tabs: ov.querySelector('#sgDomeTabs'), tabCond: ov.querySelector('#sgTabCond'), tabSky: ov.querySelector('#sgTabSky'),
-      paneCond: ov.querySelector('#sgDomeCond'), paneSky: ov.querySelector('#sgDomeSky'),
+      tabPhoto: ov.querySelector('#sgTabPhoto'),
+      paneCond: ov.querySelector('#sgDomeCond'), paneSky: ov.querySelector('#sgDomeSky'), panePhoto: ov.querySelector('#sgDomePhoto'),
       skySvg: ov.querySelector('#sgSkySvg'), skySummary: ov.querySelector('#sgSkySummary'),
+      photoCtrls: ov.querySelector('#sgPhotoCtrls'), photoOut: ov.querySelector('#sgPhotoOut'),
+      photoNote: ov.querySelector('#sgPhotoNote'), photoGear: ov.querySelector('#sgPhotoGear'),
     };
     sgDomeEls.tabCond.addEventListener('click', () => setDomeTab('cond'));
     sgDomeEls.tabSky.addEventListener('click', () => setDomeTab('sky'));
+    sgDomeEls.tabPhoto.addEventListener('click', () => setDomeTab('photo'));
     return sgDomeEls;
   }
 
@@ -1342,17 +1352,21 @@
   function setDomeTab(which) {
     const e = sgDomeEls; if (!e) return;
     domeTab = which;
-    const sky = which === 'sky';
-    e.paneCond.hidden = sky; e.paneSky.hidden = !sky;
-    e.tabCond.classList.toggle('is-on', !sky); e.tabSky.classList.toggle('is-on', sky);
-    e.tabCond.setAttribute('aria-selected', sky ? 'false' : 'true');
-    e.tabSky.setAttribute('aria-selected', sky ? 'true' : 'false');
+    e.paneCond.hidden = which !== 'cond';
+    e.paneSky.hidden = which !== 'sky';
+    e.panePhoto.hidden = which !== 'photo';
+    [['cond', e.tabCond], ['sky', e.tabSky], ['photo', e.tabPhoto]].forEach(([k, btn]) => {
+      btn.classList.toggle('is-on', which === k);
+      btn.setAttribute('aria-selected', which === k ? 'true' : 'false');
+    });
+    if (which === 'photo') renderPhotoControls();
     paintDomeActive();
   }
   // Peint l'onglet ACTIF (évite de recalculer le panneau caché pendant le scrub).
   function paintDomeActive() {
     if (!sgDomeCurrent) return;
     if (domeTab === 'sky' && sgDomeCurrent.spot) paintSky();
+    else if (domeTab === 'photo') paintPhoto();
     else paintDome(sgDomeData(sgDomeCurrent.i, sgDomeCurrent.title, sgDomeCurrent.sub));
   }
   // Planisphère du ciel du spot (zénith centre, horizon bord, N haut / E droite), croisé
@@ -1418,15 +1432,224 @@
   }
   function sgDomeIsOpen() { return !!(sgDomeEls && sgDomeEls.ov.classList.contains('open')); }
   function closeDome() { if (sgDomeEls) { sgDomeEls.ov.classList.remove('open'); sgDomeEls.ov.setAttribute('aria-hidden', 'true'); } sgDomeCurrent = null; }
+  // ── Onglet « Photo » du dôme : assistant réglages appareil selon les conditions ──
+  // Croise les données de l'heure courante (Bortle, Lune horaire, nébulosité — déjà dans
+  // sgDomeData) avec le matériel de l'utilisateur (boîtier/objectif mémorisés) → suggère
+  // ISO / vitesse / ouverture. Vitesse Voie lactée = règle NPF (tient compte de l'ouverture
+  // et du pas photosite). Presets stockés en localStorage.
+  const PHOTO_KEY = 'of_photo_gear';
+  const SENSORS = {
+    ff: { lbl: 'Plein format', w: 36.0, crop: 1.0 },
+    apsc: { lbl: 'APS-C', w: 23.5, crop: 1.5 },
+    canon: { lbl: 'APS-C Canon', w: 22.3, crop: 1.6 },
+    m43: { lbl: 'Micro 4/3', w: 17.3, crop: 2.0 },
+    one: { lbl: '1 pouce', w: 13.2, crop: 2.7 },
+  };
+  const PHOTO_INTENTS = [['mw', 'Voie lactée'], ['moon', 'Paysage lunaire'], ['trail', 'Filé d\'étoiles'], ['tele', 'Lune / planète']];
+  const ISO_STEPS = [100, 200, 400, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6400, 8000, 10000, 12800];
+  const AP_STEPS = [1.0, 1.2, 1.4, 1.8, 2.0, 2.8, 3.5, 4.0, 5.6, 8.0, 11.0];
+  function snapTo(steps, v) { let b = steps[0]; for (const s of steps) if (Math.abs(s - v) < Math.abs(b - v)) b = s; return b; }
+  function snapISO(v) { return snapTo(ISO_STEPS, v); }
+  function snapAp(v) { return snapTo(AP_STEPS, v); }
+  function fmtAp(f) { return 'f/' + (f % 1 === 0 ? f.toFixed(0) : f.toFixed(1)); }
+  function fmtShutter(s) { return s >= 1 ? Math.round(s) + ' s' : '1/' + Math.round(1 / s) + ' s'; }
+  function defaultGear() {
+    return {
+      bodies: [{ id: 'b1', name: 'Plein format', fmt: 'ff', mp: 24 }],
+      lenses: [{ id: 'l1', name: '24 mm f/2.8', fmin: 24, fmax: 24, apmax: 2.8 }],
+      sel: { body: 'b1', lens: 'l1', focal: 24, intent: 'mw', npf: 'precis' },
+    };
+  }
+  let photoGear = null;
+  function loadGear() {
+    if (photoGear) return photoGear;
+    try { const g = JSON.parse(localStorage.getItem(PHOTO_KEY) || 'null'); if (g && g.bodies && g.lenses && g.sel) { photoGear = g; return g; } } catch (_) {}
+    photoGear = defaultGear(); return photoGear;
+  }
+  function saveGear() { try { localStorage.setItem(PHOTO_KEY, JSON.stringify(photoGear)); } catch (_) {} }
+  function pixelPitchUm(body) {
+    const s = SENSORS[body.fmt] || SENSORS.ff;
+    const horiz = Math.sqrt(Math.max(1, body.mp) * 1e6 * 1.5);   // 3:2, pixels horizontaux
+    return s.w * 1000 / horiz;
+  }
+  function uid() { return 'g' + Math.random().toString(36).slice(2, 8); }
+
+  function computePhoto() {
+    if (!sgDomeCurrent) return null;
+    const g = loadGear(), sel = g.sel;
+    const body = g.bodies.find((b) => b.id === sel.body) || g.bodies[0];
+    const lens = g.lenses.find((l) => l.id === sel.lens) || g.lenses[0];
+    if (!body || !lens) return null;
+    const focal = Math.max(lens.fmin, Math.min(lens.fmax, sel.focal || lens.fmin));
+    const apMax = lens.apmax;
+    const d = sgDomeData(sgDomeCurrent.i, '', '');
+    const bortle = Math.max(1, Math.min(8, sgBortle(d.poll).lvl));
+    const illum = d.moon.illum || 0, alt = (d.moon.alt != null ? d.moon.alt : (d.moon.up ? 20 : -10));
+    const presence = Math.max(0, Math.min(1, (alt + 2) / 22));
+    const mf = 1 - 0.45 * illum * presence;      // 0.55..1 : miroir du back (moon_light_factor)
+    const cloud = d.cloud.total;
+    const p = pixelPitchUm(body), crop = (SENSORS[body.fmt] || SENSORS.ff).crop, effFocal = focal * crop;
+    const ISO_BASE = { 1: 6400, 2: 6400, 3: 5000, 4: 3200, 5: 2500, 6: 1600, 7: 1250, 8: 800 };
+    const base = ISO_BASE[bortle] || 3200;
+    let ap = apMax, shutter, iso, note = '', cls = '';
+    if (sel.intent === 'trail') {
+      ap = apMax; shutter = 25; iso = snapISO(base * 0.5 * mf);
+      note = 'Filé : empile des poses de 20–30 s à l\'intervallomètre. ISO modéré pour rester propre, ouverture large pour accumuler.';
+    } else if (sel.intent === 'moon') {
+      const lit = Math.max(0, Math.min(1, (1 - mf) / 0.45));
+      ap = snapAp(Math.max(apMax, 2.8)); shutter = Math.max(4, Math.round(20 - 14 * lit));
+      iso = snapISO((illum > 0.4 && alt > 15 ? 800 : 1600) * Math.max(0.5, mf));
+      note = alt <= 0 ? 'Lune couchée : sans elle, pas de « paysage lunaire » — vise plutôt la Voie lactée.'
+                      : 'La Lune éclaire le paysage : poses courtes, ISO bas, la scène ressort nette.';
+    } else if (sel.intent === 'tele') {
+      ap = snapAp(Math.max(apMax, 8)); iso = 200;
+      shutter = 1 / (illum > 0.6 ? 250 : illum > 0.2 ? 125 : 60);
+      note = 'Lune : règle « Looney-11 » (≈ f/8–11, pose brève, ISO bas). Pour une planète : monte l\'ISO et affine la mise au point en live view (×10).';
+    } else {   // Voie lactée
+      const npfMul = sel.npf === 'souple' ? 2 : 1;
+      shutter = (35 * apMax + 30 * p) / focal * npfMul;
+      ap = apMax; iso = snapISO(base * mf);
+    }
+    if (cloud > 70) { note = 'Nébulosité ' + Math.round(cloud) + ' % : ciel largement bouché — peu exploitable ce créneau. Guette une éclaircie sur la frise.'; cls = 'bad'; }
+    else if (sel.intent === 'mw' && illum > 0.4 && alt > 15) { note = 'Lune ' + Math.round(illum * 100) + ' % et haute : elle voile la Voie lactée. Vise un créneau où elle est couchée, ou passe en « paysage lunaire ».'; cls = 'warn'; }
+    else if (cloud > 40) { note = (note ? note + ' ' : '') + 'Nébulosité ' + Math.round(cloud) + ' % : passages nuageux, surveille la frise.'; cls = cls || 'warn'; }
+    return { ap, shutter, iso, note: note || 'Conditions correctes pour ce créneau.', cls, focal, crop, bortle };
+  }
+
+  function renderPhotoControls() {
+    const e = sgDomeEls; if (!e || !e.photoCtrls) return;
+    const g = loadGear(), sel = g.sel;
+    if (!g.bodies.find((b) => b.id === sel.body)) sel.body = g.bodies[0] && g.bodies[0].id;
+    if (!g.lenses.find((l) => l.id === sel.lens)) sel.lens = g.lenses[0] && g.lenses[0].id;
+    const c = e.photoCtrls; c.innerHTML = '';
+    // Boîtier + objectif
+    const mkSelect = (label, items, val, onChange) => {
+      const wrap = document.createElement('label'); wrap.className = 'sg-ph-field';
+      const lb = document.createElement('span'); lb.className = 'sg-ph-lab'; lb.textContent = label;
+      const s = document.createElement('select'); s.className = 'sg-ph-sel';
+      items.forEach((it) => { const o = document.createElement('option'); o.value = it.id; o.textContent = it.name; if (it.id === val) o.selected = true; s.appendChild(o); });
+      s.addEventListener('change', () => onChange(s.value));
+      wrap.append(lb, s); return wrap;
+    };
+    const row1 = document.createElement('div'); row1.className = 'sg-ph-row';
+    row1.appendChild(mkSelect('Boîtier', g.bodies, sel.body, (v) => { sel.body = v; saveGear(); paintPhoto(); }));
+    row1.appendChild(mkSelect('Objectif', g.lenses, sel.lens, (v) => {
+      sel.lens = v; const l = g.lenses.find((x) => x.id === v); if (l) sel.focal = Math.max(l.fmin, Math.min(l.fmax, sel.focal || l.fmin));
+      saveGear(); renderPhotoControls(); paintPhoto();
+    }));
+    c.appendChild(row1);
+    // Focale (si zoom)
+    const lens = g.lenses.find((l) => l.id === sel.lens) || g.lenses[0];
+    if (lens && lens.fmax > lens.fmin) {
+      const f = document.createElement('label'); f.className = 'sg-ph-field';
+      const lb = document.createElement('span'); lb.className = 'sg-ph-lab'; lb.innerHTML = 'Focale : <b id="sgPhFocalV">' + Math.round(sel.focal) + ' mm</b>';
+      const r = document.createElement('input'); r.type = 'range'; r.min = String(lens.fmin); r.max = String(lens.fmax); r.step = '1'; r.value = String(sel.focal);
+      r.className = 'sg-ph-range';
+      r.addEventListener('input', () => { sel.focal = Number(r.value); const v = c.querySelector('#sgPhFocalV'); if (v) v.textContent = Math.round(sel.focal) + ' mm'; saveGear(); paintPhoto(); });
+      f.append(lb, r); c.appendChild(f);
+    }
+    // Intention (segmented)
+    const intWrap = document.createElement('div'); intWrap.className = 'sg-ph-field';
+    const il = document.createElement('span'); il.className = 'sg-ph-lab'; il.textContent = 'Intention';
+    const seg = document.createElement('div'); seg.className = 'sg-ph-seg';
+    PHOTO_INTENTS.forEach(([k, lbl]) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'sg-ph-chip' + (sel.intent === k ? ' on' : ''); b.textContent = lbl;
+      b.addEventListener('click', () => { sel.intent = k; saveGear(); renderPhotoControls(); paintPhoto(); });
+      seg.appendChild(b);
+    });
+    intWrap.append(il, seg); c.appendChild(intWrap);
+    // Tolérance NPF (Voie lactée seulement)
+    if (sel.intent === 'mw') {
+      const np = document.createElement('div'); np.className = 'sg-ph-field';
+      const nl = document.createElement('span'); nl.className = 'sg-ph-lab'; nl.textContent = 'Étoiles ponctuelles';
+      const nseg = document.createElement('div'); nseg.className = 'sg-ph-seg';
+      [['precis', 'Précis (NPF)'], ['souple', 'Souple (×2)']].forEach(([k, lbl]) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'sg-ph-chip' + ((sel.npf || 'precis') === k ? ' on' : ''); b.textContent = lbl;
+        b.addEventListener('click', () => { sel.npf = k; saveGear(); paintPhoto(); [].forEach.call(nseg.children, (x) => x.classList.toggle('on', x === b)); });
+        nseg.appendChild(b);
+      });
+      np.append(nl, nseg); c.appendChild(np);
+    }
+    renderGearEditor();
+  }
+
+  function renderGearEditor() {
+    const e = sgDomeEls; if (!e || !e.photoGear) return;
+    const g = loadGear(), host = e.photoGear; host.innerHTML = '';
+    const section = (title) => { const h = document.createElement('div'); h.className = 'sg-ph-gh'; h.textContent = title; host.appendChild(h); };
+    // Boîtiers
+    section('Boîtiers');
+    g.bodies.forEach((b) => {
+      const row = document.createElement('div'); row.className = 'sg-ph-grow';
+      const t = document.createElement('span'); t.className = 'sg-ph-gname'; t.textContent = b.name + ' · ' + (SENSORS[b.fmt] || SENSORS.ff).lbl + ' · ' + b.mp + ' Mpx';
+      const del = document.createElement('button'); del.type = 'button'; del.className = 'sg-ph-del'; del.textContent = '✕'; del.setAttribute('aria-label', 'Supprimer ' + b.name);
+      del.disabled = g.bodies.length <= 1;
+      del.addEventListener('click', () => { g.bodies = g.bodies.filter((x) => x.id !== b.id); if (g.sel.body === b.id) g.sel.body = g.bodies[0].id; saveGear(); renderPhotoControls(); paintPhoto(); });
+      row.append(t, del); host.appendChild(row);
+    });
+    // Form ajout boîtier
+    const bf = document.createElement('div'); bf.className = 'sg-ph-form';
+    const bName = inp('text', 'Nom (ex. Sony A7 III)'); const bFmt = document.createElement('select'); bFmt.className = 'sg-ph-sel';
+    Object.keys(SENSORS).forEach((k) => { const o = document.createElement('option'); o.value = k; o.textContent = SENSORS[k].lbl; bFmt.appendChild(o); });
+    const bMp = inp('number', 'Mpx'); bMp.min = '4'; bMp.max = '120'; bMp.value = '24'; bMp.style.maxWidth = '70px';
+    const bAdd = addBtn('+ boîtier');
+    bAdd.addEventListener('click', () => {
+      const nm = (bName.value || '').trim(); if (!nm) { bName.focus(); return; }
+      g.bodies.push({ id: uid(), name: nm, fmt: bFmt.value, mp: Math.max(4, Number(bMp.value) || 24) });
+      g.sel.body = g.bodies[g.bodies.length - 1].id; saveGear(); renderPhotoControls(); paintPhoto();
+    });
+    bf.append(bName, bFmt, bMp, bAdd); host.appendChild(bf);
+    // Objectifs
+    section('Objectifs');
+    g.lenses.forEach((l) => {
+      const row = document.createElement('div'); row.className = 'sg-ph-grow';
+      const foc = l.fmax > l.fmin ? (l.fmin + '–' + l.fmax + ' mm') : (l.fmin + ' mm');
+      const t = document.createElement('span'); t.className = 'sg-ph-gname'; t.textContent = l.name + ' · ' + foc + ' · ' + fmtAp(l.apmax);
+      const del = document.createElement('button'); del.type = 'button'; del.className = 'sg-ph-del'; del.textContent = '✕'; del.setAttribute('aria-label', 'Supprimer ' + l.name);
+      del.disabled = g.lenses.length <= 1;
+      del.addEventListener('click', () => { g.lenses = g.lenses.filter((x) => x.id !== l.id); if (g.sel.lens === l.id) g.sel.lens = g.lenses[0].id; saveGear(); renderPhotoControls(); paintPhoto(); });
+      row.append(t, del); host.appendChild(row);
+    });
+    const lf = document.createElement('div'); lf.className = 'sg-ph-form';
+    const lName = inp('text', 'Nom (ex. 24 mm)'); const lMin = inp('number', 'foc mini'); lMin.value = '24'; lMin.style.maxWidth = '68px';
+    const lMax = inp('number', 'foc maxi'); lMax.value = '24'; lMax.style.maxWidth = '68px';
+    const lAp = inp('number', 'f/'); lAp.step = '0.1'; lAp.value = '2.8'; lAp.style.maxWidth = '58px';
+    const lAdd = addBtn('+ objectif');
+    lAdd.addEventListener('click', () => {
+      const nm = (lName.value || '').trim(); if (!nm) { lName.focus(); return; }
+      let fmin = Math.max(4, Number(lMin.value) || 24), fmax = Math.max(fmin, Number(lMax.value) || fmin);
+      g.lenses.push({ id: uid(), name: nm, fmin, fmax, apmax: Math.max(0.9, Number(lAp.value) || 2.8) });
+      g.sel.lens = g.lenses[g.lenses.length - 1].id; g.sel.focal = fmin; saveGear(); renderPhotoControls(); paintPhoto();
+    });
+    lf.append(lName, lMin, lMax, lAp, lAdd); host.appendChild(lf);
+    function inp(type, ph) { const i = document.createElement('input'); i.type = type; i.placeholder = ph; i.className = 'sg-ph-inp'; return i; }
+    function addBtn(txt) { const b = document.createElement('button'); b.type = 'button'; b.className = 'sg-ph-add'; b.textContent = txt; return b; }
+  }
+
+  function paintPhoto() {
+    const e = sgDomeEls; if (!e || !e.photoOut) return;
+    const r = computePhoto();
+    if (!r) { e.photoOut.innerHTML = ''; e.photoNote.textContent = ''; return; }
+    e.photoOut.innerHTML =
+      '<div class="sg-ph-ocard"><span class="k">Ouverture</span><span class="v">' + fmtAp(r.ap) + '</span></div>' +
+      '<div class="sg-ph-ocard"><span class="k">Vitesse</span><span class="v">' + fmtShutter(r.shutter) + '</span></div>' +
+      '<div class="sg-ph-ocard"><span class="k">ISO</span><span class="v">' + r.iso + '</span></div>';
+    e.photoNote.className = 'sg-photo-note' + (r.cls ? ' ' + r.cls : '');
+    e.photoNote.textContent = r.note;
+    updateDomeFriseActive && updateDomeFriseActive();
+  }
+
   function openDome(i, title, sub, spot) {
     if (!data || !data.cells || !data.cells[i]) return;
     sgDomeCurrent = { i, title, sub, spot: spot || null };
     domeFrac = cursor;                 // démarre à l'heure affichée sur la carte, puis INDÉPENDANT
     if (sgDomeTweenRaf) { cancelAnimationFrame(sgDomeTweenRaf); sgDomeTweenRaf = null; }
     const e = ensureDomeModal();
-    // Onglet « Ciel » réservé aux SPOTS (seuls porteurs d'un champ de vision LiDAR).
+    // Onglet « Ciel » réservé aux SPOTS (seuls porteurs d'un champ de vision LiDAR) ; les onglets
+    // Conditions + Photo existent pour toute cellule → la barre d'onglets est toujours visible.
     const hasSky = !!(spot && spot.horizon && spot.horizon.azimuths && spot.horizon.azimuths.length);
-    e.tabs.hidden = !hasSky;
+    e.tabSky.hidden = !hasSky;
+    e.tabs.hidden = false;
     setDomeTab('cond');                // toujours démarrer sur Conditions (peint l'onglet actif)
     buildDomeFrise();
     e.ov.classList.add('open'); e.ov.setAttribute('aria-hidden', 'false');
