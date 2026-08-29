@@ -750,3 +750,6 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 .sg-ph-inp { min-width: 0 !important; min-height: 0 !important; flex: 1 1 90px; font: inherit; font-size: 12.5px; color: #eaf0fb; background: #0b1220; border: 1px solid #22304a; border-radius: 8px; padding: 6px 8px; }
 .sg-ph-add { min-width: 0 !important; min-height: 0 !important; flex: 0 0 auto; font: inherit; font-size: 12px; font-weight: 700; color: #1a1205; background: #f0c460; border: 0; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
 .sg-ph-add:hover { filter: brightness(1.06); }
+.sg-ph-ghint { font-size: 11.5px; line-height: 1.4; color: #9fb0c8; padding: 4px 2px 2px; }
+.sg-ph-sel option { color: #eaf0fb; background: #0b1220; }
+.sg-ph-sel optgroup { color: #9fb0c8; background: #0b1220; font-style: normal; }

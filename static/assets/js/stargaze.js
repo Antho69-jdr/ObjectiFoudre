@@ -1437,7 +1437,7 @@
   // sgDomeData) avec le matériel de l'utilisateur (boîtier/objectif mémorisés) → suggère
   // ISO / vitesse / ouverture. Vitesse Voie lactée = règle NPF (tient compte de l'ouverture
   // et du pas photosite). Presets stockés en localStorage.
-  const PHOTO_KEY = 'of_photo_gear';
+  const PHOTO_KEY = 'of_photo_gear2';
   const SENSORS = {
     ff: { lbl: 'Plein format', w: 36.0, crop: 1.0 },
     apsc: { lbl: 'APS-C', w: 23.5, crop: 1.5 },
@@ -1446,6 +1446,79 @@
     one: { lbl: '1 pouce', w: 13.2, crop: 2.7 },
   };
   const PHOTO_INTENTS = [['mw', 'Voie lactée'], ['moon', 'Paysage lunaire'], ['trail', 'Filé d\'étoiles'], ['tele', 'Lune / planète']];
+  // Catalogue de boîtiers réels (grp=marque ; fmt→pas photosite via Mpx pour la règle NPF).
+  // Les « Générique » d'abord (indices stables → défauts c0/…). « Autre » via « Mes ajouts ».
+  const CAM_BODIES = [
+    { grp: 'Générique', name: 'Plein format · 24 Mpx', fmt: 'ff', mp: 24 },
+    { grp: 'Générique', name: 'Plein format · 45 Mpx', fmt: 'ff', mp: 45 },
+    { grp: 'Générique', name: 'APS-C · 24 Mpx', fmt: 'apsc', mp: 24 },
+    { grp: 'Générique', name: 'Micro 4/3 · 20 Mpx', fmt: 'm43', mp: 20 },
+    { grp: 'Sony', name: 'Sony A7 III', fmt: 'ff', mp: 24 },
+    { grp: 'Sony', name: 'Sony A7 IV', fmt: 'ff', mp: 33 },
+    { grp: 'Sony', name: 'Sony A7R V', fmt: 'ff', mp: 61 },
+    { grp: 'Sony', name: 'Sony A7S III', fmt: 'ff', mp: 12 },
+    { grp: 'Sony', name: 'Sony A6400', fmt: 'apsc', mp: 24 },
+    { grp: 'Sony', name: 'Sony A6700', fmt: 'apsc', mp: 26 },
+    { grp: 'Canon', name: 'Canon EOS R6', fmt: 'ff', mp: 20 },
+    { grp: 'Canon', name: 'Canon EOS R6 II', fmt: 'ff', mp: 24 },
+    { grp: 'Canon', name: 'Canon EOS R5', fmt: 'ff', mp: 45 },
+    { grp: 'Canon', name: 'Canon EOS R8', fmt: 'ff', mp: 24 },
+    { grp: 'Canon', name: 'Canon EOS RP', fmt: 'ff', mp: 26 },
+    { grp: 'Canon', name: 'Canon EOS R7', fmt: 'canon', mp: 33 },
+    { grp: 'Canon', name: 'Canon EOS R10', fmt: 'canon', mp: 24 },
+    { grp: 'Canon', name: 'Canon 6D Mark II', fmt: 'ff', mp: 26 },
+    { grp: 'Canon', name: 'Canon 90D', fmt: 'canon', mp: 32 },
+    { grp: 'Nikon', name: 'Nikon Z6 II', fmt: 'ff', mp: 24 },
+    { grp: 'Nikon', name: 'Nikon Z7 II', fmt: 'ff', mp: 45 },
+    { grp: 'Nikon', name: 'Nikon Z8', fmt: 'ff', mp: 45 },
+    { grp: 'Nikon', name: 'Nikon Zf', fmt: 'ff', mp: 24 },
+    { grp: 'Nikon', name: 'Nikon Z fc', fmt: 'apsc', mp: 20 },
+    { grp: 'Nikon', name: 'Nikon D850', fmt: 'ff', mp: 45 },
+    { grp: 'Nikon', name: 'Nikon D750', fmt: 'ff', mp: 24 },
+    { grp: 'Fujifilm', name: 'Fujifilm X-T5', fmt: 'apsc', mp: 40 },
+    { grp: 'Fujifilm', name: 'Fujifilm X-T4', fmt: 'apsc', mp: 26 },
+    { grp: 'Fujifilm', name: 'Fujifilm X-S20', fmt: 'apsc', mp: 26 },
+    { grp: 'Fujifilm', name: 'Fujifilm X100VI', fmt: 'apsc', mp: 40 },
+    { grp: 'Panasonic', name: 'Lumix S5 II', fmt: 'ff', mp: 24 },
+    { grp: 'Panasonic', name: 'Lumix GH6', fmt: 'm43', mp: 25 },
+    { grp: 'Panasonic', name: 'Lumix G9', fmt: 'm43', mp: 20 },
+    { grp: 'OM System', name: 'OM-1', fmt: 'm43', mp: 20 },
+    { grp: 'OM System', name: 'Olympus E-M10 IV', fmt: 'm43', mp: 20 },
+    { grp: 'Pentax', name: 'Pentax K-1 II', fmt: 'ff', mp: 36 },
+    { grp: 'Pentax', name: 'Pentax K-70', fmt: 'apsc', mp: 24 },
+  ];
+  // Catalogue d'objectifs (grand-angles orientés astro + zooms courants). fmin/fmax/apmax.
+  const CAM_LENSES = [
+    { grp: 'Générique', name: '14 mm f/2.8', fmin: 14, fmax: 14, apmax: 2.8 },
+    { grp: 'Générique', name: '20 mm f/1.8', fmin: 20, fmax: 20, apmax: 1.8 },
+    { grp: 'Générique', name: '24 mm f/1.4', fmin: 24, fmax: 24, apmax: 1.4 },
+    { grp: 'Générique', name: '24 mm f/2.8', fmin: 24, fmax: 24, apmax: 2.8 },
+    { grp: 'Générique', name: '35 mm f/1.8', fmin: 35, fmax: 35, apmax: 1.8 },
+    { grp: 'Générique', name: '16-35 mm f/2.8', fmin: 16, fmax: 35, apmax: 2.8 },
+    { grp: 'Générique', name: '24-70 mm f/2.8', fmin: 24, fmax: 70, apmax: 2.8 },
+    { grp: 'Générique', name: 'Kit 18-55 mm f/3.5', fmin: 18, fmax: 55, apmax: 3.5 },
+    { grp: 'Samyang / Rokinon', name: 'Samyang 14 mm f/2.8', fmin: 14, fmax: 14, apmax: 2.8 },
+    { grp: 'Samyang / Rokinon', name: 'Samyang 24 mm f/1.4', fmin: 24, fmax: 24, apmax: 1.4 },
+    { grp: 'Samyang / Rokinon', name: 'Samyang 12 mm f/2 (APS-C)', fmin: 12, fmax: 12, apmax: 2.0 },
+    { grp: 'Sigma Art', name: 'Sigma 14 mm f/1.8 Art', fmin: 14, fmax: 14, apmax: 1.8 },
+    { grp: 'Sigma Art', name: 'Sigma 20 mm f/1.4 Art', fmin: 20, fmax: 20, apmax: 1.4 },
+    { grp: 'Sigma Art', name: 'Sigma 24 mm f/1.4 Art', fmin: 24, fmax: 24, apmax: 1.4 },
+    { grp: 'Sigma Art', name: 'Sigma 35 mm f/1.4 Art', fmin: 35, fmax: 35, apmax: 1.4 },
+    { grp: 'Sigma Art', name: 'Sigma 14-24 mm f/2.8 Art', fmin: 14, fmax: 24, apmax: 2.8 },
+    { grp: 'Sony', name: 'Sony FE 14 mm f/1.8 GM', fmin: 14, fmax: 14, apmax: 1.8 },
+    { grp: 'Sony', name: 'Sony FE 20 mm f/1.8 G', fmin: 20, fmax: 20, apmax: 1.8 },
+    { grp: 'Sony', name: 'Sony FE 16-35 mm f/2.8 GM', fmin: 16, fmax: 35, apmax: 2.8 },
+    { grp: 'Canon', name: 'Canon RF 15-35 mm f/2.8', fmin: 15, fmax: 35, apmax: 2.8 },
+    { grp: 'Canon', name: 'Canon RF 16 mm f/2.8', fmin: 16, fmax: 16, apmax: 2.8 },
+    { grp: 'Canon', name: 'Canon RF 24 mm f/1.8', fmin: 24, fmax: 24, apmax: 1.8 },
+    { grp: 'Nikon', name: 'Nikon Z 14-30 mm f/4', fmin: 14, fmax: 30, apmax: 4.0 },
+    { grp: 'Nikon', name: 'Nikon Z 20 mm f/1.8', fmin: 20, fmax: 20, apmax: 1.8 },
+    { grp: 'Nikon', name: 'Nikon Z 24 mm f/1.8', fmin: 24, fmax: 24, apmax: 1.8 },
+    { grp: 'Tamron', name: 'Tamron 17-28 mm f/2.8', fmin: 17, fmax: 28, apmax: 2.8 },
+    { grp: 'Tamron', name: 'Tamron 20 mm f/2.8', fmin: 20, fmax: 20, apmax: 2.8 },
+    { grp: 'Fujifilm', name: 'Fujifilm XF 16 mm f/1.4', fmin: 16, fmax: 16, apmax: 1.4 },
+    { grp: 'Fujifilm', name: 'Fujifilm XF 10-24 mm f/4', fmin: 10, fmax: 24, apmax: 4.0 },
+  ];
   const ISO_STEPS = [100, 200, 400, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6400, 8000, 10000, 12800];
   const AP_STEPS = [1.0, 1.2, 1.4, 1.8, 2.0, 2.8, 3.5, 4.0, 5.6, 8.0, 11.0];
   function snapTo(steps, v) { let b = steps[0]; for (const s of steps) if (Math.abs(s - v) < Math.abs(b - v)) b = s; return b; }
@@ -1454,16 +1527,13 @@
   function fmtAp(f) { return 'f/' + (f % 1 === 0 ? f.toFixed(0) : f.toFixed(1)); }
   function fmtShutter(s) { return s >= 1 ? Math.round(s) + ' s' : '1/' + Math.round(1 / s) + ' s'; }
   function defaultGear() {
-    return {
-      bodies: [{ id: 'b1', name: 'Plein format', fmt: 'ff', mp: 24 }],
-      lenses: [{ id: 'l1', name: '24 mm f/2.8', fmin: 24, fmax: 24, apmax: 2.8 }],
-      sel: { body: 'b1', lens: 'l1', focal: 24, intent: 'mw', npf: 'precis' },
-    };
+    // c0 = Plein format 24 Mpx · c3 = 24 mm f/2.8 (indices stables des « Générique »).
+    return { customBodies: [], customLenses: [], sel: { bodyKey: 'c0', lensKey: 'c3', focal: 24, intent: 'mw', npf: 'precis' } };
   }
   let photoGear = null;
   function loadGear() {
     if (photoGear) return photoGear;
-    try { const g = JSON.parse(localStorage.getItem(PHOTO_KEY) || 'null'); if (g && g.bodies && g.lenses && g.sel) { photoGear = g; return g; } } catch (_) {}
+    try { const g = JSON.parse(localStorage.getItem(PHOTO_KEY) || 'null'); if (g && Array.isArray(g.customBodies) && Array.isArray(g.customLenses) && g.sel && g.sel.bodyKey) { photoGear = g; return g; } } catch (_) {}
     photoGear = defaultGear(); return photoGear;
   }
   function saveGear() { try { localStorage.setItem(PHOTO_KEY, JSON.stringify(photoGear)); } catch (_) {} }
@@ -1472,13 +1542,26 @@
     const horiz = Math.sqrt(Math.max(1, body.mp) * 1e6 * 1.5);   // 3:2, pixels horizontaux
     return s.w * 1000 / horiz;
   }
-  function uid() { return 'g' + Math.random().toString(36).slice(2, 8); }
+  function uid() { return Math.random().toString(36).slice(2, 8); }
+  // Listes fusionnées catalogue + « Mes ajouts ». key = 'c<idx>' (catalogue) / 'u<id>' (custom).
+  function bodyList() {
+    const cat = CAM_BODIES.map((b, i) => ({ key: 'c' + i, name: b.name, grp: b.grp, fmt: b.fmt, mp: b.mp }));
+    const cus = (loadGear().customBodies || []).map((b) => ({ key: 'u' + b.id, name: b.name, grp: 'Mes ajouts', fmt: b.fmt, mp: b.mp }));
+    return cat.concat(cus);
+  }
+  function lensList() {
+    const cat = CAM_LENSES.map((l, i) => ({ key: 'c' + i, name: l.name, grp: l.grp, fmin: l.fmin, fmax: l.fmax, apmax: l.apmax }));
+    const cus = (loadGear().customLenses || []).map((l) => ({ key: 'u' + l.id, name: l.name, grp: 'Mes ajouts', fmin: l.fmin, fmax: l.fmax, apmax: l.apmax }));
+    return cat.concat(cus);
+  }
+  function resolveBody(key) { const l = bodyList(); return l.find((b) => b.key === key) || l[0]; }
+  function resolveLens(key) { const l = lensList(); return l.find((x) => x.key === key) || l[0]; }
 
   function computePhoto() {
     if (!sgDomeCurrent) return null;
     const g = loadGear(), sel = g.sel;
-    const body = g.bodies.find((b) => b.id === sel.body) || g.bodies[0];
-    const lens = g.lenses.find((l) => l.id === sel.lens) || g.lenses[0];
+    const body = resolveBody(sel.bodyKey);
+    const lens = resolveLens(sel.lensKey);
     if (!body || !lens) return null;
     const focal = Math.max(lens.fmin, Math.min(lens.fmax, sel.focal || lens.fmin));
     const apMax = lens.apmax;
@@ -1516,30 +1599,37 @@
     return { ap, shutter, iso, note: note || 'Conditions correctes pour ce créneau.', cls, focal, crop, bortle };
   }
 
+  // Select groupé par marque (optgroup). items = [{key,name,grp}]. val = clé sélectionnée.
+  function mkGroupedSelect(label, items, val, onChange) {
+    const wrap = document.createElement('label'); wrap.className = 'sg-ph-field';
+    const lb = document.createElement('span'); lb.className = 'sg-ph-lab'; lb.textContent = label;
+    const s = document.createElement('select'); s.className = 'sg-ph-sel';
+    const groups = [], byGrp = {};
+    items.forEach((it) => { if (!byGrp[it.grp]) { byGrp[it.grp] = []; groups.push(it.grp); } byGrp[it.grp].push(it); });
+    groups.forEach((grp) => {
+      const og = document.createElement('optgroup'); og.label = grp;
+      byGrp[grp].forEach((it) => { const o = document.createElement('option'); o.value = it.key; o.textContent = it.name; if (it.key === val) o.selected = true; og.appendChild(o); });
+      s.appendChild(og);
+    });
+    s.addEventListener('change', () => onChange(s.value));
+    wrap.append(lb, s); return wrap;
+  }
   function renderPhotoControls() {
     const e = sgDomeEls; if (!e || !e.photoCtrls) return;
     const g = loadGear(), sel = g.sel;
-    if (!g.bodies.find((b) => b.id === sel.body)) sel.body = g.bodies[0] && g.bodies[0].id;
-    if (!g.lenses.find((l) => l.id === sel.lens)) sel.lens = g.lenses[0] && g.lenses[0].id;
+    // Clés obsolètes (custom supprimé) → repli sur le 1er du catalogue.
+    if (!bodyList().some((b) => b.key === sel.bodyKey)) sel.bodyKey = 'c0';
+    if (!lensList().some((l) => l.key === sel.lensKey)) sel.lensKey = 'c3';
     const c = e.photoCtrls; c.innerHTML = '';
-    // Boîtier + objectif
-    const mkSelect = (label, items, val, onChange) => {
-      const wrap = document.createElement('label'); wrap.className = 'sg-ph-field';
-      const lb = document.createElement('span'); lb.className = 'sg-ph-lab'; lb.textContent = label;
-      const s = document.createElement('select'); s.className = 'sg-ph-sel';
-      items.forEach((it) => { const o = document.createElement('option'); o.value = it.id; o.textContent = it.name; if (it.id === val) o.selected = true; s.appendChild(o); });
-      s.addEventListener('change', () => onChange(s.value));
-      wrap.append(lb, s); return wrap;
-    };
     const row1 = document.createElement('div'); row1.className = 'sg-ph-row';
-    row1.appendChild(mkSelect('Boîtier', g.bodies, sel.body, (v) => { sel.body = v; saveGear(); paintPhoto(); }));
-    row1.appendChild(mkSelect('Objectif', g.lenses, sel.lens, (v) => {
-      sel.lens = v; const l = g.lenses.find((x) => x.id === v); if (l) sel.focal = Math.max(l.fmin, Math.min(l.fmax, sel.focal || l.fmin));
+    row1.appendChild(mkGroupedSelect('Boîtier', bodyList(), sel.bodyKey, (v) => { sel.bodyKey = v; saveGear(); paintPhoto(); }));
+    row1.appendChild(mkGroupedSelect('Objectif', lensList(), sel.lensKey, (v) => {
+      sel.lensKey = v; const l = resolveLens(v); if (l) sel.focal = Math.max(l.fmin, Math.min(l.fmax, sel.focal || l.fmin));
       saveGear(); renderPhotoControls(); paintPhoto();
     }));
     c.appendChild(row1);
     // Focale (si zoom)
-    const lens = g.lenses.find((l) => l.id === sel.lens) || g.lenses[0];
+    const lens = resolveLens(sel.lensKey);
     if (lens && lens.fmax > lens.fmin) {
       const f = document.createElement('label'); f.className = 'sg-ph-field';
       const lb = document.createElement('span'); lb.className = 'sg-ph-lab'; lb.innerHTML = 'Focale : <b id="sgPhFocalV">' + Math.round(sel.focal) + ' mm</b>';
@@ -1573,57 +1663,59 @@
     renderGearEditor();
   }
 
+  // « Mon matériel » : n'ajoute/supprime que les entrées PERSO (le catalogue reste figé).
+  // Un ajout apparaît ensuite sous « Mes ajouts » dans les menus déroulants et est sélectionné.
   function renderGearEditor() {
     const e = sgDomeEls; if (!e || !e.photoGear) return;
     const g = loadGear(), host = e.photoGear; host.innerHTML = '';
+    const hint = document.createElement('div'); hint.className = 'sg-ph-ghint';
+    hint.textContent = 'Ton modèle n’est pas dans la liste ? Ajoute-le — il apparaîtra sous « Mes ajouts ».';
+    host.appendChild(hint);
     const section = (title) => { const h = document.createElement('div'); h.className = 'sg-ph-gh'; h.textContent = title; host.appendChild(h); };
-    // Boîtiers
-    section('Boîtiers');
-    g.bodies.forEach((b) => {
+    const inp = (type, ph) => { const i = document.createElement('input'); i.type = type; i.placeholder = ph; i.className = 'sg-ph-inp'; return i; };
+    const addBtn = (txt) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'sg-ph-add'; b.textContent = txt; return b; };
+    // Boîtiers perso
+    section('Mes boîtiers');
+    (g.customBodies || []).forEach((b) => {
       const row = document.createElement('div'); row.className = 'sg-ph-grow';
       const t = document.createElement('span'); t.className = 'sg-ph-gname'; t.textContent = b.name + ' · ' + (SENSORS[b.fmt] || SENSORS.ff).lbl + ' · ' + b.mp + ' Mpx';
       const del = document.createElement('button'); del.type = 'button'; del.className = 'sg-ph-del'; del.textContent = '✕'; del.setAttribute('aria-label', 'Supprimer ' + b.name);
-      del.disabled = g.bodies.length <= 1;
-      del.addEventListener('click', () => { g.bodies = g.bodies.filter((x) => x.id !== b.id); if (g.sel.body === b.id) g.sel.body = g.bodies[0].id; saveGear(); renderPhotoControls(); paintPhoto(); });
+      del.addEventListener('click', () => { g.customBodies = g.customBodies.filter((x) => x.id !== b.id); if (g.sel.bodyKey === 'u' + b.id) g.sel.bodyKey = 'c0'; saveGear(); renderPhotoControls(); paintPhoto(); });
       row.append(t, del); host.appendChild(row);
     });
-    // Form ajout boîtier
     const bf = document.createElement('div'); bf.className = 'sg-ph-form';
-    const bName = inp('text', 'Nom (ex. Sony A7 III)'); const bFmt = document.createElement('select'); bFmt.className = 'sg-ph-sel';
+    const bName = inp('text', 'Nom du boîtier'); const bFmt = document.createElement('select'); bFmt.className = 'sg-ph-sel';
     Object.keys(SENSORS).forEach((k) => { const o = document.createElement('option'); o.value = k; o.textContent = SENSORS[k].lbl; bFmt.appendChild(o); });
-    const bMp = inp('number', 'Mpx'); bMp.min = '4'; bMp.max = '120'; bMp.value = '24'; bMp.style.maxWidth = '70px';
+    const bMp = inp('number', 'Mpx'); bMp.min = '4'; bMp.max = '120'; bMp.value = '24'; bMp.style.maxWidth = '68px';
     const bAdd = addBtn('+ boîtier');
     bAdd.addEventListener('click', () => {
       const nm = (bName.value || '').trim(); if (!nm) { bName.focus(); return; }
-      g.bodies.push({ id: uid(), name: nm, fmt: bFmt.value, mp: Math.max(4, Number(bMp.value) || 24) });
-      g.sel.body = g.bodies[g.bodies.length - 1].id; saveGear(); renderPhotoControls(); paintPhoto();
+      const id = uid(); g.customBodies.push({ id, name: nm, fmt: bFmt.value, mp: Math.max(4, Number(bMp.value) || 24) });
+      g.sel.bodyKey = 'u' + id; saveGear(); renderPhotoControls(); paintPhoto();
     });
     bf.append(bName, bFmt, bMp, bAdd); host.appendChild(bf);
-    // Objectifs
-    section('Objectifs');
-    g.lenses.forEach((l) => {
+    // Objectifs perso
+    section('Mes objectifs');
+    (g.customLenses || []).forEach((l) => {
       const row = document.createElement('div'); row.className = 'sg-ph-grow';
       const foc = l.fmax > l.fmin ? (l.fmin + '–' + l.fmax + ' mm') : (l.fmin + ' mm');
       const t = document.createElement('span'); t.className = 'sg-ph-gname'; t.textContent = l.name + ' · ' + foc + ' · ' + fmtAp(l.apmax);
       const del = document.createElement('button'); del.type = 'button'; del.className = 'sg-ph-del'; del.textContent = '✕'; del.setAttribute('aria-label', 'Supprimer ' + l.name);
-      del.disabled = g.lenses.length <= 1;
-      del.addEventListener('click', () => { g.lenses = g.lenses.filter((x) => x.id !== l.id); if (g.sel.lens === l.id) g.sel.lens = g.lenses[0].id; saveGear(); renderPhotoControls(); paintPhoto(); });
+      del.addEventListener('click', () => { g.customLenses = g.customLenses.filter((x) => x.id !== l.id); if (g.sel.lensKey === 'u' + l.id) g.sel.lensKey = 'c3'; saveGear(); renderPhotoControls(); paintPhoto(); });
       row.append(t, del); host.appendChild(row);
     });
     const lf = document.createElement('div'); lf.className = 'sg-ph-form';
-    const lName = inp('text', 'Nom (ex. 24 mm)'); const lMin = inp('number', 'foc mini'); lMin.value = '24'; lMin.style.maxWidth = '68px';
-    const lMax = inp('number', 'foc maxi'); lMax.value = '24'; lMax.style.maxWidth = '68px';
-    const lAp = inp('number', 'f/'); lAp.step = '0.1'; lAp.value = '2.8'; lAp.style.maxWidth = '58px';
+    const lName = inp('text', 'Nom de l’objectif'); const lMin = inp('number', 'foc mini'); lMin.value = '24'; lMin.style.maxWidth = '66px';
+    const lMax = inp('number', 'foc maxi'); lMax.value = '24'; lMax.style.maxWidth = '66px';
+    const lAp = inp('number', 'f/'); lAp.step = '0.1'; lAp.value = '2.8'; lAp.style.maxWidth = '56px';
     const lAdd = addBtn('+ objectif');
     lAdd.addEventListener('click', () => {
       const nm = (lName.value || '').trim(); if (!nm) { lName.focus(); return; }
-      let fmin = Math.max(4, Number(lMin.value) || 24), fmax = Math.max(fmin, Number(lMax.value) || fmin);
-      g.lenses.push({ id: uid(), name: nm, fmin, fmax, apmax: Math.max(0.9, Number(lAp.value) || 2.8) });
-      g.sel.lens = g.lenses[g.lenses.length - 1].id; g.sel.focal = fmin; saveGear(); renderPhotoControls(); paintPhoto();
+      const fmin = Math.max(4, Number(lMin.value) || 24), fmax = Math.max(fmin, Number(lMax.value) || fmin);
+      const id = uid(); g.customLenses.push({ id, name: nm, fmin, fmax, apmax: Math.max(0.9, Number(lAp.value) || 2.8) });
+      g.sel.lensKey = 'u' + id; g.sel.focal = fmin; saveGear(); renderPhotoControls(); paintPhoto();
     });
     lf.append(lName, lMin, lMax, lAp, lAdd); host.appendChild(lf);
-    function inp(type, ph) { const i = document.createElement('input'); i.type = type; i.placeholder = ph; i.className = 'sg-ph-inp'; return i; }
-    function addBtn(txt) { const b = document.createElement('button'); b.type = 'button'; b.className = 'sg-ph-add'; b.textContent = txt; return b; }
   }
 
   function paintPhoto() {
