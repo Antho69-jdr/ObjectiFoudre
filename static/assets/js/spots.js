@@ -756,6 +756,7 @@
     if (!pg) return;
     pg.setAttribute('aria-hidden', 'false');
     document.body.classList.add('spots-open');
+    discoverClearMarkers();                // repartir sans les pins d'une recherche précédente
     renderTable();                         // rendu immédiat avec les données courantes
     loadSpots().then(function () { renderTable(); });   // puis rafraîchi
   }
@@ -1088,6 +1089,115 @@
     return row;
   }
 
+  // ── Trouver des spots automatiquement (#9) : feuille géoloc+rayon → job de fond → résultats ──
+  var discoverMarkers = [], discoverTimer = null, discoverSheet = null, discoverRadius = 50;
+  function ensureDiscoverSheet() {
+    if (discoverSheet) return discoverSheet;
+    var s = document.createElement('div'); s.className = 'ofspot-discover-sheet'; s.id = 'ofspotDiscoverSheet'; s.setAttribute('hidden', '');
+    document.body.appendChild(s); discoverSheet = s; return s;
+  }
+  function discoverClearMarkers() { discoverMarkers.forEach(function (m) { try { m.remove(); } catch (e) {} }); discoverMarkers = []; }
+  function discoverClose() { if (discoverTimer) { clearTimeout(discoverTimer); discoverTimer = null; } discoverClearMarkers(); if (discoverSheet) discoverSheet.setAttribute('hidden', ''); }
+  function discoverHead(title) { return '<div class="ofd-head"><span class="ofd-title">' + title + '</span><button type="button" class="ofd-close" aria-label="Fermer">×</button></div>'; }
+  function discoverBind() { var c = discoverSheet.querySelector('.ofd-close'); if (c) c.addEventListener('click', discoverClose); }
+  function openDiscover() { discoverClearMarkers(); ensureDiscoverSheet().removeAttribute('hidden'); discoverStepStart(); }
+  function discoverStepStart() {
+    discoverSheet.innerHTML = discoverHead('Trouver des spots')
+      + '<p class="ofd-p">Autour de ta position : ciel sombre, horizon dégagé, point haut et proche d\'une route.</p>'
+      + '<button type="button" class="ofd-btn primary" id="ofdLocate">📍 Se géolocaliser</button>';
+    discoverBind();
+    discoverSheet.querySelector('#ofdLocate').addEventListener('click', discoverLocate);
+  }
+  function discoverLocate() {
+    var btn = discoverSheet.querySelector('#ofdLocate'); if (btn) { btn.disabled = true; btn.textContent = 'Localisation…'; }
+    locateMe(function () {
+      if (!myGeo) { if (btn) { btn.disabled = false; btn.textContent = '📍 Se géolocaliser'; } return; }
+      discoverStepRadius();
+    });
+  }
+  function discoverStepRadius() {
+    discoverSheet.innerHTML = discoverHead('Rayon de recherche')
+      + '<label class="ofd-rad">Rayon : <b id="ofdRadV">' + discoverRadius + ' km</b>'
+      + '<input type="range" id="ofdRad" min="10" max="150" step="10" value="' + discoverRadius + '"></label>'
+      + '<button type="button" class="ofd-btn primary" id="ofdRun">Lancer la recherche</button>'
+      + '<p class="ofd-note">Le 1ᵉʳ balayage prend ~1–2 min (analyse de l\'horizon), puis c\'est instantané.</p>';
+    discoverBind();
+    var r = discoverSheet.querySelector('#ofdRad'), v = discoverSheet.querySelector('#ofdRadV');
+    r.addEventListener('input', function () { discoverRadius = Number(r.value); v.textContent = discoverRadius + ' km'; });
+    discoverSheet.querySelector('#ofdRun').addEventListener('click', discoverRun);
+  }
+  function discoverRun() {
+    if (!myGeo) { discoverStepStart(); return; }
+    discoverSheet.innerHTML = discoverHead('Recherche en cours')
+      + '<div class="ofd-prog"><span class="ofd-prog-bar" id="ofdBar" style="width:5%"></span></div>'
+      + '<p class="ofd-p" id="ofdProgTxt">Sélection des candidats…</p>';
+    discoverBind();
+    fetch('/api/spots/discover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat: myGeo.lat, lon: myGeo.lon, radius_km: discoverRadius }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (!d || !d.ok || !d.job) { discoverError(d && d.error); return; } discoverPoll(d.job); })
+      .catch(function () { discoverError('Réseau indisponible.'); });
+  }
+  function discoverPoll(job) {
+    fetch('/api/spots/discover/status?job=' + encodeURIComponent(job))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok) { discoverError(d && d.error); return; }
+        var tot = (d.progress && d.progress.total) || 0, done = (d.progress && d.progress.done) || 0;
+        var bar = discoverSheet.querySelector('#ofdBar'); if (bar) bar.style.width = Math.max(5, tot ? Math.round(done / tot * 100) : 8) + '%';
+        var txt = discoverSheet.querySelector('#ofdProgTxt'); if (txt) txt.textContent = tot ? (done + ' / ' + tot + ' points analysés…') : 'Sélection des candidats…';
+        if (d.done) { if (d.error) { discoverError(null); } else { discoverRenderResults(d.results || []); } return; }
+        discoverTimer = setTimeout(function () { discoverPoll(job); }, 1500);
+      })
+      .catch(function () { discoverTimer = setTimeout(function () { discoverPoll(job); }, 2500); });
+  }
+  function discoverError(msg) {
+    discoverSheet.innerHTML = discoverHead('Recherche')
+      + '<p class="ofd-p">' + (msg || 'La recherche a échoué. Réessaie.') + '</p>'
+      + '<button type="button" class="ofd-btn" id="ofdRetry">Réessayer</button>';
+    discoverBind();
+    var b = discoverSheet.querySelector('#ofdRetry'); if (b) b.addEventListener('click', discoverStepRadius);
+  }
+  function discoverRenderResults(list) {
+    discoverClearMarkers();
+    if (!list.length) {
+      discoverSheet.innerHTML = discoverHead('Aucun spot trouvé')
+        + '<p class="ofd-p">Aucun point ne réunit tous les critères dans ce rayon. Essaie un rayon plus grand.</p>'
+        + '<button type="button" class="ofd-btn" id="ofdAgain">Nouvelle recherche</button>';
+      discoverBind(); var ba = discoverSheet.querySelector('#ofdAgain'); if (ba) ba.addEventListener('click', discoverStepStart); return;
+    }
+    var html = discoverHead(list.length + ' spot' + (list.length > 1 ? 's' : '') + ' trouvé' + (list.length > 1 ? 's' : '')) + '<div class="ofd-list">';
+    list.forEach(function (r, i) {
+      var km = spotKm({ lon: r.lon, lat: r.lat });
+      var road = r.road_dist_m < 1000 ? (r.road_dist_m + ' m') : ((r.road_dist_m / 1000).toFixed(1) + ' km');
+      html += '<div class="ofd-card" data-i="' + i + '"><div class="ofd-card-h"><span class="ofd-rk">' + (i + 1) + '</span>'
+        + '<span class="ofd-sc" style="color:' + scoreColor(r.score) + '">' + r.score + '</span></div>'
+        + '<div class="ofd-meta">🌑 ' + r.darkness + ' · 🌄 ' + r.openness + ' · 🚗 ' + road
+        + (r.z0 != null ? ' · ⛰ ' + r.z0 + ' m' : '') + (km != null ? ' · ' + kmTxt(km) : '') + '</div>'
+        + '<div class="ofd-acts"><button type="button" class="ofd-mini" data-act="see">Voir</button>'
+        + '<button type="button" class="ofd-mini save" data-act="save">Enregistrer</button></div></div>';
+    });
+    html += '</div><button type="button" class="ofd-btn" id="ofdAgain">Nouvelle recherche</button>';
+    discoverSheet.innerHTML = html; discoverBind();
+    list.forEach(function (r) {
+      try { var el = document.createElement('div'); el.className = 'ofspot-discover-pin'; var mk = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([r.lon, r.lat]).addTo(map); discoverMarkers.push(mk); } catch (e) {}
+    });
+    [].forEach.call(discoverSheet.querySelectorAll('.ofd-card'), function (card) {
+      var r = list[Number(card.dataset.i)];
+      card.querySelector('[data-act=see]').addEventListener('click', function () { discoverSee(r); });
+      card.querySelector('[data-act=save]').addEventListener('click', function (e) { discoverSave(r, e.target); });
+    });
+    discoverSheet.querySelector('#ofdAgain').addEventListener('click', discoverStepStart);
+  }
+  function discoverSee(r) { if (discoverSheet) discoverSheet.setAttribute('hidden', ''); closeSpotsPage(); try { map.flyTo({ center: [r.lon, r.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 9, 11), duration: 650 }); } catch (e) {} }
+  function discoverSave(r, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    var name = 'Spot auto ' + r.lat.toFixed(3) + ',' + r.lon.toFixed(3);
+    submitSpot({ name: name, lon: r.lon, lat: r.lat, notes: 'Trouvé automatiquement', share: false }).then(function (d) {
+      if (d && d.ok) { if (btn) { btn.textContent = 'Enregistré ✓'; } toast('Spot enregistré dans « Mes spots » ✓', 3800); loadSpots().then(function () {}); }
+      else { if (btn) { btn.disabled = false; btn.textContent = 'Enregistrer'; } toast((d && d.error) || 'Échec de l\'enregistrement.'); }
+    });
+  }
+
   function renderTable() {
     var body = document.getElementById('ofspotTableBody');
     if (!body) return;
@@ -1114,10 +1224,15 @@
     var bar = document.createElement('div'); bar.className = 'ofspot-tbl-bar';
     var count = document.createElement('span'); count.className = 'ofspot-tbl-count';
     count.textContent = list.length + ' spot' + (list.length > 1 ? 's' : '') + (mine ? '' : (' public' + (list.length > 1 ? 's' : '')));
+    var actions = document.createElement('div'); actions.className = 'ofspot-tbl-actions';
+    var findA = document.createElement('button'); findA.type = 'button'; findA.className = 'ofspot-tbl-find';
+    findA.innerHTML = '<span aria-hidden="true">🔭</span> Trouver des spots';
+    findA.addEventListener('click', openDiscover);
     var addA = document.createElement('button'); addA.type = 'button'; addA.className = 'ofspot-tbl-add';
     addA.innerHTML = '<span class="plus" aria-hidden="true">+</span> Ajouter un spot';
     addA.addEventListener('click', function () { closeSpotsPage(); enterAddMode(); });
-    bar.append(count, addA);
+    actions.append(findA, addA);
+    bar.append(count, actions);
     body.appendChild(bar);
     if (!list.length) {
       var empty = document.createElement('div'); empty.className = 'ofspot-empty';

@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.226"
+APP_VERSION = "1.3.227"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4734,6 +4734,161 @@ def _spot_compute_horizon(spot_id: str, lon: float, lat: float, inner_radius_m: 
         spots.attach_access(spot_id, _spot_road_access(lon, lat))
     except Exception:  # noqa: BLE001 - accès routier best-effort, jamais bloquant
         pass
+
+
+# ── Découverte automatique de spots (#9) : « gratuit d'abord, cher ensuite » ──
+# Grille de candidats → pré-filtre pollution lumineuse (analytique, instantané) → liste
+# courte éparpillée → raffinage COÛTEUX (horizon LiDAR + accès route) en job de fond avec
+# progression. Seuils « restreints » fixes. Résultats = spots polyvalents (sombre + dégagé
+# + accessible + point haut) à afficher/enregistrer.
+_DISCOVER_DARK_MIN = 60       # obscurité 0..100 : rejet des zones trop éclairées (pré-filtre)
+_DISCOVER_OPEN_MIN = 60       # openness 0..100 : horizon suffisamment dégagé (filtre dur)
+_DISCOVER_ROAD_MAX = 800      # m : distance max à une route carrossable (filtre dur)
+_DISCOVER_SHORTLIST = 15      # nb de candidats raffinés (coûteux)
+_DISCOVER_RESULTS = 6         # nb de spots proposés
+_DISCOVER_MIN_SEP_KM = 4.0    # écart mini entre candidats (couvrir la zone)
+_discover_jobs: dict[str, dict] = {}
+_discover_lock = threading.Lock()
+
+
+def _discover_grid(lat: float, lon: float, radius_km: float) -> list[tuple[float, float]]:
+    """Maillage de candidats dans le rayon (bornage France). Pas adaptatif → ~≤2500 points."""
+    spacing = max(1.5, radius_km / 25.0)
+    coslat = math.cos(math.radians(lat)) or 1e-6
+    dlat = spacing / 111.0
+    dlon = spacing / (111.0 * coslat)
+    n = int(radius_km / spacing) + 1
+    r2 = radius_km * radius_km
+    pts: list[tuple[float, float]] = []
+    for i in range(-n, n + 1):
+        la = lat + i * dlat
+        if not (41.0 <= la <= 51.6):
+            continue
+        dy = (la - lat) * 111.0
+        for j in range(-n, n + 1):
+            lo = lon + j * dlon
+            if not (-5.5 <= lo <= 9.8):
+                continue
+            dx = (lo - lon) * 111.0 * coslat
+            if dx * dx + dy * dy <= r2:
+                pts.append((lo, la))
+    return pts
+
+
+def _discover_thin(cands: list[tuple], min_sep_km: float, cap: int) -> list[tuple]:
+    """Éparpillement glouton : parcourt les candidats (triés par obscurité décroissante) et
+    n'en garde un que s'il est à ≥ min_sep_km des déjà retenus. Plafonne à `cap`."""
+    kept: list[tuple] = []
+    sep2 = min_sep_km * min_sep_km
+    for dk, lo, la in cands:
+        coslat = math.cos(math.radians(la))
+        ok = True
+        for _, klo, kla in kept:
+            dx = (lo - klo) * 111.0 * coslat
+            dy = (la - kla) * 111.0
+            if dx * dx + dy * dy < sep2:
+                ok = False
+                break
+        if ok:
+            kept.append((dk, lo, la))
+            if len(kept) >= cap:
+                break
+    return kept
+
+
+def _discover_score(r: dict, alt_min: float, alt_max: float) -> int:
+    """Score combiné 0..100 : obscurité 40 % · horizon 30 % · proximité route 15 % · altitude 15 %."""
+    dk = r["darkness"] / 100.0
+    op = r["openness"] / 100.0
+    road_s = max(0.0, 1.0 - r["road_dist_m"] / float(_DISCOVER_ROAD_MAX))
+    alt = 0.5 if alt_max <= alt_min or r.get("z0") is None else (r["z0"] - alt_min) / (alt_max - alt_min)
+    return int(round(100 * (0.40 * dk + 0.30 * op + 0.15 * road_s + 0.15 * alt)))
+
+
+def _discover_worker(job_id: str, lat: float, lon: float, radius_km: float) -> None:
+    def bump(done: int) -> None:
+        with _discover_lock:
+            j = _discover_jobs.get(job_id)
+            if j:
+                j["done_count"] = done
+    try:
+        grid = _discover_grid(lat, lon, radius_km)
+        darks = stargaze.darkness_grid(grid) if grid else []
+        cands = [(darks[i], grid[i][0], grid[i][1]) for i in range(len(grid)) if darks[i] >= _DISCOVER_DARK_MIN]
+        cands.sort(key=lambda x: -x[0])
+        shortlist = _discover_thin(cands, _DISCOVER_MIN_SEP_KM, _DISCOVER_SHORTLIST)
+        with _discover_lock:
+            j = _discover_jobs.get(job_id)
+            if j:
+                j["total"] = len(shortlist)
+        results: list[dict] = []
+        for idx, (dk, lo, la) in enumerate(shortlist):
+            openness = z0 = None
+            try:
+                scan = horizon.cached_horizon_scan(lo, la)
+                openness = scan.get("openness")
+                z0 = scan.get("z0")
+            except Exception:  # noqa: BLE001 - point écarté si l'horizon échoue
+                pass
+            bump(idx + 1)
+            if openness is None or openness < _DISCOVER_OPEN_MIN:
+                continue
+            access = _spot_road_access(lo, la)
+            road = access.get("road_dist_m") if access else None
+            if road is None or road > _DISCOVER_ROAD_MAX:
+                continue
+            results.append({
+                "lon": round(lo, 5), "lat": round(la, 5), "darkness": int(dk),
+                "openness": int(round(openness)), "z0": (round(z0) if z0 is not None else None),
+                "road_dist_m": int(road), "walk_min": (access.get("walk_min") if access else None),
+            })
+        alts = [r["z0"] for r in results if r["z0"] is not None]
+        amin, amax = (min(alts), max(alts)) if alts else (0.0, 0.0)
+        for r in results:
+            r["score"] = _discover_score(r, amin, amax)
+        results.sort(key=lambda r: -r["score"])
+        with _discover_lock:
+            j = _discover_jobs.get(job_id)
+            if j:
+                j.update(done=True, results=results[:_DISCOVER_RESULTS])
+    except Exception:  # noqa: BLE001 - le job ne doit jamais casser le serveur
+        with _discover_lock:
+            j = _discover_jobs.get(job_id)
+            if j:
+                j.update(done=True, error=True, results=[])
+
+
+class SpotDiscoverRequest(BaseModel):
+    lat: float = Field(..., ge=41.0, le=51.6)
+    lon: float = Field(..., ge=-5.5, le=9.8)
+    radius_km: float = Field(50.0, ge=10.0, le=150.0)
+
+
+@app.post("/api/spots/discover")
+async def api_spots_discover(payload: SpotDiscoverRequest) -> dict[str, Any]:
+    """Lance une recherche automatique de spots autour d'un point (job de fond). Renvoie un
+    `job` à sonder via /api/spots/discover/status."""
+    job_id = os.urandom(6).hex()
+    with _discover_lock:
+        if len(_discover_jobs) > 30:   # purge des plus vieux
+            for k in sorted(_discover_jobs, key=lambda k: _discover_jobs[k].get("ts", 0))[:10]:
+                _discover_jobs.pop(k, None)
+        _discover_jobs[job_id] = {"done": False, "done_count": 0, "total": 0, "results": None, "ts": time.time()}
+    threading.Thread(target=_discover_worker, args=(job_id, float(payload.lat), float(payload.lon), float(payload.radius_km)),
+                     daemon=True, name="spot-discover").start()
+    return {"ok": True, "job": job_id}
+
+
+@app.get("/api/spots/discover/status")
+async def api_spots_discover_status(job: str = Query(...)) -> dict[str, Any]:
+    with _discover_lock:
+        j = _discover_jobs.get(job)
+        if not j:
+            return {"ok": False, "error": "Recherche inconnue ou expirée."}
+        return {"ok": True, "done": bool(j["done"]),
+                "progress": {"done": j["done_count"], "total": j["total"]},
+                "error": bool(j.get("error", False)),
+                "results": (j.get("results") if j["done"] else None)}
 
 
 def _enrich_public_pseudos(items: list[dict[str, Any]]) -> list[dict[str, Any]]:

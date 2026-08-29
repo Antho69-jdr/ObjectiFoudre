@@ -416,3 +416,39 @@ body.mobile-ui .ofspot-modal-row .del { flex: 1 1 auto; }
 .ofspot-panel-go-btn:hover { filter: brightness(1.07); }
 .ofspot-panel-go-btn span { font-size: 11px; }
 .ofspot-card-road { color: #9fd8ec; }
+
+/* ═══ Trouver des spots automatiquement (#9) — bouton + feuille + résultats (v1.3.227) ═══ */
+.ofspot-tbl-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ofspot-tbl-find { min-width: 0 !important; min-height: 0 !important; display: inline-flex; align-items: center; gap: 6px; background: transparent; color: #46c0e6; border: 1px solid color-mix(in srgb, #46c0e6 45%, #22303f); border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.15s; }
+.ofspot-tbl-find:hover { background: rgba(70, 192, 230, 0.12); border-color: #46c0e6; }
+.ofspot-tbl-find:focus-visible { outline: 2px solid #46c0e6; outline-offset: 2px; }
+
+.ofspot-discover-sheet { position: fixed; z-index: 10060; left: 50%; bottom: 0; transform: translateX(-50%); width: min(460px, 100vw); max-height: 78vh; overflow-y: auto; background: #0f1620; border: 1px solid #22303f; border-bottom: 0; border-radius: 16px 16px 0 0; box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.5); color: #e9eff7; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.ofspot-discover-sheet[hidden] { display: none; }
+.ofd-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ofd-title { font-size: 15px; font-weight: 700; }
+.ofd-close { min-width: 0 !important; min-height: 0 !important; width: 30px; height: 30px; border-radius: 8px; border: 1px solid #22303f; background: #121a25; color: #8ba0b8; font-size: 18px; line-height: 1; cursor: pointer; padding: 0; }
+.ofd-close:hover { color: #fff; border-color: #46c0e6; }
+.ofd-p { font-size: 13.5px; color: #b7c6d6; margin: 0; }
+.ofd-note { font-size: 12px; color: #8ba0b8; margin: 0; }
+.ofd-btn { min-width: 0 !important; min-height: 0 !important; font: inherit; font-size: 14px; font-weight: 700; border-radius: 10px; padding: 11px 16px; cursor: pointer; border: 1px solid #2a3a4c; background: #121a25; color: #cfe0ee; transition: 0.15s; }
+.ofd-btn:hover { border-color: #46c0e6; }
+.ofd-btn.primary { background: #46c0e6; color: #08222c; border: 0; }
+.ofd-btn.primary:hover { filter: brightness(1.06); }
+.ofd-btn:disabled { opacity: 0.6; cursor: default; }
+.ofd-rad { display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; color: #b7c6d6; }
+.ofd-rad b { color: #8ff0da; font-weight: 700; }
+.ofd-rad input[type=range] { accent-color: #46c0e6; height: 22px; }
+.ofd-prog { height: 8px; border-radius: 5px; background: #0b1220; border: 1px solid #22303f; overflow: hidden; }
+.ofd-prog-bar { display: block; height: 100%; background: linear-gradient(90deg, #46c0e6, #8ff0da); border-radius: 5px; transition: width 0.4s ease; }
+.ofd-list { display: flex; flex-direction: column; gap: 8px; }
+.ofd-card { background: #121a25; border: 1px solid #22303f; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px; }
+.ofd-card-h { display: flex; align-items: center; justify-content: space-between; }
+.ofd-rk { width: 22px; height: 22px; border-radius: 7px; background: rgba(70, 192, 230, 0.16); color: #9fd8ec; font: 700 12px/22px "IBM Plex Mono", monospace; text-align: center; }
+.ofd-sc { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ofd-meta { font-family: ui-monospace, monospace; font-size: 12px; color: #9fb0c8; }
+.ofd-acts { display: flex; gap: 8px; }
+.ofd-mini { min-width: 0 !important; min-height: 0 !important; flex: 1 1 0; font: inherit; font-size: 12.5px; font-weight: 700; border-radius: 8px; padding: 8px 10px; cursor: pointer; border: 1px solid #2a3a4c; background: #0f1620; color: #cfe0ee; }
+.ofd-mini:hover { border-color: #46c0e6; }
+.ofd-mini.save { background: #46c0e6; color: #08222c; border: 0; }
+.ofspot-discover-pin { width: 16px; height: 16px; border-radius: 50%; background: #46c0e6; border: 2px solid #fff; box-shadow: 0 0 0 4px rgba(70, 192, 230, 0.3), 0 2px 6px rgba(0, 0, 0, 0.5); cursor: pointer; }
