@@ -742,20 +742,35 @@
       panelEl.appendChild(by);
     }
     if (h && h.azimuths) {
+      // Vue « Aperçu » : stats + obstruction proche + légende du champ de vision.
+      var infoPane = document.createElement('div'); infoPane.className = 'ofspot-panel-pane';
       var stats = document.createElement('div'); stats.className = 'ofspot-stats';
       stats.innerHTML = statCell('Altitude', Math.round(h.z0) + ' m') +
         statCell('Horizon moyen', (h.mean_horizon_deg >= 0 ? '+' : '') + h.mean_horizon_deg + '°') +
         statCell('Ciel bas dégagé', h.pct_below_5deg + ' %') +
         statCell('Relief autour', '+' + (h.denivele_max_m || 0) + ' m') +
         (accessFull(spot) ? statCell('Route carrossable', accessFull(spot)) : '');
-      panelEl.appendChild(stats);
-      panelEl.appendChild(buildNearLine(h));
+      infoPane.appendChild(stats);
+      infoPane.appendChild(buildNearLine(h));
       var leg = document.createElement('div'); leg.className = 'ofspot-panel-legend';
       leg.innerHTML = '<span><i style="background:#46c0e6"></i>ciel dégagé</span>' +
         '<span><i style="background:#b8804f"></i>relief</span>' +
         '<span><i style="background:#5aab6b"></i>obstruction proche</span>';
-      panelEl.appendChild(leg);
-      var pano = renderSpotPanorama(spot); if (pano) panelEl.appendChild(pano);
+      infoPane.appendChild(leg);
+      // Vue « Panorama 360° » : onglets (comme le dôme) → une vue à la fois (paysage OK).
+      var pano = renderSpotPanorama(spot);
+      if (pano) {
+        var panoPane = document.createElement('div'); panoPane.className = 'ofspot-panel-pane'; panoPane.hidden = true; panoPane.appendChild(pano);
+        var tabs = document.createElement('div'); tabs.className = 'ofspot-panel-tabs'; tabs.setAttribute('role', 'tablist');
+        var mkTab = function (label, on) { var b = document.createElement('button'); b.type = 'button'; b.className = 'ofspot-panel-tab' + (on ? ' is-on' : ''); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', on ? 'true' : 'false'); b.textContent = label; return b; };
+        var tA = mkTab('Aperçu', true), tB = mkTab('Panorama 360°', false);
+        var setTab = function (info) { infoPane.hidden = !info; panoPane.hidden = info; tA.classList.toggle('is-on', info); tB.classList.toggle('is-on', !info); tA.setAttribute('aria-selected', info ? 'true' : 'false'); tB.setAttribute('aria-selected', info ? 'false' : 'true'); };
+        tA.addEventListener('click', function () { setTab(true); }); tB.addEventListener('click', function () { setTab(false); });
+        tabs.append(tA, tB); panelEl.appendChild(tabs);
+        panelEl.appendChild(infoPane); panelEl.appendChild(panoPane);
+      } else {
+        panelEl.appendChild(infoPane);
+      }
     } else {
       var pend = document.createElement('div'); pend.className = 'ofspot-pending';
       pend.textContent = 'Champ de vision en cours de calcul…'; panelEl.appendChild(pend);

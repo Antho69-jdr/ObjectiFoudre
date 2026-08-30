@@ -74,8 +74,17 @@ body.mobile-ui .spots-rail { left: 10px; }
   background: #121a25; color: #e9eff7; border: 1px solid #22303f; border-radius: 14px; padding: 14px 14px 12px;
   box-shadow: 0 14px 34px -14px #000c; opacity: 0; transform: translateY(8px); pointer-events: none;
   transition: opacity .18s, transform .18s;
+  /* Jamais plus haut que l'espace au-dessus de la frise → scroll interne (paysage OK). */
+  max-height: calc(100dvh - var(--timeline-height, 88px) - 60px); overflow-y: auto; overflow-x: hidden;
 }
 .ofspot-panel.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+/* Onglets du panneau spot (Aperçu / Panorama 360°) — une vue à la fois. */
+.ofspot-panel-tabs { display: flex; gap: 6px; margin: 10px 0 8px; }
+.ofspot-panel-tab { flex: 1; min-width: 0 !important; min-height: 0 !important; font: inherit; font-size: 12px; font-weight: 600; color: #8ba0b8; background: transparent; border: 1px solid #22303f; border-radius: 9px; padding: 7px 8px; cursor: pointer; transition: .12s; }
+.ofspot-panel-tab:hover { border-color: #46c0e6; }
+.ofspot-panel-tab.is-on { background: rgba(70, 192, 230, 0.16); border-color: #46c0e6; color: #d8f1fa; }
+.ofspot-panel-tab:focus-visible { outline: 2px solid #46c0e6; outline-offset: 1px; }
+.ofspot-panel-pane[hidden] { display: none; }
 .ofspot-panel .ofspot-head { padding-right: 26px; }
 .ofspot-panel-close {
   position: absolute; top: 8px; right: 8px; min-width: 0 !important; min-height: 0 !important;
