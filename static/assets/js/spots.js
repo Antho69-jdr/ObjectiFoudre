@@ -309,31 +309,43 @@
     } catch (e) {}
     return 'track';
   }
-  function timelinePx() {
+  // Haut RÉEL de la frise à l'écran (le dock inclut la meta-stack/safe-area → plus haut que
+  // --timeline-height). On mesure pour que le panneau ne la recouvre JAMAIS.
+  function friseTopPx() {
+    try {
+      var d = document.getElementById('timelineDock');
+      if (d) { var r = d.getBoundingClientRect(); if (r.height > 4 && r.top > 0) return r.top; }
+    } catch (e) {}
     var v = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--timeline-height'), 10);
-    return isFinite(v) ? v : 88;
+    return window.innerHeight - (isFinite(v) ? v : 88);
   }
-  // Positionne le panneau : en « suivi », ancré près du spot (flip pour rester à l'écran, jamais
-  // sur la frise). Dans les régimes téléphone, on efface le style inline → les media queries gèrent.
+  // Positionne le panneau selon le régime. Téléphone : styles inline minimaux + media queries.
+  // Suivi (tablette/desktop) : ancré près du spot (flip pour rester à l'écran, jamais sur la frise).
   function layoutPanel() {
     if (!panelEl || !panelSpot) return;
-    var reg = panelRegime(), track = reg === 'track';
-    panelEl.classList.toggle('ofspot-panel--track', track);
+    var reg = panelRegime(), s = panelEl.style;
+    panelEl.classList.toggle('ofspot-panel--track', reg === 'track');
     panelEl.classList.toggle('ofspot-panel--full', reg === 'phone-land');
-    if (!track) { panelEl.style.left = ''; panelEl.style.top = ''; return; }
+    if (reg === 'phone-land') { s.left = s.top = s.bottom = s.maxHeight = ''; return; }
+    var friseTop = friseTopPx();
+    if (reg === 'phone-port') {
+      s.left = s.top = ''; s.bottom = (window.innerHeight - friseTop + 10) + 'px'; s.maxHeight = (friseTop - 16) + 'px';
+      return;
+    }
+    // suivi
+    s.bottom = ''; s.maxHeight = (friseTop - 24) + 'px';
     if (typeof map === 'undefined' || !map.project || typeof panelSpot.lon !== 'number') return;
     var pt = map.project([panelSpot.lon, panelSpot.lat]);
     var cont = map.getContainer().getBoundingClientRect();
     var sx = cont.left + pt.x, sy = cont.top + pt.y;
     var pw = panelEl.offsetWidth || 340, ph = panelEl.offsetHeight || 300;
-    var m = 12, gap = 18, friseTop = window.innerHeight - timelinePx() - 10;
+    var m = 12, gap = 18, fT = friseTop - 10;
     var left = sx + gap;
     if (left + pw + m > window.innerWidth) left = sx - gap - pw;   // flip à gauche du spot
     left = Math.max(m, Math.min(left, window.innerWidth - pw - m));
-    var top = sy - ph / 2;
-    top = Math.min(top, friseTop - ph);                            // jamais sur la frise
+    var top = Math.min(sy - ph / 2, fT - ph);                      // jamais sur la frise
     top = Math.max(m, top);
-    panelEl.style.left = left + 'px'; panelEl.style.top = top + 'px';
+    s.left = left + 'px'; s.top = top + 'px';
   }
   function bindPanelTracking() {
     if (panelTrackBound) return;
@@ -449,7 +461,7 @@
     selectedSpotId = null;
     closeGpsMenu();
     unbindPanelTracking(); panelSpot = null;
-    if (panelEl) { panelEl.classList.remove('show'); panelEl.style.left = ''; panelEl.style.top = ''; }
+    if (panelEl) { panelEl.classList.remove('show'); panelEl.style.left = panelEl.style.top = panelEl.style.bottom = panelEl.style.maxHeight = ''; }
   }
 
   // ══ CHASSE : « spots viables pour CETTE cellule orageuse » ══════════════════
