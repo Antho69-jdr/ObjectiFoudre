@@ -1210,6 +1210,35 @@
     ['α Centauri', 219.902, -60.834, -0.27, 'Centaure'],
   ];
   function skyNeverRises(dec, lat) { return dec < (lat - 90); }   // ne franchit jamais l'horizon
+  // Lune (Schlyter) → RA/Dec géocentrique + illumination (0..1). Le panorama (spots.js) en a besoin.
+  function skyMoonRadec(ms) {
+    const d = skyDays(ms);
+    const N = 125.1228 - 0.0529538083 * d, i = 5.1454;
+    const w = 318.0634 + 0.1643573223 * d, a = 60.2666, e = 0.054900, M = 115.3654 + 13.0649929509 * d;
+    const E = skyKepler(M, e);
+    const xv = a * (Math.cos(E) - e), yv = a * Math.sqrt(1 - e * e) * Math.sin(E);
+    const v = Math.atan2(yv, xv), r = Math.hypot(xv, yv);
+    const Nr = N * SKY_RAD, ir = i * SKY_RAD, u = v + w * SKY_RAD;
+    const xh = r * (Math.cos(Nr) * Math.cos(u) - Math.sin(Nr) * Math.sin(u) * Math.cos(ir));
+    const yh = r * (Math.sin(Nr) * Math.cos(u) + Math.cos(Nr) * Math.sin(u) * Math.cos(ir));
+    const zh = r * (Math.sin(u) * Math.sin(ir));
+    const eps = (23.4393 - 3.563e-7 * d) * SKY_RAD;
+    const xe = xh, ye = yh * Math.cos(eps) - zh * Math.sin(eps), ze = yh * Math.sin(eps) + zh * Math.cos(eps);
+    const su = skySunEcl(d), elong = Math.atan2(yh, xh) - Math.atan2(su[1], su[0]);
+    return { ra: ((Math.atan2(ye, xe) * SKY_DEG) % 360 + 360) % 360, dec: Math.atan2(ze, Math.hypot(xe, ye)) * SKY_DEG, illum: (1 - Math.cos(elong)) / 2 };
+  }
+  function skySunRadec(ms) {
+    const d = skyDays(ms), su = skySunEcl(d), lon = Math.atan2(su[1], su[0]), r = Math.hypot(su[0], su[1]);
+    const eps = (23.4393 - 3.563e-7 * d) * SKY_RAD;
+    const xs = r * Math.cos(lon), ys = r * Math.sin(lon) * Math.cos(eps), zs = r * Math.sin(lon) * Math.sin(eps);
+    return { ra: ((Math.atan2(ys, xs) * SKY_DEG) % 360 + 360) % 360, dec: Math.atan2(zs, Math.hypot(xs, ys)) * SKY_DEG };
+  }
+  // Pont astro pour le panorama 360° des spots (spots.js) : positions alt/az de tous les astres.
+  window.OFSky = {
+    altaz: skyAltaz, planetRadec: skyPlanetRadec, galToRadec: skyGalToRadec,
+    moonRadec: skyMoonRadec, sunRadec: skySunRadec,
+    stars: SKY_STARS, planets: Object.keys(SKY_PL),
+  };
   // Horizon (°) du spot dans la direction az, interpolé entre les azimuts LiDAR (spot.horizon.azimuths).
   function skyHorizonAt(azimuths, az) {
     if (!azimuths || !azimuths.length) return 0;

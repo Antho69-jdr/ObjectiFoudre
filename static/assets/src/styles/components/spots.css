@@ -453,3 +453,11 @@ body.mobile-ui .ofspot-modal-row .del { flex: 1 1 auto; }
 .ofd-mini:hover { border-color: #46c0e6; }
 .ofd-mini.save { background: #46c0e6; color: #08222c; border: 0; }
 .ofspot-discover-pin { width: 16px; height: 16px; border-radius: 50%; background: #46c0e6; border: 2px solid #fff; box-shadow: 0 0 0 4px rgba(70, 192, 230, 0.3), 0 2px 6px rgba(0, 0, 0, 0.5); cursor: pointer; }
+
+/* Panorama 360° LiDAR (panneau du spot) — relief + overlay astro + curseur d'heure (v1.3.229) */
+.ofspot-pano { margin-top: 10px; }
+.ofspot-pano-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: #cfe0ee; letter-spacing: 0.02em; }
+.ofspot-pano-t { font-family: ui-monospace, monospace; font-size: 12px; font-weight: 700; color: #ffd36b; }
+.ofspot-pano-svg { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid #22303f; cursor: crosshair; }
+.ofspot-pano-read { font-family: ui-monospace, monospace; font-size: 11px; color: #8ba0b8; min-height: 15px; margin-top: 5px; }
+.ofspot-pano-slider { width: 100%; accent-color: #46c0e6; height: 20px; margin-top: 2px; cursor: pointer; }

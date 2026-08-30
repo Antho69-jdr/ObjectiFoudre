@@ -634,6 +634,87 @@
       }).catch(function () { toast('Réseau indisponible.'); });
   }
 
+  // Horizon (°) du spot dans la direction az, interpolé entre les 24 azimuts LiDAR.
+  function panoHorizonAt(azArr, az) {
+    var n = azArr.length; if (!n) return 0;
+    az = ((az % 360) + 360) % 360; var step = 360 / n;
+    var i = Math.floor(az / step) % n, j = (i + 1) % n, f = (az - i * step) / step;
+    var a = azArr[i].horizon_deg || 0, b = azArr[j].horizon_deg || 0;
+    return a + (b - a) * f;
+  }
+  // Panorama 360° synthétisé du LiDAR (relief) + overlay astro (Voie lactée/Lune/planètes/étoiles,
+  // via window.OFSky exposé par stargaze.js), avec curseur d'heure pour scruter la nuit.
+  function renderSpotPanorama(spot) {
+    var h = spot.horizon; if (!h || !h.azimuths || !h.azimuths.length) return null;
+    var az = h.azimuths.slice().sort(function (a, b) { return a.az - b.az; });
+    var W = 720, yB = 196, yTop = 16, MAXDEG = 45, lat = +spot.lat, lon = +spot.lon;
+    var wrap = document.createElement('div'); wrap.className = 'ofspot-pano';
+    var head = document.createElement('div'); head.className = 'ofspot-pano-h';
+    head.innerHTML = '<span>Tour d’horizon 360°</span><span class="ofspot-pano-t" id="ofPanoT"></span>';
+    wrap.appendChild(head);
+    var svg = el('svg', { viewBox: '0 0 ' + W + ' 218', class: 'ofspot-pano-svg' }); wrap.appendChild(svg);
+    var read = document.createElement('div'); read.className = 'ofspot-pano-read'; read.textContent = 'Survole le relief · glisse le curseur pour changer l’heure';
+    wrap.appendChild(read);
+    var sl = document.createElement('input'); sl.type = 'range'; sl.min = '0'; sl.max = '12'; sl.step = '1'; sl.value = '5'; sl.className = 'ofspot-pano-slider';
+    sl.setAttribute('aria-label', 'Heure de la nuit'); wrap.appendChild(sl);
+    function nightMs(idx) { var d = new Date(); d.setHours(18, 0, 0, 0); return d.getTime() + idx * 3600000; }
+    function yOf(deg) { var dd = Math.max(0, Math.min(MAXDEG, deg)); return yB - dd / MAXDEG * (yB - yTop); }
+    function drawAstro(ms) {
+      var S = window.OFSky; if (!S) return;
+      var seg = [];
+      var flush = function () {
+        if (seg.length > 1) {
+          svg.appendChild(el('polyline', { points: seg.join(' '), fill: 'none', stroke: '#9bb6e8', 'stroke-width': 11, opacity: 0.13, 'stroke-linecap': 'round' }));
+          svg.appendChild(el('polyline', { points: seg.join(' '), fill: 'none', stroke: '#cfe0ff', 'stroke-width': 2, opacity: 0.28, 'stroke-linecap': 'round' }));
+        }
+        seg = [];
+      };
+      for (var l = 0; l <= 360; l += 3) { var gr = S.galToRadec(l, 0), aa = S.altaz(gr.ra, gr.dec, ms, lat, lon); if (aa.alt > 0 && aa.alt < MAXDEG) seg.push((aa.az * 2).toFixed(1) + ',' + yOf(aa.alt).toFixed(1)); else flush(); }
+      flush();
+      var label = function (x, y, t, below) { var tx = el('text', { x: x + 5, y: y - 4, fill: below ? 'rgba(232,114,90,.75)' : 'rgba(207,224,255,.85)', 'font-size': 9, 'font-family': 'ui-monospace,monospace' }); tx.textContent = t; svg.appendChild(tx); };
+      var plot = function (name, ra, dec, kind, mag) {
+        var aa = S.altaz(ra, dec, ms, lat, lon); if (aa.alt <= 0 || aa.alt >= MAXDEG) return;
+        var x = aa.az * 2, y = yOf(aa.alt), below = aa.alt < panoHorizonAt(az, aa.az);
+        if (kind === 'moon') svg.appendChild(el('circle', { cx: x, cy: y, r: 6, fill: '#e6ecf4', opacity: below ? 0.4 : 0.95 }));
+        else if (kind === 'sun') svg.appendChild(el('circle', { cx: x, cy: y, r: 7, fill: '#ffd36b', opacity: below ? 0.4 : 0.95 }));
+        else if (kind === 'planet') { svg.appendChild(el('circle', { cx: x, cy: y, r: 3.2, fill: '#ffd9a0', opacity: below ? 0.35 : 0.95 })); label(x, y, name, below); }
+        else { var r = Math.max(1, 2.6 - (mag || 1) * 0.5); svg.appendChild(el('circle', { cx: x, cy: y, r: r, fill: '#eaf2ff', opacity: below ? 0.25 : 0.9 })); if ((mag == null ? 9 : mag) < 0.5) label(x, y, name, below); }
+        if (below) svg.appendChild(el('circle', { cx: x, cy: y, r: (kind === 'moon' || kind === 'sun') ? 8 : 4, fill: 'none', stroke: '#e8725a', 'stroke-width': 1, opacity: 0.5 }));
+      };
+      S.stars.forEach(function (s) { plot(s[0], s[1], s[2], 'star', s[3]); });
+      S.planets.forEach(function (nm) { var pr = S.planetRadec(nm, ms); plot(nm, pr.ra, pr.dec, 'planet'); });
+      var sr = S.sunRadec(ms); plot('Soleil', sr.ra, sr.dec, 'sun');
+      var mo = S.moonRadec(ms); plot('Lune', mo.ra, mo.dec, 'moon');
+    }
+    function draw() {
+      var ms = nightMs(+sl.value); svg.innerHTML = '';
+      var defs = el('defs', {}), g = el('linearGradient', { id: 'ofpsky', x1: 0, y1: 0, x2: 0, y2: 1 });
+      g.appendChild(el('stop', { offset: '0%', 'stop-color': '#0a1430' })); g.appendChild(el('stop', { offset: '100%', 'stop-color': '#16233a' }));
+      defs.appendChild(g); svg.appendChild(defs);
+      svg.appendChild(el('rect', { x: 0, y: 0, width: W, height: yB, fill: 'url(#ofpsky)' }));
+      [15, 30].forEach(function (dd) { var y = yOf(dd); svg.appendChild(el('line', { x1: 0, y1: y, x2: W, y2: y, stroke: 'rgba(160,185,230,.14)', 'stroke-width': 1, 'stroke-dasharray': '2 5' })); });
+      drawAstro(ms);
+      var pts = az.map(function (p) { return { x: p.az * 2, y: yOf(p.horizon_deg), blk: p.blocker }; }); pts.push({ x: 720, y: pts[0].y, blk: pts[0].blk });
+      var d = 'M 0 ' + yB; pts.forEach(function (p) { d += ' L ' + p.x.toFixed(1) + ' ' + p.y.toFixed(1); }); d += ' L ' + W + ' ' + yB + ' Z';
+      svg.appendChild(el('path', { d: d, fill: '#070c14', opacity: 0.97 }));
+      for (var k = 0; k < pts.length - 1; k++) { var col = pts[k].blk === 'near' ? '#5aab6b' : '#c79461'; svg.appendChild(el('line', { x1: pts[k].x.toFixed(1), y1: pts[k].y.toFixed(1), x2: pts[k + 1].x.toFixed(1), y2: pts[k + 1].y.toFixed(1), stroke: col, 'stroke-width': 2.2, 'stroke-linecap': 'round' })); }
+      svg.appendChild(el('line', { x1: 0, y1: yB, x2: W, y2: yB, stroke: 'rgba(160,185,230,.3)', 'stroke-width': 1 }));
+      [['N', 0], ['NE', 45], ['E', 90], ['SE', 135], ['S', 180], ['SO', 225], ['O', 270], ['NO', 315], ['N', 360]].forEach(function (c) {
+        var x = c[1] * 2; svg.appendChild(el('line', { x1: x, y1: yB, x2: x, y2: yB + 6, stroke: 'rgba(160,185,230,.45)', 'stroke-width': 1 }));
+        var tx = el('text', { x: x, y: yB + 18, fill: '#8ba0b8', 'font-size': 12, 'font-weight': 700, 'text-anchor': 'middle', 'font-family': 'ui-monospace,monospace' }); tx.textContent = c[0]; svg.appendChild(tx);
+      });
+      var hh = new Date(ms), t = wrap.querySelector('#ofPanoT'); if (t) t.textContent = ('0' + hh.getHours()).slice(-2) + 'h';
+    }
+    svg.addEventListener('mousemove', function (ev) {
+      var r = svg.getBoundingClientRect(), xv = Math.max(0, Math.min(W, (ev.clientX - r.left) / r.width * W)), azd = xv / 2, deg = panoHorizonAt(az, azd);
+      var cardn = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'][Math.round(azd / 22.5) % 16];
+      read.textContent = cardn + ' (' + Math.round(azd) + '°) · ' + (deg <= 0 ? 'horizon dégagé' : 'relief à ' + deg.toFixed(0) + '°');
+    });
+    sl.addEventListener('input', draw);
+    draw();
+    return wrap;
+  }
+
   function showPanel(spot) {
     var h = spot.horizon || null;
     if (!panelEl) { panelEl = document.createElement('div'); panelEl.className = 'ofspot-panel'; panelEl.id = 'ofspotPanel'; document.body.appendChild(panelEl); }
@@ -674,6 +755,7 @@
         '<span><i style="background:#b8804f"></i>relief</span>' +
         '<span><i style="background:#5aab6b"></i>obstruction proche</span>';
       panelEl.appendChild(leg);
+      var pano = renderSpotPanorama(spot); if (pano) panelEl.appendChild(pano);
     } else {
       var pend = document.createElement('div'); pend.className = 'ofspot-pending';
       pend.textContent = 'Champ de vision en cours de calcul…'; panelEl.appendChild(pend);
