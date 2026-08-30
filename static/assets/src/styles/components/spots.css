@@ -71,15 +71,15 @@ body.mobile-ui .spots-rail { left: 10px; }
 .ofspot-panel {
   position: fixed; z-index: 39; left: 64px; bottom: calc(var(--timeline-height, 88px) + 16px);
   width: 300px; max-width: calc(100vw - 88px);
-  background: #121a25; color: #e9eff7; border: 1px solid #22303f; border-radius: 14px; padding: 14px 14px 12px;
+  background: #121a25; color: #e9eff7; border: 1px solid #22303f; border-radius: 14px; padding: 12px 12px 10px;
   box-shadow: 0 14px 34px -14px #000c; opacity: 0; transform: translateY(8px); pointer-events: none;
   transition: opacity .18s, transform .18s;
-  /* Jamais plus haut que l'espace au-dessus de la frise → scroll interne (paysage OK). */
-  max-height: calc(100dvh - var(--timeline-height, 88px) - 60px); overflow-y: auto; overflow-x: hidden;
+  /* Jamais plus haut que l'espace au-dessus de la frise (le panorama s'adapte → pas de scroll). */
+  max-height: calc(100dvh - var(--timeline-height, 88px) - 14px); overflow-y: auto; overflow-x: hidden;
 }
 .ofspot-panel.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
 /* Onglets du panneau spot (Aperçu / Panorama 360°) — une vue à la fois. */
-.ofspot-panel-tabs { display: flex; gap: 6px; margin: 10px 0 8px; }
+.ofspot-panel-tabs { display: flex; gap: 6px; margin: 8px 0 6px; }
 .ofspot-panel-tab { flex: 1; min-width: 0 !important; min-height: 0 !important; font: inherit; font-size: 12px; font-weight: 600; color: #8ba0b8; background: transparent; border: 1px solid #22303f; border-radius: 9px; padding: 7px 8px; cursor: pointer; transition: .12s; }
 .ofspot-panel-tab:hover { border-color: #46c0e6; }
 .ofspot-panel-tab.is-on { background: rgba(70, 192, 230, 0.16); border-color: #46c0e6; color: #d8f1fa; }
@@ -92,17 +92,19 @@ body.mobile-ui .spots-rail { left: 10px; }
   background: transparent; border: none; color: #8ba0b8; font-size: 22px; line-height: 1; border-radius: 8px; cursor: pointer; padding: 0;
 }
 .ofspot-panel-close:hover { background: #ffffff12; color: #e9eff7; }
-.ofspot-panel-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; font-size: 11px; color: #8ba0b8; }
+.ofspot-panel-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 6px; font-size: 11px; color: #8ba0b8; }
 .ofspot-panel-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .ofspot-panel-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 /* actions admin dans le panneau (Modifier / Supprimer) */
-.ofspot-panel-admin { display: flex; gap: 8px; margin-top: 12px; }
+.ofspot-panel-admin { display: flex; gap: 8px; margin-top: 8px; }
 .ofspot-panel-abtn { flex: 1; font: inherit; font-size: 12.5px; font-weight: 600; border-radius: 8px; padding: 8px 10px; cursor: pointer; border: 1px solid #22303f; background: transparent; color: #e9eff7; }
 .ofspot-panel-abtn:hover { border-color: #46c0e6; }
 .ofspot-panel-abtn.del { color: #e8725a; border-color: #e8725a55; }
 .ofspot-panel-abtn.del:hover { border-color: #e8725a; background: #e8725a14; }
 /* +34px : dégage aussi la poignée de repli de la frise (z 30, ~30px au-dessus du dock). */
-body.mobile-ui .ofspot-panel { left: 8px; right: 8px; width: auto; max-width: none; bottom: calc(var(--timeline-height, 88px) + 34px); }
+/* Largeur PLAFONNÉE (même en mobile-ui, tjrs posé) : sinon plein écran → panorama démesuré en
+   hauteur (ratio ~3.3:1) qui déborde en paysage. 460px = panorama modéré qui tient sans scroll. */
+body.mobile-ui .ofspot-panel { left: 8px; right: 8px; width: auto; max-width: 460px; bottom: calc(var(--timeline-height, 88px) + 34px); }
 
 /* ── Chasse : panneau « spots viables pour cette cellule orageuse » (Phase 1) ──
    Même gabarit/z-index que .ofspot-panel, accent ambre orage. En mode chasse, il
@@ -419,7 +421,7 @@ body.mobile-ui .ofspot-modal-row .del { flex: 1 1 auto; }
 .ofspot-lrow-meta { font-size: 12px; color: #8ba0b8; }
 .ofspot-lrow-gps { flex: 0 0 auto; }
 
-.ofspot-panel-go { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.ofspot-panel-go { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .ofspot-panel-km { font-size: 12.5px; font-weight: 600; color: #9fd8ec; }
 .ofspot-panel-go-btn { min-width: 0 !important; min-height: 0 !important; margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 13px; font-weight: 700; color: #08222c; background: #46c0e6; border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; }
 .ofspot-panel-go-btn:hover { filter: brightness(1.07); }
@@ -464,9 +466,12 @@ body.mobile-ui .ofspot-modal-row .del { flex: 1 1 auto; }
 .ofspot-discover-pin { width: 16px; height: 16px; border-radius: 50%; background: #46c0e6; border: 2px solid #fff; box-shadow: 0 0 0 4px rgba(70, 192, 230, 0.3), 0 2px 6px rgba(0, 0, 0, 0.5); cursor: pointer; }
 
 /* Panorama 360° LiDAR (panneau du spot) — relief + overlay astro + curseur d'heure (v1.3.229) */
-.ofspot-pano { margin-top: 10px; }
-.ofspot-pano-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: #cfe0ee; letter-spacing: 0.02em; }
+.ofspot-pano { margin-top: 8px; }
+.ofspot-pano-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 5px; font-size: 12px; font-weight: 700; color: #cfe0ee; letter-spacing: 0.02em; }
 .ofspot-pano-t { font-family: ui-monospace, monospace; font-size: 12px; font-weight: 700; color: #ffd36b; }
-.ofspot-pano-svg { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid #22303f; cursor: crosshair; }
-.ofspot-pano-read { font-family: ui-monospace, monospace; font-size: 11px; color: #8ba0b8; min-height: 15px; margin-top: 5px; }
-.ofspot-pano-slider { width: 100%; accent-color: #46c0e6; height: 20px; margin-top: 2px; cursor: pointer; }
+/* Le panorama remplit l'espace disponible : aspect naturel en portrait, écrasé en hauteur si
+   l'écran est bas (paysage) via max-height relative → toute la modale tient SANS scroller.
+   preserveAspectRatio="none" (posé en JS) garde la pleine largeur. */
+.ofspot-pano-svg { display: block; width: 100%; height: auto; aspect-ratio: 720 / 218; max-height: calc(100dvh - var(--timeline-height, 88px) - 196px); min-height: 78px; border-radius: 10px; border: 1px solid #22303f; cursor: crosshair; }
+.ofspot-pano-read { font-family: ui-monospace, monospace; font-size: 10.5px; color: #8ba0b8; min-height: 14px; margin-top: 4px; }
+.ofspot-pano-slider { width: 100%; accent-color: #46c0e6; height: 18px; margin-top: 2px; cursor: pointer; }

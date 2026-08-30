@@ -652,7 +652,7 @@
     var head = document.createElement('div'); head.className = 'ofspot-pano-h';
     head.innerHTML = '<span>Tour d’horizon 360°</span><span class="ofspot-pano-t" id="ofPanoT"></span>';
     wrap.appendChild(head);
-    var svg = el('svg', { viewBox: '0 0 ' + W + ' 218', class: 'ofspot-pano-svg' }); wrap.appendChild(svg);
+    var svg = el('svg', { viewBox: '0 0 ' + W + ' 218', preserveAspectRatio: 'none', class: 'ofspot-pano-svg' }); wrap.appendChild(svg);
     var read = document.createElement('div'); read.className = 'ofspot-pano-read'; read.textContent = 'Survole le relief · glisse le curseur pour changer l’heure';
     wrap.appendChild(read);
     var sl = document.createElement('input'); sl.type = 'range'; sl.min = '0'; sl.max = '12'; sl.step = '1'; sl.value = '5'; sl.className = 'ofspot-pano-slider';
@@ -760,7 +760,7 @@
       // Vue « Panorama 360° » : onglets (comme le dôme) → une vue à la fois (paysage OK).
       var pano = renderSpotPanorama(spot);
       if (pano) {
-        var panoPane = document.createElement('div'); panoPane.className = 'ofspot-panel-pane'; panoPane.hidden = true; panoPane.appendChild(pano);
+        var panoPane = document.createElement('div'); panoPane.className = 'ofspot-panel-pane ofspot-panel-pane--pano'; panoPane.hidden = true; panoPane.appendChild(pano);
         var tabs = document.createElement('div'); tabs.className = 'ofspot-panel-tabs'; tabs.setAttribute('role', 'tablist');
         var mkTab = function (label, on) { var b = document.createElement('button'); b.type = 'button'; b.className = 'ofspot-panel-tab' + (on ? ' is-on' : ''); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', on ? 'true' : 'false'); b.textContent = label; return b; };
         var tA = mkTab('Aperçu', true), tB = mkTab('Panorama 360°', false);
@@ -782,8 +782,11 @@
     if (pkm != null) { var pks = document.createElement('span'); pks.className = 'ofspot-panel-km'; pks.textContent = kmTxt(pkm) + ' de moi'; pgo.appendChild(pks); }
     pgo.appendChild(gpsButton(spot, 'ofspot-panel-go-btn'));
     panelEl.appendChild(pgo);
-    if (spot._mine) panelEl.appendChild(ownerActions(spot));
-    if (isAdmin()) {
+    // Propriétaire = actions perso (Proposer/Modifier/Supprimer). Sinon admin = Modifier/Supprimer.
+    // (else if → pas de doublon quand on est À LA FOIS propriétaire ET admin.)
+    if (spot._mine) {
+      panelEl.appendChild(ownerActions(spot));
+    } else if (isAdmin()) {
       var acts = document.createElement('div'); acts.className = 'ofspot-panel-admin';
       var edit = document.createElement('button'); edit.type = 'button'; edit.className = 'ofspot-panel-abtn';
       edit.textContent = 'Modifier';
