@@ -69,14 +69,17 @@ body.mobile-ui .spots-rail { left: 10px; }
    bottom = hauteur de frise + marge → le panneau se pose AU-DESSUS de la frise et
    reste lisible sans avoir à masquer la frise. */
 .ofspot-panel {
-  position: fixed; z-index: 39; left: 64px; bottom: calc(var(--timeline-height, 88px) + 16px);
-  width: 300px; max-width: calc(100vw - 88px);
+  position: fixed; z-index: 39;
+  width: 340px; max-width: calc(100vw - 24px);
   background: #121a25; color: #e9eff7; border: 1px solid #22303f; border-radius: 14px; padding: 12px 12px 10px;
   box-shadow: 0 14px 34px -14px #000c; opacity: 0; transform: translateY(8px); pointer-events: none;
   transition: opacity .18s, transform .18s;
-  /* Jamais plus haut que l'espace au-dessus de la frise (le panorama s'adapte → pas de scroll). */
-  max-height: calc(100dvh - var(--timeline-height, 88px) - 14px); overflow-y: auto; overflow-x: hidden;
+  /* Jamais plus haut que l'espace au-dessus de la frise → pas de scroll. */
+  max-height: calc(100dvh - var(--timeline-height, 88px) - 20px); overflow-y: auto; overflow-x: hidden;
 }
+/* Tablette/desktop : le panneau SUIT le spot (left/top posés en inline par spots.js, comme le
+   tooltip des cellules). Ces valeurs ne servent que de repli si le JS n'a pas encore positionné. */
+.ofspot-panel--track { left: 64px; top: 84px; right: auto; bottom: auto; }
 .ofspot-panel.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
 /* Onglets du panneau spot (Aperçu / Panorama 360°) — une vue à la fois. */
 .ofspot-panel-tabs { display: flex; gap: 6px; margin: 8px 0 6px; }
@@ -102,9 +105,21 @@ body.mobile-ui .spots-rail { left: 10px; }
 .ofspot-panel-abtn.del { color: #e8725a; border-color: #e8725a55; }
 .ofspot-panel-abtn.del:hover { border-color: #e8725a; background: #e8725a14; }
 /* +34px : dégage aussi la poignée de repli de la frise (z 30, ~30px au-dessus du dock). */
-/* Largeur PLAFONNÉE (même en mobile-ui, tjrs posé) : sinon plein écran → panorama démesuré en
-   hauteur (ratio ~3.3:1) qui déborde en paysage. 460px = panorama modéré qui tient sans scroll. */
-body.mobile-ui .ofspot-panel { left: 8px; right: 8px; width: auto; max-width: 460px; bottom: calc(var(--timeline-height, 88px) + 34px); }
+/* Téléphone PORTRAIT : pleine largeur, ancré AU-DESSUS de la frise (jamais dessus). */
+@media (orientation: portrait) and (max-width: 767px) {
+  .ofspot-panel {
+    left: 8px; right: 8px; top: auto; width: auto; max-width: none;
+    bottom: calc(var(--timeline-height, 88px) + 10px);
+    max-height: calc(100dvh - var(--timeline-height, 88px) - 20px);
+  }
+}
+/* Téléphone PAYSAGE : plein écran. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .ofspot-panel {
+    inset: 0; left: 0; top: 0; right: 0; bottom: 0;
+    width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0;
+  }
+}
 
 /* ── Chasse : panneau « spots viables pour cette cellule orageuse » (Phase 1) ──
    Même gabarit/z-index que .ofspot-panel, accent ambre orage. En mode chasse, il

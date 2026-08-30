@@ -297,6 +297,58 @@
 
   // ── Cercle de vision GÉO imprimé sur la carte + panneau de stats ────────────
   var VIS_SRC = 'ofspot-vision', selectedSpotId = null, panelEl = null, visionWired = false;
+  var panelSpot = null, panelTrackBound = null;   // suivi de position (tablette/desktop)
+
+  // Régime d'affichage du panneau spot : téléphone portrait (pleine largeur au-dessus de la frise),
+  // téléphone paysage (plein écran), sinon tablette/desktop = « suivi » (le panneau se place près
+  // du spot à l'écran, comme le tooltip des cellules).
+  function panelRegime() {
+    try {
+      if (window.matchMedia('(orientation: landscape) and (max-height: 500px)').matches) return 'phone-land';
+      if (window.matchMedia('(orientation: portrait) and (max-width: 767px)').matches) return 'phone-port';
+    } catch (e) {}
+    return 'track';
+  }
+  function timelinePx() {
+    var v = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--timeline-height'), 10);
+    return isFinite(v) ? v : 88;
+  }
+  // Positionne le panneau : en « suivi », ancré près du spot (flip pour rester à l'écran, jamais
+  // sur la frise). Dans les régimes téléphone, on efface le style inline → les media queries gèrent.
+  function layoutPanel() {
+    if (!panelEl || !panelSpot) return;
+    var reg = panelRegime(), track = reg === 'track';
+    panelEl.classList.toggle('ofspot-panel--track', track);
+    panelEl.classList.toggle('ofspot-panel--full', reg === 'phone-land');
+    if (!track) { panelEl.style.left = ''; panelEl.style.top = ''; return; }
+    if (typeof map === 'undefined' || !map.project || typeof panelSpot.lon !== 'number') return;
+    var pt = map.project([panelSpot.lon, panelSpot.lat]);
+    var cont = map.getContainer().getBoundingClientRect();
+    var sx = cont.left + pt.x, sy = cont.top + pt.y;
+    var pw = panelEl.offsetWidth || 340, ph = panelEl.offsetHeight || 300;
+    var m = 12, gap = 18, friseTop = window.innerHeight - timelinePx() - 10;
+    var left = sx + gap;
+    if (left + pw + m > window.innerWidth) left = sx - gap - pw;   // flip à gauche du spot
+    left = Math.max(m, Math.min(left, window.innerWidth - pw - m));
+    var top = sy - ph / 2;
+    top = Math.min(top, friseTop - ph);                            // jamais sur la frise
+    top = Math.max(m, top);
+    panelEl.style.left = left + 'px'; panelEl.style.top = top + 'px';
+  }
+  function bindPanelTracking() {
+    if (panelTrackBound) return;
+    panelTrackBound = function () { layoutPanel(); };
+    try { map.on('move', panelTrackBound); } catch (e) {}
+    window.addEventListener('resize', panelTrackBound);
+    window.addEventListener('orientationchange', panelTrackBound);
+  }
+  function unbindPanelTracking() {
+    if (!panelTrackBound) return;
+    try { map.off('move', panelTrackBound); } catch (e) {}
+    window.removeEventListener('resize', panelTrackBound);
+    window.removeEventListener('orientationchange', panelTrackBound);
+    panelTrackBound = null;
+  }
 
   function destPoint(lon, lat, azDeg, distM) {   // destination géodésique (sphère)
     var R = 6371000, br = azDeg * Math.PI / 180, ad = distM / R;
@@ -396,7 +448,8 @@
     }
     selectedSpotId = null;
     closeGpsMenu();
-    if (panelEl) panelEl.classList.remove('show');
+    unbindPanelTracking(); panelSpot = null;
+    if (panelEl) { panelEl.classList.remove('show'); panelEl.style.left = ''; panelEl.style.top = ''; }
   }
 
   // ══ CHASSE : « spots viables pour CETTE cellule orageuse » ══════════════════
@@ -717,6 +770,7 @@
 
   function showPanel(spot) {
     var h = spot.horizon || null;
+    panelSpot = spot;
     if (!panelEl) { panelEl = document.createElement('div'); panelEl.className = 'ofspot-panel'; panelEl.id = 'ofspotPanel'; document.body.appendChild(panelEl); }
     panelEl.innerHTML = '';
     var close = document.createElement('button'); close.type = 'button'; close.className = 'ofspot-panel-close'; close.setAttribute('aria-label', 'Fermer'); close.textContent = '×';
@@ -764,7 +818,7 @@
         var tabs = document.createElement('div'); tabs.className = 'ofspot-panel-tabs'; tabs.setAttribute('role', 'tablist');
         var mkTab = function (label, on) { var b = document.createElement('button'); b.type = 'button'; b.className = 'ofspot-panel-tab' + (on ? ' is-on' : ''); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', on ? 'true' : 'false'); b.textContent = label; return b; };
         var tA = mkTab('Aperçu', true), tB = mkTab('Panorama 360°', false);
-        var setTab = function (info) { infoPane.hidden = !info; panoPane.hidden = info; tA.classList.toggle('is-on', info); tB.classList.toggle('is-on', !info); tA.setAttribute('aria-selected', info ? 'true' : 'false'); tB.setAttribute('aria-selected', info ? 'false' : 'true'); };
+        var setTab = function (info) { infoPane.hidden = !info; panoPane.hidden = info; tA.classList.toggle('is-on', info); tB.classList.toggle('is-on', !info); tA.setAttribute('aria-selected', info ? 'true' : 'false'); tB.setAttribute('aria-selected', info ? 'false' : 'true'); layoutPanel(); };
         tA.addEventListener('click', function () { setTab(true); }); tB.addEventListener('click', function () { setTab(false); });
         tabs.append(tA, tB); panelEl.appendChild(tabs);
         panelEl.appendChild(infoPane); panelEl.appendChild(panoPane);
@@ -798,6 +852,7 @@
       panelEl.appendChild(acts);
     }
     panelEl.classList.add('show');
+    layoutPanel(); bindPanelTracking();
   }
 
   function clearMarkers() { markers.forEach(function (m) { m.remove(); }); markers = []; }
