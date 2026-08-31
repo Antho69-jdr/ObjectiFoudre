@@ -74,17 +74,17 @@
       texte: "Prévisions, Radar et Étoiles lisent la même maille de 15 km sous trois angles : ce qui est prévu, ce qui est observé, et la qualité du ciel nocturne. Celle qui s'ouvre au lancement se choisit dans votre compte."
     },
     {
-      id: 'compte', ancre: 'compte', feature: null,
-      titre: 'Spots et alertes',
-      texte: "Enregistrez des spots avec leur horizon dégagé, et recevez une alerte lorsqu’une cellule orageuse approche d’un département suivi.",
-      action: 'compte'
-    },
-    {
-      // Dernière étape : on termine sur la vue d'anticipation, et « Terminer » y emmène.
       id: 'prev', ancre: 'nav:prev', feature: 'horizon_long',
       titre: 'Risque orageux J+0 → J+10',
       texte: "AROME jusqu’à J+1, ECMWF au-delà, avec une tendance à partir de J+4. C’est la vue d’anticipation, celle qui décide d’une sortie.",
       action: 'prev'
+    },
+    {
+      // Dernière étape : la visite se termine sur une demande (ouverture du compte).
+      id: 'compte', ancre: 'compte', feature: null,
+      titre: 'Spots et alertes',
+      texte: "Enregistrez des spots avec leur horizon dégagé, et recevez une alerte lorsqu’une cellule orageuse approche d’un département suivi.",
+      action: 'compte'
     }
   ];
 
