@@ -2,12 +2,11 @@
    Component : ecrans systeme (LIVE, legacy migre, parite stricte)
    -----------------------------------------------------------------------------
    - app-loader : splash d'ouverture (#appLoader, plein ecran sur #app).
-   - mobile-block-screen : ecran « smartphone non pris en charge ».
    Valeurs reprises VERBATIM du legacy (composants 534-578 / 1192-1240) → aucun
    changement visuel ; theme.css charge en dernier gagne a specificite egale une
-   fois le legacy purge (cluster `sysscreens`). Le comportement d'etat
-   `body.mobile-blocked` (overflow + pointer-events, migre depuis le legacy en
-   Tier 1 du retrait des CSS legacy) est en bas de fichier.
+   fois le legacy purge (cluster `sysscreens`).
+   L'ecran « smartphone non pris en charge » a ete RETIRE (v1.3.240) : c'etait une
+   vieille regle deja neutralisee dans le JS, l'application est supportee sur mobile.
    ========================================================================== */
 
 /* ----------------------------------------------------- Splash / loader --- */
@@ -85,68 +84,4 @@
 @media (prefers-reduced-motion: reduce) {
   .app-loader-logo { animation: none; }
   .app-loader-card::after { animation: none; background-position: 50% 0, 0 0; }
-}
-
-/* ------------------------------------------------ Ecran de blocage mobile --- */
-.mobile-block-screen {
-  position: fixed;
-  inset: 0;
-  z-index: 2000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)) 20px;
-  background:
-    radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 42%),
-    linear-gradient(180deg, rgba(4, 10, 20, 0.98), rgba(7, 17, 31, 0.995));
-}
-/* [hidden] (0,2,0) bat la base .mobile-block-screen{display:flex} (0,1,0) par
-   spécificité → display:none sans !important (phase qualité 2026-06-30). */
-.mobile-block-screen[hidden] {
-  display: none;
-}
-.mobile-block-card {
-  width: min(100%, 420px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 24px 20px;
-  border-radius: var(--r-xl);
-  border: 1px solid var(--border-mid);
-  background: rgba(9, 20, 35, 0.94);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
-  text-align: center;
-}
-.mobile-block-logo {
-  width: 76px;
-  height: 76px;
-  object-fit: contain;
-}
-.mobile-block-title {
-  font-size: var(--fs-24);
-  font-weight: var(--fw-extrabold);
-  letter-spacing: 0.02em;
-  color: #f5f7fb;
-}
-.mobile-block-text {
-  margin: 0;
-  color: #f5f7fb;
-  font-size: var(--fs-16);
-  line-height: 1.45;
-}
-.mobile-block-text-secondary {
-  color: rgba(230, 236, 245, 0.78);
-  font-size: var(--fs-15);
-}
-
-/* ------------------------------------------ Comportement « bloque » --- */
-/* mobile-block.js pose body.mobile-blocked sous l'ecran de blocage : fige le
-   scroll + neutralise l'app dessous. (Actuellement isBlockedSmartphone()=false
-   -> dormant ; migre pour parite. Le display:block etait en !important legacy
-   mais ne surcharge rien — #app est block par defaut — donc 0 !important.) */
-body.mobile-blocked { overflow: hidden; }
-body.mobile-blocked #app { pointer-events: none; user-select: none; }
-@media (max-width: 767px), (pointer: coarse) {
-  body.mobile-blocked #app { display: block; }
 }
