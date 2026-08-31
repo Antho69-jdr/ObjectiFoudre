@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.241"
+APP_VERSION = "1.3.243"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -17171,6 +17171,7 @@ class AccountPrefsRequest(BaseModel):
     default_map: str | None = Field(None, max_length=20)
     bottom_nav: list[str] | None = Field(None)
     avatar: str | None = Field(None, max_length=32)
+    tour_done: bool | None = Field(None)
 
 
 @app.post("/api/account/prefs")
@@ -17192,6 +17193,8 @@ async def account_set_prefs(request: Request, payload: AccountPrefsRequest) -> R
         patch["bottom_nav"] = payload.bottom_nav
     if "avatar" in fields:
         patch["avatar"] = payload.avatar
+    if "tour_done" in fields:
+        patch["tour_done"] = payload.tour_done
     if not patch:
         return JSONResponse({"ok": True, "user": accounts.private_view(user)})
     try:

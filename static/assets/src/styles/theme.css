@@ -181,6 +181,7 @@
 /* Frise 3 « ruban chronologique à curseur » (remplace date-strip + period-tabs) —
    après c1 pour gagner la cascade dans le dock desktop. */
 @import "./components/prediction-ribbon.css";
+@import "./components/tour.css";
 
 :root {
   /* Fond & surfaces */

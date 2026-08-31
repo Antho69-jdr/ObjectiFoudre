@@ -575,6 +575,10 @@ def set_prefs(user_id: str, patch: dict[str, Any]) -> dict[str, Any]:
             clean["bottom_nav"] = seen or None
         else:
             raise AccountError("Configuration de barre invalide.")
+    if "tour_done" in patch:
+        # Visite guidée du premier lancement déjà effectuée. Miroir du localStorage,
+        # pour ne pas relancer la visite quand l'utilisateur change d'appareil.
+        clean["tour_done"] = True if patch["tour_done"] else None
     if "avatar" in patch:
         # Avatar de compte (refonte mobile). ID court d'un preset de la galerie ;
         # 'ini'/absent/invalide → None (= initiales colorées). Le front valide.

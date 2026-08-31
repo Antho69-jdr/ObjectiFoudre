@@ -1,0 +1,178 @@
+/* =============================================================================
+   Component : visite guidée du premier lancement (tour.js)
+   -----------------------------------------------------------------------------
+   Le « projecteur » est une box-shadow de très grand rayon autour d'un trou
+   transparent : aucun masque SVG, aucune bibliothèque, et la zone éclairée reste
+   parfaitement nette. Le trou ne capte pas les gestes (pointer-events: none) —
+   c'est la nappe qui les intercepte, pour que le clic dehors ferme la visite.
+   ========================================================================== */
+
+.of-tour {
+  position: fixed;
+  inset: 0;
+  z-index: 400;              /* au-dessus des pages plein écran (68) et de la barre
+                                du bas (92) ; sous rien d'autre : la visite est modale */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 180ms ease, visibility 0s linear 180ms;
+}
+.of-tour.visible {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 180ms ease;
+}
+
+/* Cible fantôme pour l'étape « cellule » : la grille n'expose pas de noeud par
+   cellule, on éclaire donc une zone au centre de la carte. Invisible en soi. */
+.of-tour-cible {
+  position: fixed;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.of-tour-trou {
+  position: fixed;
+  border-radius: 10px;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 9999px rgba(4, 10, 18, 0.78),
+    0 0 0 2px var(--accent, #38bdf8),
+    0 0 26px 4px rgba(56, 189, 248, 0.45);
+  transition: left 380ms cubic-bezier(.3, .8, .35, 1),
+              top 380ms cubic-bezier(.3, .8, .35, 1),
+              width 380ms cubic-bezier(.3, .8, .35, 1),
+              height 380ms cubic-bezier(.3, .8, .35, 1);
+}
+
+.of-tour-bulle {
+  position: fixed;
+  width: min(320px, calc(100vw - 24px));
+  background: var(--panel, #14243a);
+  border: 1px solid var(--accent, #38bdf8);
+  border-radius: 12px;
+  padding: 15px 16px 14px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
+  transition: left 380ms cubic-bezier(.3, .8, .35, 1),
+              top 380ms cubic-bezier(.3, .8, .35, 1);
+}
+
+.of-tour-num {
+  font-size: var(--fs-11, 11px);
+  font-weight: var(--fw-bold, 700);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent, #38bdf8);
+}
+.of-tour-titre {
+  margin: 6px 0 6px;
+  font-size: var(--fs-17, 17px);
+  font-weight: var(--fw-extrabold, 800);
+  line-height: 1.2;
+  color: #f5f8fd;
+}
+.of-tour-texte {
+  margin: 0;
+  font-size: var(--fs-14, 14px);
+  line-height: 1.45;
+  color: var(--text-dim, #9fb2cc);
+}
+
+.of-tour-points {
+  display: flex;
+  gap: 4px;
+  margin-top: 12px;
+}
+.of-tour-points i {
+  display: block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.of-tour-points i.on { background: var(--accent, #38bdf8); }
+
+.of-tour-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 13px;
+}
+/* `body.mobile-ui button { min-width: 88px }` dilaterait ces boutons : on neutralise. */
+.of-tour-btn,
+.of-tour-passer {
+  min-width: 0 !important;
+  flex: 0 0 auto !important;
+}
+.of-tour-btn {
+  font-size: var(--fs-13, 13px);
+  font-weight: var(--fw-semibold, 600);
+  padding: 7px 13px;
+  border-radius: 7px;
+  border: 1px solid var(--border-mid, #31506f);
+  background: transparent;
+  color: var(--text-dim, #9fb2cc);
+  cursor: pointer;
+}
+.of-tour-btn:hover:not(:disabled) { border-color: var(--accent, #38bdf8); color: #fff; }
+.of-tour-btn:disabled { opacity: 0.4; cursor: default; }
+.of-tour-btn-primaire {
+  background: var(--accent, #38bdf8);
+  border-color: var(--accent, #38bdf8);
+  color: #04121f;
+}
+.of-tour-btn-primaire:hover:not(:disabled) { color: #04121f; filter: brightness(1.1); }
+.of-tour-passer {
+  margin-left: auto;
+  font-size: var(--fs-12, 12px);
+  padding: 7px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint, #7c92ad);
+  cursor: pointer;
+}
+.of-tour-passer:hover { color: var(--text-dim, #9fb2cc); }
+
+.of-tour :focus-visible {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 2px;
+}
+
+/* Pendant la visite, le fond ne défile pas sous la nappe. */
+body.of-tour-ouvert { overflow: hidden; }
+
+/* Téléphone : la bulle prend toute la largeur utile et le texte respire moins. */
+@media (max-width: 600px), (pointer: coarse) {
+  .of-tour-bulle { width: min(340px, calc(100vw - 20px)); padding: 14px 15px 13px; }
+  .of-tour-titre { font-size: var(--fs-16, 16px); }
+}
+
+/* Téléphone en paysage : très peu de hauteur, on compacte tout. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .of-tour-bulle { padding: 11px 13px 11px; width: min(300px, calc(100vw - 20px)); }
+  .of-tour-titre { margin: 4px 0 4px; font-size: var(--fs-15, 15px); }
+  .of-tour-texte { font-size: var(--fs-13, 13px); line-height: 1.35; }
+  .of-tour-points { margin-top: 8px; }
+  .of-tour-actions { margin-top: 9px; }
+}
+
+/* Mouvement réduit : le projecteur saute d'une ancre à l'autre au lieu de glisser. */
+@media (prefers-reduced-motion: reduce) {
+  .of-tour-trou,
+  .of-tour-bulle { transition: none; }
+  .of-tour { transition: none; }
+}
+
+/* Entrée « Revoir la visite » dans le tiroir d'aide. */
+.drawer-tour-btn {
+  margin-top: 10px;
+  min-width: 0 !important;
+  font-size: var(--fs-13, 13px);
+  font-weight: var(--fw-semibold, 600);
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--accent, #38bdf8);
+  background: transparent;
+  color: var(--accent, #38bdf8);
+  cursor: pointer;
+}
+.drawer-tour-btn:hover { background: var(--accent, #38bdf8); color: #04121f; }
