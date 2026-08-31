@@ -44,6 +44,14 @@
       texte: "La frise parcourt les créneaux de la journée. La carte est recalculée à chaque pas."
     },
     {
+      // Le rail gauche n'est pas UN élément mais TROIS, un par carte : #spotsRail
+      // (Prévisions), #chaseLayerRail (Radar), #stargazeLayerRail (Étoiles).
+      // L'ancre prend celui qui est visible, d'où le message « il change ».
+      id: 'rail', ancre: 'rail', feature: null,
+      titre: 'Les outils de la carte, à gauche',
+      texte: "Ce rail regroupe les outils de la carte affichée : spots et meilleures cellules ici. Son contenu CHANGE avec la carte — le radar y expose ses couches, le mode étoiles ses filtres de ciel."
+    },
+    {
       id: 'prev', ancre: 'nav:prev', feature: 'horizon_long',
       titre: 'Risque orageux J+0 → J+10',
       texte: "AROME jusqu’à J+1, ECMWF au-delà, avec une tendance à partir de J+4. C’est la vue d’anticipation."
@@ -57,6 +65,11 @@
       id: 'etoiles', ancre: 'nav:etoiles', feature: 'stargaze',
       titre: 'Qualité du ciel nocturne',
       texte: "Pollution lumineuse, nébulosité par étage, phase et hauteur de la Lune. La seconde lecture de la même grille, hors saison orageuse."
+    },
+    {
+      id: 'cartes', ancre: 'cartes', feature: null,
+      titre: 'Trois cartes, une même grille',
+      texte: "Prévisions, Radar et Étoiles lisent la même maille de 15 km sous trois angles : ce qui est prévu, ce qui est observé, et la qualité du ciel nocturne. Celle qui s'ouvre au lancement se choisit dans votre compte."
     },
     {
       id: 'compte', ancre: 'compte', feature: null,
@@ -262,6 +275,33 @@
       var ab = document.getElementById('accountBtn');
       return { el: visible(ab) ? ab : null };
     }
+    if (ancre === 'rail') {
+      // Le premier rail gauche visible : chaque carte a le sien.
+      var rails = ['spotsRail', 'chaseLayerRail', 'stargazeLayerRail'];
+      for (var i = 0; i < rails.length; i++) {
+        var el = document.getElementById(rails[i]);
+        if (visible(el)) return { el: el, large: true };
+      }
+      return { el: null };
+    }
+    if (ancre === 'cartes') {
+      // Union des entrées de navigation des trois cartes principales. En bandeau
+      // desktop il n'y a pas de bouton « Prévisions » (c'est la carte par défaut,
+      // affichée quand aucune page n'est ouverte) : on unit ce qu'on trouve.
+      var sels = ['.bnav-tab[data-nav="carte"]', '.bnav-tab[data-nav="radar"]',
+                  '.bnav-tab[data-nav="etoiles"]', '#chasePageBtn', '#stargazePageBtn'];
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, n = 0;
+      for (var k = 0; k < sels.length; k++) {
+        var e2 = document.querySelector(sels[k]);
+        if (!visible(e2)) continue;
+        var rr = e2.getBoundingClientRect();
+        x0 = Math.min(x0, rr.left); y0 = Math.min(y0, rr.top);
+        x1 = Math.max(x1, rr.right); y1 = Math.max(y1, rr.bottom);
+        n++;
+      }
+      if (n < 2) return { el: null };          // pas de quoi parler de « trois cartes »
+      return { rect: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } };
+    }
     if (ancre.indexOf('nav:') === 0) {
       var cle = ancre.slice(4);
       // 1) barre du bas : l'onglet s'il est épinglé, sinon « Plus » qui le contient
@@ -388,7 +428,8 @@
       return;
     }
     var b = r.rect || r.el.getBoundingClientRect();
-    var marge = r.plein ? -Math.min(b.width, b.height) * 0.28 : (r.doux ? 4 : 8);
+    var marge = r.plein ? -Math.min(b.width, b.height) * 0.28
+              : (r.large ? 16 : (r.doux ? 4 : 8));
     var x = b.x - marge, y = b.y - marge, w = b.width + marge * 2, h = b.height + marge * 2;
 
     if (sansAnim) trou.style.transition = 'none';
