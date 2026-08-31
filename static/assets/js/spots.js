@@ -319,8 +319,18 @@
     var v = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--timeline-height'), 10);
     return window.innerHeight - (isFinite(v) ? v : 88);
   }
+  // Rayon À L'ÉCRAN (px) du cercle de vision (~30 km) au zoom courant → pour placer le panneau
+  // JUSTE À CÔTÉ du cercle (sans le recouvrir).
+  function visionRadiusPx(spot) {
+    try {
+      if (typeof map === 'undefined' || !map.project) return 0;
+      var c = map.project([spot.lon, spot.lat]);
+      var e = map.project(destPoint(spot.lon, spot.lat, 90, 30000));
+      return Math.hypot(e.x - c.x, e.y - c.y);
+    } catch (e) { return 0; }
+  }
   // Positionne le panneau selon le régime. Téléphone : styles inline minimaux + media queries.
-  // Suivi (tablette/desktop) : ancré près du spot (flip pour rester à l'écran, jamais sur la frise).
+  // Suivi (tablette/desktop) : à CÔTÉ du cercle de vision (jamais dessus), jamais sur la frise.
   function layoutPanel() {
     if (!panelEl || !panelSpot) return;
     var reg = panelRegime(), s = panelEl.style;
@@ -339,9 +349,11 @@
     var cont = map.getContainer().getBoundingClientRect();
     var sx = cont.left + pt.x, sy = cont.top + pt.y;
     var pw = panelEl.offsetWidth || 340, ph = panelEl.offsetHeight || 300;
-    var m = 12, gap = 18, fT = friseTop - 10;
+    var m = 12, fT = friseTop - 10;
+    // Gap = juste au-delà du cercle de vision (borné à ~la moitié de l'écran pour rester visible).
+    var gap = Math.max(28, Math.min(visionRadiusPx(panelSpot) + 24, window.innerWidth * 0.5));
     var left = sx + gap;
-    if (left + pw + m > window.innerWidth) left = sx - gap - pw;   // flip à gauche du spot
+    if (left + pw + m > window.innerWidth) left = sx - gap - pw;   // flip de l'autre côté du spot
     left = Math.max(m, Math.min(left, window.innerWidth - pw - m));
     var top = Math.min(sy - ph / 2, fT - ph);                      // jamais sur la frise
     top = Math.max(m, top);
@@ -563,7 +575,16 @@
   function stopStormPulse() { if (stormPulseRAF != null) { cancelAnimationFrame(stormPulseRAF); stormPulseRAF = null; } }
 
   function focusStormSpot(spot) {
-    try { map.flyTo({ center: [spot.lon, spot.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 8, 9), duration: 650 }); } catch (e) {}
+    try {
+      var flyOpts = { center: [spot.lon, spot.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 8, 9), duration: 650 };
+      // Téléphone portrait : le panneau couvre le bas → on remonte le spot AU-DESSUS du panneau
+      // (padding bas = tout ce qui est sous le haut du panneau : panneau + frise).
+      if (panelRegime() === 'phone-port' && panelEl) {
+        var ptop = panelEl.getBoundingClientRect().top;
+        if (ptop > 0) flyOpts.padding = { top: 0, left: 0, right: 0, bottom: Math.max(0, window.innerHeight - ptop + 8) };
+      }
+      map.flyTo(flyOpts);
+    } catch (e) {}
   }
 
   function showStormPanel(cell, picks) {
