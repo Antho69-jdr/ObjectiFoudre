@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.238"
+APP_VERSION = "1.3.239"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -790,6 +790,50 @@ METEOFRANCE_GRIB_SLOT_GRID_SPECS = [
 # grille : ce sont des enrichissements (le scoring les gère en None). Permet d'ajouter
 # de nouveaux champs AROME sans risque de régression si un run/groupe ne les expose pas.
 METEOFRANCE_GRIB_NON_FATAL_FIELDS = {"boundary_layer_height"}
+
+# ── AGRÉGATION PAR CELLULE ────────────────────────────────────────────────────
+# Une cellule de 15 km couvre ~42 points de la grille AROME 0,025°. Historiquement on
+# n'en lisait qu'UN (le plus proche du centre) alors que le champ entier est déjà décodé
+# en mémoire : 69 % des cellules contenant une poche de CAPE > 1500 J/kg étaient
+# représentées par une valeur qui ne la voyait pas.
+# MESURÉ (campagne 27-30/08/2026, 3029 cellules-jours dont 2 journées calmes, scores du
+# pipeline réel confrontés à la foudre MTG-LI) : résumer la cellule par un p90 au lieu
+# d'y piocher un point gagne +0,048 de CSI ET d'AUC, à la résolution de production.
+# À comparer aux +0,001 de CSI qu'ont jamais rapporté les poids appris.
+# ⚠ Le seuil optimal se DÉPLACE avec l'agrégateur (50 -> 65 sur « au moins 10 éclairs ») :
+#   activer ce réglage SANS réapprendre le seuil ferait virer tout le pays au rouge.
+#   D'où le défaut `nearest` : le comportement déployé reste rigoureusement inchangé
+#   tant que la variable d'environnement n'est pas posée.
+# ⚠ Réserve assumée : le p90 prend la température au coin le plus chaud et le point de
+#   rosée au coin le plus humide, qui ne sont pas le même endroit — le profil obtenu
+#   n'existe nulle part dans la cellule. La variante cohérente (tout lire au point le
+#   plus instable) a été testée : statistiquement équivalente, AUC légèrement inférieure,
+#   et elle imposerait de coordonner les champs entre eux (refonte de l'échantillonnage).
+METEOFRANCE_CELL_AGGREGATORS = {"nearest", "p90"}
+METEOFRANCE_CELL_AGGREGATOR = (
+    (os.environ.get("OBJECTIFOUDRE_CELL_AGGREGATOR") or "nearest").strip().lower()
+)
+if METEOFRANCE_CELL_AGGREGATOR not in METEOFRANCE_CELL_AGGREGATORS:
+    METEOFRANCE_CELL_AGGREGATOR = "nearest"
+METEOFRANCE_CELL_AGGREGATOR_PERCENTILE = 90.0
+# Grandeurs CIRCULAIRES : un percentile sur des azimuts n'a aucun sens (350° et 10° sont
+# voisins). Elles restent au plus proche voisin quel que soit le réglage.
+METEOFRANCE_CELL_AGGREGATOR_EXCLUDED_PREFIXES = ("wind_direction_",)
+
+
+def _cell_aggregator_for_field(field: str) -> str:
+    """Agrégateur effectif d'un champ : `nearest` ou le mode configuré."""
+    if METEOFRANCE_CELL_AGGREGATOR == "nearest":
+        return "nearest"
+    if str(field or "").startswith(METEOFRANCE_CELL_AGGREGATOR_EXCLUDED_PREFIXES):
+        return "nearest"
+    return METEOFRANCE_CELL_AGGREGATOR
+
+
+def _cell_aggregator_cache_token() -> str:
+    """Jeton de cache. VIDE en mode `nearest` pour que le déploiement du réglage
+    n'invalide AUCUN cache ni archive existants tant qu'il n'est pas activé."""
+    return "" if METEOFRANCE_CELL_AGGREGATOR == "nearest" else f":agg={METEOFRANCE_CELL_AGGREGATOR}"
 METEOFRANCE_GRIB_SLOT_PACKAGE_INDEX_LIMITS = {
     "SP1": 24,
     "SP2": 80,
@@ -2874,6 +2918,10 @@ def _archive_france_slot_grid(result: dict[str, Any]) -> None:
             "hour": hour,
             "run_reference_time": run_ref,
             "algorithm_version": meta.get("grib_slot_grid_algorithm_version"),
+            # Agrégateur de cellule utilisé pour ce créneau : une bascule change la
+            # distribution des scores, donc le seuil appris. Sans cette trace, une
+            # fenêtre de 180 jours mêlerait deux populations sans qu'on puisse le voir.
+            "cell_aggregator": METEOFRANCE_CELL_AGGREGATOR,
             "generated_at": meta.get("generated_at"),
             "archived_at": _history_now_iso(),
             "payload": payload,
@@ -3826,7 +3874,8 @@ def _meteofrance_metadata_cache_key(api_key: str, scope: str, model: str | None 
 
 def _meteofrance_slot_grid_cache_key(api_key: str, lat: float, lon: float, label: str, target_date: Date, hour: int, detail_level: str) -> str:
     base = _meteofrance_metadata_cache_key(api_key, "slot-grid")
-    return f"{base}:{_cache_key(lat, lon, target_date)}:h{hour:02d}:detail={detail_level}:label={_label_cache_key(label)}"
+    return (f"{base}:{_cache_key(lat, lon, target_date)}:h{hour:02d}:detail={detail_level}"
+            f":label={_label_cache_key(label)}{_cell_aggregator_cache_token()}")
 
 
 def _meteofrance_grib_slot_grid_cache_key(api_key: str, requested_grid: str | None, lat: float, lon: float, label: str, target_date: Date, hour: int, detail_level: str) -> str:
@@ -3834,7 +3883,8 @@ def _meteofrance_grib_slot_grid_cache_key(api_key: str, requested_grid: str | No
     base = _meteofrance_metadata_cache_key(api_key, "grib-slot-grid")
     return (
         f"{base}:grid={grid_part}:{_cache_key(lat, lon, target_date)}:h{hour:02d}:"
-        f"detail={detail_level}:algo={METEOFRANCE_GRIB_SLOT_GRID_ALGORITHM_VERSION}:label={_label_cache_key(label)}"
+        f"detail={detail_level}:algo={METEOFRANCE_GRIB_SLOT_GRID_ALGORITHM_VERSION}"
+        f":label={_label_cache_key(label)}{_cell_aggregator_cache_token()}"
     )
 
 
@@ -3844,6 +3894,7 @@ def _meteofrance_grib_france_slot_grid_cache_key(api_key: str, requested_grid: s
     return (
         f"{base}:grid={grid_part}:date={target_date.isoformat()}:h{hour:02d}:"
         f"detail={detail_level}:algo={METEOFRANCE_GRIB_SLOT_GRID_ALGORITHM_VERSION}"
+        f"{_cell_aggregator_cache_token()}"
     )
 
 
@@ -5567,9 +5618,28 @@ def _sample_meteofrance_grib_national_field_cache(
     if len(values) < ni * nj:
         return {"ok": False, "message": "Tableau national GRIB plus court que la grille annoncee.", "samples": []}
 
+    # Agrégation par cellule : même règle que le chemin eccodes (cf. _grib_nearest_samples).
+    # Les deux chemins DOIVENT s'accorder, sinon la valeur d'une cellule dépendrait de
+    # l'état du cache plutôt que de la météo.
+    aggregate = _cell_aggregator_for_field(field)
+    cell_percentile = None
+    if aggregate == "p90":
+        try:
+            import numpy as np
+
+            lat_step = float(lat_increment) if lat_increment else (last_lat - first_lat) / max(nj - 1, 1)
+            lon_step = float(lon_increment) if lon_increment else (last_lon - first_lon) / max(ni - 1, 1)
+            grid2d = np.asarray(values[: ni * nj], dtype=float).reshape((nj, ni))
+            half_j, half_i = _cell_half_steps(list(points), lat_step, lon_step)
+            missing = metadata.get("missingValue")
+            missing = float(missing) if missing is not None else None
+            cell_percentile = {"grid": grid2d, "half_j": half_j, "half_i": half_i, "missing": missing}
+        except Exception:
+            cell_percentile = None   # dégradation sûre : on repart au plus proche voisin
+
     samples = []
     valid_samples = []
-    for point in points:
+    for idx, point in enumerate(points):
         lat = float(getattr(point, "lat"))
         lon = float(getattr(point, "lon"))
         y_axis = _grib_axis_index(lat, first_lat, last_lat, nj, lat_increment, cyclic=False)
@@ -5582,6 +5652,15 @@ def _sample_meteofrance_grib_national_field_cache(
         if grid_index < 0 or grid_index >= len(values):
             continue
         raw_value = float(values[grid_index])
+        if cell_percentile is not None:
+            try:
+                raw_value = float(_cell_window_percentiles(
+                    cell_percentile["grid"], [y], [x],
+                    [cell_percentile["half_j"][idx]], [cell_percentile["half_i"][idx]],
+                    METEOFRANCE_CELL_AGGREGATOR_PERCENTILE, cell_percentile["missing"],
+                )[0])
+            except Exception:
+                pass
         value = round(raw_value, 3) if math.isfinite(raw_value) else None
         sample = {
             "zone": getattr(point, "zone", ""),
@@ -8328,7 +8407,95 @@ def _convert_meteofrance_grib_field_value(field: str, value: float | None, metad
     return round(converted, 3)
 
 
-def _grib_nearest_samples(handle: Any, in_lats: list[float], in_lons: list[float]) -> list[dict[str, Any] | None]:
+def _cell_window_percentiles(
+    grid: Any,
+    jj: Any,
+    ii: Any,
+    half_j: Any,
+    half_i: Any,
+    percentile: float,
+    missing_value: float | None = None,
+) -> Any:
+    """p-ième percentile du champ sur la fenêtre de chaque cellule.
+
+    `grid` est le champ en 2 D indexé [latitude, longitude] ; `jj`/`ii` sont les indices
+    du centre de chaque cellule, `half_j`/`half_i` la demi-hauteur et la demi-largeur de
+    la cellule EN PAS DE GRILLE. Les valeurs manquantes sont écartées ; si une fenêtre
+    n'a plus rien de valide, on retombe sur la valeur du centre (comportement historique).
+
+    Vectorisé par taille de fenêtre : les demi-tailles ne prennent qu'une poignée de
+    valeurs distinctes (la cellule ne s'élargit qu'avec la latitude), donc deux ou trois
+    passes numpy suffisent pour toute la France. Une boucle point par point coûtait
+    200 ms par champ, soit plus d'une minute par journée — inacceptable dans la
+    matérialisation.
+    """
+    import numpy as np
+
+    nj, ni = grid.shape
+    jj = np.asarray(jj, dtype=int).ravel()
+    ii = np.asarray(ii, dtype=int).ravel()
+    half_j = np.broadcast_to(np.asarray(half_j, dtype=int).ravel(), jj.shape)
+    half_i = np.broadcast_to(np.asarray(half_i, dtype=int).ravel(), ii.shape)
+
+    centre = grid[jj, ii].astype(float)
+    out = centre.copy()
+    if grid.dtype != np.float64:
+        grid = grid.astype(float)
+
+    for hj, hi in {(int(a), int(b)) for a, b in zip(half_j, half_i)}:
+        sel = np.nonzero((half_j == hj) & (half_i == hi))[0]
+        if sel.size == 0:
+            continue
+        if hj == 0 and hi == 0:
+            continue                      # fenêtre réduite au centre : rien à faire
+        rows = np.clip(jj[sel][:, None] + np.arange(-hj, hj + 1)[None, :], 0, nj - 1)
+        cols = np.clip(ii[sel][:, None] + np.arange(-hi, hi + 1)[None, :], 0, ni - 1)
+        windows = grid[rows[:, :, None], cols[:, None, :]].reshape(sel.size, -1)
+
+        # Percentile par tri plutôt que par `nanpercentile`, qui est ~60x plus lent
+        # (masquage + copies) et coûterait à lui seul une minute par journée France.
+        # `np.sort` relègue les NaN en fin de ligne : il suffit d'indexer au rang
+        # correspondant au nombre de valeurs réellement valides. Interpolation linéaire
+        # identique à celle de np.percentile, vérifiée à 2e-13 près.
+        bad = ~np.isfinite(windows)
+        if missing_value is not None:
+            bad |= np.abs(windows - float(missing_value)) <= 1e-6
+        windows = np.where(bad, np.nan, windows)
+        nvalid = (~bad).sum(axis=1)
+        srt = np.sort(windows, axis=1)
+        safe = np.maximum(nvalid, 1)
+        k = (safe - 1) * (float(percentile) / 100.0)
+        lo = np.floor(k).astype(int)
+        hi = np.minimum(lo + 1, safe - 1)
+        frac = k - lo
+        v_lo = np.take_along_axis(srt, lo[:, None], axis=1)[:, 0]
+        v_hi = np.take_along_axis(srt, hi[:, None], axis=1)[:, 0]
+        vals = v_lo * (1.0 - frac) + v_hi * frac
+        # fenêtre entièrement manquante -> on garde la valeur du centre
+        out[sel] = np.where(nvalid == 0, centre[sel], vals)
+    return out
+
+
+def _cell_half_steps(points: list[Any], lat_step: float, lon_step: float) -> tuple[Any, Any]:
+    """Demi-cellule de chaque point convertie en nombre de pas de grille (>= 0).
+    Les Point portent déjà `cell_height_deg` / `cell_width_deg` : la fenêtre suit donc
+    la vraie géométrie de la cellule, y compris son élargissement en longitude au nord."""
+    import numpy as np
+
+    heights = np.array([float(getattr(p, "cell_height_deg", 0.0) or 0.0) for p in points])
+    widths = np.array([float(getattr(p, "cell_width_deg", 0.0) or 0.0) for p in points])
+    hj = np.floor((heights / 2.0) / max(abs(float(lat_step)), 1e-9)).astype(int)
+    hi = np.floor((widths / 2.0) / max(abs(float(lon_step)), 1e-9)).astype(int)
+    return np.maximum(hj, 0), np.maximum(hi, 0)
+
+
+def _grib_nearest_samples(
+    handle: Any,
+    in_lats: list[float],
+    in_lons: list[float],
+    cell_points: list[Any] | None = None,
+    aggregate: str = "nearest",
+) -> list[dict[str, Any] | None]:
     """Plus proche voisin pour une liste de points, renvoyé aligné sur l'entrée.
 
     Sur grille régulière (regular_ll — cas AROME/ARPEGE/WCS), l'indice se calcule par
@@ -8337,6 +8504,11 @@ def _grib_nearest_samples(handle: Any, in_lats: list[float], in_lons: list[float
     matérialisation (~5500 points × ~14 champs × 24 h). Équivalence exacte vérifiée vs
     codes_grib_find_nearest (0 écart d'index/valeur). Repli eccodes multi-points pour
     toute grille non régulière ou en cas d'imprévu.
+
+    `aggregate="p90"` (avec `cell_points`) remplace la valeur du point central par le
+    90ᵉ percentile du champ sur TOUTE la cellule — les ~42 points de la maille AROME
+    qu'on décodait déjà sans les lire. Le repli non régulier reste au plus proche
+    voisin : dégradation sûre, jamais d'échec.
     """
     import eccodes  # type: ignore
 
@@ -8372,11 +8544,23 @@ def _grib_nearest_samples(handle: Any, in_lats: list[float], in_lons: list[float
                 dlmb = np.radians(grid_lons - qlon)
                 hav = np.sin(dphi / 2.0) ** 2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlmb / 2.0) ** 2
                 dist_km = 2.0 * 6371.0 * np.arcsin(np.minimum(1.0, np.sqrt(hav)))
+                point_values = values[flat]
+                if aggregate == "p90" and cell_points is not None and len(cell_points) == n:
+                    grid2d = values.reshape((ni, nj)).T if j_consecutive else values.reshape((nj, ni))
+                    half_j, half_i = _cell_half_steps(cell_points, lat_step, lon_step)
+                    try:
+                        missing = float(_safe_eccodes_get(handle, "missingValue"))
+                    except (TypeError, ValueError):
+                        missing = None
+                    point_values = _cell_window_percentiles(
+                        grid2d, jj, ii, half_j, half_i,
+                        METEOFRANCE_CELL_AGGREGATOR_PERCENTILE, missing,
+                    )
                 return [
                     {
                         "lat": float(grid_lats[k]),
                         "lon": float(grid_lons[k]),
-                        "value": float(values[flat[k]]),
+                        "value": float(point_values[k]),
                         "distance": float(dist_km[k]),
                         "index": int(flat[k]),
                     }
@@ -8414,7 +8598,10 @@ def _sample_grib_field_nearest_with_eccodes(raw: bytes, field: str, points: list
         if point_list:
             in_lats = [float(point.lat) for point in point_list]
             in_lons = [float(point.lon) for point in point_list]
-            nearest_points = _grib_nearest_samples(handle, in_lats, in_lons)
+            nearest_points = _grib_nearest_samples(
+                handle, in_lats, in_lons,
+                cell_points=point_list, aggregate=_cell_aggregator_for_field(field),
+            )
             for point, normalized in zip(point_list, nearest_points):
                 if normalized is None:
                     continue
@@ -9743,6 +9930,7 @@ def _build_meteofrance_grib_slot_grid_sync(
                 "provider": "meteofrance_arome_grib",
                 "source_provider": "meteofrance_arome_grib",
                 "source_label": "Météo-France AROME GRIB cache",
+                "cell_aggregator": METEOFRANCE_CELL_AGGREGATOR,
                 "nwp_model": _active_nwp_model(),
                 "nwp_model_label": _active_nwp_spec().get("label"),
                 "migration_probe": True,
