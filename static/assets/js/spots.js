@@ -577,11 +577,12 @@
   function focusStormSpot(spot) {
     try {
       var flyOpts = { center: [spot.lon, spot.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 8, 9), duration: 650 };
-      // Téléphone portrait : le panneau couvre le bas → on remonte le spot AU-DESSUS du panneau
-      // (padding bas = tout ce qui est sous le haut du panneau : panneau + frise).
+      // Téléphone portrait : le panneau couvre le bas → on remonte le spot dans le TIERS HAUT de
+      // la zone libre (au-dessus du panneau) via un offset caméra vertical (la caméra se place
+      // « sous » le spot). offset = position visée − centre du conteneur.
       if (panelRegime() === 'phone-port' && panelEl) {
         var ptop = panelEl.getBoundingClientRect().top;
-        if (ptop > 0) flyOpts.padding = { top: 0, left: 0, right: 0, bottom: Math.max(0, window.innerHeight - ptop + 8) };
+        if (ptop > 0) flyOpts.offset = [0, Math.round(ptop * 0.42 - window.innerHeight / 2)];
       }
       map.flyTo(flyOpts);
     } catch (e) {}
