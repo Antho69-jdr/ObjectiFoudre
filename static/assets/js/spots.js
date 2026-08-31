@@ -462,7 +462,14 @@
     try {
       var b = new maplibregl.LngLatBounds();
       [0, 90, 180, 270].forEach(function (a) { b.extend(destPoint(spot.lon, spot.lat, a, 30000)); });
-      map.fitBounds(b, { padding: 70, duration: 700, maxZoom: 11 });
+      // Cadrage du cercle de vision. Téléphone portrait : le panneau couvre le bas → gros padding
+      // bas (= hauteur du panneau) pour cadrer le cercle DANS la zone visible au-dessus du panneau
+      // → le spot rend au-dessus de la modale. Ailleurs : padding uniforme (panneau à côté).
+      var pad = 70;
+      if (panelRegime() === 'phone-port' && panelEl) {
+        pad = { top: 56, left: 24, right: 24, bottom: Math.min((panelEl.offsetHeight || 260) + 28, Math.round(window.innerHeight * 0.62)) };
+      }
+      map.fitBounds(b, { padding: pad, duration: 700, maxZoom: 11 });
     } catch (e) {}
   }
 
@@ -575,19 +582,7 @@
   function stopStormPulse() { if (stormPulseRAF != null) { cancelAnimationFrame(stormPulseRAF); stormPulseRAF = null; } }
 
   function focusStormSpot(spot) {
-    try {
-      var flyZoom = Math.max(map.getZoom ? map.getZoom() : 8, 9);
-      var flyCenter = [spot.lon, spot.lat];
-      // Téléphone portrait : le panneau couvre le bas → on centre la carte PLUS AU SUD que le spot
-      // (décalage lat correspondant à dyPx au zoom cible) pour que le spot rende AU-DESSUS du
-      // panneau. Méthode géométrique fiable (indépendante d'offset/padding du flyTo).
-      if (panelRegime() === 'phone-port' && panelEl) {
-        var dyPx = Math.round((panelEl.offsetHeight || 260) * 0.5 + 50);
-        var mpp = 156543.03392 * Math.cos(spot.lat * Math.PI / 180) / Math.pow(2, flyZoom);
-        flyCenter = [spot.lon, spot.lat - dyPx * (mpp / 111320)];
-      }
-      map.flyTo({ center: flyCenter, zoom: flyZoom, duration: 650 });
-    } catch (e) {}
+    try { map.flyTo({ center: [spot.lon, spot.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 8, 9), duration: 650 }); } catch (e) {}
   }
 
   function showStormPanel(cell, picks) {
