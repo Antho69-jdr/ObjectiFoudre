@@ -35,9 +35,11 @@
   border-radius: 10px;
   pointer-events: none;
   box-shadow:
-    0 0 0 9999px rgba(4, 10, 18, 0.78),
+    /* Fond volontairement TRES opaque : la zone éclairée doit trancher nettement,
+       sinon l'oeil continue de lire la carte autour au lieu de suivre la visite. */
+    0 0 0 9999px rgba(3, 8, 15, 0.92),
     0 0 0 2px var(--accent, #38bdf8),
-    0 0 26px 4px rgba(56, 189, 248, 0.45);
+    0 0 30px 5px rgba(56, 189, 248, 0.5);
   transition: left 380ms cubic-bezier(.3, .8, .35, 1),
               top 380ms cubic-bezier(.3, .8, .35, 1),
               width 380ms cubic-bezier(.3, .8, .35, 1),
@@ -47,11 +49,11 @@
 .of-tour-bulle {
   position: fixed;
   width: min(320px, calc(100vw - 24px));
-  background: var(--panel, #14243a);
+  background: #101d2e;                  /* opaque, pas de transparence héritée */
   border: 1px solid var(--accent, #38bdf8);
   border-radius: 12px;
   padding: 15px 16px 14px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.75);
   transition: left 380ms cubic-bezier(.3, .8, .35, 1),
               top 380ms cubic-bezier(.3, .8, .35, 1);
 }

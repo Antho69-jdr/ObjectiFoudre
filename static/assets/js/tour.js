@@ -22,14 +22,21 @@
   // `feature` : clé fonctionnelle, consommée par estAccessible(). null = toujours là.
   var ETAPES = [
     {
-      id: 'carte', ancre: 'map', feature: null,
-      titre: 'La grille de probabilité',
-      texte: "Chaque cellule couvre 15 km et porte une probabilité de déclenchement orageux, calculée à partir du modèle AROME de Météo-France. L'échelle va du bleu au rouge."
+      // La carte se recadre sur la France et le projecteur épouse le pays : on montre
+      // le périmètre couvert avant de parler de son contenu.
+      id: 'carte', ancre: 'france', feature: null,
+      titre: 'La France, maillée en cellules de 15 km',
+      texte: "Chaque cellule porte une probabilité de déclenchement orageux, calculée à partir du modèle AROME de Météo-France. L'échelle va du bleu au rouge.",
+      entrer: function () { memoriserCamera(); cadrerFrance(900); }
     },
     {
-      id: 'cellule', ancre: 'cellule', feature: 'cell_detail',
-      titre: 'Le détail d’une cellule',
-      texte: "Ouvrez une cellule pour obtenir le détail horaire : instabilité, humidité, cisaillement, et la confiance associée au score."
+      // On zoome sur la cellule la plus active et on l'ACTIVE réellement : le
+      // projecteur se pose ensuite sur la fiche obtenue, c'est-à-dire la réponse.
+      id: 'cellule', ancre: 'selection', feature: 'cell_detail',
+      titre: 'Ouvrir une cellule',
+      texte: "Un appui sur une cellule affiche sa probabilité et sa confiance. Le détail complet — instabilité, humidité, cisaillement — s'obtient depuis cette fiche.",
+      entrer: function () { activerCellule(); },
+      sortir: function () { fermerSelection(); cadrerFrance(700); }
     },
     {
       id: 'frise', ancre: 'frise', feature: null,
@@ -58,6 +65,143 @@
       action: 'compte'   // dernière étape : ouvre réellement la modale (choix validé)
     }
   ];
+
+  // ── Pilotage de la carte ──────────────────────────────────────────────────
+  // `map` est un `const` de state.js : un binding lexical GLOBAL, visible depuis les
+  // scripts classiques chargés ensuite — mais PAS sur window (piège connu du projet).
+  function laCarte() {
+    try {
+      return (typeof map !== 'undefined' && map && map.getCanvas && map.project) ? map : null;
+    } catch (e) { return null; }
+  }
+
+  // Mêmes bornes que la grille France du serveur (METEOFRANCE_FRANCE_GRID_BOUNDS).
+  var FRANCE_BB = [[-5.25, 41.25], [9.65, 51.15]];
+  var cameraInitiale = null;
+
+  function memoriserCamera() {
+    var m = laCarte();
+    if (!m || cameraInitiale) return;
+    try {
+      cameraInitiale = { center: m.getCenter(), zoom: m.getZoom(),
+                         bearing: m.getBearing(), pitch: m.getPitch() };
+    } catch (e) { cameraInitiale = null; }
+  }
+
+  function restaurerCamera() {
+    var m = laCarte();
+    if (!m || !cameraInitiale) return;
+    try { m.easeTo({ center: cameraInitiale.center, zoom: cameraInitiale.zoom,
+                     bearing: cameraInitiale.bearing, pitch: cameraInitiale.pitch,
+                     duration: 600 }); } catch (e) {}
+    cameraInitiale = null;
+  }
+
+  function cadrerFrance(duree) {
+    var m = laCarte();
+    if (!m) return;
+    var haut = 40, bas = 40;
+    try {
+      var fr = document.getElementById('timelineDock');
+      if (fr && visible(fr)) bas = Math.min(160, fr.getBoundingClientRect().height + 30);
+      var bn = document.querySelector('.bnav');
+      if (bn && visible(bn)) bas += bn.getBoundingClientRect().height;
+    } catch (e) {}
+    try {
+      m.fitBounds(FRANCE_BB, {
+        padding: { top: haut, bottom: bas, left: 30, right: 30 },
+        duration: duree === 0 ? 0 : (duree || 800)
+      });
+    } catch (e) {}
+  }
+
+  // Rectangle écran occupé par la France : sert de forme au projecteur de l'étape 1.
+  function rectFrance() {
+    var m = laCarte();
+    if (!m) return null;
+    try {
+      var a = m.project([FRANCE_BB[0][0], FRANCE_BB[1][1]]);   // ouest / nord
+      var b = m.project([FRANCE_BB[1][0], FRANCE_BB[0][1]]);   // est / sud
+      var x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+      var w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+      if (!(w > 40 && h > 40)) return null;
+      return { x: x, y: y, width: w, height: h };
+    } catch (e) { return null; }
+  }
+
+  // La cellule la plus « parlante » visible : le meilleur score de déclenchement.
+  function choisirCellule() {
+    var m = laCarte();
+    if (!m || !m.queryRenderedFeatures) return null;
+    try {
+      if (!m.getLayer('grid-fill')) return null;
+      var feats = m.queryRenderedFeatures({ layers: ['grid-fill'] });
+      if (!feats || !feats.length) return null;
+      var meilleure = null, meilleurScore = -1;
+      for (var i = 0; i < feats.length; i++) {
+        var pr = feats[i].properties || {};
+        var sc = Number(pr.trigger_score);
+        if (!isFinite(sc)) sc = 0;
+        if (sc > meilleurScore) { meilleurScore = sc; meilleure = feats[i]; }
+      }
+      if (!meilleure) meilleure = feats[Math.floor(feats.length / 2)];
+      // Les features rendues ne portent PAS lon/lat (vérifié en production : seulement
+      // zone, trigger_score, confidence_score et les propriétés de rendu) — on calcule
+      // donc le centre depuis la géométrie, et non depuis un coin du polygone.
+      var minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+      (function parcourir(c) {
+        if (!c) return;
+        if (typeof c[0] === 'number' && typeof c[1] === 'number') {
+          if (c[0] < minLon) minLon = c[0];
+          if (c[0] > maxLon) maxLon = c[0];
+          if (c[1] < minLat) minLat = c[1];
+          if (c[1] > maxLat) maxLat = c[1];
+          return;
+        }
+        for (var k = 0; k < c.length; k++) parcourir(c[k]);
+      })(meilleure.geometry && meilleure.geometry.coordinates);
+      if (!isFinite(minLon) || !isFinite(minLat)) return null;
+      return { lon: (minLon + maxLon) / 2, lat: (minLat + maxLat) / 2,
+               zone: (meilleure.properties || {}).zone,
+               score: (meilleure.properties || {}).trigger_score };
+    } catch (e) { return null; }
+  }
+
+  // Zoome sur la cellule puis l'ACTIVE réellement : on dispatche un vrai clic sur le
+  // canvas, pour que MapLibre fasse son propre calcul de features et déclenche le
+  // gestionnaire de la couche `grid-fill` comme un utilisateur l'aurait fait.
+  var celluleActivee = null;
+  function activerCellule() {
+    var m = laCarte();
+    if (!m) return;
+    var c = choisirCellule();
+    if (!c) return;
+    celluleActivee = c;
+    try {
+      m.easeTo({ center: [c.lon, c.lat], zoom: Math.max(m.getZoom(), 7.6), duration: 900 });
+      m.once('moveend', function () {
+        try {
+          var pt = m.project([c.lon, c.lat]);
+          var cible = m.getCanvasContainer();
+          var box = cible.getBoundingClientRect();
+          var cx = box.left + pt.x, cy = box.top + pt.y;
+          ['mousedown', 'mouseup', 'click'].forEach(function (type) {
+            cible.dispatchEvent(new MouseEvent(type, {
+              bubbles: true, cancelable: true, view: window,
+              clientX: cx, clientY: cy, button: 0
+            }));
+          });
+        } catch (e) {}
+        setTimeout(function () { replacer(); }, 120);
+      });
+    } catch (e) {}
+  }
+
+  function fermerSelection() {
+    var c = document.getElementById('selectionCard');
+    if (c) c.classList.remove('visible');
+    celluleActivee = null;
+  }
 
   // ── Accessibilité fonctionnelle (mode gratuit à venir) ────────────────────
   // Aujourd'hui tout est accessible. Le jour où les droits par plan existeront, ce
@@ -88,6 +232,25 @@
 
   function resoudre(ancre) {
     if (ancre === 'map') return { el: document.getElementById('map'), plein: true };
+    if (ancre === 'france') {
+      var rf = rectFrance();
+      if (rf) return { rect: rf, doux: true };
+      return { el: document.getElementById('map'), plein: true };   // repli sûr
+    }
+    if (ancre === 'selection') {
+      var sc = document.getElementById('selectionCard');
+      if (visible(sc)) return { el: sc };
+      // la fiche n'est pas (encore) là : on éclaire la cellule visée, sinon le centre
+      var m = laCarte();
+      if (m && celluleActivee) {
+        try {
+          var pt = m.project([celluleActivee.lon, celluleActivee.lat]);
+          var bx = m.getCanvasContainer().getBoundingClientRect();
+          return { rect: { x: bx.left + pt.x - 46, y: bx.top + pt.y - 34, width: 92, height: 68 }, doux: true };
+        } catch (e) {}
+      }
+      return { el: celluleAuCentre(), doux: true };
+    }
     if (ancre === 'frise') {
       var f = document.getElementById('timelineDock');
       return { el: visible(f) ? f : null };
@@ -168,10 +331,10 @@
     btnSuiv = document.getElementById('ofTourSuiv');
     btnPasser = document.getElementById('ofTourPasser');
 
-    btnPrec.addEventListener('click', function () { if (pos > 0) { pos--; peindre(); } });
+    btnPrec.addEventListener('click', function () { if (pos > 0) { allerA(pos - 1); } });
     btnSuiv.addEventListener('click', function () {
       if (pos >= actives.length - 1) { terminer(true); return; }
-      pos++; peindre();
+      allerA(pos + 1);
     });
     btnPasser.addEventListener('click', function () { terminer(false); });
     scrim.addEventListener('pointerdown', function (ev) {
@@ -217,14 +380,14 @@
     var e = actives[pos];
     if (!e) { terminer(false); return; }
     var r = resoudre(e.ancre);
-    if (!r.el) {                                   // ancre disparue en cours de route
+    if (!r.el && !r.rect) {                        // ancre disparue en cours de route
       actives.splice(pos, 1);
       if (!actives.length) { terminer(false); return; }
       if (pos >= actives.length) pos = actives.length - 1;
       peindre(true);
       return;
     }
-    var b = r.el.getBoundingClientRect();
+    var b = r.rect || r.el.getBoundingClientRect();
     var marge = r.plein ? -Math.min(b.width, b.height) * 0.28 : (r.doux ? 4 : 8);
     var x = b.x - marge, y = b.y - marge, w = b.width + marge * 2, h = b.height + marge * 2;
 
@@ -265,13 +428,29 @@
     bulle.style.top = Math.max(m, Math.min(by, innerHeight - bh - m)) + 'px';
   }
 
+  // Changement d'étape : on quitte proprement l'étape courante (une étape a pu
+  // modifier la carte) avant d'entrer dans la suivante.
+  function allerA(n) {
+    var courante = actives[pos];
+    if (courante && typeof courante.sortir === 'function') {
+      try { courante.sortir(); } catch (e) {}
+    }
+    pos = n;
+    var suivante = actives[pos];
+    peindre();
+    if (suivante && typeof suivante.entrer === 'function') {
+      try { suivante.entrer(); } catch (e) {}
+    }
+  }
+
   // ── Cycle de vie ──────────────────────────────────────────────────────────
   function etapesActives() {
     var out = [];
     for (var i = 0; i < ETAPES.length; i++) {
       var e = ETAPES[i];
       if (!estAccessible(e.feature)) continue;      // fonction hors plan -> masquée
-      if (!resoudre(e.ancre).el) continue;          // ancre absente -> masquée
+      var a = resoudre(e.ancre);
+      if (!a.el && !a.rect) continue;               // ancre absente -> masquée
       out.push(e);
     }
     return out;
@@ -287,6 +466,16 @@
     document.body.classList.add('of-tour-ouvert');
     scrim.classList.add('visible');
     peindre(true);
+    if (actives[0] && typeof actives[0].entrer === 'function') {
+      try { actives[0].entrer(); } catch (e) {}
+    }
+    // La carte bouge pendant ~900 ms : on resuit l'ancre le temps du recadrage.
+    var t0 = Date.now();
+    (function suivre() {
+      if (!ouvert || Date.now() - t0 > 1400) return;
+      peindre(true);
+      requestAnimationFrame(suivre);
+    })();
     setTimeout(function () { try { btnSuiv.focus(); } catch (e) {} }, 40);
   }
 
@@ -297,6 +486,10 @@
     document.body.classList.remove('of-tour-ouvert');
     var cible = document.getElementById('ofTourCible');
     if (cible) cible.remove();
+    // Une étape a pu zoomer la carte ou ouvrir une fiche : on rend l'application
+    // dans l'état où on l'a trouvée, quelle que soit l'étape de sortie.
+    fermerSelection();
+    restaurerCamera();
     marquerVu();
     try { if (dernierFocus && dernierFocus.focus) dernierFocus.focus(); } catch (e) {}
     // Choix validé : la visite peut se terminer sur une demande.
