@@ -59,11 +59,6 @@
       texte: "Ce rail regroupe les outils de la carte affichée : spots et meilleures cellules ici. Son contenu CHANGE avec la carte — le radar y expose ses couches, le mode étoiles ses filtres de ciel."
     },
     {
-      id: 'prev', ancre: 'nav:prev', feature: 'horizon_long',
-      titre: 'Risque orageux J+0 → J+10',
-      texte: "AROME jusqu’à J+1, ECMWF au-delà, avec une tendance à partir de J+4. C’est la vue d’anticipation."
-    },
-    {
       id: 'radar', ancre: 'nav:radar', feature: 'chase',
       titre: 'Radar et suivi de cellules',
       texte: "Réflectivité Météo-France, cellules suivies avec trajectoire et vitesse, et impacts de foudre MTG-LI des 30 dernières minutes."
@@ -82,9 +77,34 @@
       id: 'compte', ancre: 'compte', feature: null,
       titre: 'Spots et alertes',
       texte: "Enregistrez des spots avec leur horizon dégagé, et recevez une alerte lorsqu’une cellule orageuse approche d’un département suivi.",
-      action: 'compte'   // dernière étape : ouvre réellement la modale (choix validé)
+      action: 'compte'
+    },
+    {
+      // Dernière étape : on termine sur la vue d'anticipation, et « Terminer » y emmène.
+      id: 'prev', ancre: 'nav:prev', feature: 'horizon_long',
+      titre: 'Risque orageux J+0 → J+10',
+      texte: "AROME jusqu’à J+1, ECMWF au-delà, avec une tendance à partir de J+4. C’est la vue d’anticipation, celle qui décide d’une sortie.",
+      action: 'prev'
     }
   ];
+
+  // Action exécutée quand la visite se termine SUR cette étape (bouton « Terminer »).
+  // Indexée par étape et non codée en dur, sinon changer l'ordre du parcours ferait
+  // ouvrir la mauvaise chose — c'était le cas avant que « Risque orageux » passe en fin.
+  var ACTIONS = {
+    compte: function () {
+      var b = document.getElementById('bnavAvatar') || document.getElementById('accountBtn');
+      if (b) b.click();
+    },
+    prev: function () {
+      // Le bouton du bandeau existe même en mobile (masqué) : c'est déjà la mécanique
+      // qu'emploie la barre du bas via clickEl('predictionPageBtn').
+      var b = document.getElementById('predictionPageBtn');
+      if (b) { b.click(); return; }
+      var t = document.querySelector('.bnav-tab[data-nav="prev"]');
+      if (t) t.click();
+    }
+  };
 
   // ── Pilotage de la carte ──────────────────────────────────────────────────
   // `map` est un `const` de state.js : un binding lexical GLOBAL, visible depuis les
@@ -541,10 +561,11 @@
     restaurerCamera();
     marquerVu();
     try { if (dernierFocus && dernierFocus.focus) dernierFocus.focus(); } catch (e) {}
-    // Choix validé : la visite peut se terminer sur une demande.
+    // La visite se termine sur une action concrète, celle de sa dernière étape.
     if (jusquAuBout) {
-      var b = document.getElementById('bnavAvatar') || document.getElementById('accountBtn');
-      if (b) setTimeout(function () { b.click(); }, 220);
+      var derniere = actives[actives.length - 1];
+      var faire = derniere && ACTIONS[derniere.action];
+      if (faire) setTimeout(faire, 220);
     }
   }
 
