@@ -280,7 +280,7 @@
   }
   // Bandeau desktop : l'onglet actif = le bouton du rail correspondant (hors
   // 'compte' — l'avatar garde sa pastille). Réutilise currentView() + l'observer.
-  var HEADER_NAV_BTN = { prev: 'predictionPageBtn', radar: 'chasePageBtn', etoiles: 'stargazePageBtn', spots: 'spotsPageBtn', histo: 'historyPageBtn', forum: 'forumPageBtn', admin: 'maintenancePageBtn' };
+  var HEADER_NAV_BTN = { carte: 'forecastPageBtn', prev: 'predictionPageBtn', radar: 'chasePageBtn', etoiles: 'stargazePageBtn', spots: 'spotsPageBtn', histo: 'historyPageBtn', forum: 'forumPageBtn', admin: 'maintenancePageBtn' };
   function updateActive() {
     var v = currentView();
     for (var k in HEADER_NAV_BTN) {
@@ -368,6 +368,16 @@
     function anySurfaceOpen() {
       return !!document.querySelector('.prediction-page[aria-hidden="false"]') || drawerOpen();
     }
+    // Bouton « Prévisions » du bandeau desktop : retour à la carte de base. Même
+    // destination que l'onglet `carte` de la barre du bas — on réutilise goCarte()
+    // au lieu de dupliquer la bascule des modes chasse/étoiles.
+    var forecastBtn = el('forecastPageBtn');
+    if (forecastBtn) forecastBtn.addEventListener('click', function () {
+      closeOpenSurfaces();
+      goCarte();
+      updateActive();
+    });
+
     var railHost = el('rightRailScroll');
     if (railHost) railHost.addEventListener('click', function (e) {
       var btn = e.target.closest('.grid-focus-btn, #toggleSearchBtn');

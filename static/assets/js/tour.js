@@ -22,6 +22,13 @@
   // `feature` : clé fonctionnelle, consommée par estAccessible(). null = toujours là.
   var ETAPES = [
     {
+      // Le point de départ : la carte de base et le bouton qui y ramène. En bandeau
+      // desktop c'est #forecastPageBtn, en mobile l'onglet `carte`.
+      id: 'accueil', ancre: 'nav:carte', feature: null,
+      titre: 'Prévisions, la carte de base',
+      texte: "C'est la vue qui s'ouvre au lancement. Ce bouton y ramène depuis n'importe quelle page ou n'importe quel mode."
+    },
+    {
       // La carte se recadre sur la France et le projecteur épouse le pays : on montre
       // le périmètre couvert avant de parler de son contenu.
       id: 'carte', ancre: 'france', feature: null,
@@ -238,7 +245,7 @@
 
   // Bandeau desktop : la clé du pool -> l'identifiant du bouton réel.
   var BTN_DESKTOP = {
-    carte: null, radar: 'chasePageBtn', etoiles: 'stargazePageBtn',
+    carte: 'forecastPageBtn', radar: 'chasePageBtn', etoiles: 'stargazePageBtn',
     forum: 'forumPageBtn', prev: 'predictionPageBtn', spots: 'spotsPageBtn',
     histo: 'historyPageBtn'
   };
@@ -289,7 +296,8 @@
       // desktop il n'y a pas de bouton « Prévisions » (c'est la carte par défaut,
       // affichée quand aucune page n'est ouverte) : on unit ce qu'on trouve.
       var sels = ['.bnav-tab[data-nav="carte"]', '.bnav-tab[data-nav="radar"]',
-                  '.bnav-tab[data-nav="etoiles"]', '#chasePageBtn', '#stargazePageBtn'];
+                  '.bnav-tab[data-nav="etoiles"]',
+                  '#forecastPageBtn', '#chasePageBtn', '#stargazePageBtn'];
       var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, n = 0;
       for (var k = 0; k < sels.length; k++) {
         var e2 = document.querySelector(sels[k]);
