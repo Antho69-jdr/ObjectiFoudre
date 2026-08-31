@@ -576,14 +576,17 @@
 
   function focusStormSpot(spot) {
     try {
-      var flyOpts = { center: [spot.lon, spot.lat], zoom: Math.max(map.getZoom ? map.getZoom() : 8, 9), duration: 650 };
-      // Téléphone portrait : le panneau couvre le bas → après le vol, on remonte le spot au-dessus
-      // du panneau par un panBy vertical (déterministe : panBy([0,+dy]) fait monter le contenu).
+      var flyZoom = Math.max(map.getZoom ? map.getZoom() : 8, 9);
+      var flyCenter = [spot.lon, spot.lat];
+      // Téléphone portrait : le panneau couvre le bas → on centre la carte PLUS AU SUD que le spot
+      // (décalage lat correspondant à dyPx au zoom cible) pour que le spot rende AU-DESSUS du
+      // panneau. Méthode géométrique fiable (indépendante d'offset/padding du flyTo).
       if (panelRegime() === 'phone-port' && panelEl) {
-        var dy = Math.round((panelEl.offsetHeight || 260) * 0.5 + 50);
-        if (dy > 0) map.once('moveend', function () { try { map.panBy([0, dy], { duration: 260 }); } catch (e) {} });
+        var dyPx = Math.round((panelEl.offsetHeight || 260) * 0.5 + 50);
+        var mpp = 156543.03392 * Math.cos(spot.lat * Math.PI / 180) / Math.pow(2, flyZoom);
+        flyCenter = [spot.lon, spot.lat - dyPx * (mpp / 111320)];
       }
-      map.flyTo(flyOpts);
+      map.flyTo({ center: flyCenter, zoom: flyZoom, duration: 650 });
     } catch (e) {}
   }
 
