@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.240"
+APP_VERSION = "1.3.241"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -809,7 +809,17 @@ METEOFRANCE_GRIB_NON_FATAL_FIELDS = {"boundary_layer_height"}
 #   n'existe nulle part dans la cellule. La variante cohérente (tout lire au point le
 #   plus instable) a été testée : statistiquement équivalente, AUC légèrement inférieure,
 #   et elle imposerait de coordonner les champs entre eux (refonte de l'échantillonnage).
-METEOFRANCE_CELL_AGGREGATORS = {"nearest", "p90"}
+# `shadow` : la production sert le PLUS PROCHE VOISIN (rigoureusement inchangé, mêmes
+# clés de cache) et on calcule EN PLUS le score p90 de chaque cellule, qu'on archive à
+# part. Objectif : dériver sur NOS données de production la courbe de ré-ancrage par
+# quantiles et le seuil propres au p90, avant toute bascule.
+# Pourquoi un ré-ancrage : basculer brut ferait passer les cellules « orage prévu »
+# (score >= 60) de 26,8 % à 36,2 % — +35 %, la lecture de la carte serait faussée.
+# L'AUC étant une mesure de RANG, elle est invariante par transformation monotone :
+# reclasser les scores p90 sur la distribution historique garde 100 % du gain
+# (AUC 0,8735 vs 0,8731 brut, contre 0,8251 au plus proche voisin) et ne bouge rien
+# à l'écran. Mesuré sur les 3029 cellules-jours de la campagne.
+METEOFRANCE_CELL_AGGREGATORS = {"nearest", "p90", "shadow"}
 METEOFRANCE_CELL_AGGREGATOR = (
     (os.environ.get("OBJECTIFOUDRE_CELL_AGGREGATOR") or "nearest").strip().lower()
 )
@@ -821,19 +831,37 @@ METEOFRANCE_CELL_AGGREGATOR_PERCENTILE = 90.0
 METEOFRANCE_CELL_AGGREGATOR_EXCLUDED_PREFIXES = ("wind_direction_",)
 
 
+def _cell_shadow_active() -> bool:
+    """Mode ombre : on calcule le p90 en parallèle sans rien changer à ce qui est servi."""
+    return METEOFRANCE_CELL_AGGREGATOR == "shadow"
+
+
 def _cell_aggregator_for_field(field: str) -> str:
-    """Agrégateur effectif d'un champ : `nearest` ou le mode configuré."""
-    if METEOFRANCE_CELL_AGGREGATOR == "nearest":
+    """Agrégateur effectif d'un champ POUR LA VALEUR SERVIE. En mode ombre c'est
+    `nearest` : la production ne change pas d'un iota."""
+    if METEOFRANCE_CELL_AGGREGATOR in ("nearest", "shadow"):
         return "nearest"
     if str(field or "").startswith(METEOFRANCE_CELL_AGGREGATOR_EXCLUDED_PREFIXES):
         return "nearest"
     return METEOFRANCE_CELL_AGGREGATOR
 
 
+def _cell_shadow_aggregator_for_field(field: str) -> str | None:
+    """Agrégateur de la valeur d'OMBRE, ou None si rien à calculer en parallèle."""
+    if not _cell_shadow_active():
+        return None
+    if str(field or "").startswith(METEOFRANCE_CELL_AGGREGATOR_EXCLUDED_PREFIXES):
+        return "nearest"      # grandeur circulaire : l'ombre reprend la valeur servie
+    return "p90"
+
+
 def _cell_aggregator_cache_token() -> str:
-    """Jeton de cache. VIDE en mode `nearest` pour que le déploiement du réglage
-    n'invalide AUCUN cache ni archive existants tant qu'il n'est pas activé."""
-    return "" if METEOFRANCE_CELL_AGGREGATOR == "nearest" else f":agg={METEOFRANCE_CELL_AGGREGATOR}"
+    """Jeton de cache. VIDE en mode `nearest` ET en mode `shadow` : dans les deux cas
+    la valeur SERVIE est celle du plus proche voisin, donc aucun cache ni archive
+    existant ne doit être invalidé."""
+    if METEOFRANCE_CELL_AGGREGATOR in ("nearest", "shadow"):
+        return ""
+    return f":agg={METEOFRANCE_CELL_AGGREGATOR}"
 METEOFRANCE_GRIB_SLOT_PACKAGE_INDEX_LIMITS = {
     "SP1": 24,
     "SP2": 80,
@@ -2860,6 +2888,69 @@ def _read_history_gzip(path: Path) -> dict[str, Any] | None:
         return json.loads(handle.read().decode("utf-8"))
 
 
+def _shadow_slot_path(date_str: str, hour: int) -> Path:
+    return OBJECTIFOUDRE_HISTORY_DIR / "shadow" / date_str / f"h{hour:02d}.json.gz"
+
+
+def _archive_shadow_slot(date_str: str, hour: int, cells: list[dict[str, Any]],
+                         run_ref: str = "") -> None:
+    """Archive les scores d'OMBRE d'un créneau France (mode `shadow`).
+
+    Volontairement maigre — zone, position, score, confiance — car on n'a besoin que de
+    deux choses : la DISTRIBUTION des scores p90 (pour dériver la courbe de ré-ancrage
+    par quantiles) et le couple score/position (pour réapprendre le seuil contre la
+    foudre observée). ~0,3 Mo compressé par journée. Écrit à part de `history/france/`
+    pour ne rien risquer sur l'archive de service. Ne lève jamais."""
+    if not OBJECTIFOUDRE_HISTORY_ENABLED or not cells:
+        return
+    try:
+        path = _shadow_slot_path(date_str, hour)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "schema": HISTORY_SCHEMA_VERSION,
+            "date": date_str,
+            "hour": hour,
+            "run_reference_time": run_ref,
+            "aggregator": "p90",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "cells": cells,
+        }
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        with gzip.open(tmp, "wt", encoding="utf-8") as fh:
+            json.dump(record, fh, separators=(",", ":"))
+        os.replace(tmp, path)
+    except Exception:
+        # L'ombre est un dispositif de mesure : elle ne doit JAMAIS faire échouer un créneau.
+        logging.getLogger("objectifoudre").warning(
+            "archivage ombre %s h%02d impossible", date_str, hour, exc_info=True)
+
+
+def _shadow_collection_status(max_days: int = 60) -> dict[str, Any]:
+    """État de la collecte d'ombre : jours accumulés, créneaux, et comparaison des
+    distributions servie / p90. Sert à savoir QUAND on a de quoi dériver la courbe de
+    ré-ancrage et le seuil (gate de l'apprentissage : 10 jours minimum)."""
+    base = OBJECTIFOUDRE_HISTORY_DIR / "shadow"
+    out: dict[str, Any] = {
+        "enabled": _cell_shadow_active(),
+        "aggregator_setting": METEOFRANCE_CELL_AGGREGATOR,
+        "days": 0, "slots": 0, "dates": [],
+        "min_days_for_calibration": learning.CALIB_MIN_DAYS,
+        "ready": False,
+    }
+    try:
+        if not base.exists():
+            return out
+        dates = sorted([d.name for d in base.iterdir() if d.is_dir()])[-max_days:]
+        slots = 0
+        for d in dates:
+            slots += len(list((base / d).glob("h*.json.gz")))
+        out.update(days=len(dates), slots=slots, dates=dates[-10:],
+                   ready=len(dates) >= learning.CALIB_MIN_DAYS)
+    except Exception:
+        logging.getLogger("objectifoudre").warning("état de la collecte d'ombre illisible", exc_info=True)
+    return out
+
+
 def _archive_france_slot_grid(result: dict[str, Any]) -> None:
     """Persist a freshly computed France slot grid into the durable history store.
     Keeps only the latest AROME run per (date, slot). Never raises: archiving must
@@ -3590,6 +3681,8 @@ def _learning_status() -> dict[str, Any]:
         "data": counts,
         "gates": gates,
         "threshold": {"active": _active_score_threshold, "baseline": verification.DEFAULT_SCORE_THRESHOLD},
+        # Collecte d'ombre (agrégateur p90 mesuré en parallèle) : cf. _shadow_collection_status.
+        "shadow": _shadow_collection_status(),
         "weights": {
             "active": (active.get("weights") if active else None),
             "default": learning.DEFAULT_BLEND_WEIGHTS,
@@ -5475,6 +5568,11 @@ def _sample_meteofrance_grib_national_field_registry_for_points(
         for item in sampled.get("samples", [])
         if item.get("zone") and item.get("value") is not None
     }
+    shadow_values_by_zone = {
+        str(item.get("zone")): item.get("shadow_value")
+        for item in sampled.get("samples", [])
+        if item.get("zone") and item.get("shadow_value") is not None
+    }
     if not values_by_zone:
         return None
     created_at = float(registry_created_at) if registry_created_at is not None else None
@@ -5508,6 +5606,7 @@ def _sample_meteofrance_grib_national_field_registry_for_points(
     }
     return {
         "values_by_zone": values_by_zone,
+        "shadow_values_by_zone": shadow_values_by_zone,
         "field_request": field_request,
         "sampled_count": int(sampled.get("valid_count") or 0),
     }
@@ -5622,8 +5721,9 @@ def _sample_meteofrance_grib_national_field_cache(
     # Les deux chemins DOIVENT s'accorder, sinon la valeur d'une cellule dépendrait de
     # l'état du cache plutôt que de la météo.
     aggregate = _cell_aggregator_for_field(field)
+    shadow_agg = _cell_shadow_aggregator_for_field(field)
     cell_percentile = None
-    if aggregate == "p90":
+    if aggregate == "p90" or shadow_agg == "p90":
         try:
             import numpy as np
 
@@ -5652,15 +5752,18 @@ def _sample_meteofrance_grib_national_field_cache(
         if grid_index < 0 or grid_index >= len(values):
             continue
         raw_value = float(values[grid_index])
+        raw_p90 = None
         if cell_percentile is not None:
             try:
-                raw_value = float(_cell_window_percentiles(
+                raw_p90 = float(_cell_window_percentiles(
                     cell_percentile["grid"], [y], [x],
                     [cell_percentile["half_j"][idx]], [cell_percentile["half_i"][idx]],
                     METEOFRANCE_CELL_AGGREGATOR_PERCENTILE, cell_percentile["missing"],
                 )[0])
             except Exception:
-                pass
+                raw_p90 = None
+        if aggregate == "p90" and raw_p90 is not None:
+            raw_value = raw_p90
         value = round(raw_value, 3) if math.isfinite(raw_value) else None
         sample = {
             "zone": getattr(point, "zone", ""),
@@ -5673,6 +5776,10 @@ def _sample_meteofrance_grib_national_field_cache(
             "distance_km": round(_distance_km(lat, lon, float(grid_lat), float(grid_lon)), 3),
             "grid_index": grid_index,
         }
+        if shadow_agg == "p90" and raw_p90 is not None:
+            sample["shadow_value"] = round(raw_p90, 3) if math.isfinite(raw_p90) else None
+        elif shadow_agg == "nearest":
+            sample["shadow_value"] = value
         samples.append(sample)
         if value is not None:
             valid_samples.append(sample)
@@ -8495,6 +8602,7 @@ def _grib_nearest_samples(
     in_lons: list[float],
     cell_points: list[Any] | None = None,
     aggregate: str = "nearest",
+    shadow: str | None = None,
 ) -> list[dict[str, Any] | None]:
     """Plus proche voisin pour une liste de points, renvoyé aligné sur l'entrée.
 
@@ -8509,6 +8617,10 @@ def _grib_nearest_samples(
     90ᵉ percentile du champ sur TOUTE la cellule — les ~42 points de la maille AROME
     qu'on décodait déjà sans les lire. Le repli non régulier reste au plus proche
     voisin : dégradation sûre, jamais d'échec.
+
+    `shadow="p90"` ajoute `shadow_value` à chaque point SANS toucher à `value` : c'est le
+    mode ombre, qui prépare la bascule en accumulant le score p90 pendant que la
+    production continue de servir le plus proche voisin. Calculé dans la même passe.
     """
     import eccodes  # type: ignore
 
@@ -8545,27 +8657,38 @@ def _grib_nearest_samples(
                 hav = np.sin(dphi / 2.0) ** 2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlmb / 2.0) ** 2
                 dist_km = 2.0 * 6371.0 * np.arcsin(np.minimum(1.0, np.sqrt(hav)))
                 point_values = values[flat]
-                if aggregate == "p90" and cell_points is not None and len(cell_points) == n:
+                shadow_values = None
+                besoin_p90 = (aggregate == "p90") or (shadow == "p90")
+                if besoin_p90 and cell_points is not None and len(cell_points) == n:
                     grid2d = values.reshape((ni, nj)).T if j_consecutive else values.reshape((nj, ni))
                     half_j, half_i = _cell_half_steps(cell_points, lat_step, lon_step)
                     try:
                         missing = float(_safe_eccodes_get(handle, "missingValue"))
                     except (TypeError, ValueError):
                         missing = None
-                    point_values = _cell_window_percentiles(
+                    p90_values = _cell_window_percentiles(
                         grid2d, jj, ii, half_j, half_i,
                         METEOFRANCE_CELL_AGGREGATOR_PERCENTILE, missing,
                     )
-                return [
-                    {
+                    if aggregate == "p90":
+                        point_values = p90_values
+                    if shadow == "p90":
+                        shadow_values = p90_values
+                elif shadow == "nearest":
+                    shadow_values = point_values
+                out = []
+                for k in range(n):
+                    item = {
                         "lat": float(grid_lats[k]),
                         "lon": float(grid_lons[k]),
                         "value": float(point_values[k]),
                         "distance": float(dist_km[k]),
                         "index": int(flat[k]),
                     }
-                    for k in range(n)
-                ]
+                    if shadow_values is not None:
+                        item["shadow_value"] = float(shadow_values[k])
+                    out.append(item)
+                return out
     except Exception:
         pass
 
@@ -8601,6 +8724,7 @@ def _sample_grib_field_nearest_with_eccodes(raw: bytes, field: str, points: list
             nearest_points = _grib_nearest_samples(
                 handle, in_lats, in_lons,
                 cell_points=point_list, aggregate=_cell_aggregator_for_field(field),
+                shadow=_cell_shadow_aggregator_for_field(field),
             )
             for point, normalized in zip(point_list, nearest_points):
                 if normalized is None:
@@ -8617,6 +8741,9 @@ def _sample_grib_field_nearest_with_eccodes(raw: bytes, field: str, points: list
                     "distance_km": round(normalized["distance"], 3),
                     "grid_index": normalized["index"],
                 }
+                if "shadow_value" in normalized:
+                    sample["shadow_value"] = _convert_meteofrance_grib_field_value(
+                        field, normalized["shadow_value"], metadata)
                 samples.append(sample)
                 if converted is not None:
                     valid_samples.append(sample)
@@ -9538,6 +9665,8 @@ def _build_meteofrance_grib_slot_grid_sync(
         contexts: dict[str, dict[str, Any]] = {}
         indexes: dict[tuple[str, str, int], dict[str, Any]] = {}
         field_values: dict[str, dict[str, float]] = {}
+        # Mode ombre : mêmes champs, échantillonnés en p90, sans toucher à `field_values`.
+        shadow_field_values: dict[str, dict[str, float]] = {}
         field_requests = []
         missing: list[str] = []
         optional_missing: list[str] = []
@@ -9564,6 +9693,8 @@ def _build_meteofrance_grib_slot_grid_sync(
                 )
                 if registry_sample is not None:
                     field_values[field] = registry_sample["values_by_zone"]
+                    if registry_sample.get("shadow_values_by_zone"):
+                        shadow_field_values[field] = registry_sample["shadow_values_by_zone"]
                     national_field_cache_hits += 1
                     national_field_sampled_count += int(registry_sample.get("sampled_count") or 0)
                     field_requests.append(registry_sample["field_request"])
@@ -9721,6 +9852,13 @@ def _build_meteofrance_grib_slot_grid_sync(
                 }
                 if values_by_zone:
                     field_values[field] = values_by_zone
+                    shadow_by_zone = {
+                        str(item.get("zone")): item.get("shadow_value")
+                        for item in sampled.get("samples", [])
+                        if item.get("zone") and item.get("shadow_value") is not None
+                    }
+                    if shadow_by_zone:
+                        shadow_field_values[field] = shadow_by_zone
                     national_field_cache_hits += 1
                     national_field_sampled_count += int(sampled.get("valid_count") or 0)
                     field_requests.append(
@@ -9802,6 +9940,13 @@ def _build_meteofrance_grib_slot_grid_sync(
             }
             if values_by_zone:
                 field_values[field] = values_by_zone
+                shadow_by_zone = {
+                    str(item.get("zone")): item.get("shadow_value")
+                    for item in sampled.get("samples", [])
+                    if item.get("zone") and item.get("shadow_value") is not None
+                }
+                if shadow_by_zone:
+                    shadow_field_values[field] = shadow_by_zone
             elif spec.get("required") and field not in METEOFRANCE_GRIB_NON_FATAL_FIELDS:
                 missing.append(field)
             else:
@@ -9854,56 +9999,92 @@ def _build_meteofrance_grib_slot_grid_sync(
         slot_dt = datetime.combine(target_date, Time(hour=hour), tzinfo=ZoneInfo("Europe/Paris"))
         if normalized_grid_scope == "france":
             _enrich_field_values_with_wcs(field_values, slot_dt, points)
-        grid_locations = []
-        for point in points:
-            zone = point.zone
-            temp_c = field_values.get("temperature_2m", {}).get(zone)
-            dewpoint_c = field_values.get("dew_point_2m", {}).get(zone)
-            rh2m = field_values.get("relative_humidity_2m", {}).get(zone)
-            if rh2m is None:
-                rh2m = _relative_humidity_from_dewpoint_c(temp_c, dewpoint_c)
-            wind_speed_10m = field_values.get("wind_speed_10m", {}).get(zone)
-            wind_direction_10m = field_values.get("wind_direction_10m", {}).get(zone)
-            wind_direction_10m_available = wind_speed_10m is not None and wind_direction_10m is not None
-            # ⚠ « mucape » = en réalité MLCAPE (wcs_client MLCAPE__GROUND), pas du vrai MUCAPE.
-            # `_first_present` (première valeur NON-None, pas falsy) : un MLCAPE VALIDE de 0.0
-            # ne doit pas être traité comme absent et remplacé par le CAPE paquet (bug audit).
-            cape_val = _first_present(field_values.get("mucape", {}).get(zone),
-                                      field_values.get("cape", {}).get(zone))
-            has_td = temp_c is not None and dewpoint_c is not None
-            hourly = {
-                "time": [slot_dt.isoformat()],
-                "cape": [cape_val if cape_val is not None else 0.0],
-                "precipitable_water": [field_values.get("precipitable_water", {}).get(zone)],
-                "shortwave_radiation": [field_values.get("shortwave_radiation", {}).get(zone)],
-                "precipitation_rate": [field_values.get("precipitation_rate", {}).get(zone)],
-                # temp/rosée : None si absent (PAS 0.0 = faux -0 °C sec) → rows_for_location
-                # SAUTE l'heure plutôt que de fabriquer un faux signal (bug audit).
-                "temperature_2m": [temp_c],
-                "dew_point_2m": [dewpoint_c],
-                "convective_inhibition": [field_values.get("convective_inhibition", {}).get(zone)],
-                "shear_ms": [field_values.get("shear_ms", {}).get(zone)],
-                "srh_01km": [field_values.get("srh_01km", {}).get(zone)],  # hélicité 0-1 km (sévérité)
-                # Indice de soulèvement (rehausse le score quand l'instabilité d'altitude dépasse
-                # la CAPE de surface) : T500 environnement + pression de surface (ARPEGE WCS).
-                "t500_k": [field_values.get("t500_k", {}).get(zone)],
-                "surface_pressure": [field_values.get("surface_pressure", {}).get(zone)],
-                "relative_humidity_2m": [rh2m],
-                "vapour_pressure_deficit": [_vapour_pressure_deficit_kpa(float(temp_c), float(dewpoint_c)) if has_td else None],
-                "wet_bulb_temperature_2m": [_wet_bulb_stull_c(float(temp_c), float(rh2m)) if (has_td and rh2m is not None) else None],
-                "cloud_cover_low": [field_values.get("cloud_cover_low", {}).get(zone)],
-                "cloud_cover_mid": [field_values.get("cloud_cover_mid", {}).get(zone)],
-                "cloud_cover_high": [field_values.get("cloud_cover_high", {}).get(zone)],
-                "boundary_layer_height": [field_values.get("boundary_layer_height", {}).get(zone)],
-                "wind_gusts_10m": [field_values.get("wind_gusts_10m", {}).get(zone) or 0.0],
-                "wind_speed_10m": [wind_speed_10m if wind_speed_10m is not None else 0.0],
-                "wind_direction_10m": [wind_direction_10m],
-                "wind_direction_10m_available": [wind_direction_10m_available],
-            }
-            grid_locations.append({"hourly": hourly, "models": METEOFRANCE_GRIB_SLOT_MODEL_NAME})
+        def _locations_depuis(vals: dict[str, dict[str, float]]) -> list[dict[str, Any]]:
+            """Construit les entrées horaires du scoring depuis un jeu de valeurs par champ.
+            Appelé une fois pour les valeurs SERVIES, et une seconde fois en mode ombre
+            avec les valeurs p90 — pour que les deux scores viennent du même code."""
+            locs: list[dict[str, Any]] = []
+            for point in points:
+                zone = point.zone
+                temp_c = vals.get("temperature_2m", {}).get(zone)
+                dewpoint_c = vals.get("dew_point_2m", {}).get(zone)
+                rh2m = vals.get("relative_humidity_2m", {}).get(zone)
+                if rh2m is None:
+                    rh2m = _relative_humidity_from_dewpoint_c(temp_c, dewpoint_c)
+                wind_speed_10m = vals.get("wind_speed_10m", {}).get(zone)
+                wind_direction_10m = vals.get("wind_direction_10m", {}).get(zone)
+                wind_direction_10m_available = wind_speed_10m is not None and wind_direction_10m is not None
+                # ⚠ « mucape » = en réalité MLCAPE (wcs_client MLCAPE__GROUND), pas du vrai MUCAPE.
+                # `_first_present` (première valeur NON-None, pas falsy) : un MLCAPE VALIDE de 0.0
+                # ne doit pas être traité comme absent et remplacé par le CAPE paquet (bug audit).
+                cape_val = _first_present(vals.get("mucape", {}).get(zone),
+                                          vals.get("cape", {}).get(zone))
+                has_td = temp_c is not None and dewpoint_c is not None
+                hourly = {
+                    "time": [slot_dt.isoformat()],
+                    "cape": [cape_val if cape_val is not None else 0.0],
+                    "precipitable_water": [vals.get("precipitable_water", {}).get(zone)],
+                    "shortwave_radiation": [vals.get("shortwave_radiation", {}).get(zone)],
+                    "precipitation_rate": [vals.get("precipitation_rate", {}).get(zone)],
+                    # temp/rosée : None si absent (PAS 0.0 = faux -0 °C sec) → rows_for_location
+                    # SAUTE l'heure plutôt que de fabriquer un faux signal (bug audit).
+                    "temperature_2m": [temp_c],
+                    "dew_point_2m": [dewpoint_c],
+                    "convective_inhibition": [vals.get("convective_inhibition", {}).get(zone)],
+                    "shear_ms": [vals.get("shear_ms", {}).get(zone)],
+                    "srh_01km": [vals.get("srh_01km", {}).get(zone)],  # hélicité 0-1 km (sévérité)
+                    # Indice de soulèvement (rehausse le score quand l'instabilité d'altitude dépasse
+                    # la CAPE de surface) : T500 environnement + pression de surface (ARPEGE WCS).
+                    "t500_k": [vals.get("t500_k", {}).get(zone)],
+                    "surface_pressure": [vals.get("surface_pressure", {}).get(zone)],
+                    "relative_humidity_2m": [rh2m],
+                    "vapour_pressure_deficit": [_vapour_pressure_deficit_kpa(float(temp_c), float(dewpoint_c)) if has_td else None],
+                    "wet_bulb_temperature_2m": [_wet_bulb_stull_c(float(temp_c), float(rh2m)) if (has_td and rh2m is not None) else None],
+                    "cloud_cover_low": [vals.get("cloud_cover_low", {}).get(zone)],
+                    "cloud_cover_mid": [vals.get("cloud_cover_mid", {}).get(zone)],
+                    "cloud_cover_high": [vals.get("cloud_cover_high", {}).get(zone)],
+                    "boundary_layer_height": [vals.get("boundary_layer_height", {}).get(zone)],
+                    "wind_gusts_10m": [vals.get("wind_gusts_10m", {}).get(zone) or 0.0],
+                    "wind_speed_10m": [wind_speed_10m if wind_speed_10m is not None else 0.0],
+                    "wind_direction_10m": [wind_direction_10m],
+                    "wind_direction_10m_available": [wind_direction_10m_available],
+                }
+                locs.append({"hourly": hourly, "models": METEOFRANCE_GRIB_SLOT_MODEL_NAME})
+            return locs
+
+        grid_locations = _locations_depuis(field_values)
 
         rows = rows_for_grid_locations(points, grid_locations)
         payload = group_for_output(rows, payload_lat, payload_lon, payload_label, target_date=target_date, model_name=METEOFRANCE_GRIB_SLOT_MODEL_NAME)
+
+        # ── MODE OMBRE ────────────────────────────────────────────────────────
+        # Même pipeline, mêmes points, valeurs p90 : on obtient le score qu'aurait la
+        # cellule après bascule. Rien de tout ceci n'entre dans `payload` : la réponse
+        # servie et les caches restent identiques au mode `nearest`.
+        shadow_cells: list[dict[str, Any]] = []
+        if _cell_shadow_active() and normalized_grid_scope == "france" and shadow_field_values:
+            try:
+                fusion = dict(field_values)
+                fusion.update(shadow_field_values)   # champs calculés (cisaillement, SRH) conservés
+                shadow_rows = rows_for_grid_locations(points, _locations_depuis(fusion))
+                shadow_payload = group_for_output(
+                    shadow_rows, payload_lat, payload_lon, payload_label,
+                    target_date=target_date, model_name=METEOFRANCE_GRIB_SLOT_MODEL_NAME)
+                for _day in shadow_payload.get("days", []):
+                    for _slot in _day.get("slots", []):
+                        for _cell in _slot.get("cells", []):
+                            shadow_cells.append({
+                                "zone": _cell.get("zone"),
+                                "lat": _cell.get("lat"),
+                                "lon": _cell.get("lon"),
+                                "trigger": _cell.get("trigger_score"),
+                                "conf": _cell.get("confidence_score"),
+                            })
+            except Exception:
+                shadow_cells = []
+                logging.getLogger("objectifoudre").warning(
+                    "score d'ombre impossible pour %s h%02d", target_date, hour, exc_info=True)
+
         for day in payload.get("days", []):
             for slot in day.get("slots", []):
                 slot["grid_scope"] = normalized_grid_scope
@@ -9988,6 +10169,10 @@ def _build_meteofrance_grib_slot_grid_sync(
             # (_set_cached_value ci-dessus) reste l'accélérateur chaud, entretenu par le
             # préchargement ; la couverture (RAM→archive) et le service restent corrects.
             _archive_france_slot_grid(result)
+            if shadow_cells:
+                _archive_shadow_slot(
+                    target_date.isoformat(), int(hour), shadow_cells,
+                    run_ref=str(latest_arome_run_reference_time or ""))
         else:
             _write_meteofrance_local_persistent_cache(cache_namespace, cache_key, result)
         return result
