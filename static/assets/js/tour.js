@@ -37,12 +37,15 @@
       entrer: function () { memoriserCamera(); cadrerFrance(900); }
     },
     {
-      // On zoome sur la cellule la plus active et on l'ACTIVE réellement : le
-      // projecteur se pose ensuite sur la fiche obtenue, c'est-à-dire la réponse.
+      // On zoome sur la cellule la plus active, puis c'est à l'UTILISATEUR de la
+      // toucher. Une fois ouverte, le projecteur se pose sur la fiche obtenue et le
+      // texte bascule sur `texteApres`.
       id: 'cellule', ancre: 'selection', feature: 'cell_detail',
       titre: 'Ouvrir une cellule',
-      texte: "Un appui sur une cellule affiche sa probabilité et sa confiance. Le détail complet — instabilité, humidité, cisaillement — s'obtient depuis cette fiche.",
-      entrer: function () { activerCellule(); },
+      texte: "À vous de jouer : touchez la cellule mise en avant pour afficher sa probabilité et sa confiance.",
+      texteApres: "Voilà la fiche de la cellule : probabilité et confiance. Le détail complet — instabilité, humidité, cisaillement — s'obtient depuis là.",
+      interactif: true,
+      entrer: function () { viserCellule(); },
       sortir: function () { fermerSelection(); cadrerFrance(700); }
     },
     {
@@ -211,7 +214,9 @@
   // canvas, pour que MapLibre fasse son propre calcul de features et déclenche le
   // gestionnaire de la couche `grid-fill` comme un utilisateur l'aurait fait.
   var celluleActivee = null;
-  function activerCellule() {
+  // Zoome sur la cellule et s'arrête là : c'est l'UTILISATEUR qui la touche.
+  // On ne simule plus le clic — montrer un geste vaut moins que le faire faire.
+  function viserCellule() {
     var m = laCarte();
     if (!m) return;
     var c = choisirCellule();
@@ -219,22 +224,34 @@
     celluleActivee = c;
     try {
       m.easeTo({ center: [c.lon, c.lat], zoom: Math.max(m.getZoom(), 7.6), duration: 900 });
-      m.once('moveend', function () {
-        try {
-          var pt = m.project([c.lon, c.lat]);
-          var cible = m.getCanvasContainer();
-          var box = cible.getBoundingClientRect();
-          var cx = box.left + pt.x, cy = box.top + pt.y;
-          ['mousedown', 'mouseup', 'click'].forEach(function (type) {
-            cible.dispatchEvent(new MouseEvent(type, {
-              bubbles: true, cancelable: true, view: window,
-              clientX: cx, clientY: cy, button: 0
-            }));
-          });
-        } catch (e) {}
-        setTimeout(function () { replacer(); }, 120);
-      });
+      m.once('moveend', function () { setTimeout(function () { replacer(); }, 120); });
     } catch (e) {}
+  }
+
+  // Relaie à la carte un clic que l'utilisateur a fait DANS le projecteur. La nappe
+  // recouvre tout et intercepte les gestes ; plutôt que de la rendre traversante (on
+  // perdrait la fermeture au clic dehors), on redispatche l'événement sur le canvas
+  // aux coordonnées réelles. MapLibre refait son hit-test : c'est bien le clic de
+  // l'utilisateur, au point où il a visé.
+  function relayerClicCarte(clientX, clientY) {
+    var m = laCarte();
+    if (!m) return false;
+    try {
+      var cible = m.getCanvasContainer();
+      ['mousedown', 'mouseup', 'click'].forEach(function (type) {
+        cible.dispatchEvent(new MouseEvent(type, {
+          bubbles: true, cancelable: true, view: window,
+          clientX: clientX, clientY: clientY, button: 0
+        }));
+      });
+      setTimeout(function () { replacer(); }, 160);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function selectionOuverte() {
+    var c = document.getElementById('selectionCard');
+    return !!(c && c.classList.contains('visible') && visible(c));
   }
 
   function fermerSelection() {
@@ -412,6 +429,15 @@
       var t = trou.getBoundingClientRect();
       if (ev.clientX >= t.left && ev.clientX <= t.right &&
           ev.clientY >= t.top && ev.clientY <= t.bottom) {
+        var e0 = actives[pos];
+        // Étape interactive : le geste appartient à l'utilisateur, on le RELAIE à la
+        // carte au lieu d'avancer à sa place. Tant que la fiche n'est pas ouverte.
+        // `celluleActivee` garantit qu'on a bien visé une cellule : sans grille rendue
+        // (serveur local, données absentes) le relais n'ouvrirait rien et le clic
+        // semblerait mort — on retombe alors sur l'avancement normal.
+        if (e0 && e0.interactif && celluleActivee && !selectionOuverte()) {
+          if (relayerClicCarte(ev.clientX, ev.clientY)) return;
+        }
         btnSuiv.click();
         return;
       }
@@ -467,7 +493,8 @@
 
     elNum.textContent = 'Étape ' + (pos + 1) + ' sur ' + actives.length;
     elTitre.textContent = e.titre;
-    elTexte.textContent = e.texte + (r.repli ? ' — accessible depuis « Plus ».' : '');
+    var txt = (e.texteApres && e.interactif && selectionOuverte()) ? e.texteApres : e.texte;
+    elTexte.textContent = txt + (r.repli ? ' — accessible depuis « Plus ».' : '');
     var pts = '';
     for (var i = 0; i < actives.length; i++) pts += '<i class="' + (i === pos ? 'on' : '') + '"></i>';
     elPoints.innerHTML = pts;

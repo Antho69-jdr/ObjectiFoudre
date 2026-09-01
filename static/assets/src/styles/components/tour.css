@@ -46,6 +46,32 @@
               height 380ms cubic-bezier(.3, .8, .35, 1);
 }
 
+/* Liseré pulsé autour de la zone à regarder. Porté par un pseudo-élément et NON par
+   la box-shadow du trou : celle-ci contient la nappe de 9999px, l'animer ferait
+   repeindre tout l'écran à chaque image. Ici seul un anneau de la taille du trou
+   s'anime. */
+.of-tour-trou::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  border: 2px solid var(--accent, #38bdf8);
+  pointer-events: none;
+  animation: of-tour-pulse 1900ms ease-in-out infinite;
+}
+@keyframes of-tour-pulse {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+    box-shadow: 0 0 8px 1px rgba(56, 189, 248, 0.35);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.015);
+    box-shadow: 0 0 24px 7px rgba(56, 189, 248, 0.7);
+  }
+}
+
 .of-tour-bulle {
   position: fixed;
   width: min(320px, calc(100vw - 24px));
@@ -162,6 +188,12 @@ body.of-tour-ouvert { overflow: hidden; }
   .of-tour-trou,
   .of-tour-bulle { transition: none; }
   .of-tour { transition: none; }
+  /* L'anneau reste, mais fixe et bien lisible : on retire la pulsation, pas le repère. */
+  .of-tour-trou::after {
+    animation: none;
+    opacity: 1;
+    box-shadow: 0 0 18px 4px rgba(56, 189, 248, 0.55);
+  }
 }
 
 /* Entrée « Revoir la visite » dans le tiroir d'aide. */
