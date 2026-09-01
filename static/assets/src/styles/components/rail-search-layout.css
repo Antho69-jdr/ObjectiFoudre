@@ -326,33 +326,37 @@ body.mobile-ui .right-rail-stack {
    commence à y=227 alors que les rails descendaient jusqu'à 251, 276 et 357 — les
    TROIS passaient dessous.
 
-   On les borne donc à l'espace réellement libre (sous le haut de l'écran, au-dessus
-   de la frise ET de la barre du bas) au lieu de les centrer sur le viewport.
+   MÊME TRAITEMENT QUE LE RAIL DROIT en paysage (voir le bloc `.right-rail-scroll`
+   plus haut, media query jumelle) : on borne le rail à l'espace libre et on le rend
+   DÉFILANT, plutôt que de rogner le contenu. Le rail Étoiles fait 354 px (légende
+   dépliable de 104 px + 5 boutons de 42) pour ~207 px disponibles : même sans la
+   légende il ne rentrerait pas.
+
    `--timeline-height-px` est posée par controls-timeline.js à partir d'une MESURE
    de la frise, contrairement à --timeline-height qui la sous-estime.
 
-   Le rail Étoiles fait 354 px (légende dépliable de 104 px + 5 boutons de 42) pour
-   ~207 px disponibles : même sans la légende il ne rentrerait pas. On autorise donc
-   une SECONDE COLONNE (`flex-wrap`) plutôt que de rogner le contenu ou d'imposer un
-   défilement au doigt dans une bande de 42 px de large. `overflow-y` reste en
-   dernier recours si même deux colonnes ne suffisaient pas. */
-@media (orientation: landscape) and (max-height: 500px) {
+   Détails repris du rail droit, et qui comptent :
+   - `touch-action: pan-y` — sans lui le doigt ferait glisser la CARTE au lieu de
+     faire défiler le rail ;
+   - `justify-content: flex-start` — un centrage rendrait le début du contenu
+     inatteignable dès que ça déborde ;
+   Pas de spacer `::after` ici, contrairement au rail droit : celui-ci se clippe PILE
+   au bord de la frise et a besoin d'une course pour l'en dégager, alors que notre
+   `bottom` réserve déjà 22 px de marge. L'ajouter rendait défilants des rails qui
+   tiennent (le rail Radar gagnait 16 px de course pour rien). */
+@media (orientation: landscape) and (max-width: 1024px) and (max-height: 600px) {
   .spots-rail,
   .chase-layer-rail,
   .stargaze-layer-rail {
-    top: 8px;
+    top: max(8px, env(safe-area-inset-top));
     bottom: calc(var(--bottom-nav-h, 0px) + var(--timeline-height-px, 64px) + 22px);
     transform: none;
-    flex-wrap: wrap;
-    /* `safe center` et non `center` : quand une colonne déborde malgré tout, un
-       centrage classique la fait sortir des DEUX côtés et le début devient
-       inatteignable au défilement (la légende dépliable disparaissait ainsi par le
-       haut). `safe` retombe sur un alignement au début dans ce cas précis. */
-    justify-content: safe center;
-    align-content: safe flex-start;
-    gap: 8px;
+    justify-content: flex-start;
     overflow-y: auto;
+    overflow-x: visible;
+    touch-action: pan-y;
     overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
   .spots-rail::-webkit-scrollbar,
