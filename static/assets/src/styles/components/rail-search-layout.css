@@ -358,7 +358,34 @@ body.mobile-ui .right-rail-stack {
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
+    /* Le contenu se coupait NET au bord bas : rien n'indiquait qu'il y avait une
+       suite. On l'estompe sur les 34 derniers pixels, sans l'effacer tout à fait
+       (0,22 d'opacité résiduelle) : le bouton suivant reste devinable, ce qui est
+       précisément le signal « ça défile ». Fondu en BAS seulement — un fondu en haut
+       atténuerait le premier bouton des rails qui ne débordent pas, leur contenu
+       commençant au ras du bord. */
+    /* ⚠️ Rendre le rail défilant le CLIPPE aussi HORIZONTALEMENT : en CSS, dès qu'un
+       axe défile, `overflow-x: visible` calcule `auto` (et `clip` calcule `hidden`,
+       ce qui neutralise overflow-clip-margin — testé). Le panneau dépliant de la
+       légende étoiles, qui sort à droite du rail, se retrouvait donc coupé à 42 px.
+       Correctif : on ÉLARGIT la boîte de défilement pour que le panneau tienne dedans,
+       et on la rend transparente aux gestes (les enfants les reprennent) — exactement
+       le motif `.right-rail-stack` du rail droit. Les zones vides laissent passer vers
+       la carte, les boutons restent cliquables, et le défilement vertical fonctionne
+       toujours puisque le geste part d'un enfant. */
+    width: min(242px, calc(100vw - 20px));
+    align-items: flex-start;
+    pointer-events: none;
+
+    --of-rail-fondu: 34px;
+    -webkit-mask-image: linear-gradient(to bottom,
+      #000 calc(100% - var(--of-rail-fondu)), rgba(0, 0, 0, 0.22) 100%);
+    mask-image: linear-gradient(to bottom,
+      #000 calc(100% - var(--of-rail-fondu)), rgba(0, 0, 0, 0.22) 100%);
   }
+  .spots-rail > *,
+  .chase-layer-rail > *,
+  .stargaze-layer-rail > * { pointer-events: auto; }
   .spots-rail::-webkit-scrollbar,
   .chase-layer-rail::-webkit-scrollbar,
   .stargaze-layer-rail::-webkit-scrollbar { display: none; }
