@@ -74,8 +74,13 @@
   #stargazeControls {
     bottom: calc(var(--bottom-nav-h) + max(var(--sp-3), env(safe-area-inset-bottom))) !important;
   }
-  /* légendes/badges ancrés juste au-dessus de la frise → remontés d'autant */
-  .chase-legend, .stargaze-legend { bottom: calc(83px + var(--bottom-nav-h)) !important; }
+  /* légendes/badges ancrés juste au-dessus de la frise → remontés d'autant.
+     ⚠️ .stargaze-legend RETIRÉE de cette règle : elle n'est plus `position: fixed`
+     mais `relative`, DANS le flux du rail gauche (ruban vertical, v1.3.176). Un
+     `bottom` sur un élément relatif le DÉCALE VERS LE HAUT — ici de 83 + hauteur de
+     barre = 141 px — si bien que la légende était peinte hors de son rail sur tout
+     appareil tactile. .chase-legend, elle, est bien restée fixed et garde la règle. */
+  .chase-legend { bottom: calc(83px + var(--bottom-nav-h)) !important; }
 
   /* ---- Réserver la place de la barre sur les surfaces plein écran ----
      La barre (z 89) est désormais visible PAR-DESSUS les pages et le drawer :

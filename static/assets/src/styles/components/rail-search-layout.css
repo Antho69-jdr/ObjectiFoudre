@@ -317,3 +317,45 @@ body.mobile-ui .right-rail-stack {
 .search-dock > * {
   pointer-events: auto;
 }
+
+/* ── Rails GAUCHES en téléphone paysage ─────────────────────────────────────
+   Les trois rails gauches (#spotsRail sur Prévisions, #chaseLayerRail sur Radar,
+   #stargazeLayerRail sur Étoiles) partagent le même placement : `top: 50%` centré
+   sur le VIEWPORT. En paysage téléphone la hauteur est rare, et la frise remonte
+   encore quand elle s'enroule sur les écrans étroits : mesuré à 740x360, la frise
+   commence à y=227 alors que les rails descendaient jusqu'à 251, 276 et 357 — les
+   TROIS passaient dessous.
+
+   On les borne donc à l'espace réellement libre (sous le haut de l'écran, au-dessus
+   de la frise ET de la barre du bas) au lieu de les centrer sur le viewport.
+   `--timeline-height-px` est posée par controls-timeline.js à partir d'une MESURE
+   de la frise, contrairement à --timeline-height qui la sous-estime.
+
+   Le rail Étoiles fait 354 px (légende dépliable de 104 px + 5 boutons de 42) pour
+   ~207 px disponibles : même sans la légende il ne rentrerait pas. On autorise donc
+   une SECONDE COLONNE (`flex-wrap`) plutôt que de rogner le contenu ou d'imposer un
+   défilement au doigt dans une bande de 42 px de large. `overflow-y` reste en
+   dernier recours si même deux colonnes ne suffisaient pas. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .spots-rail,
+  .chase-layer-rail,
+  .stargaze-layer-rail {
+    top: 8px;
+    bottom: calc(var(--bottom-nav-h, 0px) + var(--timeline-height-px, 64px) + 22px);
+    transform: none;
+    flex-wrap: wrap;
+    /* `safe center` et non `center` : quand une colonne déborde malgré tout, un
+       centrage classique la fait sortir des DEUX côtés et le début devient
+       inatteignable au défilement (la légende dépliable disparaissait ainsi par le
+       haut). `safe` retombe sur un alignement au début dans ce cas précis. */
+    justify-content: safe center;
+    align-content: safe flex-start;
+    gap: 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+  .spots-rail::-webkit-scrollbar,
+  .chase-layer-rail::-webkit-scrollbar,
+  .stargaze-layer-rail::-webkit-scrollbar { display: none; }
+}
