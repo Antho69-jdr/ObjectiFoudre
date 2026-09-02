@@ -593,6 +593,55 @@
     attachRailDrag(rail);
     slotsEl.appendChild(rail);
     updateCursorUI();
+    computeLabelStep();
+    watchLabelDensity();
+  }
+
+  // ── Densité des étiquettes horaires du rail ───────────────────────────────
+  // Sur téléphone tenu droit, le rail ne reçoit qu'une centaine de pixels pour toute
+  // la nuit : dix étiquettes de 18 px s'y chevauchaient (9 sur 10, mesuré en prod).
+  // On n'en affiche donc qu'une sur `labelStep`, déduit de l'ÉCARTEMENT RÉEL entre
+  // deux repères — et non d'un « nombre d'étiquettes × largeur ≤ rail », raccourci
+  // qui laissait encore des chevauchements à 360 px (cf. audit du 2026-09-02).
+  // Les TRAITS, eux, restent tous là : ce sont eux qui portent les heures de nuit
+  // noire (`.sg-dark-hour`), et ils ne se chevauchent jamais.
+  const LABEL_MIN_GAP = 3;
+  let labelStep = 1, densityRO = null;
+
+  function computeLabelStep() {
+    if (!railTrack || railMarks.length < 2) { labelStep = 1; applyLabelDensity(); return; }
+    const w = railTrack.getBoundingClientRect().width;
+    if (!w) return;   // frise repliée ou masquée : rien à mesurer, on garde l'état
+    const lab0 = railMarks[0].querySelector('.timeline-hour-label');
+    const labW = (lab0 && lab0.getBoundingClientRect().width) || 18;
+    const pas = w / (railMarks.length - 1);
+    labelStep = Math.max(1, Math.min(railMarks.length, Math.ceil((labW + LABEL_MIN_GAP) / Math.max(1, pas))));
+    applyLabelDensity();
+  }
+
+  function applyLabelDensity() {
+    if (!railMarks.length) return;
+    railMarks.forEach((m, i) => {
+      const l = m.querySelector('.timeline-hour-label');
+      if (!l) return;
+      // L'heure SÉLECTIONNÉE reste toujours lisible : c'est elle qui s'affiche dans la
+      // pastille du curseur. On efface en revanche les étiquettes conservées qui
+      // tomberaient à moins d'un pas d'elle, sinon elles se recouvriraient.
+      let show = (i % labelStep === 0);
+      if (i === cursor) show = true;
+      else if (Math.abs(i - cursor) < labelStep) show = false;
+      l.style.display = show ? '' : 'none';
+    });
+  }
+
+  // Recalcul à chaque changement de largeur du conteneur (rotation, repli du dock,
+  // passage paysage/portrait) — même motif que le sync de controls-timeline.js.
+  // Masquer une étiquette ne change pas la taille de la piste (repères en absolu),
+  // donc pas de boucle d'observation.
+  function watchLabelDensity() {
+    if (densityRO || !slotsEl || typeof ResizeObserver !== 'function') return;
+    densityRO = new ResizeObserver(() => requestAnimationFrame(computeLabelStep));
+    densityRO.observe(slotsEl);
   }
 
   function updateCursorUI() {
@@ -601,6 +650,7 @@
     const span = railTrack.querySelector('.timeline-rail-cursor span');
     if (span && hours[cursor]) span.textContent = fmtHM(hours[cursor].iso);
     railMarks.forEach((m, i) => m.classList.toggle('active', i === cursor));
+    applyLabelDensity();   // l'heure sélectionnée doit rester lisible quel que soit le pas
     const rail = railTrack.parentElement;
     if (rail && hours[cursor]) rail.setAttribute('aria-valuetext', fmtHM(hours[cursor].iso));
   }

@@ -303,6 +303,14 @@ body.stargaze-mode .meta-stack .meta-version { color: #fdf1cf; }
    bouton de frise, invisible → compense les 2 boutons de droite face au seul play
    de gauche pour que le RAIL horaire tombe pile au centre de l'écran. */
 .sg-frise-spacer { flex: 0 0 auto; width: 40px; height: 40px; pointer-events: none; }
+/* …mais sur écran ÉTROIT ce centrage se paie trop cher : la frise porte six gabarits
+   de bouton pour 358 px de large (74 % de la largeur), et le rail horaire — le seul
+   à porter de l'information — tombait à 94 px pour dix heures. L'espaceur, qui ne
+   contient rien, est le premier à céder : 44 px rendus au rail (gouttière comprise).
+   Au-delà de 620 px le rail est à l'aise, on garde le centrage. */
+@media (max-width: 620px) {
+  .sg-frise-spacer { display: none; }
+}
 .sg-frise-btn {
   flex: 0 0 auto !important;
   width: 40px !important; height: 40px !important;
