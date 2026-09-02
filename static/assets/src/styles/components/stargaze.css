@@ -662,11 +662,23 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 @media (max-width: 767px), (pointer: coarse) { .sg-dome { max-width: 100%; } .sg-dome-legend { grid-template-columns: 1fr; } .sg-dome-frise-lab { font-size: 9px; } }
 
 /* ── « Autour de moi » (item 3) : feuille en bas — géoloc + rayon + résultats ── */
+/* La feuille était ancrée à `bottom: 0` : elle recouvrait la frise ET la barre du bas,
+   et sa dernière ligne butait sur le bord de l'écran. On la remonte AU-DESSUS des deux,
+   avec le même calcul que les rails gauches et le dock de recherche
+   (`--bottom-nav-h` n'existe qu'en tactile → 0 sur desktop, `--timeline-height-px` est
+   MESURÉE par controls-timeline.js, contrairement à --timeline-height qui sous-estime).
+   `max-height` + défilement : en paysage bas, la feuille garnie de résultats dépassait
+   sinon par le HAUT une fois remontée. */
 .sg-geo-sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 96;
+  position: fixed; left: 0; right: 0; z-index: 96;
+  --sg-geo-lift: calc(var(--bottom-nav-h, 0px) + var(--timeline-height-px, 64px) + max(var(--sp-3), env(safe-area-inset-bottom)) + 10px);
+  bottom: var(--sg-geo-lift);
+  max-height: calc(100dvh - var(--sg-geo-lift) - 12px);
+  overflow-y: auto; overscroll-behavior: contain;
+  border-radius: 18px;
   width: min(460px, 100%); margin: 0 auto;
-  background: rgba(16, 12, 6, 0.97); border: 1px solid rgba(251, 191, 36, 0.30); border-bottom: 0;
-  border-radius: 18px 18px 0 0; padding: 12px 16px 16px; color: #f2e8d0;
+  background: rgba(16, 12, 6, 0.97); border: 1px solid rgba(251, 191, 36, 0.30);
+  padding: 12px 16px 16px; color: #f2e8d0;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   box-shadow: 0 -18px 50px -12px rgba(0, 0, 0, 0.6);
   backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);

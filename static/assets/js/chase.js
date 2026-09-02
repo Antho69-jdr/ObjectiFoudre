@@ -1305,9 +1305,16 @@
     ['france-department-lines', 'line-color', 'rgba(180, 120, 124, 0.5)', 'rgba(120, 145, 175, 0.5)'],
     ['france-region-lines', 'line-color', 'rgba(208, 150, 154, 0.62)', 'rgba(150, 176, 208, 0.62)'],
   ];
+  // ⚠️ Le report par `once('idle')` doit être ANNULABLE : en enchaînant vite deux cartes
+  // (Radar puis Étoiles), la teinte ROUGE restait en attente et s'appliquait APRÈS la
+  // teinte nuit du mode étoile → fond rouge sous la grille étoile. On retire donc toujours
+  // le report précédent avant d'en poser un nouveau (miroir exact de stargaze.js).
+  let tintPending = null;
   function setChaseMapTint(on) {
     if (!map) return;
+    if (tintPending) { try { map.off('idle', tintPending); } catch (_) {} tintPending = null; }
     const apply = () => {
+      tintPending = null;
       for (const [layer, prop, chaseVal, normalVal] of CHASE_MAP_TINT) {
         if (map.getLayer(layer)) {
           try { map.setPaintProperty(layer, prop, on ? chaseVal : normalVal); } catch (_) {}
@@ -1315,7 +1322,7 @@
       }
     };
     if (map.isStyleLoaded && map.isStyleLoaded()) apply();
-    else map.once('idle', apply);
+    else { tintPending = apply; map.once('idle', apply); }
   }
 
   // ── Activation / désactivation (bascule sur la carte de base) ────────────────

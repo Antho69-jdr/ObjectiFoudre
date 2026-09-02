@@ -149,7 +149,10 @@
   // ── marqueurs + calque ─────────────────────────────────────────────────────
   // spotsData = spots PUBLICS (calque commun + scoring orage + table « Publics »).
   // mineData  = MES spots (connecté) : perso privés + partagés (avec `status`).
-  var markers = [], popup = null, visible = true, loaded = false, spotsData = [], mineData = [];
+  // `visible` = calque de spots affiché sur la carte. OFF PAR DÉFAUT (demande Anthony) :
+  // la carte s'ouvre sur la donnée météo/étoile seule, les pastilles vertes s'ajoutent
+  // à la demande via le bouton œil des rails gauches.
+  var markers = [], popup = null, visible = false, loaded = false, spotsData = [], mineData = [];
   var account = { loggedIn: false };
   var tableView = 'public';   // page tableau : 'public' | 'mine'
 

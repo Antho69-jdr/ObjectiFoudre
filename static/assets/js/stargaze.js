@@ -389,6 +389,15 @@
     const s = layerSel;
     return s.light && s.moon && s.cloudLo && s.cloudMi && s.cloudHi;
   }
+  // (Re)pousse TOUTE la donnée déjà calculée vers les sources MapLibre, puis recolore.
+  // Appelée quand les couches n'existaient pas encore au moment du rendu (style pas prêt).
+  function pushSources() {
+    if (!map) return;
+    if (qualityFC && map.getSource(QUALITY_SRC)) { try { map.getSource(QUALITY_SRC).setData(qualityFC); } catch (_) {} }
+    updateBestLayer();
+    paintHour(cursor);
+  }
+
   function paintHour(hi) {
     if (!map.getLayer(QUALITY_LYR)) return;
     const expr = degraded ? colorExprDk()
@@ -397,15 +406,22 @@
   }
 
   // Recoloration nuit de la carte de base (surroundings visibles), comme le mode chasse.
+  // ⚠️ Le report par `once('idle')` doit être ANNULABLE : en enchaînant vite deux cartes
+  // (Radar puis Étoiles), la teinte ROUGE du mode chasse restait en attente et s'appliquait
+  // APRÈS la teinte nuit → fond rouge sous la grille étoile. On retire donc toujours le
+  // report précédent avant d'en poser un nouveau (miroir exact de chase.js).
+  let tintPending = null;
   function setStargazeMapTint(on) {
     if (!map) return;
+    if (tintPending) { try { map.off('idle', tintPending); } catch (_) {} tintPending = null; }
     const apply = () => {
+      tintPending = null;
       for (const [layer, prop, nightVal, normalVal] of STARGAZE_MAP_TINT) {
         if (map.getLayer(layer)) { try { map.setPaintProperty(layer, prop, on ? nightVal : normalVal); } catch (_) {} }
       }
     };
     if (map.isStyleLoaded && map.isStyleLoaded()) apply();
-    else map.once('idle', apply);
+    else { tintPending = apply; map.once('idle', apply); }
   }
 
   // ── Badge + frise ────────────────────────────────────────────────────────
@@ -457,6 +473,25 @@
     return Math.max(0, Math.min(100, ((hours[i].epoch - t0) / Math.max(1, t1 - t0)) * 100));
   }
 
+  // Libellé de l'info-bulle d'une icône de phase de la frise étoile.
+  // Les icônes « nuit » annoncent la NUIT NOIRE (nuit astronomique, soleil < −18°) —
+  // la seule fenêtre qui compte ici — et non le simple coucher→lever du badge de base.
+  // Même source que le badge du haut (`data.night`), donc les deux disent la même chose.
+  function solarIconTooltip(ph) {
+    const hhmm = (typeof formatTimelineSunHour === 'function')
+      ? formatTimelineSunHour(ph.hour)
+      : (String(Math.floor(ph.hour)).padStart(2, '0') + ':' + String(Math.round((ph.hour % 1) * 60)).padStart(2, '0'));
+    if (ph.type === 'night') {
+      const n = (data && data.night) || {};
+      return (n.night_start_utc && n.night_end_utc)
+        ? 'Nuit noire · ' + fmtHMz(n.night_start_utc) + ' → ' + fmtHMz(n.night_end_utc)
+        : 'Pas de nuit noire cette nuit (crépuscule permanent)';
+    }
+    if (ph.type === 'sunrise') return 'Lever du soleil · ' + hhmm;
+    if (ph.type === 'sunset') return 'Coucher du soleil · ' + hhmm;
+    return (ph.label || ph.type) + ' · ' + hhmm;
+  }
+
   // Icônes de phase solaire (lever/coucher/nuit) — MÊME rendu que la frise de base
   // (timeline-solar.js), positionnées sur la fenêtre de la nuit.
   function addSolarIcons(track) {
@@ -477,12 +512,49 @@
         const icon = document.createElement('span');
         icon.className = `timeline-light-icon timeline-light-icon-${ph.type}`;
         icon.style.left = pct + '%';
+        // ⚠️ L'info-bulle de ces icônes est le `::before { content: attr(data-tooltip) }`
+        // de timeline.css (elles sont explicitement exclues du tooltip flottant de
+        // tooltip.js). Sans data-tooltip la bulle s'ouvrait VIDE : c'est pour ça que
+        // celles de la frise étoile n'ont jamais rien affiché.
+        icon.dataset.tooltip = solarIconTooltip(ph);
         icon.setAttribute('role', 'img');
-        icon.setAttribute('aria-label', ph.label || ph.type);
+        icon.setAttribute('aria-label', icon.dataset.tooltip);
         icon.innerHTML = timelinePhaseIconSvg(ph.type);
+        // Tactile : `:hover` n'existe pas au doigt → un tap ouvre/ferme la bulle.
+        // `stopPropagation` sur pointerdown : sans lui, le tap remonte jusqu'au rail et
+        // DÉPLACE le curseur d'heure (attachRailDrag écoute le pointerdown du rail).
+        // Il ne gêne pas la fermeture au tap dehors : OFDismiss écoute en CAPTURE.
+        icon.addEventListener('pointerdown', (ev) => { ev.stopPropagation(); });
+        icon.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const open = icon.classList.contains('is-open');
+          closeSolarTips();
+          if (!open) icon.classList.add('is-open');
+        });
         track.appendChild(icon);
       }
     }
+    registerSolarTipDismiss();
+  }
+
+  // Fermeture des info-bulles de phase (une seule ouverte à la fois).
+  function closeSolarTips() {
+    if (!slotsEl) return;
+    slotsEl.querySelectorAll('.timeline-light-icon.is-open').forEach((o) => o.classList.remove('is-open'));
+  }
+  // Enregistrement UNIQUE sur le conteneur stable `#stargazeSlots` : la frise (`track`)
+  // est reconstruite à chaque rendu, s'inscrire dessus empilerait une entrée morte par
+  // reconstruction.
+  let solarTipDismissed = false;
+  function registerSolarTipDismiss() {
+    if (solarTipDismissed || !slotsEl) return;
+    if (!window.OFDismiss || typeof window.OFDismiss.register !== 'function') return;
+    solarTipDismissed = true;
+    window.OFDismiss.register({
+      el: slotsEl,
+      isOpen: () => !!slotsEl.querySelector('.timeline-light-icon.is-open'),
+      close: closeSolarTips,
+    });
   }
 
   // Frise = MÊME structure/classes que la frise de base et du mode chasse
@@ -1835,7 +1907,11 @@
     setStargazeMapTint(true);
     if (ensureLayers()) { hideGrid(true); setLayersVisible(true); }
     else {
-      const retry = () => { if (!active) return; if (ensureLayers()) { hideGrid(true); setLayersVisible(true); paintHour(cursor); } else window.setTimeout(retry, 250); };
+      // ⚠️ `paintHour` ne pose QUE la couleur : si loadData() a rendu pendant que le style
+      // n'était pas prêt, `map.getSource(QUALITY_SRC)` était absent et la GÉOMÉTRIE a été
+      // jetée en silence → carte étoile vide jusqu'à ce qu'on sorte et revienne. On repousse
+      // donc les sources dès que les couches existent.
+      const retry = () => { if (!active) return; if (ensureLayers()) { hideGrid(true); setLayersVisible(true); pushSources(); } else window.setTimeout(retry, 250); };
       window.setTimeout(retry, 250);
     }
     if (!clickBound) {

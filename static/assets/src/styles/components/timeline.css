@@ -260,6 +260,13 @@ body.stargaze-mode #stargazeSlots {
   color: rgb(var(--tl-bright));
   pointer-events: none;
 }
+/* Le trait est PERCÉ en son milieu : il barrait le numéro d'heure, que la pastille
+   du curseur (::after, fond quasi transparent) laisse pourtant lire. Géométrie :
+   le trait couvre y=4..40 dans la boîte de 44px du curseur ; la pastille fait
+   19px + 2×3px de bordure = 25px de diamètre, centrée à y=22 → elle occupe
+   y=9,5..34,5, soit 15,3 % à 84,7 % de la hauteur du trait. On coupe un poil plus
+   large (14 %/86 %) pour dégager le liseré. Le masque garde le dégradé d'origine,
+   contrairement à un gradient de fond qu'il aurait fallu redécrire. */
 .timeline-rail-cursor::before {
   content: "";
   position: absolute;
@@ -269,6 +276,8 @@ body.stargaze-mode #stargazeSlots {
   border-radius: var(--r-pill);
   background: linear-gradient(180deg, rgba(var(--tl-bright),0.98), rgba(var(--tl-accent),0.82));
   box-shadow: 0 0 10px rgba(var(--tl-accent),0.42);
+  -webkit-mask-image: linear-gradient(180deg, #000 0 14%, transparent 14% 86%, #000 86% 100%);
+  mask-image: linear-gradient(180deg, #000 0 14%, transparent 14% 86%, #000 86% 100%);
 }
 .timeline-rail-cursor::after {
   content: "";
@@ -305,7 +314,16 @@ body.stargaze-mode #stargazeSlots {
 .timeline-hour-mark.is-arome-cached .timeline-hour-line { background: rgba(var(--tl-accent),0.76); }
 .timeline-hour-mark.is-arome-loaded .timeline-hour-line { background: rgba(var(--tl-accent),0.98); box-shadow: 0 0 8px rgba(var(--tl-accent),0.45); }
 .timeline-hour-mark.active .timeline-hour-label { color: #f8fafc; font-weight: var(--fw-black); }
-.timeline-hour-mark.active .timeline-hour-line { top: 4px; height: 36px; width: 2px; opacity: 0.94; background: rgba(255, 255, 255, 0.90); }
+/* Repère de l'heure SÉLECTIONNÉE : même perçage que le trait du curseur, qui se
+   superpose exactement au même x. Sans lui, ce trait-ci continuait de traverser les
+   chiffres (il est SOUS l'étiquette, mais l'étiquette est transparente : la barre
+   ressortait dans les creux du « 22 »). Géométrie identique au curseur (boîte de 44px,
+   trait de 4 à 40) → mêmes arrêts de masque. */
+.timeline-hour-mark.active .timeline-hour-line {
+  top: 4px; height: 36px; width: 2px; opacity: 0.94; background: rgba(255, 255, 255, 0.90);
+  -webkit-mask-image: linear-gradient(180deg, #000 0 14%, transparent 14% 86%, #000 86% 100%);
+  mask-image: linear-gradient(180deg, #000 0 14%, transparent 14% 86%, #000 86% 100%);
+}
 
 /* --- Icônes de phase solaire (jour/nuit/lever/coucher) du rail desktop -------
    Posées au-dessus du rail (top négatif), trait de liaison (::after) + bulle
@@ -362,12 +380,17 @@ body.stargaze-mode #stargazeSlots {
   transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s ease;
   pointer-events: none;
 }
+/* `.is-open` : ouverture au TAP (posée par stargaze.js) — au doigt il n'y a pas de
+   `:hover`, et ces icônes sont exclues du tooltip flottant de tooltip.js. */
 .timeline-light-icon:hover::before,
-.timeline-light-icon:focus-visible::before {
+.timeline-light-icon:focus-visible::before,
+.timeline-light-icon.is-open::before {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(0);
 }
+/* Une bulle ouverte au tap passe au-dessus des icônes voisines (z 9 entre elles). */
+.timeline-light-icon.is-open { z-index: 12; }
 .timeline-light-icon-night { color: rgba(125, 211, 252, 0.82); }
 .timeline-light-icon-sunrise,
 .timeline-light-icon-sunset { color: rgba(251, 146, 60, 0.94); }
