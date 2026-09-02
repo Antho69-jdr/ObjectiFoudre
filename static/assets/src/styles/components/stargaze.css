@@ -619,6 +619,31 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 /* Vue « Ciel » : planisphère tout-azimut + résumé (Voie lactée / planètes / étoiles). */
 .sg-sky-pane { padding: 2px 14px 12px; }
 .sg-sky-svg { display: block; width: 100%; max-width: 320px; height: auto; margin: 0 auto; }
+/* Barre d'outils du planisphère : bouton boussole + cap courant.
+   ⚠️ `body.mobile-ui button { min-width: 88px; flex: 0 0 auto }` dilaterait le bouton :
+   on repose donc des porteurs explicites (même parade que .bnav-avatar). */
+.sg-sky-tools { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
+.sg-sky-compass {
+  flex: 1 1 auto !important; min-width: 0 !important;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 7px 10px; border-radius: 10px; cursor: pointer;
+  border: 1px solid #22304a; background: transparent; color: #9fb0c8;
+  font: 600 12px/1 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  transition: 0.15s;
+}
+.sg-sky-compass .icon-svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.sg-sky-compass:hover { color: #eaf0fb; border-color: #33445f; }
+.sg-sky-compass.is-on { background: rgba(244, 185, 66, 0.14); border-color: rgba(244, 185, 66, 0.45); color: #ffe9b0; }
+.sg-sky-compass:focus-visible { outline: 2px solid #f4b942; outline-offset: 2px; }
+.sg-sky-heading {
+  flex: 0 0 auto; font: 600 12px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color: #ffe9b0; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.sg-sky-heading[hidden] { display: none; }
+/* Le disque pivote d'un bloc ; les textes se contre-tournent (attribut pose par le JS).
+   Transition COURTE : elle lisse le pas de 1,5° sans trainer derriere le poignet. */
+#sgSkyRot, .sg-sky-lab { transition: transform 0.12s linear; }
+@media (prefers-reduced-motion: reduce) { #sgSkyRot, .sg-sky-lab { transition: none; } }
 .sg-sky-summary { margin-top: 8px; display: flex; flex-direction: column; }
 .sg-sky-row { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; padding: 6px 2px; border-top: 1px solid #1a2438; }
 .sg-sky-row span { color: #7dd3fc; font-weight: 600; }

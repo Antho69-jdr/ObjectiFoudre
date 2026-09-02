@@ -1281,6 +1281,41 @@
     ['Schedar', 10.127, 56.537, 2.24, 'Cassiopée'], ['Polaris', 37.954, 89.264, 1.98, 'Petite Ourse'],
     ['α Centauri', 219.902, -60.834, -0.27, 'Centaure'],
   ];
+  // Figures de constellations (« bâtonnets ») visibles depuis la France.
+  // Format compact : [nom FR, phare 0|1, [ra,dec, ra,dec, …], [i,j, i,j, …]] où les
+  // index du 4ᵉ tableau désignent des sommets du 3ᵉ. Coordonnées J2000, contrôlées par
+  // étendue angulaire (aucune figure au-delà de 30°, hors circumpolaires et Scorpion) et
+  // par longueur de segment. « Phare » = les huit figures que tout le monde reconnaît :
+  // ce sont les SEULES à porter un nom, sinon le disque de 300 px sature (choix Anthony,
+  // maquette du 2026-09-02 : 24 figures tracées et 8 nommées donnent 6,1 pour cent
+  // d'encombrement, contre 10 en nommant tout).
+  const SKY_CONST = [
+    ["Aigle",1,[297.696,8.868,296.565,10.613,298.828,6.407,291.375,3.115,286.353,13.863,302.826,-0.821,286.562,-4.883],[1,0,0,2,1,4,2,3,3,6,3,5]],
+    ["Cassiopée",1,[2.295,59.15,10.127,56.537,14.177,60.717,21.454,60.235,28.599,63.67],[0,1,1,2,2,3,3,4]],
+    ["Cygne",1,[310.358,45.28,305.557,40.257,311.553,33.97,296.244,45.131,292.68,27.96],[0,1,1,2,1,3,1,4]],
+    ["Grande Ourse",1,[165.932,61.751,165.46,56.382,178.458,53.695,183.857,57.033,193.507,55.96,200.981,54.926,206.885,49.313],[0,1,1,2,2,3,3,0,3,4,4,5,5,6]],
+    ["Lyre",1,[279.234,38.784,281.084,39.67,281.193,37.605,282.52,33.363,284.736,32.69],[0,1,0,2,2,3,3,4,4,2]],
+    ["Orion",1,[88.793,7.407,81.283,6.35,83.002,-0.299,84.053,-1.202,85.19,-1.943,86.939,-9.67,78.634,-8.202,83.784,9.934],[0,1,1,2,2,3,3,4,4,0,4,5,2,6,0,7,7,1]],
+    ["Pégase",1,[346.19,15.205,345.944,28.083,3.309,15.184,2.097,29.091,326.046,9.875,340.365,10.832,340.75,30.221,332.55,6.198],[0,1,1,3,3,2,2,0,0,5,5,7,7,4,1,6]],
+    ["Scorpion",1,[247.352,-26.432,241.359,-19.805,240.083,-22.622,239.713,-26.114,245.297,-25.593,248.971,-28.216,252.541,-34.293,253.084,-38.048,253.646,-42.362,258.038,-43.239,264.33,-42.998,263.402,-37.104,262.691,-37.296],[1,2,2,3,2,4,4,0,0,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12]],
+    ["Andromède",0,[2.097,29.091,9.832,30.861,17.433,35.621,14.188,38.499,30.975,42.33],[0,1,1,2,2,3,3,4]],
+    ["Bouvier",0,[213.915,19.182,221.247,27.074,218.019,38.308,225.487,40.39,227.996,33.315,218.019,30.371,220.187,13.728,208.671,18.398],[0,1,1,4,4,3,3,2,2,5,5,0,0,6,0,7]],
+    ["Céphée",0,[319.645,62.586,322.165,70.561,354.837,77.632,332.714,58.201,333.76,57.044,337.293,58.415],[0,1,1,2,2,5,5,3,3,0,3,4]],
+    ["Cocher",0,[79.172,45.998,89.882,44.947,81.573,28.608,89.93,37.213,74.248,33.166],[0,1,1,3,3,2,2,4,4,0]],
+    ["Couronne boréale",0,[232.865,31.359,231.955,29.106,233.672,26.715,235.075,26.296,236.507,26.068,237.804,26.878,239.398,29.851],[0,1,1,2,2,3,3,4,4,5,5,6]],
+    ["Dragon",0,[211.097,64.376,269.152,51.489,262.608,52.301,268.382,56.873,263.04,55.185,288.139,67.661,257.197,65.715,245.998,61.514,231.232,58.966,222.677,58.565,188.371,69.788],[1,3,3,4,4,2,2,1,3,5,5,6,6,7,7,0,0,10,7,8,8,9]],
+    ["Gémeaux",0,[116.329,28.026,113.649,31.888,110.031,21.982,100.983,25.131,99.428,16.399,95.74,22.514,93.719,22.507,101.322,12.896],[1,3,3,5,5,6,0,2,2,4,2,7,1,0]],
+    ["Grand Chien",0,[101.287,-16.716,95.675,-17.956,107.098,-26.393,104.656,-28.972,111.024,-29.303,105.94,-15.633],[1,0,0,5,5,2,2,3,3,0,2,4]],
+    ["Hercule",0,[250.323,31.602,250.724,38.922,258.758,36.809,255.073,30.926,247.555,21.49,258.762,24.839,258.662,14.39],[0,1,1,2,2,3,3,0,0,4,4,6,3,5,5,6]],
+    ["Lion",0,[152.093,11.967,151.833,16.763,154.993,19.842,154.173,23.417,148.191,26.007,146.463,23.774,168.527,20.524,177.265,14.572,168.56,15.43],[0,1,1,2,2,3,3,4,4,5,0,8,8,6,6,7,7,8,2,6]],
+    ["Persée",0,[51.081,49.861,47.042,40.956,46.199,53.506,55.731,47.788,59.463,40.01,58.533,31.884,46.294,38.84],[2,0,0,3,3,4,4,5,0,1,1,6,1,4]],
+    ["Petit Chien",0,[114.826,5.225,111.788,8.289],[0,1]],
+    ["Petite Ourse",0,[37.954,89.264,263.054,86.586,251.493,82.037,236.014,77.794,222.676,74.156,230.182,71.834,244.378,75.755],[0,1,1,2,2,3,3,6,6,4,4,5,5,3]],
+    ["Sagittaire",0,[276.043,-34.385,275.249,-29.828,276.993,-25.421,283.816,-26.297,285.653,-29.88,281.414,-26.991,286.735,-27.67],[0,1,1,2,2,5,5,3,3,6,6,4,4,0,5,4]],
+    ["Taureau",0,[68.98,16.509,81.573,28.608,84.411,21.143,67.165,15.871,64.948,15.628,67.154,19.18,60.17,12.49],[1,5,5,0,0,3,3,4,4,6,0,2]],
+    ["Vierge",0,[201.298,-11.161,177.674,1.765,184.976,-0.667,190.415,-1.449,193.901,3.398,195.544,10.959,203.673,-0.596,214.004,-6.001],[1,2,2,3,3,4,4,5,3,0,0,6,6,7,6,4]]
+  ];
+
   function skyNeverRises(dec, lat) { return dec < (lat - 90); }   // ne franchit jamais l'horizon
   // Lune (Schlyter) → RA/Dec géocentrique + illumination (0..1). Le panorama (spots.js) en a besoin.
   function skyMoonRadec(ms) {
@@ -1359,6 +1394,11 @@
       + '<div class="sg-dome-amber"><span id="sgDomeBortle"></span><span class="sg-dome-track"><span class="sg-dome-fill amber" id="sgDomePollFill"></span></span></div></div>'
       + '</div></div>'
       + '<div class="sg-dome-pane sg-sky-pane" id="sgDomeSky" hidden>'
+      + '<div class="sg-sky-tools"><button class="sg-sky-compass" id="sgSkyCompass" type="button" aria-pressed="false">'
+      + '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'
+      + '<circle cx="12" cy="12" r="9"></circle><path d="m15.2 8.8-2 5.4-5.4 2 2-5.4Z" fill="currentColor" stroke="none"></path></svg>'
+      + '<span id="sgSkyCompassLbl">Orienter avec la boussole</span></button>'
+      + '<span class="sg-sky-heading" id="sgSkyHeading" hidden></span></div>'
       + '<svg class="sg-sky-svg" id="sgSkySvg" viewBox="0 0 300 316" role="img" aria-label="Carte du ciel du spot selon son champ de vision"></svg>'
       + '<div class="sg-sky-summary" id="sgSkySummary"></div></div>'
       + '<div class="sg-dome-pane sg-photo-pane" id="sgDomePhoto" hidden>'
@@ -1382,12 +1422,15 @@
       tabPhoto: ov.querySelector('#sgTabPhoto'),
       paneCond: ov.querySelector('#sgDomeCond'), paneSky: ov.querySelector('#sgDomeSky'), panePhoto: ov.querySelector('#sgDomePhoto'),
       skySvg: ov.querySelector('#sgSkySvg'), skySummary: ov.querySelector('#sgSkySummary'),
+      skyCompass: ov.querySelector('#sgSkyCompass'), skyCompassLbl: ov.querySelector('#sgSkyCompassLbl'),
+      skyHeading: ov.querySelector('#sgSkyHeading'),
       photoCtrls: ov.querySelector('#sgPhotoCtrls'), photoOut: ov.querySelector('#sgPhotoOut'),
       photoNote: ov.querySelector('#sgPhotoNote'), photoGear: ov.querySelector('#sgPhotoGear'),
     };
     sgDomeEls.tabCond.addEventListener('click', () => setDomeTab('cond'));
     sgDomeEls.tabSky.addEventListener('click', () => setDomeTab('sky'));
     sgDomeEls.tabPhoto.addEventListener('click', () => setDomeTab('photo'));
+    sgDomeEls.skyCompass.addEventListener('click', toggleCompass);
     return sgDomeEls;
   }
 
@@ -1461,6 +1504,9 @@
       btn.setAttribute('aria-selected', which === k ? 'true' : 'false');
     });
     if (which === 'photo') renderPhotoControls();
+    // Quitter l'onglet Ciel coupe la boussole : garder le capteur actif sous un autre
+    // onglet consommerait pour rien, et on retrouverait le disque pivoté au retour.
+    if (which !== 'sky' && compassOn) stopCompass();
     paintDomeActive();
   }
   // Peint l'onglet ACTIF (évite de recalculer le panneau caché pendant le scrub).
@@ -1484,6 +1530,9 @@
     const card = (az) => ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round((((az % 360) + 360) % 360) / 45) % 8];
     let s = '<defs><radialGradient id="sgSkyG" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#0c1a30"/><stop offset="70%" stop-color="#0a1120"/><stop offset="100%" stop-color="#070b14"/></radialGradient></defs>';
     s += '<circle cx="' + CX + '" cy="' + CY + '" r="' + R + '" fill="url(#sgSkyG)" stroke="rgba(155,182,232,.28)" stroke-width="1"/>';
+    // TOUT ce qui suit vit dans un groupe pivotable : la boussole fait tourner le ciel
+    // d'un bloc (cf. applySkyHeading). Le disque de fond, lui, ne tourne pas.
+    s += '<g id="sgSkyRot" transform="rotate(0 ' + CX + ' ' + CY + ')">';
     for (const alt of [30, 60]) { const rr = ((90 - alt) / 90 * R).toFixed(1); s += '<circle cx="' + CX + '" cy="' + CY + '" r="' + rr + '" fill="none" stroke="rgba(155,182,232,.12)" stroke-width="1"/>'; }
     // Voie lactée (plan galactique b=0), en segments continus au-dessus de l'horizon.
     let seg = [], gc = null;
@@ -1494,12 +1543,74 @@
       else flush();
     }
     flush();
+    // ── Figures de constellations ──────────────────────────────────────────
+    // Tracees SOUS le relief et les astres (elles ne doivent jamais masquer une
+    // etoile nommee). Un segment dont les DEUX bouts sont sous le relief n'est pas
+    // trace du tout : une figure a moitie derriere la colline est dessinee a moitie,
+    // ce qui dit « depuis ce spot tu n'en verras que le haut ». Seules les huit
+    // figures phares portent un nom, et seulement si la moitie de leurs sommets est
+    // degagee — sinon on etiquetterait du vide.
+    let cLines = '', cLabels = '';
+    // Emplacements DEJA pris par un nom d'etoile (elles sont dessinees plus bas, mais
+    // il faut les connaitre avant pour ne pas ecrire « Lyre » par-dessus « Vega »).
+    const prises = [];
+    for (const st of SKY_STARS) {
+      if (st[3] >= 1.5) continue;
+      const a3 = skyAltaz(st[1], st[2], ms, lat, lon);
+      if (a3.alt < -1) continue;
+      const p3 = proj(Math.max(0, a3.alt), a3.az);
+      prises.push([p3[0] + 6 + st[0].length * 2.1, p3[1]]);   // centre approx. du libelle
+    }
+    const libre = (x, y) => !prises.some((q) => Math.abs(q[0] - x) < 26 && Math.abs(q[1] - y) < 9);
+    for (const [nom, phare, pts, segs] of SKY_CONST) {
+      const n = pts.length / 2;
+      const vx = new Array(n);
+      let libres = 0, sx = 0, sy = 0;
+      for (let i = 0; i < n; i++) {
+        const aa2 = skyAltaz(pts[i * 2], pts[i * 2 + 1], ms, lat, lon);
+        if (aa2.alt < -1) { vx[i] = null; continue; }
+        const pp = proj(Math.max(0, aa2.alt), aa2.az);
+        const masq = aa2.alt < hz(aa2.az);
+        vx[i] = { p: pp, masq };
+        if (!masq) { libres++; sx += pp[0]; sy += pp[1]; }
+      }
+      if (!libres) continue;
+      const w = phare ? 1.15 : 0.85, o = phare ? 0.62 : 0.42;
+      for (let k = 0; k < segs.length; k += 2) {
+        const A = vx[segs[k]], B = vx[segs[k + 1]];
+        if (!A || !B || (A.masq && B.masq)) continue;
+        const op = (A.masq || B.masq) ? (o * 0.42).toFixed(2) : o;
+        cLines += '<line x1="' + A.p[0].toFixed(1) + '" y1="' + A.p[1].toFixed(1)
+               + '" x2="' + B.p[0].toFixed(1) + '" y2="' + B.p[1].toFixed(1)
+               + '" stroke="#8fa8d4" stroke-width="' + w + '" opacity="' + op + '" stroke-linecap="round"/>';
+      }
+      if (phare && libres >= Math.max(2, Math.ceil(n * 0.5))) {
+        const bx = sx / libres;
+        // Le barycentre tombe souvent PILE sur l'etoile la plus brillante de la figure,
+        // dont le nom est deja ecrit la. On essaie donc quelques decalages verticaux et
+        // on renonce au nom si aucun ne se degage — mieux vaut pas de nom qu'illisible.
+        let by = null;
+        for (const dy of [11, -11, 21, -21, 0]) {
+          const y2 = sy / libres + dy;
+          if (Math.hypot(bx - CX, y2 - CY) < R - 10 && libre(bx, y2)) { by = y2; break; }
+        }
+        if (by != null) {
+          prises.push([bx, by]);
+          cLabels += '<text class="sg-sky-lab" data-x="' + bx.toFixed(1) + '" data-y="' + by.toFixed(1) + '" x="' + bx.toFixed(1) + '" y="' + by.toFixed(1)
+                  + '" text-anchor="middle" fill="#a8bde0" font-size="9" opacity="0.8">' + nom + '</text>';
+        }
+      }
+    }
+    s += cLines + cLabels;
+
     // Relief du spot (champ de vision) : anneau entre l'horizon vrai (0°) et le relief.
     let outer = [], inner = [];
     for (let az = 0; az <= 360; az += 4) { const p = proj(0, az); outer.push(p[0].toFixed(1) + ',' + p[1].toFixed(1)); }
     for (let az = 360; az >= 0; az -= 4) { const p = proj(Math.min(89, hz(az)), az); inner.push(p[0].toFixed(1) + ',' + p[1].toFixed(1)); }
     s += '<path d="M ' + outer.join(' L ') + ' L ' + inner.join(' L ') + ' Z" fill="rgba(251,191,36,.14)" stroke="rgba(251,191,36,.5)" stroke-width="1" stroke-dasharray="3 3"/>';
-    for (const c of [['N', 0], ['E', 90], ['S', 180], ['O', 270]]) { const p = proj(-7, c[1]); s += '<text x="' + p[0].toFixed(1) + '" y="' + (p[1] + 4).toFixed(1) + '" text-anchor="middle" fill="#f2d488" font-size="12" font-weight="600">' + c[0] + '</text>'; }
+    // `sg-sky-lab` + data-x/data-y : tout texte du groupe pivotant doit se CONTRE-tourner
+    // pour rester lisible quand la boussole fait tourner le ciel (cf. applySkyHeading).
+    for (const c of [['N', 0], ['E', 90], ['S', 180], ['O', 270]]) { const p = proj(-7, c[1]); s += '<text class="sg-sky-lab" data-x="' + p[0].toFixed(1) + '" data-y="' + (p[1] + 4).toFixed(1) + '" x="' + p[0].toFixed(1) + '" y="' + (p[1] + 4).toFixed(1) + '" text-anchor="middle" fill="#f2d488" font-size="12" font-weight="600">' + c[0] + '</text>'; }
     const vis = { stars: [], planets: [], never: [] };
     const drawObj = (name, ra, dec, isPlanet, mag) => {
       if (skyNeverRises(dec, lat)) { vis.never.push(name); return; }
@@ -1508,20 +1619,22 @@
       if (isPlanet) {
         const z = 4.5;
         s += '<rect x="' + (x - z).toFixed(1) + '" y="' + (y - z).toFixed(1) + '" width="' + (2 * z) + '" height="' + (2 * z) + '" transform="rotate(45 ' + x.toFixed(1) + ' ' + y.toFixed(1) + ')" fill="' + (masked ? 'none' : '#ffd27a') + '" stroke="' + (masked ? '#e8896a' : 'none') + '" stroke-width="1.4"/>';
-        s += '<text x="' + (x + 7).toFixed(1) + '" y="' + (y + 3).toFixed(1) + '" fill="' + (masked ? '#e8896a' : '#ffe6b8') + '" font-size="9">' + name + '</text>';
+        s += '<text class="sg-sky-lab" data-x="' + (x + 7).toFixed(1) + '" data-y="' + (y + 3).toFixed(1) + '" x="' + (x + 7).toFixed(1) + '" y="' + (y + 3).toFixed(1) + '" fill="' + (masked ? '#e8896a' : '#ffe6b8') + '" font-size="9">' + name + '</text>';
         if (!masked) vis.planets.push(name);
       } else {
         const r0 = mag < 0.5 ? 3.6 : mag < 1.3 ? 2.9 : 2.2;
         s += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r0 + '" fill="' + (masked ? 'none' : '#eaf2ff') + '" stroke="' + (masked ? '#e8896a' : 'none') + '" stroke-width="1.3"/>';
-        if (mag < 1.5) s += '<text x="' + (x + 6).toFixed(1) + '" y="' + (y + 3).toFixed(1) + '" fill="' + (masked ? '#e8896a' : '#dbe6f7') + '" font-size="8.5">' + name + '</text>';
+        if (mag < 1.5) s += '<text class="sg-sky-lab" data-x="' + (x + 6).toFixed(1) + '" data-y="' + (y + 3).toFixed(1) + '" x="' + (x + 6).toFixed(1) + '" y="' + (y + 3).toFixed(1) + '" fill="' + (masked ? '#e8896a' : '#dbe6f7') + '" font-size="8.5">' + name + '</text>';
         if (masked) s += '<line x1="' + (x - 3.5).toFixed(1) + '" y1="' + y.toFixed(1) + '" x2="' + (x + 3.5).toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="#e8896a" stroke-width="1.1"/>';
         if (!masked && mag < 1.0) vis.stars.push(name);
       }
     };
     for (const st of SKY_STARS) drawObj(st[0], st[1], st[2], false, st[3]);
     for (const nm in SKY_PL) { const pr = skyPlanetRadec(nm, ms); drawObj(nm, pr.ra, pr.dec, true, -2); }
-    if (gc) { const m = gc.alt < hz(gc.az); s += '<text x="' + gc.p[0].toFixed(1) + '" y="' + (gc.p[1] + 4).toFixed(1) + '" text-anchor="middle" fill="' + (m ? '#e8896a' : '#cfe0ff') + '" font-size="12">✦</text>'; }
+    if (gc) { const m = gc.alt < hz(gc.az); s += '<text class="sg-sky-lab" data-x="' + gc.p[0].toFixed(1) + '" data-y="' + (gc.p[1] + 4).toFixed(1) + '" x="' + gc.p[0].toFixed(1) + '" y="' + (gc.p[1] + 4).toFixed(1) + '" text-anchor="middle" fill="' + (m ? '#e8896a' : '#cfe0ff') + '" font-size="12">✦</text>'; }
+    s += '</g>';   // fin du groupe pivotant
     e.skySvg.innerHTML = s;
+    applySkyHeading();   // reapplique le cap si la boussole est active
     let mw = 'sous l\'horizon';
     if (gc) mw = (gc.alt < hz(gc.az)) ? ('centre bas, gêné ' + card(gc.az)) : ('visible · ' + card(gc.az));
     let html = '<div class="sg-sky-row"><span>Voie lactée</span><b>' + mw + '</b></div>'
@@ -1531,8 +1644,110 @@
     e.skySummary.innerHTML = html;
     updateDomeFriseActive();   // la frise partagée doit suivre le scrub aussi en onglet Ciel
   }
+  // ── Boussole du périphérique (onglet Ciel) ────────────────────────────────
+  // Choix Anthony (maquette 2026-09-02) : LE CIEL TOURNE. Le disque pivote pour que la
+  // direction visée soit en haut — tablette face au sud, le sud est en haut de l'écran.
+  // Les textes se contre-tournent pour rester lisibles (classe `sg-sky-lab`).
+  //
+  // Deux API selon la plateforme :
+  //  - Android/Chrome : `deviceorientationabsolute`, cap = 360 − alpha ;
+  //  - iOS/Safari : `deviceorientation` + `webkitCompassHeading` (déjà un cap vrai),
+  //    et une PERMISSION à demander depuis un geste utilisateur — d'où le bouton.
+  // Le cap brut tremble : on lisse en moyenne circulaire glissante et on ne repeint
+  // qu'au-delà de 1,5° d'écart, dans un rAF (le SVG n'est pas reconstruit, on ne touche
+  // qu'à des attributs `transform`).
+  let compassOn = false, compassHeading = 0, compassSmooth = null, compassRAF = null, compassBound = false;
+
+  function skyRotEl() { return sgDomeEls && sgDomeEls.skySvg ? sgDomeEls.skySvg.querySelector('#sgSkyRot') : null; }
+
+  // Applique le cap courant au planisphère (rotation du groupe + contre-rotation des textes).
+  function applySkyHeading() {
+    const g = skyRotEl();
+    if (!g) return;
+    const a = compassOn ? compassHeading : 0;
+    g.setAttribute('transform', 'rotate(' + (-a).toFixed(1) + ' 150 150)');
+    const labs = g.querySelectorAll('.sg-sky-lab');
+    for (const t of labs) {
+      if (!compassOn) { t.removeAttribute('transform'); continue; }
+      t.setAttribute('transform', 'rotate(' + a.toFixed(1) + ' ' + t.getAttribute('data-x') + ' ' + t.getAttribute('data-y') + ')');
+    }
+  }
+
+  function compassCardinal(a) {
+    return ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'][Math.round((((a % 360) + 360) % 360) / 22.5) % 16];
+  }
+
+  function onCompass(ev) {
+    let h = null;
+    if (typeof ev.webkitCompassHeading === 'number' && !Number.isNaN(ev.webkitCompassHeading)) h = ev.webkitCompassHeading;
+    else if (ev.absolute && typeof ev.alpha === 'number') h = (360 - ev.alpha) % 360;
+    if (h == null) return;
+    // Lissage en moyenne circulaire (une moyenne arithmétique saute de 359° à 0°).
+    if (compassSmooth == null) compassSmooth = h;
+    else {
+      const d = ((h - compassSmooth + 540) % 360) - 180;
+      compassSmooth = ((compassSmooth + d * 0.25) % 360 + 360) % 360;
+    }
+    if (Math.abs(((compassSmooth - compassHeading + 540) % 360) - 180) < 1.5) return;
+    compassHeading = compassSmooth;
+    if (compassRAF == null) compassRAF = requestAnimationFrame(() => {
+      compassRAF = null;
+      applySkyHeading();
+      if (sgDomeEls && sgDomeEls.skyHeading) sgDomeEls.skyHeading.textContent = Math.round(compassHeading) + '° ' + compassCardinal(compassHeading);
+    });
+  }
+
+  function compassEventName() {
+    return ('ondeviceorientationabsolute' in window) ? 'deviceorientationabsolute' : 'deviceorientation';
+  }
+
+  function stopCompass() {
+    if (compassBound) { window.removeEventListener(compassEventName(), onCompass); compassBound = false; }
+    if (compassRAF != null) { cancelAnimationFrame(compassRAF); compassRAF = null; }
+    compassOn = false; compassSmooth = null; compassHeading = 0;
+    if (sgDomeEls) {
+      sgDomeEls.skyCompass.classList.remove('is-on');
+      sgDomeEls.skyCompass.setAttribute('aria-pressed', 'false');
+      sgDomeEls.skyCompassLbl.textContent = 'Orienter avec la boussole';
+      sgDomeEls.skyHeading.hidden = true;
+    }
+    applySkyHeading();
+  }
+
+  async function toggleCompass() {
+    if (compassOn) { stopCompass(); return; }
+    const e = sgDomeEls;
+    if (!('DeviceOrientationEvent' in window)) {
+      e.skyCompassLbl.textContent = 'Boussole indisponible sur cet appareil';
+      return;
+    }
+    // iOS ≥ 13 : la permission ne peut être demandée que depuis un geste utilisateur.
+    const DOE = window.DeviceOrientationEvent;
+    if (typeof DOE.requestPermission === 'function') {
+      let rep = 'denied';
+      try { rep = await DOE.requestPermission(); } catch (_) { rep = 'denied'; }
+      if (rep !== 'granted') { e.skyCompassLbl.textContent = 'Accès à la boussole refusé'; return; }
+    }
+    compassOn = true; compassSmooth = null;
+    if (!compassBound) { window.addEventListener(compassEventName(), onCompass); compassBound = true; }
+    e.skyCompass.classList.add('is-on');
+    e.skyCompass.setAttribute('aria-pressed', 'true');
+    e.skyCompassLbl.textContent = 'Boussole active — appuie pour figer';
+    e.skyHeading.hidden = false;
+    e.skyHeading.textContent = 'en attente du cap…';
+    applySkyHeading();
+    // Aucun événement au bout de 3 s = capteur absent ou bloqué : on le dit au lieu
+    // de laisser un disque figé qui prétend suivre le poignet.
+    window.setTimeout(() => {
+      if (compassOn && compassSmooth == null) {
+        e.skyHeading.textContent = 'aucun cap reçu';
+        e.skyCompassLbl.textContent = 'Pas de boussole ici — appuie pour arrêter';
+      }
+    }, 3000);
+  }
+
   function sgDomeIsOpen() { return !!(sgDomeEls && sgDomeEls.ov.classList.contains('open')); }
-  function closeDome() { if (sgDomeEls) { sgDomeEls.ov.classList.remove('open'); sgDomeEls.ov.setAttribute('aria-hidden', 'true'); } sgDomeCurrent = null; }
+  function closeDome() { if (compassOn) stopCompass(); if (sgDomeEls) { sgDomeEls.ov.classList.remove('open'); sgDomeEls.ov.setAttribute('aria-hidden', 'true'); } sgDomeCurrent = null; }
   // ── Onglet « Photo » du dôme : assistant réglages appareil selon les conditions ──
   // Croise les données de l'heure courante (Bortle, Lune horaire, nébulosité — déjà dans
   // sgDomeData) avec le matériel de l'utilisateur (boîtier/objectif mémorisés) → suggère
