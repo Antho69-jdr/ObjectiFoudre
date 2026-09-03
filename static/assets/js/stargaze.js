@@ -745,6 +745,12 @@
     // sans cellules du tout = échec total ; sinon on sert AU MOINS l'obscurité (repli).
     if (!d || !Array.isArray(d.cells) || !d.cells.length || !Array.isArray(d.darkness)) {
       showHint((d && d.message) || 'Conditions indisponibles — réessaie plus tard.');
+      // Les nuits À VENIR sont servies par /outlook, qui porte ses propres cellules :
+      // un échec de /tonight ne doit pas emporter aussi la navigation entre les nuits.
+      // Et on retente /tonight, sinon la carte reste vide jusqu'à ce qu'on quitte le mode.
+      loadOutlook();
+      if (retryTimer) window.clearTimeout(retryTimer);
+      retryTimer = window.setTimeout(() => { if (active && viewNight === 0) loadData(); }, 20000);
       return;
     }
     hideHint();
@@ -783,6 +789,25 @@
   }
 
   // ── Prévision nébulosité des prochaines nuits (ECMWF, /api/stargaze/outlook) ──
+  // ⚠️ Les flèches ‹ › de navigation entre les nuits naissent `hidden` dans le HTML :
+  // SEUL `buildNightSelector()` les révèle, et seulement une fois l'outlook chargé.
+  // Un unique échec réseau les laissait donc cachées pour TOUTE la session — rien ne
+  // rappelait `loadOutlook()`, il fallait quitter le mode étoile et y revenir
+  // (symptôme remonté par Anthony le 2026-09-03, reproduit en faisant échouer une
+  // seule fois /api/stargaze/outlook). On réessaie maintenant, en espaçant.
+  const OUTLOOK_BACKOFF = [3000, 8000, 20000];
+  let outlookRetry = null, outlookTries = 0;
+
+  function scheduleOutlookRetry() {
+    if (!active || outlookData || outlookRetry) return;
+    const delai = outlookTries < OUTLOOK_BACKOFF.length ? OUTLOOK_BACKOFF[outlookTries] : 60000;
+    outlookTries++;
+    outlookRetry = window.setTimeout(() => {
+      outlookRetry = null;
+      if (active && !outlookData) loadOutlook();
+    }, delai);
+  }
+
   function loadOutlook() {
     if (outlookData) { buildNightSelector(); return; }
     if (outlookLoading) return;
@@ -790,9 +815,10 @@
     fetch('/api/stargaze/outlook').then((r) => r.json()).then((d) => {
       outlookLoading = false;
       if (d && d.ok && Array.isArray(d.nights) && d.nights.some((n) => n.available)) {
+        outlookTries = 0;
         outlookData = d; buildNightSelector();
-      }
-    }).catch(() => { outlookLoading = false; });
+      } else scheduleOutlookRetry();   // réponse vide ou en erreur : on retentera
+    }).catch(() => { outlookLoading = false; scheduleOutlookRetry(); });
   }
 
   function nightLabel(dateIso) {   // "2026-07-25" → "Ven. 25" (soir de la nuit)
@@ -2201,6 +2227,8 @@
     if (nightNextBtn) nightNextBtn.hidden = true;
     if (slotsEl) slotsEl.classList.remove('sg-night-static');
     if (retryTimer) { window.clearTimeout(retryTimer); retryTimer = null; }
+    if (outlookRetry) { window.clearTimeout(outlookRetry); outlookRetry = null; }
+    outlookTries = 0;
     degraded = false;
     toggleBtn.classList.remove('active');
     toggleBtn.setAttribute('aria-pressed', 'false');
