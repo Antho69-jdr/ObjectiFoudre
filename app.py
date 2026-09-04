@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.258"
+APP_VERSION = "1.3.259"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -21654,6 +21654,31 @@ async def historical_analysis_csv(
     return PlainTextResponse(csv_text, media_type="text/csv; charset=utf-8", headers=headers)
 
 
+# Le numéro de version affiché était ÉCRIT EN DUR dans index.html, à trois endroits.
+# La procédure de bump ne remplace que les `?v=` : il est donc resté bloqué sur 1.3.238
+# pendant vingt versions (jusqu'à la 1.3.258), faussant à la fois le bandeau visible ET
+# la version jointe à CHAQUE rapport de plantage client. On l'injecte désormais depuis
+# APP_VERSION au moment de servir la page : une seule source de vérité, plus rien à
+# penser à bumper. Résultat mis en cache sur le mtime du fichier (une lecture, pas une
+# par requête) ; en-têtes inchangés — la page reste en `no-store`.
+_index_html_cache: tuple[float, str] | None = None
+
+
+def _render_index_html() -> str:
+    global _index_html_cache
+    path = STATIC_DIR / "index.html"
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    if _index_html_cache is not None and _index_html_cache[0] == mtime:
+        return _index_html_cache[1]
+    html = path.read_text(encoding="utf-8").replace("__APP_VERSION__", APP_VERSION)
+    _index_html_cache = (mtime, html)
+    return html
+
+
 @app.get("/")
-def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-store, max-age=0"})
+def index() -> Response:
+    return Response(content=_render_index_html(), media_type="text/html",
+                    headers={"Cache-Control": "no-store, max-age=0"})
