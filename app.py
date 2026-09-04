@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.260"
+APP_VERSION = "1.3.261"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16674,6 +16674,12 @@ def _server_telemetry_sync() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         out["reports"] = {"error": str(exc)[:150]}
 
+    # Journal d'ombre GII (étape 1 de l'audit MTG-LI) : le trou devance-t-il le radar ?
+    try:
+        out["gii_shadow"] = _gii_shadow_status()
+    except Exception as exc:  # noqa: BLE001
+        out["gii_shadow"] = {"error": str(exc)[:150]}
+
     # Utilisateurs uniques (anonyme, carte Trello « nombre d'utilisateurs différents »)
     try:
         out["users"] = _analytics_summary()
@@ -16694,6 +16700,17 @@ def _server_telemetry_sync() -> dict[str, Any]:
         out["push"] = {"error": str(exc)[:150]}
 
     return out
+
+
+@app.get("/api/server/gii-shadow", dependencies=[Depends(_admin_secret_dep)])
+async def server_gii_shadow() -> dict[str, Any]:
+    """ADMIN, LECTURE SEULE : le trou de couverture GII devance-t-il le premier écho radar ?
+
+    Rend l'état du journal et, dès qu'il y a de la matière, la couverture GII du voisinage
+    d'une maille AVANT que le radar n'y voie une cellule — rapportée à ses voisines proches
+    au même instant. Un rapport passant sous 1 avant l'écho = le trou devance le radar.
+    Ne modifie rien, n'ingère rien."""
+    return await asyncio.to_thread(_gii_shadow_report)
 
 
 @app.get("/api/server/shadow-rebase", dependencies=[Depends(_admin_secret_dep)])
@@ -21017,6 +21034,344 @@ def _li_live_poll_once() -> int:
     return new_products
 
 
+# ══ JOURNAL D'OMBRE GII (étape 1 de l'audit MTG-LI) ═════════════════════════════
+# Campagne du 2026-09-04, 4 journées / 58 cellules : quand une zone va s'allumer, la
+# COUVERTURE du produit GII (ciel clair uniquement) y bascule 60 à 90 min avant le premier
+# éclair — d'abord MIEUX dégagée que ses voisines (rapport 1,24 à −2 h, conditions
+# pré-convectives), puis effondrée (0,41 à −30 min) quand le bouclier nuageux se forme.
+# Ce signal survit à des témoins pris dans la même région au même instant, contrairement à
+# l'indice de soulèvement de l'anneau, qui n'était qu'un gradient de masse d'air.
+#
+# IL RESTE UNE INCONNUE, ET ELLE DÉCIDE DE TOUT : ce préavis est mesuré contre la FOUDRE.
+# Le radar, lui, voit la précipitation dès qu'elle existe. Impossible à trancher a
+# posteriori — le radar est un ring buffer RAM de 2 h, sans archive. D'où ce journal, qui
+# enregistre les deux EN PARALLÈLE, sans rien changer au service (même discipline que le
+# mode ombre du p90).
+#
+# Coût maîtrisé : rien les jours calmes. On ne journalise que s'il y a eu de l'activité
+# convective dans les 3 dernières heures — sans ce recul, on ne pourrait jamais observer
+# l'avance, puisque le déclencheur serait précisément ce qu'on cherche à devancer.
+GII_COLLECTION = "EO:EUM:DAT:0683"      # « GII - MTG - 0 degree » (Lifted/K index, ciel clair)
+OBJECTIFOUDRE_GII_SHADOW = (os.environ.get("OBJECTIFOUDRE_GII_SHADOW") or "").strip().lower() in ("1", "true", "yes", "on")
+GII_SHADOW_INTERVAL_MIN = int(os.environ.get("OBJECTIFOUDRE_GII_SHADOW_INTERVAL_MIN") or 30)
+GII_SHADOW_LOOKBEHIND_MIN = 180         # activité convective encore « récente » (3 h)
+GII_SHADOW_CELL_DEG = 0.5               # maille du journal (~55 x 39 km), celle de la campagne
+_gii_shadow_lock = threading.Lock()
+_gii_shadow_state: dict[str, Any] = {"last_tick": 0.0, "last_active": 0.0, "ticks": 0,
+                                     "last_error": None, "last_gii_end": None}
+_gii_shadow_stop = threading.Event()
+_gii_shadow_thread: threading.Thread | None = None
+
+
+def _gii_cell_key(lat: float, lon: float) -> str:
+    """Clé de la maille du journal : coin sud-ouest, pas de 0,5°."""
+    d = GII_SHADOW_CELL_DEG
+    return "%.1f|%.1f" % (math.floor(lat / d) * d, math.floor(lon / d) * d)
+
+
+def _gii_extract_france_counts(zip_bytes: bytes) -> dict[str, int]:
+    """D'un produit GII : nombre de retraits VALIDES par maille de 0,5° sur la France.
+
+    ⚠️ GII ne met pas de valeur manquante là où le ciel est bouché : il ne produit AUCUN
+    point, position comprise. Le trou est donc une ABSENCE, et se mesure en DENSITÉ — c'est
+    tout l'objet de ce comptage."""
+    import h5py
+    import numpy as np
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
+            nc = next((n for n in archive.namelist() if n.endswith(".nc")), None)
+            if not nc:
+                return {}
+            nc_bytes = archive.read(nc)
+    except Exception:
+        return {}
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as tmp:
+            tmp.write(nc_bytes)
+            tmp_path = tmp.name
+        with h5py.File(tmp_path, "r") as handle:
+            if "latitude" not in handle or "longitude" not in handle:
+                return {}
+            # ⚠️ MÉMOIRE : la grille fait 1856x1856. Convertir lat ET lon en float64
+            # matérialiserait ~55 Mo transitoires sur un serveur qui a déjà un fil
+            # anti-OOM. On garde donc les ENTIERS BRUTS (int16, facteur d'échelle 0,01)
+            # et on transpose la bbox dans leur unité : ~14 Mo, et le test de fenêtre est
+            # exact puisqu'il ne fait que comparer des entiers.
+            dlat, dlon = handle["latitude"], handle["longitude"]
+            sc = dlat.attrs.get("scale_factor")
+            echelle = float(np.asarray(sc).ravel()[0]) if sc is not None else 1.0
+            fv = dlat.attrs.get("_FillValue")
+            remplissage = int(np.asarray(fv).ravel()[0]) if fv is not None else -32767
+            lat_i = dlat[:]
+            lon_i = dlon[:]
+            west, south, east, north = FRANCE_LIGHTNING_BBOX
+            # Bornes EXACTES : « valeur_réelle >= borne » équivaut, sur des entiers, à
+            # « brut >= ceil(borne/échelle) » ; et « <= borne » à « brut <= floor(...) ».
+            # Un arrondi choisi selon le SIGNE (ce que j'avais écrit d'abord) élargit la
+            # fenêtre — 3 points de plus, mesuré.
+            bas = lambda v: int(math.ceil(v / echelle))
+            haut = lambda v: int(math.floor(v / echelle))
+            m = ((lat_i != remplissage) & (lon_i != remplissage)
+                 & (lon_i >= bas(west)) & (lon_i <= haut(east))
+                 & (lat_i >= bas(south)) & (lat_i <= haut(north)))
+            lat_sel = lat_i[m].astype("f4") * echelle
+            lon_sel = lon_i[m].astype("f4") * echelle
+    except Exception:
+        return {}
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    out: dict[str, int] = {}
+    for la, lo in zip(lat_sel.tolist(), lon_sel.tolist()):
+        k = _gii_cell_key(la, lo)
+        out[k] = out.get(k, 0) + 1
+    return out
+
+
+def _gii_fetch_latest() -> tuple[dict[str, int], str] | None:
+    """Dernier produit GII publié → comptage France par maille + fin de sa fenêtre."""
+    token = _eumdac_token()
+    if not token:
+        return None
+    now = datetime.now(timezone.utc)
+    start = (now - timedelta(minutes=40)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    end = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    url = ("https://api.eumetsat.int/data/search-products/1.0.0/os?format=json"
+           f"&pi={GII_COLLECTION}&dtstart={start}&dtend={end}&c=4")
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    feats = payload.get("features", [])
+    feats.sort(key=lambda f: (f.get("properties", {}) or {}).get("date", ""), reverse=True)
+    for feat in feats:
+        props = feat.get("properties", {}) or {}
+        links = (props.get("links", {}) or {}).get("data") or []
+        href = links[0].get("href") if links else None
+        if not href:
+            continue
+        req = urllib.request.Request(href, headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            zip_bytes = resp.read()
+        counts = _gii_extract_france_counts(zip_bytes)
+        if counts:
+            return counts, str(props.get("date") or "")
+    return None
+
+
+def _gii_shadow_radar_cells() -> dict[str, dict[str, Any]]:
+    """Mailles de 0,5° occupées par une cellule radar SUIVIE, avec l'âge de la plus jeune.
+    C'est la référence à battre : l'instant où le radar voit quelque chose."""
+    with _fr_cells_lock:
+        cells = list(_fr_cells.get("cells") or [])
+    out: dict[str, dict[str, Any]] = {}
+    for c in cells:
+        lat, lon = c.get("lat"), c.get("lon")
+        if lat is None or lon is None:
+            continue
+        k = _gii_cell_key(float(lat), float(lon))
+        age = c.get("age_min")
+        e = out.setdefault(k, {"n": 0, "age_min": None, "ouvert": False})
+        e["n"] += 1
+        if isinstance(age, int) and (e["age_min"] is None or age < e["age_min"]):
+            e["age_min"] = age
+        e["ouvert"] = bool(e["ouvert"] or c.get("age_open"))
+    return out
+
+
+def _gii_shadow_path(date_str: str) -> Path:
+    return OBJECTIFOUDRE_HISTORY_DIR / "gii_shadow" / f"{date_str}.jsonl.gz"
+
+
+def _gii_shadow_tick() -> str:
+    """Un pas du journal. Rend une raison lisible (pour l'état). Ne lève jamais."""
+    if not OBJECTIFOUDRE_GII_SHADOW:
+        return "disabled"
+    if not OBJECTIFOUDRE_HISTORY_ENABLED:
+        return "no_history_dir"
+    now = time.time()
+    radar = _gii_shadow_radar_cells()
+    with _gii_shadow_lock:
+        if radar:
+            _gii_shadow_state["last_active"] = now
+        derniere_activite = float(_gii_shadow_state.get("last_active") or 0.0)
+        dernier_tick = float(_gii_shadow_state.get("last_tick") or 0.0)
+    # Rien les jours calmes : on n'écrit que pendant (et juste après) l'activité convective.
+    if now - derniere_activite > GII_SHADOW_LOOKBEHIND_MIN * 60:
+        return "calm"
+    if now - dernier_tick < GII_SHADOW_INTERVAL_MIN * 60:
+        return "too_soon"
+    try:
+        got = _gii_fetch_latest()
+    except Exception as exc:  # noqa: BLE001
+        with _gii_shadow_lock:
+            _gii_shadow_state["last_error"] = str(exc)[:200]
+        return "fetch_failed"
+    if not got:
+        return "no_product"
+    counts, gii_end = got
+    record = {
+        "schema": HISTORY_SCHEMA_VERSION,
+        "at": round(now),
+        "gii_end": gii_end,
+        "cell_deg": GII_SHADOW_CELL_DEG,
+        "gii": counts,          # maille -> nb de retraits GII valides
+        "radar": radar,         # maille -> cellules radar suivies (n, âge de la plus jeune)
+    }
+    try:
+        date_str = datetime.now(timezone.utc).date().isoformat()
+        path = _gii_shadow_path(date_str)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with gzip.open(path, "at", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+    except Exception as exc:  # noqa: BLE001
+        with _gii_shadow_lock:
+            _gii_shadow_state["last_error"] = str(exc)[:200]
+        return "write_failed"
+    with _gii_shadow_lock:
+        _gii_shadow_state["last_tick"] = now
+        _gii_shadow_state["ticks"] = int(_gii_shadow_state.get("ticks") or 0) + 1
+        _gii_shadow_state["last_gii_end"] = gii_end
+        _gii_shadow_state["last_error"] = None
+    return "written"
+
+
+def _gii_shadow_loop() -> None:
+    _gii_shadow_stop.wait(180)   # laisser le tracker radar se remplir
+    while not _gii_shadow_stop.is_set():
+        try:
+            _gii_shadow_tick()
+        except Exception:
+            logging.getLogger("objectifoudre").warning("journal d'ombre GII", exc_info=True)
+        _gii_shadow_stop.wait(120)
+
+
+def _start_gii_shadow_thread() -> None:
+    global _gii_shadow_thread
+    if not OBJECTIFOUDRE_GII_SHADOW:
+        return
+    if not (EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET):
+        return
+    if _gii_shadow_thread is not None and _gii_shadow_thread.is_alive():
+        return
+    _gii_shadow_stop.clear()
+    _gii_shadow_thread = threading.Thread(target=_gii_shadow_loop, name="gii-shadow", daemon=True)
+    _gii_shadow_thread.start()
+
+
+def _gii_shadow_status(max_days: int = 30) -> dict[str, Any]:
+    """État du journal : jours, pas enregistrés, dernière activité."""
+    with _gii_shadow_lock:
+        etat = dict(_gii_shadow_state)
+    out: dict[str, Any] = {
+        "enabled": OBJECTIFOUDRE_GII_SHADOW,
+        "interval_min": GII_SHADOW_INTERVAL_MIN,
+        "days": 0, "dates": [], "records": 0,
+        "last_tick": etat.get("last_tick") or None,
+        "last_gii_end": etat.get("last_gii_end"),
+        "last_error": etat.get("last_error"),
+        "ticks_since_boot": etat.get("ticks") or 0,
+    }
+    base = OBJECTIFOUDRE_HISTORY_DIR / "gii_shadow"
+    try:
+        if not base.exists():
+            return out
+        fichiers = sorted(base.glob("*.jsonl.gz"))[-max_days:]
+        total = 0
+        for f in fichiers:
+            try:
+                with gzip.open(f, "rt", encoding="utf-8") as fh:
+                    total += sum(1 for _ in fh)
+            except Exception:
+                continue
+        out.update(days=len(fichiers), dates=[f.stem.replace(".jsonl", "") for f in fichiers], records=total)
+    except Exception:
+        logging.getLogger("objectifoudre").warning("état du journal d'ombre GII illisible", exc_info=True)
+    return out
+
+
+def _gii_shadow_report(max_days: int = 30) -> dict[str, Any]:
+    """Le trou de couverture GII devance-t-il le premier écho radar, et de combien ?
+
+    Pour chaque maille où le radar finit par voir une cellule, on regarde en arrière la
+    couverture GII de son voisinage, rapportée à celle de ses voisines PROCHES au même
+    instant (le contrôle qui a fait tomber l'anneau lors de la campagne). LECTURE SEULE."""
+    rapport: dict[str, Any] = {"etat": _gii_shadow_status(max_days), "avertissements": []}
+    base = OBJECTIFOUDRE_HISTORY_DIR / "gii_shadow"
+    if not base.exists():
+        rapport["avertissements"].append("Aucun journal : la collecte n'a jamais tourné.")
+        return rapport
+    d = GII_SHADOW_CELL_DEG
+    def voisinage(gii: dict[str, int], k: str, r: int) -> int:
+        la, lo = (float(x) for x in k.split("|"))
+        t = 0
+        for a in range(-r, r + 1):
+            for b in range(-r, r + 1):
+                t += gii.get("%.1f|%.1f" % (la + a * d, lo + b * d), 0)
+        return t
+    paliers = [-120, -90, -60, -30, 0]
+    seaux: dict[int, list[tuple[float, float]]] = {p: [] for p in paliers}
+    n_evenements = 0
+    for f in sorted(base.glob("*.jsonl.gz"))[-max_days:]:
+        try:
+            with gzip.open(f, "rt", encoding="utf-8") as fh:
+                pas = [json.loads(l) for l in fh if l.strip()]
+        except Exception:
+            continue
+        pas.sort(key=lambda r: r.get("at") or 0)
+        if len(pas) < 5:
+            continue
+        # premier écho radar par maille
+        premier: dict[str, int] = {}
+        for i, r in enumerate(pas):
+            for k in (r.get("radar") or {}):
+                premier.setdefault(k, i)
+        jamais = [k for k in {kk for r in pas for kk in (r.get("gii") or {})} if k not in premier]
+        for k, i0 in premier.items():
+            if i0 < 4:
+                continue   # apparition trop tôt dans le journal : pas de recul
+            n_evenements += 1
+            t0 = pas[i0].get("at") or 0
+            for p in paliers:
+                cible = t0 + p * 60
+                j = min(range(len(pas)), key=lambda x: abs((pas[x].get("at") or 0) - cible))
+                if abs((pas[j].get("at") or 0) - cible) > 20 * 60:
+                    continue
+                gii = pas[j].get("gii") or {}
+                a = voisinage(gii, k, 2)
+                la, lo = (float(x) for x in k.split("|"))
+                proches = [t for t in jamais
+                           if 3 <= max(abs(round((float(t.split("|")[0]) - la) / d)),
+                                       abs(round((float(t.split("|")[1]) - lo) / d))) <= 5]
+                vt = [voisinage(gii, t, 2) for t in proches]
+                if vt:
+                    vt.sort()
+                    seaux[p].append((float(a), float(vt[len(vt) // 2])))
+    rapport["evenements_radar"] = n_evenements
+    lignes = []
+    for p in paliers:
+        v = seaux[p]
+        if not v:
+            continue
+        a = sorted(x[0] for x in v); b = sorted(x[1] for x in v)
+        ma, mb = a[len(a) // 2], b[len(b) // 2]
+        lignes.append({"minutes_avant_echo_radar": p, "couverture_maille": round(ma, 1),
+                       "couverture_temoins_proches": round(mb, 1),
+                       "rapport": round(ma / mb, 3) if mb else None, "n": len(v)})
+    rapport["avant_premier_echo_radar"] = lignes
+    rapport["lecture"] = ("Un rapport qui passe SOUS 1 avant l'écho radar signifie que le trou "
+                          "GII devance le radar. La campagne du 04/09 mesurait ce basculement à "
+                          "60-90 min avant le premier ÉCLAIR ; reste à savoir où il tombe par "
+                          "rapport au premier ÉCHO.")
+    if n_evenements < 20:
+        rapport["avertissements"].append(
+            f"Seulement {n_evenements} apparitions de cellule radar exploitables : trop peu pour conclure.")
+    return rapport
+
+
 def _li_live_loop() -> None:
     _li_live_stop.wait(20)   # laisser le boot respirer
     while not _li_live_stop.is_set():
@@ -21212,6 +21567,7 @@ def _startup_fr_radar() -> None:
     _start_li_live_thread()   # foudre live MTG-LI (no-op si identifiants EUMETSAT absents)
     _start_ram_cache_purge_thread()   # anti-OOM : purge périodique du cache RAM
     _start_push_alert_thread()   # alertes orage par département (no-op sans clés VAPID)
+    _start_gii_shadow_thread()   # journal d'ombre GII (no-op tant qu'OBJECTIFOUDRE_GII_SHADOW n'est pas posé)
 
 
 @app.on_event("shutdown")
