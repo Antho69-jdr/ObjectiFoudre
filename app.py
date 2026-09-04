@@ -88,7 +88,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.267"
+APP_VERSION = "1.3.268"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4842,10 +4842,10 @@ async def _stargaze_trim_for_access(request: Request, data: Any) -> Any:
     sortent du même appel (stargaze.js:743 n'en fait qu'un). On retire donc les champs
     propres au dôme au lieu de refuser la route. Ne mutile JAMAIS le dict en cache :
     on renvoie une copie."""
-    if not access.paywall_enabled() or not isinstance(data, dict):
+    if not _paywall_active(request) or not isinstance(data, dict):
         return data
     _user, entitled = await _access_context(request)
-    if access.is_allowed("stargaze_deep", entitled=entitled):
+    if access.is_allowed("stargaze_deep", entitled=entitled, enabled=True):
         return data
     out = {k: v for k, v in data.items() if k not in access.STARGAZE_DOME_FIELDS}
     moon = data.get("moon")
@@ -16770,7 +16770,7 @@ def _server_telemetry_sync() -> dict[str, Any]:
     # le périmètre est RÉELLEMENT appliqué : sans lui, ces compteurs sont dormants.
     try:
         out["access"] = {**accounts.entitlement_stats(),
-                         "paywall_enabled": access.paywall_enabled(),
+                         "paywall_mode": access.paywall_mode(),
                          "trial_days": access.TRIAL_DAYS}
     except Exception as exc:  # noqa: BLE001
         out["access"] = {"error": str(exc)[:150]}
@@ -16805,6 +16805,94 @@ async def server_shadow_rebase(threshold: int = Query(1)) -> dict[str, Any]:
 async def server_telemetry() -> dict[str, Any]:
     """État consolidé du serveur pour la page maintenance (admin)."""
     return await asyncio.to_thread(_server_telemetry_sync)
+
+
+# ── Outils de TEST du périmètre gratuit/payant (admin) ───────────────────────
+# Sans eux, « essayer le périmètre » signifierait le poser pour tous les visiteurs à la
+# fois — une mise en service, pas un test — et l'essai de 7 jours, verrouillé sur l'adresse
+# e-mail, ne se jouerait qu'UNE seule fois par compte.
+async def _paywall_state(request: Request) -> dict[str, Any]:
+    user = await _account_current_user(request)
+    ent = await asyncio.to_thread(accounts.entitlement_for, user["id"]) if user else None
+    email = str((user or {}).get("email") or "")
+    return {
+        "ok": True,
+        "mode": access.paywall_mode(),
+        "mode_explication": {
+            access.MODE_OFF: "éteint pour tout le monde (état normal de la production)",
+            access.MODE_PREVIEW: "aperçu : ne s'applique QU'AUX sessions qui l'ont demandé",
+            access.MODE_ON: "EN SERVICE : s'applique à tous les visiteurs",
+        }[access.paywall_mode()],
+        "apercu_actif_sur_cette_session": request.cookies.get(_PAYWALL_PREVIEW_COOKIE) == "1",
+        "perimetre_applique_ici": _paywall_active(request),
+        "mon_compte": {
+            "email": email,
+            "droit_actif": bool(ent and ent["active"]),
+            # `source`/`expire` restent ceux du DERNIER droit même après révocation : on
+            # garde la trace exprès. C'est `droit_actif` (et `statut`) qui font foi.
+            "statut": (ent or {}).get("status"),
+            "source": (ent or {}).get("source"),
+            "expire": (ent or {}).get("expires_utc"),
+            "essai_deja_pris": await asyncio.to_thread(accounts.trial_claimed, email) if email else None,
+        },
+        "compteurs": await asyncio.to_thread(accounts.entitlement_stats),
+    }
+
+
+@app.get("/api/server/paywall", dependencies=[Depends(_admin_secret_dep)])
+async def server_paywall_state(request: Request) -> Response:
+    """[admin] Où en est le périmètre : le mode du serveur, l'aperçu de CETTE session,
+    et les droits de mon propre compte."""
+    return JSONResponse(await _paywall_state(request))
+
+
+@app.post("/api/server/paywall/preview", dependencies=[Depends(_admin_secret_dep)])
+async def server_paywall_preview(request: Request, on: int = Query(1, ge=0, le=1)) -> Response:
+    """[admin] Applique (ou retire) le périmètre à CETTE session seulement. N'a d'effet
+    qu'en mode `preview` — l'état renvoyé le dit franchement si ce n'est pas le cas."""
+    body = await _paywall_state(request)
+    body["apercu_actif_sur_cette_session"] = bool(on)
+    body["perimetre_applique_ici"] = access.paywall_enabled(preview_session=bool(on))
+    if access.paywall_mode() == access.MODE_OFF:
+        body["avertissement"] = ("Le serveur est en mode « off » : l'aperçu est mémorisé mais "
+                                 "ne s'appliquera qu'une fois OBJECTIFOUDRE_PAYWALL=preview posé.")
+    resp = JSONResponse(body)
+    if on:
+        resp.set_cookie(_PAYWALL_PREVIEW_COOKIE, "1", max_age=7 * 86400, httponly=False,
+                        secure=_account_cookie_secure(request), samesite="lax", path="/")
+    else:
+        resp.delete_cookie(_PAYWALL_PREVIEW_COOKIE, path="/")
+    return resp
+
+
+@app.post("/api/server/paywall/grant", dependencies=[Depends(_admin_secret_dep)])
+async def server_paywall_grant(request: Request, days: int = Query(30, ge=1, le=3650)) -> Response:
+    """[admin] M'accorde un abonnement de TEST, à durée bornée. Aucun paiement, aucun
+    prestataire : c'est une écriture en base pour voir l'app en état « abonné »."""
+    user = await _require_admin_account(request)
+    await asyncio.to_thread(accounts.grant_entitlement, user["id"], "manual", days=days)
+    return JSONResponse(await _paywall_state(request))
+
+
+@app.post("/api/server/paywall/revoke", dependencies=[Depends(_admin_secret_dep)])
+async def server_paywall_revoke(request: Request) -> Response:
+    """[admin] Me retire mon droit : je redeviens un visiteur gratuit."""
+    user = await _require_admin_account(request)
+    await asyncio.to_thread(accounts.revoke_entitlement, user["id"])
+    return JSONResponse(await _paywall_state(request))
+
+
+@app.post("/api/server/paywall/trial-reset", dependencies=[Depends(_admin_secret_dep)])
+async def server_paywall_trial_reset(request: Request) -> Response:
+    """[admin] Rend l'essai de 7 jours à nouveau disponible pour MON adresse, et coupe
+    l'essai en cours s'il y en a un — sinon le parcours ne se joue qu'une fois."""
+    user = await _require_admin_account(request)
+    email = str(user.get("email") or "")
+    ent = await asyncio.to_thread(accounts.entitlement_for, user["id"])
+    if ent and ent.get("source") == "trial":
+        await asyncio.to_thread(accounts.revoke_entitlement, user["id"])
+    await asyncio.to_thread(accounts.clear_trial_claim, email)
+    return JSONResponse(await _paywall_state(request))
 
 
 # ── LOGS serveur (ring buffer RAM) : dernières lignes pour la page maintenance ────
@@ -17230,6 +17318,19 @@ def _horizon_days(date_value: Any, *, missing: int = 0) -> int:
     return (target - today).days
 
 
+# Cookie d'APERÇU : en mode `preview`, le périmètre ne s'applique QU'AUX sessions qui le
+# portent. Un administrateur se le pose depuis Outils & diagnostics et voit exactement ce
+# que verra un visiteur gratuit, sur les données réelles, sans qu'aucun visiteur ne soit
+# touché. Le forger soi-même ne donne aucun droit : ça ne fait que se RESTREINDRE.
+_PAYWALL_PREVIEW_COOKIE = "objf_paywall_preview"
+
+
+def _paywall_active(request: Request) -> bool:
+    """Le périmètre s'applique-t-il à CETTE requête ?"""
+    return access.paywall_enabled(
+        preview_session=request.cookies.get(_PAYWALL_PREVIEW_COOKIE) == "1")
+
+
 async def _access_context(request: Request) -> tuple[dict[str, Any] | None, bool]:
     """(compte connecté, a-t-il un droit actif). Une seule lecture par requête."""
     user = await _account_current_user(request)
@@ -17250,21 +17351,23 @@ async def _trial_available_for(user: dict[str, Any] | None) -> bool:
 
 async def _require_access(request: Request, feature: str, *, horizon: int = 0) -> dict[str, Any] | None:
     """Exige le droit `feature` à l'horizon demandé, sinon lève un 402 porteur de l'offre."""
-    if not access.paywall_enabled():
+    if not _paywall_active(request):
         return None
     user, entitled = await _access_context(request)
-    if access.is_allowed(feature, horizon=horizon, entitled=entitled):
+    if access.is_allowed(feature, horizon=horizon, entitled=entitled, enabled=True):
         return user
     raise PaywallError(access.denial(feature, horizon=horizon,
                                      trial_available=await _trial_available_for(user)))
 
 
-async def _access_view(user: dict[str, Any] | None) -> dict[str, Any]:
+async def _access_view(request: Request, user: dict[str, Any] | None) -> dict[str, Any]:
     """État des droits exposé au compte LUI-MÊME (/api/account/me). Lecture seule : le
-    front s'en sert pour l'affichage, jamais pour l'autorisation — elle est côté serveur."""
+    front s'en sert pour l'affichage, jamais pour l'autorisation — elle est côté serveur.
+    `paywall` vaut pour CETTE session : en mode aperçu, il ne passe à vrai que pour
+    l'administrateur qui a demandé l'aperçu."""
     ent = await asyncio.to_thread(accounts.entitlement_for, user["id"]) if user else None
     return {
-        "paywall": access.paywall_enabled(),
+        "paywall": _paywall_active(request),
         "entitled": bool(ent and ent["active"]),
         "source": (ent or {}).get("source"),
         "expires_utc": (ent or {}).get("expires_utc"),
@@ -17539,7 +17642,7 @@ async def account_me(request: Request) -> dict[str, Any]:
             "google_configured": oauth.get("google", False),   # compat front historique
             "oauth": oauth, "email_enabled": mailer.configured(),
             "is_admin": _is_admin_user(user),
-            "access": await _access_view(user),
+            "access": await _access_view(request, user),
             "user": accounts.private_view(user) if user else None}
 
 
@@ -17562,7 +17665,7 @@ async def account_start_trial(request: Request) -> Response:
         await asyncio.to_thread(accounts.start_trial, user["id"], user.get("email") or "")
     except accounts.AccountError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
-    return JSONResponse({"ok": True, "access": await _access_view(user)})
+    return JSONResponse({"ok": True, "access": await _access_view(request, user)})
 
 
 class AccountPseudoRequest(BaseModel):

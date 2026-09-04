@@ -102,10 +102,38 @@ STARGAZE_DOME_FIELDS = ("cloud_low", "cloud_mid", "cloud_high", "aurora")
 STARGAZE_DOME_MOON_FIELDS = ("moonrise_utc", "moonset_utc")
 
 
-def paywall_enabled() -> bool:
-    """Drapeau maître. Lu à chaque appel (et non à l'import) pour rester testable et
-    basculable sans redéploiement."""
-    return os.environ.get("OBJECTIFOUDRE_PAYWALL", "").strip().lower() in {"1", "true", "yes", "on"}
+MODE_OFF, MODE_PREVIEW, MODE_ON = "off", "preview", "on"
+
+
+def paywall_mode() -> str:
+    """Trois états, lus à chaque appel (et non à l'import) pour rester testables et
+    basculables sans redéploiement :
+
+      off      (défaut)  — rien ne s'applique, à personne. État de la production.
+      preview            — le périmètre ne s'applique qu'aux SESSIONS DÉSIGNÉES (un
+                           administrateur s'y met lui-même depuis Outils & diagnostics).
+                           Aucun visiteur n'est touché : c'est le mode pour ESSAYER en
+                           vrai, sur les vraies données, sans rien mettre en service.
+      on                 — le périmètre s'applique à tout le monde. C'est la mise en
+                           service, pas un test.
+    """
+    raw = os.environ.get("OBJECTIFOUDRE_PAYWALL", "").strip().lower()
+    if raw == "preview":
+        return MODE_PREVIEW
+    if raw in {"1", "true", "yes", "on"}:
+        return MODE_ON
+    return MODE_OFF
+
+
+def paywall_enabled(*, preview_session: bool = False) -> bool:
+    """Le périmètre s'applique-t-il à CETTE requête ? `preview_session` dit si la session
+    a demandé l'aperçu (cookie posé par un administrateur)."""
+    mode = paywall_mode()
+    if mode == MODE_ON:
+        return True
+    if mode == MODE_PREVIEW:
+        return bool(preview_session)
+    return False
 
 
 def feature(key: str) -> Feature | None:
@@ -212,7 +240,16 @@ if __name__ == "__main__":
     check("OBJECTIFOUDRE_PAYWALL=on allume", paywall_enabled())
     os.environ["OBJECTIFOUDRE_PAYWALL"] = "0"
     check("OBJECTIFOUDRE_PAYWALL=0 éteint", not paywall_enabled())
+    os.environ["OBJECTIFOUDRE_PAYWALL"] = "preview"
+    check("mode aperçu : rien pour une session ordinaire", not paywall_enabled())
+    check("mode aperçu : appliqué à la session désignée", paywall_enabled(preview_session=True))
+    check("mode aperçu reconnu", paywall_mode() == MODE_PREVIEW)
+    os.environ["OBJECTIFOUDRE_PAYWALL"] = "on"
+    check("mode on : appliqué même sans aperçu", paywall_enabled())
+    check("mode on : l'aperçu ne change rien", paywall_enabled(preview_session=True))
     os.environ.pop("OBJECTIFOUDRE_PAYWALL", None)
+    check("mode par défaut = off", paywall_mode() == MODE_OFF)
+    check("mode off : l'aperçu ne l'allume PAS", not paywall_enabled(preview_session=True))
 
     print("=== refus et catalogue ===")
     d = denial("history", trial_available=True)

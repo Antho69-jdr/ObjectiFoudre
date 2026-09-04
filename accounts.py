@@ -915,6 +915,18 @@ def start_trial(user_id: str, email: str, days: float | None = None) -> dict[str
     return ent
 
 
+def clear_trial_claim(email: str) -> bool:
+    """Rend l'essai à nouveau disponible pour cette adresse. Réservé au TEST (outil admin) :
+    sans ça, le parcours d'essai ne se joue qu'une fois par adresse, et il n'y aurait aucun
+    moyen de le rejouer après l'avoir vérifié."""
+    email = str(email or "").strip()
+    if not email:
+        return False
+    with _lock, _db() as c:
+        cur = c.execute("DELETE FROM trial_claims WHERE claim_hash = ?", (_claim_hash(email),))
+    return cur.rowcount > 0
+
+
 def entitlement_stats() -> dict[str, Any]:
     """Compteurs pour la télémétrie admin (droits d'accès)."""
     now = _now_iso()
@@ -1164,6 +1176,15 @@ if __name__ == "__main__":
         check("recréer le compte ne redonne pas l'essai", False)
     except AccountError:
         check("recréer le compte ne redonne pas l'essai", True)
+
+    ur = register_local("rejouer@example.com", "MotDePasse42")
+    start_trial(ur["id"], "rejouer@example.com")
+    check("essai pris", trial_claimed("rejouer@example.com") is True)
+    check("clear_trial_claim rend l'essai", clear_trial_claim("rejouer@example.com") is True
+          and trial_claimed("rejouer@example.com") is False)
+    check("clear_trial_claim sur une adresse jamais vue → False", clear_trial_claim("jamais@example.com") is False)
+    check("essai rejouable après remise à zéro", start_trial(ur["id"], "rejouer@example.com")["active"] is True)
+    delete_user(ur["id"])
 
     print(f"\n{ok['n'] - ok['fail']}/{ok['n']} OK" + ("" if ok["fail"] == 0 else f" — {ok['fail']} ÉCHEC(S)"))
     raise SystemExit(1 if ok["fail"] else 0)

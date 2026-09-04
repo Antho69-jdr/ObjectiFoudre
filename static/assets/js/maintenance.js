@@ -108,6 +108,18 @@
       desc: 'Liste des comptes créés (sans mot de passe, évidemment).' },
     { id: 'spots-pending', label: 'Spots en attente', url: '/api/spots/pending',
       desc: 'Les propositions de spots qui attendent ta modération.' },
+    { id: 'paywall-etat', label: 'Périmètre payant · état', url: '/api/server/paywall',
+      desc: 'Le mode du serveur (off / aperçu / en service), l\'aperçu de CETTE session, et les droits de ton compte.' },
+    { id: 'paywall-apercu-on', label: 'Périmètre payant · m\'appliquer l\'aperçu', url: '/api/server/paywall/preview?on=1', methode: 'POST',
+      desc: 'Te fait voir l\'app comme un visiteur gratuit — cadenas et mur compris — SANS toucher aux autres visiteurs. Recharge la page ensuite.' },
+    { id: 'paywall-apercu-off', label: 'Périmètre payant · me retirer l\'aperçu', url: '/api/server/paywall/preview?on=0', methode: 'POST',
+      desc: 'Retour à la vue normale. Recharge la page ensuite.' },
+    { id: 'paywall-grant', label: 'Périmètre payant · m\'accorder 30 jours', url: '/api/server/paywall/grant?days=30', methode: 'POST',
+      desc: 'Abonnement de TEST écrit en base — aucun paiement, aucun prestataire. Pour voir l\'app en état « abonné ».' },
+    { id: 'paywall-revoke', label: 'Périmètre payant · me retirer mon droit', url: '/api/server/paywall/revoke', methode: 'POST',
+      desc: 'Je redeviens un visiteur gratuit.' },
+    { id: 'paywall-trial-reset', label: 'Périmètre payant · rejouer mon essai', url: '/api/server/paywall/trial-reset', methode: 'POST',
+      desc: 'Rend l\'essai de 7 jours à nouveau disponible pour ton adresse et coupe celui en cours. Sans ça, le parcours ne se joue qu\'une fois.' },
   ];
 
   // ⚠️ La mosaïque est REPEINTE toutes les 15 s (`grid.innerHTML = …`). Le résultat d'un
@@ -154,7 +166,7 @@
     const t0 = performance.now();
     let texte, ok = false;
     try {
-      const r = await fetch(o.url);
+      const r = await fetch(o.url, o.methode ? { method: o.methode } : undefined);
       const brut = await r.text();
       ok = r.ok;
       try { texte = JSON.stringify(JSON.parse(brut), null, 2); } catch (_) { texte = brut; }

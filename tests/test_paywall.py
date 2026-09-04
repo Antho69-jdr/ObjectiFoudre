@@ -31,9 +31,14 @@ import app as api_app
 accounts.init_db()   # créée au démarrage du serveur, pas à l'import
 
 
-def _req(cookie: str | None = None) -> types.SimpleNamespace:
-    """Requête minimale : _account_current_user ne lit que les cookies."""
-    return types.SimpleNamespace(cookies=({api_app._SESSION_COOKIE: cookie} if cookie else {}))
+def _req(cookie: str | None = None, apercu: bool = False) -> types.SimpleNamespace:
+    """Requête minimale : _account_current_user et _paywall_active ne lisent que les cookies."""
+    ck = {}
+    if cookie:
+        ck[api_app._SESSION_COOKIE] = cookie
+    if apercu:
+        ck[api_app._PAYWALL_PREVIEW_COOKIE] = "1"
+    return types.SimpleNamespace(cookies=ck)
 
 
 def _run(coro):
@@ -297,13 +302,73 @@ class EssaiTests(unittest.TestCase):
 
     def test_l_etat_expose_au_compte_ne_sert_qu_a_l_affichage(self):
         u = accounts.register_local("etat@example.com", "MotDePasse42")
-        vue = _run(api_app._access_view(accounts.get_user(u["id"])))
+        vue = _run(api_app._access_view(_req(), accounts.get_user(u["id"])))
         self.assertEqual(set(vue), {"paywall", "entitled", "source", "expires_utc",
                                     "trial_available", "offer"})
         self.assertFalse(vue["entitled"])
         accounts.grant_entitlement(u["id"], "manual")
-        self.assertTrue(_run(api_app._access_view(accounts.get_user(u["id"])))["entitled"])
+        self.assertTrue(_run(api_app._access_view(_req(), accounts.get_user(u["id"])))["entitled"])
         accounts.delete_user(u["id"])
+
+
+class ModeApercuTests(unittest.TestCase):
+    """Le mode « aperçu » : essayer le périmètre en vrai SANS le mettre en service.
+
+    Sans lui, la seule façon d'essayer serait de l'appliquer à tous les visiteurs d'un
+    coup — c'est-à-dire de le lancer, pas de le tester.
+    """
+
+    def tearDown(self):
+        os.environ.pop("OBJECTIFOUDRE_PAYWALL", None)
+
+    def test_off_reste_off_meme_avec_le_cookie(self):
+        """Le cookie ne peut RIEN allumer : c'est le serveur qui décide du mode."""
+        os.environ.pop("OBJECTIFOUDRE_PAYWALL", None)
+        self.assertFalse(api_app._paywall_active(_req(apercu=True)))
+        self.assertIsNone(_run(api_app._require_access(_req(apercu=True), "history")))
+
+    def test_apercu_ne_touche_que_la_session_qui_le_demande(self):
+        os.environ["OBJECTIFOUDRE_PAYWALL"] = "preview"
+        self.assertFalse(api_app._paywall_active(_req()), "un visiteur ordinaire ne doit rien voir")
+        self.assertIsNone(_run(api_app._require_access(_req(), "history")),
+                          "le visiteur ordinaire doit passer comme avant")
+        self.assertTrue(api_app._paywall_active(_req(apercu=True)))
+        with self.assertRaises(api_app.PaywallError):
+            _run(api_app._require_access(_req(apercu=True), "history"))
+
+    def test_on_s_applique_a_tout_le_monde(self):
+        os.environ["OBJECTIFOUDRE_PAYWALL"] = "1"
+        self.assertTrue(api_app._paywall_active(_req()))
+        self.assertTrue(api_app._paywall_active(_req(apercu=True)))
+
+    def test_l_etat_expose_au_front_suit_la_session(self):
+        os.environ["OBJECTIFOUDRE_PAYWALL"] = "preview"
+        self.assertFalse(_run(api_app._access_view(_req(), None))["paywall"])
+        self.assertTrue(_run(api_app._access_view(_req(apercu=True), None))["paywall"])
+
+    def test_le_dome_suit_aussi_la_session(self):
+        os.environ["OBJECTIFOUDRE_PAYWALL"] = "preview"
+        ech = {"ok": True, "cloud_low": [[1]], "moon": {"moonrise_utc": "x"}}
+        self.assertIs(_run(api_app._stargaze_trim_for_access(_req(), ech)), ech,
+                      "un visiteur ordinaire garde la réponse entière")
+        coupe = _run(api_app._stargaze_trim_for_access(_req(apercu=True), ech))
+        self.assertNotIn("cloud_low", coupe)
+
+    def test_les_outils_de_test_sont_reserves_a_l_admin(self):
+        """Ils accordent des droits : jamais accessibles sans compte administrateur, et
+        jamais verrouillés par le périmètre (sinon on ne pourrait plus l'éteindre)."""
+        chemins = {"/api/server/paywall", "/api/server/paywall/preview",
+                   "/api/server/paywall/grant", "/api/server/paywall/revoke",
+                   "/api/server/paywall/trial-reset"}
+        vus = set()
+        for r in api_app.app.routes:
+            if getattr(r, "path", None) in chemins and hasattr(r, "dependencies"):
+                vus.add(r.path)
+                noms = [getattr(d.dependency, "__name__", "") for d in r.dependencies]
+                self.assertIn("_admin_secret_dep", noms, f"{r.path} n'est pas réservé à l'admin")
+                self.assertFalse(any(n.startswith("_paywall_") for n in noms),
+                                 f"{r.path} ne doit pas être verrouillé par le périmètre lui-même")
+        self.assertEqual(vus, chemins, "outils de test manquants : %s" % (chemins - vus))
 
 
 class CablageDuFrontTests(unittest.TestCase):
