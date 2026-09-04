@@ -43,6 +43,26 @@ class InertieTests(unittest.TestCase):
         self.assertFalse(etat["enabled"])
         self.assertEqual(etat["days"], 0)
 
+    def test_un_echec_ne_relance_pas_toutes_les_deux_minutes(self):
+        """La cadence normale est gardée par `last_tick`, qui n'avance qu'au SUCCÈS. Sans
+        temporisation sur la dernière TENTATIVE, un échec ferait retenter la boucle toutes
+        les 2 min pendant tout l'épisode — jusqu'à 30 tirs de 14 Mo par heure."""
+        import time as _t
+        with tempfile.TemporaryDirectory() as d:
+            with patch.object(app, "OBJECTIFOUDRE_GII_SHADOW", True), \
+                 patch.object(app, "OBJECTIFOUDRE_HISTORY_ENABLED", True), \
+                 patch.object(app, "OBJECTIFOUDRE_HISTORY_DIR", Path(d)), \
+                 patch.object(app, "_gii_shadow_radar_cells",
+                              return_value={"45.0|3.0": {"n": 1, "age_min": 5}}), \
+                 patch.object(app, "_gii_fetch_latest", side_effect=OSError("EUMETSAT KO")) as tir:
+                app._gii_shadow_state.update(last_tick=0.0, last_active=_t.time(),
+                                             last_attempt=0.0, failures=0)
+                self.assertEqual(app._gii_shadow_tick(), "fetch_failed")
+                self.assertEqual(app._gii_shadow_tick(), "backoff")
+                self.assertEqual(app._gii_shadow_tick(), "backoff")
+                self.assertEqual(tir.call_count, 1, "un seul tir réseau pour trois passages")
+                self.assertEqual(app._gii_shadow_state["failures"], 1)
+
     def test_rien_les_jours_calmes(self):
         """Sans activité convective récente, le journal n'écrit pas — c'est ce qui rend
         le dispositif gratuit hors épisode orageux."""

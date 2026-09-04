@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.261"
+APP_VERSION = "1.3.262"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -21057,7 +21057,9 @@ GII_SHADOW_INTERVAL_MIN = int(os.environ.get("OBJECTIFOUDRE_GII_SHADOW_INTERVAL_
 GII_SHADOW_LOOKBEHIND_MIN = 180         # activité convective encore « récente » (3 h)
 GII_SHADOW_CELL_DEG = 0.5               # maille du journal (~55 x 39 km), celle de la campagne
 _gii_shadow_lock = threading.Lock()
+GII_SHADOW_RETRY_MIN = 5                # temporisation après un échec (cf. _gii_shadow_tick)
 _gii_shadow_state: dict[str, Any] = {"last_tick": 0.0, "last_active": 0.0, "ticks": 0,
+                                     "last_attempt": 0.0, "failures": 0,
                                      "last_error": None, "last_gii_end": None}
 _gii_shadow_stop = threading.Event()
 _gii_shadow_thread: threading.Thread | None = None
@@ -21199,16 +21201,27 @@ def _gii_shadow_tick() -> str:
             _gii_shadow_state["last_active"] = now
         derniere_activite = float(_gii_shadow_state.get("last_active") or 0.0)
         dernier_tick = float(_gii_shadow_state.get("last_tick") or 0.0)
+        dernier_essai = float(_gii_shadow_state.get("last_attempt") or 0.0)
     # Rien les jours calmes : on n'écrit que pendant (et juste après) l'activité convective.
     if now - derniere_activite > GII_SHADOW_LOOKBEHIND_MIN * 60:
         return "calm"
     if now - dernier_tick < GII_SHADOW_INTERVAL_MIN * 60:
         return "too_soon"
+    # ⚠️ La cadence normale est gardée par `last_tick`, qui n'avance QU'EN CAS DE SUCCÈS.
+    # Sans ce second garde-fou, un échec (EUMETSAT indisponible, jeton refusé) ferait
+    # retenter la boucle toutes les 2 min pendant tout l'épisode orageux — jusqu'à 30
+    # tentatives par heure, chacune pouvant tirer un produit de 14 Mo. On temporise donc
+    # aussi sur la dernière TENTATIVE.
+    if now - dernier_essai < GII_SHADOW_RETRY_MIN * 60:
+        return "backoff"
+    with _gii_shadow_lock:
+        _gii_shadow_state["last_attempt"] = now
     try:
         got = _gii_fetch_latest()
     except Exception as exc:  # noqa: BLE001
         with _gii_shadow_lock:
             _gii_shadow_state["last_error"] = str(exc)[:200]
+            _gii_shadow_state["failures"] = int(_gii_shadow_state.get("failures") or 0) + 1
         return "fetch_failed"
     if not got:
         return "no_product"
@@ -21236,6 +21249,7 @@ def _gii_shadow_tick() -> str:
         _gii_shadow_state["ticks"] = int(_gii_shadow_state.get("ticks") or 0) + 1
         _gii_shadow_state["last_gii_end"] = gii_end
         _gii_shadow_state["last_error"] = None
+        _gii_shadow_state["failures"] = 0
     return "written"
 
 
@@ -21274,6 +21288,8 @@ def _gii_shadow_status(max_days: int = 30) -> dict[str, Any]:
         "last_gii_end": etat.get("last_gii_end"),
         "last_error": etat.get("last_error"),
         "ticks_since_boot": etat.get("ticks") or 0,
+        "failures_since_success": etat.get("failures") or 0,
+        "last_attempt": etat.get("last_attempt") or None,
     }
     base = OBJECTIFOUDRE_HISTORY_DIR / "gii_shadow"
     try:
