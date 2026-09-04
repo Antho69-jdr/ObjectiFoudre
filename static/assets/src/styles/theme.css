@@ -183,6 +183,9 @@
 @import "./components/prediction-ribbon.css";
 @import "./components/tour.css";
 
+/* Périmètre gratuit/payant : mur, cadenas, bloc « Abonnement » de la modale Compte. */
+@import "./components/paywall.css";
+
 :root {
   /* Fond & surfaces */
   --bg: #070d18;

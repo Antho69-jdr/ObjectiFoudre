@@ -1,0 +1,136 @@
+/* ==========================================================================
+   MUR DU PÉRIMÈTRE GRATUIT/PAYANT (paywall.js)
+   - .pw-* : l'écran d'explication ouvert sur un refus serveur (402).
+   - .objf-locked : classe RACINE posée quand le périmètre s'applique à ce visiteur
+     (même idiome que .objf-admin). Les cadenas sont peints EN CSS, jamais en JS :
+     la barre du bas se repeint intégralement à chaque navigation et effacerait
+     tout marquage posé dans le DOM.
+   Tant que le serveur ne pose pas OBJECTIFOUDRE_PAYWALL, la classe n'existe pas
+   et rien de ce fichier ne s'applique.
+   ========================================================================== */
+
+/* ── L'écran ────────────────────────────────────────────────────────────── */
+.pw-modal {
+  /* z 87 : au-dessus de la modale Compte (86), d'où le mur peut être ouvert,
+     et SOUS la barre du bas (89) qui doit rester navigable — même règle
+     qu'account.css. */
+  position: fixed; inset: 0; z-index: 87;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(6, 10, 16, 0.66);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  padding: 16px;
+}
+.pw-modal.show { display: flex; }
+
+.pw-card {
+  position: relative; width: min(440px, 100%);
+  max-height: min(88vh, 700px); overflow-y: auto;
+  background: #121a25; color: #e9eff7;
+  border: 1px solid #22303f; border-radius: 16px;
+  padding: 22px 20px 18px;
+  box-shadow: 0 24px 60px -20px #000d;
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+.pw-head { display: flex; flex-direction: column; gap: 4px; padding-right: 44px; }
+.pw-eyebrow {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+  color: #fbbf24;   /* ambre LITTÉRAL : theme.css remappe --accent-2 en cyan */
+}
+.pw-title { font-size: 18px; font-weight: 800; line-height: 1.25; margin: 0; }
+.pw-lede { font-size: 13px; line-height: 1.5; color: #a9bcd2; margin: 0; }
+
+/* ── Les deux formules ──────────────────────────────────────────────────── */
+.pw-offers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 2px; }
+.pw-offer {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 12px 12px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #22303f; border-radius: 12px;
+}
+.pw-offer.is-best { border-color: rgba(251, 191, 36, 0.45); background: rgba(251, 191, 36, 0.07); }
+.pw-offer-price { font-size: 13px; font-weight: 700; line-height: 1.3; }
+.pw-offer-note { font-size: 11px; color: #8ba0b8; }
+.pw-offer.is-best .pw-offer-note { color: #fbbf24; }
+
+/* ── Actions ────────────────────────────────────────────────────────────── */
+.pw-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.pw-btn {
+  /* !important : body.mobile-ui button force min-width:88px et flex:0 0 auto,
+     ce qui dilaterait le bouton hors de la carte. */
+  flex: 1 1 auto !important; min-width: 0 !important;
+  width: 100%; padding: 11px 14px;
+  font-size: 14px; font-weight: 700; font-family: inherit;
+  border-radius: 12px; border: 1px solid #22303f;
+  background: rgba(255, 255, 255, 0.05); color: #e9eff7;
+  cursor: pointer;
+}
+.pw-btn:hover { background: rgba(255, 255, 255, 0.09); }
+.pw-btn-primary {
+  background: var(--accent, #38bdf8); border-color: transparent; color: #07111f;
+}
+.pw-btn-primary:hover { background: var(--accent-strong, #0ea5e9); }
+.pw-btn:disabled { opacity: 0.6; cursor: default; }
+.pw-btn:focus-visible { outline: 2px solid var(--accent, #38bdf8); outline-offset: 2px; }
+
+.pw-foot { font-size: 11.5px; color: #8ba0b8; line-height: 1.45; margin: 0; text-align: center; }
+.pw-error { font-size: 12px; color: #f87171; margin: 0; text-align: center; }
+
+.pw-close {
+  position: absolute; top: 10px; right: 10px;
+  min-width: 36px !important; min-height: 36px !important; max-width: 36px; max-height: 36px;
+  width: 36px; height: 36px; display: grid; place-items: center;
+  background: var(--fill-soft, rgba(255,255,255,0.06)); border: 1px solid #22303f; color: #e9eff7;
+  line-height: 1; border-radius: 50%; cursor: pointer; padding: 0; font-size: 14px;
+}
+.pw-close:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+
+@media (max-width: 380px) {
+  .pw-offers { grid-template-columns: 1fr; }
+}
+
+/* ── Cadenas sur les destinations entièrement payantes ──────────────────────
+   Historique et Mes spots sont payants EN ENTIER ; « Risque orageux », le radar
+   et les étoiles restent ouverts sur leur part gratuite et ne portent donc pas
+   de cadenas — un cadenas sur une page qui s'ouvre quand même serait un mensonge.
+   Le marqueur suit l'ATTRIBUT data-nav (barre du bas + feuille « Plus ») et les
+   ids du rail : il survit à tous les repaints. */
+html.objf-locked .bnav-tab[data-nav="histo"],
+html.objf-locked .bnav-tab[data-nav="spots"],
+html.objf-locked .bnav-row[data-plus="histo"],
+html.objf-locked .bnav-row[data-plus="spots"],
+html.objf-locked #historyPageBtn,
+html.objf-locked #spotsPageBtn { position: relative; }
+
+html.objf-locked .bnav-tab[data-nav="histo"]::after,
+html.objf-locked .bnav-tab[data-nav="spots"]::after,
+html.objf-locked .bnav-row[data-plus="histo"]::after,
+html.objf-locked .bnav-row[data-plus="spots"]::after,
+html.objf-locked #historyPageBtn::after,
+html.objf-locked #spotsPageBtn::after {
+  content: "";
+  position: absolute; top: 3px; right: 3px;
+  width: 11px; height: 11px;
+  pointer-events: none;
+  opacity: 0.85;
+  background-repeat: no-repeat; background-position: center; background-size: contain;
+  /* Cadenas tracé en SVG inline (pas d'emoji : rendu et couleur imprévisibles). */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fbbf24' stroke-width='2.4' stroke-linecap='round'%3E%3Crect x='4' y='11' width='16' height='10' rx='2' fill='%23121a25'/%3E%3Cpath d='M8 11V7.5a4 4 0 0 1 8 0V11'/%3E%3C/svg%3E");
+}
+
+/* ── Bloc « Abonnement » de la modale Compte ────────────────────────────── */
+.account-plan { display: flex; flex-direction: column; gap: 8px; }
+.account-plan-state {
+  font-size: 13px; font-weight: 700;
+  padding: 8px 10px; border-radius: 10px;
+  border: 1px solid #22303f; background: rgba(255, 255, 255, 0.03);
+}
+.account-plan-state.is-on { color: #fbbf24; border-color: rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.08); }
+.account-plan-state.is-off { color: #a9bcd2; }
+
+/* Feuille « Plus » : ligne pleine largeur + chevron → le cadenas se pose avant lui. */
+html.objf-locked .bnav-row[data-plus="histo"]::after,
+html.objf-locked .bnav-row[data-plus="spots"]::after {
+  top: 50%; right: 34px; transform: translateY(-50%);
+  width: 13px; height: 13px;
+}

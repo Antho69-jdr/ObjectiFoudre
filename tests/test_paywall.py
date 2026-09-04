@@ -306,5 +306,53 @@ class EssaiTests(unittest.TestCase):
         accounts.delete_user(u["id"])
 
 
+class CablageDuFrontTests(unittest.TestCase):
+    """Le mur ne sert à rien s'il n'est pas RÉELLEMENT chargé par la page.
+
+    Piège vécu le 2026-09-04 : le composant CSS avait été importé dans `index.css`
+    (bundle `app.css`), qui ne sert QUE la page styleguide. La page réelle charge
+    `dist/theme.css`. Les cadenas ne s'affichaient pas — la mesure au navigateur l'a
+    montré, la relecture non.
+    """
+
+    STATIC = __import__("pathlib").Path(api_app.STATIC_DIR)
+
+    def test_le_module_est_charge_avant_account_js(self):
+        """account.js appelle OFPaywall.applyMe() : il doit être défini avant."""
+        html = (self.STATIC / "index.html").read_text(encoding="utf-8")
+        i_pw, i_acc = html.find("/assets/js/paywall.js"), html.find("/assets/js/account.js")
+        self.assertNotEqual(i_pw, -1, "paywall.js n'est pas chargé par index.html")
+        self.assertNotEqual(i_acc, -1, "account.js n'est plus chargé ?")
+        self.assertLess(i_pw, i_acc, "paywall.js doit être chargé AVANT account.js")
+
+    def test_le_css_est_dans_le_bundle_reellement_servi(self):
+        """La page charge dist/theme.css — pas dist/app.css, réservé au styleguide."""
+        html = (self.STATIC / "index.html").read_text(encoding="utf-8")
+        self.assertIn("/assets/dist/theme.css", html)
+        css = (self.STATIC / "assets/dist/theme.css").read_text(encoding="utf-8")
+        for marqueur in (".pw-card", "objf-locked", ".account-plan-state"):
+            # assertTrue et non assertIn : le bundle fait 200 Ko, on ne veut pas le voir
+            # recraché dans le rapport d'échec.
+            self.assertTrue(marqueur in css,
+                            f"{marqueur} absent de theme.css : `node build.mjs` oublié, ou "
+                            f"composant importé dans le mauvais bundle (index.css ne sert "
+                            f"que le styleguide)")
+
+    def test_les_cadenas_visent_des_ancres_qui_existent(self):
+        """Les sélecteurs de cadenas suivent le DOM réel : ids du rail, data-nav de la
+        barre du bas, data-plus de la feuille « Plus »."""
+        css = (self.STATIC / "assets/dist/theme.css").read_text(encoding="utf-8")
+        html = (self.STATIC / "index.html").read_text(encoding="utf-8")
+        nav = (self.STATIC / "assets/js/bottom-nav.js").read_text(encoding="utf-8")
+        for ancre in ("#historyPageBtn", "#spotsPageBtn"):
+            self.assertTrue(ancre in css, f"{ancre} n'est plus ciblé par le CSS des cadenas")
+            self.assertTrue('id="%s"' % ancre[1:] in html, f"{ancre} n'existe plus dans index.html")
+        for ident in ("histo", "spots"):
+            # esbuild déquote les sélecteurs d'attribut : [data-plus=histo].
+            self.assertTrue(('data-plus="%s"' % ident) in css or ("data-plus=%s" % ident) in css,
+                            f"la feuille « Plus » n'est plus ciblée pour {ident}")
+            self.assertTrue("'%s'" % ident in nav, f"la destination {ident} a disparu du POOL")
+
+
 if __name__ == "__main__":
     unittest.main()

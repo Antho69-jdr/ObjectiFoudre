@@ -258,6 +258,14 @@
     });
     body.appendChild(seg);
 
+    // Abonnement (périmètre gratuit/payant) — module dédié paywall.js. Ne rend rien
+    // tant que le serveur n'applique pas le périmètre.
+    try {
+      if (window.OFPaywall) {
+        window.OFPaywall.renderSection(body, { el: el, jget: jget, jsend: jsend, toast: toast, esc: esc });
+      }
+    } catch (e) {}
+
     // Alertes orage par département (Web Push) — module dédié push-alerts.js
     try {
       if (window.ObjectiFoudrePush) {
@@ -379,6 +387,9 @@
   function loadMe() {
     return jget('/api/account/me').then(function (r) {
       state.user = (r && r.user) || null;
+      // Droits d'accès (périmètre gratuit/payant) : on partage la réponse au lieu de
+      // refaire l'appel. Inerte tant que le serveur ne pose pas le drapeau.
+      try { if (window.OFPaywall) window.OFPaywall.applyMe(r); } catch (e0) {}
       state.oauth = (r && r.oauth) || (r && r.google_configured ? { google: true } : {});
       state.emailEnabled = !!(r && r.email_enabled);
       cacheMap(state.user && state.user.prefs ? state.user.prefs.default_map : null);
