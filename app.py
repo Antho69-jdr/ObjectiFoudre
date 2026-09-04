@@ -88,7 +88,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.268"
+APP_VERSION = "1.3.269"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16802,9 +16802,24 @@ async def server_shadow_rebase(threshold: int = Query(1)) -> dict[str, Any]:
 
 
 @app.get("/api/server/telemetry", dependencies=[Depends(_admin_secret_dep)])
-async def server_telemetry() -> dict[str, Any]:
-    """État consolidé du serveur pour la page maintenance (admin)."""
-    return await asyncio.to_thread(_server_telemetry_sync)
+async def server_telemetry(request: Request) -> dict[str, Any]:
+    """État consolidé du serveur pour la page maintenance (admin). On y joint MON état de
+    périmètre : la mosaïque se repeint toutes les 15 s et les boutons à bascule y lisent
+    quoi afficher, sans requête supplémentaire."""
+    data = await asyncio.to_thread(_server_telemetry_sync)
+    try:
+        etat = await _paywall_state(request)
+        data["paywall"] = {
+            "mode": etat["mode"],
+            "apercu": etat["apercu_actif_sur_cette_session"],
+            "applique_ici": etat["perimetre_applique_ici"],
+            "compte_payant": etat["mon_compte"]["droit_actif"],
+            "source": etat["mon_compte"]["source"],
+            "essai_deja_pris": etat["mon_compte"]["essai_deja_pris"],
+        }
+    except Exception as exc:  # noqa: BLE001
+        data["paywall"] = {"error": str(exc)[:150]}
+    return data
 
 
 # ── Outils de TEST du périmètre gratuit/payant (admin) ───────────────────────
@@ -16847,9 +16862,12 @@ async def server_paywall_state(request: Request) -> Response:
 
 
 @app.post("/api/server/paywall/preview", dependencies=[Depends(_admin_secret_dep)])
-async def server_paywall_preview(request: Request, on: int = Query(1, ge=0, le=1)) -> Response:
-    """[admin] Applique (ou retire) le périmètre à CETTE session seulement. N'a d'effet
-    qu'en mode `preview` — l'état renvoyé le dit franchement si ce n'est pas le cas."""
+async def server_paywall_preview(request: Request, on: int | None = Query(None, ge=0, le=1)) -> Response:
+    """[admin] BASCULE l'aperçu sur CETTE session : sans paramètre, on inverse l'état
+    courant ; `on=0/1` force. N'a d'effet qu'en mode `preview` — l'état renvoyé le dit
+    franchement si ce n'est pas le cas."""
+    if on is None:
+        on = 0 if request.cookies.get(_PAYWALL_PREVIEW_COOKIE) == "1" else 1
     body = await _paywall_state(request)
     body["apercu_actif_sur_cette_session"] = bool(on)
     body["perimetre_applique_ici"] = access.paywall_enabled(preview_session=bool(on))
@@ -16865,20 +16883,17 @@ async def server_paywall_preview(request: Request, on: int = Query(1, ge=0, le=1
     return resp
 
 
-@app.post("/api/server/paywall/grant", dependencies=[Depends(_admin_secret_dep)])
-async def server_paywall_grant(request: Request, days: int = Query(30, ge=1, le=3650)) -> Response:
-    """[admin] M'accorde un abonnement de TEST, à durée bornée. Aucun paiement, aucun
-    prestataire : c'est une écriture en base pour voir l'app en état « abonné »."""
+@app.post("/api/server/paywall/toggle", dependencies=[Depends(_admin_secret_dep)])
+async def server_paywall_toggle(request: Request) -> Response:
+    """[admin] BASCULE mon compte entre GRATUIT et PAYANT. Un seul bouton, pas de durée à
+    choisir : le droit accordé est sans échéance et se retire du même geste. Aucun
+    paiement, aucun prestataire — c'est une écriture en base pour voir les deux états."""
     user = await _require_admin_account(request)
-    await asyncio.to_thread(accounts.grant_entitlement, user["id"], "manual", days=days)
-    return JSONResponse(await _paywall_state(request))
-
-
-@app.post("/api/server/paywall/revoke", dependencies=[Depends(_admin_secret_dep)])
-async def server_paywall_revoke(request: Request) -> Response:
-    """[admin] Me retire mon droit : je redeviens un visiteur gratuit."""
-    user = await _require_admin_account(request)
-    await asyncio.to_thread(accounts.revoke_entitlement, user["id"])
+    ent = await asyncio.to_thread(accounts.entitlement_for, user["id"])
+    if ent and ent["active"]:
+        await asyncio.to_thread(accounts.revoke_entitlement, user["id"])
+    else:
+        await asyncio.to_thread(accounts.grant_entitlement, user["id"], "manual", days=None)
     return JSONResponse(await _paywall_state(request))
 
 

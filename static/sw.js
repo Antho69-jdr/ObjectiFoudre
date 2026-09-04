@@ -1,4 +1,4 @@
-const CACHE_NAME = 'objectifoudre-v1.3.268';
+const CACHE_NAME = 'objectifoudre-v1.3.269';
 const ASSETS = [
   '/',
   '/manifest.webmanifest',

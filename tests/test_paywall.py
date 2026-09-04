@@ -358,8 +358,7 @@ class ModeApercuTests(unittest.TestCase):
         """Ils accordent des droits : jamais accessibles sans compte administrateur, et
         jamais verrouillés par le périmètre (sinon on ne pourrait plus l'éteindre)."""
         chemins = {"/api/server/paywall", "/api/server/paywall/preview",
-                   "/api/server/paywall/grant", "/api/server/paywall/revoke",
-                   "/api/server/paywall/trial-reset"}
+                   "/api/server/paywall/toggle", "/api/server/paywall/trial-reset"}
         vus = set()
         for r in api_app.app.routes:
             if getattr(r, "path", None) in chemins and hasattr(r, "dependencies"):
@@ -369,6 +368,52 @@ class ModeApercuTests(unittest.TestCase):
                 self.assertFalse(any(n.startswith("_paywall_") for n in noms),
                                  f"{r.path} ne doit pas être verrouillé par le périmètre lui-même")
         self.assertEqual(vus, chemins, "outils de test manquants : %s" % (chemins - vus))
+
+
+class BasculesTests(unittest.TestCase):
+    """Un seul bouton par bascule, et son libellé doit pouvoir dire l'état courant."""
+
+    def test_la_telemetrie_porte_l_etat_du_perimetre(self):
+        """La mosaïque de maintenance se repeint toutes les 15 s : les libellés à bascule
+        lisent l'état DANS la télémétrie, sans requête supplémentaire."""
+        u = accounts.register_local("bascule@example.com", "MotDePasse42")
+        jeton = accounts.create_session(u["id"])
+        etat = _run(api_app._paywall_state(_req(jeton)))
+        for cle in ("mode", "apercu_actif_sur_cette_session", "perimetre_applique_ici", "mon_compte"):
+            self.assertIn(cle, etat)
+        self.assertFalse(etat["mon_compte"]["droit_actif"])
+        accounts.grant_entitlement(u["id"], "manual")
+        self.assertTrue(_run(api_app._paywall_state(_req(jeton)))["mon_compte"]["droit_actif"])
+        accounts.delete_user(u["id"])
+
+    def test_la_bascule_de_droit_va_dans_les_deux_sens(self):
+        """C'est le comportement demandé : un bouton, pas une durée à choisir. Le droit
+        accordé est SANS échéance — il se retire du même geste, pas en attendant 30 jours."""
+        u = accounts.register_local("va-et-vient@example.com", "MotDePasse42")
+        self.assertFalse(accounts.is_entitled(u["id"]))
+        ent = accounts.grant_entitlement(u["id"], "manual", days=None)
+        self.assertTrue(ent["active"])
+        self.assertIsNone(ent["expires_utc"], "une bascule ne doit pas poser d'échéance")
+        accounts.revoke_entitlement(u["id"])
+        self.assertFalse(accounts.is_entitled(u["id"]))
+        self.assertTrue(accounts.grant_entitlement(u["id"], "manual", days=None)["active"],
+                        "on doit pouvoir re-basculer autant de fois qu'on veut")
+        accounts.delete_user(u["id"])
+
+    def test_l_apercu_s_inverse_sans_parametre(self):
+        """Sans `on`, l'endpoint inverse l'état courant : c'est ce qui en fait une bascule."""
+        source = __import__("inspect").getsource(api_app.server_paywall_preview)
+        self.assertIn("if on is None", source)
+
+    def test_les_boutons_de_maintenance_pointent_les_bons_endpoints(self):
+        js = (__import__("pathlib").Path(api_app.STATIC_DIR)
+              / "assets/js/maintenance.js").read_text(encoding="utf-8")
+        for url in ("/api/server/paywall/toggle", "/api/server/paywall/preview",
+                    "/api/server/paywall/trial-reset", "/api/server/paywall"):
+            self.assertIn(url, js, f"{url} n'est plus câblé dans la page maintenance")
+        for disparu in ("/api/server/paywall/grant", "/api/server/paywall/revoke"):
+            self.assertNotIn(disparu, js, f"{disparu} a été remplacé par la bascule")
+        self.assertIn("suitLeDroit", js, "les bascules doivent rafraîchir l'état après clic")
 
 
 class CablageDuFrontTests(unittest.TestCase):

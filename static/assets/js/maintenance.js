@@ -16,6 +16,9 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
   let logTimer = null;
+  // Dernière télémétrie reçue, gardée HORS du DOM : les libellés à bascule y lisent
+  // l'état courant, y compris entre deux repeintes.
+  let derniereTelemetrie = null;
   function isAdmin() { try { return document.documentElement.classList.contains('objf-admin'); } catch (e) { return false; } }
   function openPage() {
     if (!isAdmin()) return;   // défense : la page maintenance n'est accessible qu'en compte admin
@@ -50,6 +53,7 @@
       }
       const d = await r.json();
       if (mine !== token) return;
+      derniereTelemetrie = d;
       render(d);
       if (refreshEl) refreshEl.textContent = 'à jour · ' + new Date().toLocaleTimeString('fr-FR');
     } catch (_) {
@@ -108,19 +112,34 @@
       desc: 'Liste des comptes créés (sans mot de passe, évidemment).' },
     { id: 'spots-pending', label: 'Spots en attente', url: '/api/spots/pending',
       desc: 'Les propositions de spots qui attendent ta modération.' },
-    { id: 'paywall-etat', label: 'Périmètre payant · état', url: '/api/server/paywall',
-      desc: 'Le mode du serveur (off / aperçu / en service), l\'aperçu de CETTE session, et les droits de ton compte.' },
-    { id: 'paywall-apercu-on', label: 'Périmètre payant · m\'appliquer l\'aperçu', url: '/api/server/paywall/preview?on=1', methode: 'POST',
-      desc: 'Te fait voir l\'app comme un visiteur gratuit — cadenas et mur compris — SANS toucher aux autres visiteurs. Recharge la page ensuite.' },
-    { id: 'paywall-apercu-off', label: 'Périmètre payant · me retirer l\'aperçu', url: '/api/server/paywall/preview?on=0', methode: 'POST',
-      desc: 'Retour à la vue normale. Recharge la page ensuite.' },
-    { id: 'paywall-grant', label: 'Périmètre payant · m\'accorder 30 jours', url: '/api/server/paywall/grant?days=30', methode: 'POST',
-      desc: 'Abonnement de TEST écrit en base — aucun paiement, aucun prestataire. Pour voir l\'app en état « abonné ».' },
-    { id: 'paywall-revoke', label: 'Périmètre payant · me retirer mon droit', url: '/api/server/paywall/revoke', methode: 'POST',
-      desc: 'Je redeviens un visiteur gratuit.' },
-    { id: 'paywall-trial-reset', label: 'Périmètre payant · rejouer mon essai', url: '/api/server/paywall/trial-reset', methode: 'POST',
+    // ── Périmètre gratuit/payant ────────────────────────────────────────────
+    // Deux BASCULES à libellé vivant : le libellé dit l'état ACTUEL et ce que le clic
+    // va faire. L'état vient de la télémétrie (`d.paywall`), relue toutes les 15 s —
+    // donc il vit HORS du DOM, obligatoire ici puisque la mosaïque se repeint.
+    { id: 'paywall-compte',
+      label: (d) => 'Mon compte : ' + (etatPaywall(d).compte_payant ? 'PAYANT → repasser gratuit' : 'GRATUIT → passer payant'),
+      url: '/api/server/paywall/toggle', methode: 'POST', suitLeDroit: true,
+      desc: (d) => etatPaywall(d).compte_payant
+        ? 'Ton compte a un droit actif : tu vois l\'app comme un abonné. Le clic te le retire.'
+        : 'Ton compte est gratuit. Le clic t\'accorde un droit sans échéance — aucun paiement, aucun prestataire, une écriture en base.' },
+    { id: 'paywall-apercu',
+      label: (d) => 'Aperçu du périmètre : ' + (etatPaywall(d).apercu ? 'ACTIF → le retirer' : 'inactif → me l\'appliquer'),
+      url: '/api/server/paywall/preview', methode: 'POST', suitLeDroit: true,
+      desc: (d) => (etatPaywall(d).mode === 'preview'
+        ? 'Le périmètre ne s\'applique qu\'aux sessions qui le demandent : les autres visiteurs ne voient rien.'
+        : 'Le serveur est en mode « ' + etatPaywall(d).mode + ' » : la bascule est mémorisée mais sans effet tant que OBJECTIFOUDRE_PAYWALL ne vaut pas « preview ».') },
+    { id: 'paywall-trial-reset', label: 'Périmètre payant · rejouer mon essai', url: '/api/server/paywall/trial-reset', methode: 'POST', suitLeDroit: true,
       desc: 'Rend l\'essai de 7 jours à nouveau disponible pour ton adresse et coupe celui en cours. Sans ça, le parcours ne se joue qu\'une fois.' },
+    { id: 'paywall-etat', label: 'Périmètre payant · état détaillé', url: '/api/server/paywall',
+      desc: 'Le mode du serveur, l\'aperçu de cette session, les droits de ton compte et les compteurs.' },
   ];
+
+  // L'état de périmètre tel que la dernière télémétrie l'a rapporté. Repli neutre : un
+  // libellé faux vaut mieux qu'une page cassée.
+  function etatPaywall(d) {
+    const p = (d && d.paywall) || {};
+    return { mode: p.mode || 'off', apercu: !!p.apercu, compte_payant: !!p.compte_payant };
+  }
 
   // ⚠️ La mosaïque est REPEINTE toutes les 15 s (`grid.innerHTML = …`). Le résultat d'un
   // outil serait donc effacé aussitôt, et un outil lent verrait sa sortie disparaître en
@@ -160,7 +179,11 @@
   async function lancerOutil(id) {
     const o = OUTILS.find(x => x.id === id);
     if (!o) return;
-    outilEtat = { label: o.label, texte: '', ok: null,
+    // Le libellé d'une bascule change après le clic : on fige celui affiché au moment du
+    // lancement, sinon l'en-tête du résultat annoncerait l'action inverse.
+    const etiquette = typeof o.label === 'function'
+      ? o.label(derniereTelemetrie) : o.label;
+    outilEtat = { label: etiquette, texte: '', ok: null,
       etat: 'en cours…' + (o.lent ? ' (cet outil relit des journées entières, sois patient)' : '') };
     peindreOutil();
     const t0 = performance.now();
@@ -175,9 +198,16 @@
       texte = 'Échec réseau : ' + (e && e.message ? e.message : String(e));
     }
     const ms = Math.round(performance.now() - t0);
-    outilEtat = { label: o.label, texte, ok,
+    outilEtat = { label: etiquette, texte, ok,
       etat: `${ok ? 'ok' : 'échec'} · ${ms} ms · ${texte.length.toLocaleString('fr-FR')} caractères` };
     peindreOutil();
+    if (ok && o.suitLeDroit) {
+      // Le libellé de la bascule doit dire le NOUVEL état…
+      load();
+      // …et les cadenas/mur doivent suivre sans recharger la page : OFPaywall relit
+      // /api/account/me et repose (ou retire) la classe racine.
+      try { if (window.OFPaywall) window.OFPaywall.refresh(); } catch (_) {}
+    }
   }
 
   // ── Rendu de la mosaïque ────────────────────────────────────────────────────
@@ -299,9 +329,9 @@
     // se colle ensuite dans la conversation.
     cards.push(card('Outils & diagnostics',
       '<ul class="mnt-tools">' + OUTILS.map(o =>
-        `<li><div class="mnt-tool-t"><strong>${esc(o.label)}</strong>`
+        `<li><div class="mnt-tool-t"><strong>${esc(typeof o.label === 'function' ? o.label(d) : o.label)}</strong>`
         + (o.lent ? '<span class="mnt-tool-slow">lent</span>' : '')
-        + `<span class="mnt-tool-d">${esc(o.desc)}</span>`
+        + `<span class="mnt-tool-d">${esc(typeof o.desc === 'function' ? o.desc(d) : o.desc)}</span>`
         + `<code class="mnt-tool-u">${esc(o.url)}</code></div>`
         + `<button type="button" class="mnt-action" data-outil="${esc(o.id)}">Lancer</button></li>`
       ).join('') + '</ul>'
