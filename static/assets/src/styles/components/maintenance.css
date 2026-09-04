@@ -82,6 +82,41 @@
   font-size: var(--fs-11); letter-spacing: 0.04em; color: var(--text-muted);
   background: var(--fill-soft); border: 1px solid var(--divider);
   border-radius: 6px; padding: 1px 6px; }
+/* ── Carte « Outils & diagnostics » ───────────────────────────────────────────
+   Un bouton par endpoint admin, le résultat affiché sur place et copiable. La carte
+   occupe toute la largeur (mnt-actions-card) : les sorties JSON sont larges. */
+.mnt-tools { list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.mnt-tools li { display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; padding: 10px 12px; border: 1px solid var(--divider);
+  border-radius: 10px; background: var(--fill-soft); }
+.mnt-tool-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mnt-tool-t strong { font-size: var(--fs-12); color: var(--text); font-weight: 700; }
+.mnt-tool-slow { align-self: flex-start; font-size: var(--fs-11); font-weight: 700;
+  color: var(--warning, #fbbf24); border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: var(--r-pill); padding: 0 7px; }
+.mnt-tool-d { font-size: var(--fs-11); color: var(--text-muted); line-height: 1.45; }
+.mnt-tool-u { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-11); color: var(--text-dim); word-break: break-all; }
+.mnt-tools .mnt-action { flex: 0 0 auto; }
+.mnt-tool-out { margin-top: 14px; border: 1px solid var(--divider); border-radius: 10px;
+  background: var(--surface-2, rgba(0, 0, 0, 0.2)); overflow: hidden; }
+.mnt-tool-out[hidden] { display: none; }
+.mnt-tool-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 9px 12px; border-bottom: 1px solid var(--divider); }
+.mnt-tool-head strong { font-size: var(--fs-12); color: var(--text); }
+.mnt-tool-state { font-size: var(--fs-11); color: var(--text-muted);
+  font-variant-numeric: tabular-nums; }
+.mnt-tool-head .mnt-action { margin-left: auto; }
+.mnt-tool-head .mnt-action + .mnt-action { margin-left: 0; }
+/* La sortie peut faire des milliers de lignes : elle défile DANS sa boîte, et jamais
+   la page (cf. couplage des axes — overflow-y déclenche aussi le rognage en x, ici
+   voulu puisqu'un JSON non replié déborde en largeur). */
+.mnt-tool-pre { margin: 0; padding: 12px; max-height: 420px; overflow: auto;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-11); line-height: 1.5; color: var(--text-muted);
+  white-space: pre; tab-size: 2; }
+
 .mnt-subhead { margin: 12px 0 6px; font-size: var(--fs-11); font-weight: 700;
   letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
 .mnt-note { margin: 10px 0 0; font-size: var(--fs-11); line-height: 1.5;

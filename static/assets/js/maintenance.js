@@ -59,8 +59,8 @@
 
   // ── Helpers de rendu ────────────────────────────────────────────────────────
   function dot(level) { return `<span class="mnt-dot mnt-dot-${level}"></span>`; }
-  function card(title, body, level) {
-    return `<section class="mnt-card${level ? ' mnt-card-' + level : ''}"><h3 class="mnt-card-title">${level ? dot(level) : ''}${esc(title)}</h3>${body}</section>`;
+  function card(title, body, level, extra) {
+    return `<section class="mnt-card${level ? ' mnt-card-' + level : ''}${extra ? ' ' + extra : ''}"><h3 class="mnt-card-title">${level ? dot(level) : ''}${esc(title)}</h3>${body}</section>`;
   }
   function rows(pairs) {
     return '<ul class="mnt-rows">' + pairs.filter(Boolean).map(([k, v, cls]) =>
@@ -86,6 +86,86 @@
     if (a != null && b != null) return `CSI ${(+a).toFixed(3)} vs base ${(+b).toFixed(3)}`;
     if (b != null) return `CSI ${(+b).toFixed(3)} (base)`;
     return '—';
+  }
+
+  // ── Outils admin : les URL que je donne à ouvrir à la main ─────────────────
+  // Uniquement des LECTURES (GET) : rien ici ne modifie l'état du serveur. Les actions
+  // (purge mémoire, réentraînement, préchargement) restent où elles sont.
+  const OUTILS = [
+    { id: 'shadow-rebase', label: 'Ré-ancrage p90', url: '/api/server/shadow-rebase', lent: true,
+      desc: 'Courbe quantile→quantile + seuil, depuis le mode ombre. C\'est ce JSON qu\'il faut me coller le jour de la bascule.' },
+    { id: 'shadow-rebase-rapide', label: 'Ré-ancrage p90 (sans le seuil)', url: '/api/server/shadow-rebase?threshold=0',
+      desc: 'Même chose en sautant la partie lente : utile pour vérifier où en est la collecte.' },
+    { id: 'gii-shadow', label: 'Ombre GII', url: '/api/server/gii-shadow',
+      desc: 'Le trou de couverture satellite devance-t-il le premier écho radar ?' },
+    { id: 'memory-status', label: 'Mémoire serveur (détail)', url: '/api/server/memory-status',
+      desc: 'Occupation détaillée, au-delà du résumé affiché plus haut.' },
+    { id: 'history-inventory', label: 'Inventaire de l\'historique', url: '/api/history/inventory',
+      desc: 'Ce que contient réellement le volume durable, jour par jour.' },
+    { id: 'nwp-models', label: 'Modèles numériques', url: '/api/server/nwp-models',
+      desc: 'État des modèles disponibles et de leurs échéances.' },
+    { id: 'accounts', label: 'Comptes', url: '/api/server/accounts',
+      desc: 'Liste des comptes créés (sans mot de passe, évidemment).' },
+    { id: 'spots-pending', label: 'Spots en attente', url: '/api/spots/pending',
+      desc: 'Les propositions de spots qui attendent ta modération.' },
+  ];
+
+  // ⚠️ La mosaïque est REPEINTE toutes les 15 s (`grid.innerHTML = …`). Le résultat d'un
+  // outil serait donc effacé aussitôt, et un outil lent verrait sa sortie disparaître en
+  // plein vol. On garde donc l'état hors du DOM et on le REPEINT après chaque rendu.
+  let outilEtat = null;   // { label, etat, texte, ok }
+
+  function peindreOutil() {
+    const zone = document.getElementById('mntOutilOut');
+    if (!zone) return;
+    if (!outilEtat) { zone.hidden = true; zone.innerHTML = ''; return; }
+    const e = outilEtat;
+    zone.hidden = false;
+    zone.innerHTML = `<div class="mnt-tool-head"><strong>${esc(e.label)}</strong>`
+      + `<span class="mnt-tool-state${e.ok === false ? ' mnt-bad' : ''}">${esc(e.etat)}</span>`
+      + (e.texte ? '<button type="button" class="mnt-action" id="mntOutilCopy">Copier</button>'
+                 + '<button type="button" class="mnt-action" id="mntOutilClose">Fermer</button>' : '')
+      + '</div>'
+      + (e.texte ? `<pre class="mnt-tool-pre">${esc(e.texte)}</pre>` : '');
+    document.getElementById('mntOutilClose')?.addEventListener('click', () => { outilEtat = null; peindreOutil(); });
+    document.getElementById('mntOutilCopy')?.addEventListener('click', async () => {
+      const b = document.getElementById('mntOutilCopy');
+      try {
+        await navigator.clipboard.writeText(e.texte);
+        b.textContent = 'Copié';
+      } catch (_) {
+        // Presse-papier refusé (contexte non sécurisé, permission) : on sélectionne le
+        // texte pour que Ctrl+C fonctionne quand même.
+        const pre = zone.querySelector('.mnt-tool-pre');
+        const sel = window.getSelection(); const rg = document.createRange();
+        rg.selectNodeContents(pre); sel.removeAllRanges(); sel.addRange(rg);
+        b.textContent = 'sélectionné — Ctrl+C';
+      }
+      setTimeout(() => { b.textContent = 'Copier'; }, 2500);
+    });
+  }
+
+  async function lancerOutil(id) {
+    const o = OUTILS.find(x => x.id === id);
+    if (!o) return;
+    outilEtat = { label: o.label, texte: '', ok: null,
+      etat: 'en cours…' + (o.lent ? ' (cet outil relit des journées entières, sois patient)' : '') };
+    peindreOutil();
+    const t0 = performance.now();
+    let texte, ok = false;
+    try {
+      const r = await fetch(o.url);
+      const brut = await r.text();
+      ok = r.ok;
+      try { texte = JSON.stringify(JSON.parse(brut), null, 2); } catch (_) { texte = brut; }
+      if (!ok) texte = `HTTP ${r.status}\n\n${texte}`;
+    } catch (e) {
+      texte = 'Échec réseau : ' + (e && e.message ? e.message : String(e));
+    }
+    const ms = Math.round(performance.now() - t0);
+    outilEtat = { label: o.label, texte, ok,
+      etat: `${ok ? 'ok' : 'échec'} · ${ms} ms · ${texte.length.toLocaleString('fr-FR')} caractères` };
+    peindreOutil();
   }
 
   // ── Rendu de la mosaïque ────────────────────────────────────────────────────
@@ -237,6 +317,21 @@
         lvl));
     }
 
+    // ── Outils & diagnostics ─────────────────────────────────────────────────
+    // Les endpoints admin que je demande d'ouvrir à la main au fil des sessions
+    // (ré-ancrage p90, ombre GII, inventaire…). Un bouton par outil, le résultat
+    // affiché sur place et COPIABLE — c'est ce dernier point qui compte : le JSON
+    // se colle ensuite dans la conversation.
+    cards.push(card('Outils & diagnostics',
+      '<ul class="mnt-tools">' + OUTILS.map(o =>
+        `<li><div class="mnt-tool-t"><strong>${esc(o.label)}</strong>`
+        + (o.lent ? '<span class="mnt-tool-slow">lent</span>' : '')
+        + `<span class="mnt-tool-d">${esc(o.desc)}</span>`
+        + `<code class="mnt-tool-u">${esc(o.url)}</code></div>`
+        + `<button type="button" class="mnt-action" data-outil="${esc(o.id)}">Lancer</button></li>`
+      ).join('') + '</ul>'
+      + '<div class="mnt-tool-out" id="mntOutilOut" hidden></div>', null, 'mnt-actions-card'));
+
     // Pied : version + horodatage serveur
     cards.push(card('Serveur', rows([
       ['Version', d.version],
@@ -245,6 +340,9 @@
 
     grid.innerHTML = cards.join('');
     document.getElementById('maintenanceReportsOpen')?.addEventListener('click', openReports);
+    grid.querySelectorAll('[data-outil]').forEach(b =>
+      b.addEventListener('click', () => lancerOutil(b.getAttribute('data-outil'))));
+    peindreOutil();   // la mosaïque vient d'être repeinte : on restitue le résultat en cours
   }
 
   // ── Console : actions + terminal + logs ─────────────────────────────────────
