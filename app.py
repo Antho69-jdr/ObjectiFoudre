@@ -60,6 +60,7 @@ import stargaze  # mode « chasse d'étoile » : pollution lumineuse + astro
 import horizon  # « Mes spots » : horizon / champ de vision dégagé (topographie RGE ALTI)
 import spots  # « Mes spots » : store JSON des spots partagés + modération
 import accounts  # « Système de compte » : store SQLite (utilisateurs, sessions, préférences)
+import access  # « Mode gratuit / Mode de paiement » : périmètre gratuit-payant (politique pure)
 import forum  # « Forum » : store SQLite (catégories thématiques → sujets → messages)
 import mailer  # « Système de compte » : envoi d'e-mails transactionnels (vérification, reset)
 import push  # « Alertes orage » (Phase 4) : Web Push (VAPID) + géométrie des départements
@@ -87,7 +88,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.265"
+APP_VERSION = "1.3.266"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -1898,6 +1899,34 @@ async def _admin_secret_dep(request: Request) -> None:
     dans OBJECTIFOUDRE_ADMIN_EMAILS. Plus de secret d'URL. Défini TÔT (avant tout décorateur qui
     l'utilise) ; son corps délègue à _require_admin_account, résolu au runtime (défini plus bas)."""
     await _require_admin_account(request)
+
+
+class PaywallError(Exception):
+    """Refus de périmètre (HTTP 402). Porte le corps déjà construit par access.denial() pour
+    que la réponse soit IDENTIQUE qu'on refuse depuis une dépendance ou depuis un handler."""
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        super().__init__(payload.get("error", "Abonnement requis."))
+        self.payload = payload
+
+
+@app.exception_handler(PaywallError)
+async def _paywall_error_handler(request: Request, exc: PaywallError) -> JSONResponse:
+    return JSONResponse(exc.payload, status_code=402)
+
+
+def _paywall_dep(feature: str, horizon: int = 0):
+    """Fabrique une dépendance FastAPI qui exige le droit `feature` (cf. access.py).
+    Défini TÔT, comme _admin_secret_dep ; le corps délègue à _require_access, résolu au
+    runtime. Pour les routes dont l'horizon dépend du CORPS de la requête (la carte
+    gratuite et la page Risque partagent une route), on appelle _require_access dans le
+    handler avec la date demandée, au lieu de cette dépendance."""
+
+    async def _dep(request: Request) -> None:
+        await _require_access(request, feature, horizon=horizon)
+
+    _dep.__name__ = f"_paywall_{feature}"
+    return _dep
 
 
 app.add_middleware(
@@ -4808,13 +4837,31 @@ def _stargaze_tonight() -> dict[str, Any]:
     return data
 
 
+async def _stargaze_trim_for_access(request: Request, data: Any) -> Any:
+    """La carte des étoiles de ce soir est GRATUITE, le dôme ne l'est pas — et les deux
+    sortent du même appel (stargaze.js:743 n'en fait qu'un). On retire donc les champs
+    propres au dôme au lieu de refuser la route. Ne mutile JAMAIS le dict en cache :
+    on renvoie une copie."""
+    if not access.paywall_enabled() or not isinstance(data, dict):
+        return data
+    _user, entitled = await _access_context(request)
+    if access.is_allowed("stargaze_deep", entitled=entitled):
+        return data
+    out = {k: v for k, v in data.items() if k not in access.STARGAZE_DOME_FIELDS}
+    moon = data.get("moon")
+    if isinstance(moon, dict):
+        out["moon"] = {k: v for k, v in moon.items() if k not in access.STARGAZE_DOME_MOON_FIELDS}
+    out["dome_locked"] = True
+    return out
+
+
 @app.get("/api/stargaze/tonight")
-async def stargaze_tonight() -> dict[str, Any]:
+async def stargaze_tonight(request: Request) -> dict[str, Any]:
     """Meilleur spot d'observation CE SOIR : score par cellule (obscurité du site ×
     ciel dégagé AROME × phase de Lune) HEURE PAR HEURE sur la nuit d'observation,
     + top spots + contexte astro (Lune, nuit noire). Repli propre si la grille AROME
     n'est pas chargée (ok=False, l'obscurité reste dispo via /darkmap)."""
-    return await asyncio.to_thread(_stargaze_tonight)
+    return await _stargaze_trim_for_access(request, await asyncio.to_thread(_stargaze_tonight))
 
 
 # ── AGENDA ASTRO DE L'ANNÉE (item Trello « Agenda … levé/couché de soleil/lune ») ─
@@ -4849,7 +4896,7 @@ def _stargaze_agenda(year: int) -> dict[str, Any]:
     return data
 
 
-@app.get("/api/stargaze/agenda")
+@app.get("/api/stargaze/agenda", dependencies=[Depends(_paywall_dep("stargaze_deep"))])
 async def stargaze_agenda(year: int | None = Query(None, ge=2020, le=2035)) -> dict[str, Any]:
     """Agenda astro d'une année (défaut : année en cours) — lever/coucher du Soleil
     et de la Lune par jour calendaire local + phase de Lune (centre France)."""
@@ -5010,7 +5057,7 @@ def _stargaze_outlook_sync() -> dict[str, Any]:
     return data
 
 
-@app.get("/api/stargaze/outlook")
+@app.get("/api/stargaze/outlook", dependencies=[Depends(_paywall_dep("stargaze_deep"))])
 async def stargaze_outlook() -> dict[str, Any]:
     """Prévision de nébulosité des prochaines nuits (ECMWF IFS open data, ~J+1→J+9) :
     carte de qualité d'observation par nuit (obscurité × ciel dégagé ECMWF × Lune) +
@@ -5018,7 +5065,7 @@ async def stargaze_outlook() -> dict[str, Any]:
     return await asyncio.to_thread(_stargaze_outlook_sync)
 
 
-@app.get("/api/horizon")
+@app.get("/api/horizon", dependencies=[Depends(_paywall_dep("spots"))])
 async def api_horizon(
     lon: float = Query(..., ge=-5.5, le=9.8),
     lat: float = Query(..., ge=41.0, le=51.6),
@@ -5344,7 +5391,7 @@ class SpotDiscoverRequest(BaseModel):
     radius_km: float = Field(50.0, ge=10.0, le=150.0)
 
 
-@app.post("/api/spots/discover")
+@app.post("/api/spots/discover", dependencies=[Depends(_paywall_dep("spots"))])
 async def api_spots_discover(payload: SpotDiscoverRequest) -> dict[str, Any]:
     """Lance une recherche automatique de spots autour d'un point (job de fond). Renvoie un
     `job` à sonder via /api/spots/discover/status."""
@@ -5359,7 +5406,7 @@ async def api_spots_discover(payload: SpotDiscoverRequest) -> dict[str, Any]:
     return {"ok": True, "job": job_id}
 
 
-@app.get("/api/spots/discover/status")
+@app.get("/api/spots/discover/status", dependencies=[Depends(_paywall_dep("spots"))])
 async def api_spots_discover_status(job: str = Query(...)) -> dict[str, Any]:
     with _discover_lock:
         j = _discover_jobs.get(job)
@@ -5382,7 +5429,7 @@ def _enrich_public_pseudos(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return items
 
 
-@app.get("/api/spots")
+@app.get("/api/spots", dependencies=[Depends(_paywall_dep("spots"))])
 async def api_spots_list() -> dict[str, Any]:
     """Spots publics approuvés — alimente le calque des 3 cartes + la vue tableau.
     Enrichi du pseudo de l'auteur (si le spot a été partagé par un compte)."""
@@ -5390,7 +5437,7 @@ async def api_spots_list() -> dict[str, Any]:
     return {"ok": True, "spots": await asyncio.to_thread(_enrich_public_pseudos, pub)}
 
 
-@app.post("/api/spots")
+@app.post("/api/spots", dependencies=[Depends(_paywall_dep("spots"))])
 async def api_spots_create(payload: SpotCreateRequest, background_tasks: BackgroundTasks,
                            request: Request) -> dict[str, Any]:
     """Crée un spot.
@@ -5416,7 +5463,7 @@ async def api_spots_create(payload: SpotCreateRequest, background_tasks: Backgro
                                  ("id", "name", "lon", "lat", "notes", "status", "created_utc")}}
 
 
-@app.get("/api/spots/mine")
+@app.get("/api/spots/mine", dependencies=[Depends(_paywall_dep("spots"))])
 async def api_spots_mine(request: Request) -> dict[str, Any]:
     """Mes spots (perso privés + partagés) — connecté uniquement. Chaque spot porte son `status`
     (private / pending / approved / rejected) pour piloter les actions du propriétaire."""
@@ -5426,7 +5473,7 @@ async def api_spots_mine(request: Request) -> dict[str, Any]:
     return {"ok": True, "spots": await asyncio.to_thread(spots.list_mine, user["id"])}
 
 
-@app.post("/api/spots/{spot_id}/share")
+@app.post("/api/spots/{spot_id}/share", dependencies=[Depends(_paywall_dep("spots"))])
 async def api_spots_share(spot_id: str, request: Request) -> dict[str, Any]:
     """Propose mon spot perso au public → statut 'pending' (modération). Propriétaire requis."""
     user = await _account_current_user(request)
@@ -5439,7 +5486,7 @@ async def api_spots_share(spot_id: str, request: Request) -> dict[str, Any]:
     return {"ok": True, "spot": res}
 
 
-@app.post("/api/spots/{spot_id}/unshare")
+@app.post("/api/spots/{spot_id}/unshare", dependencies=[Depends(_paywall_dep("spots"))])
 async def api_spots_unshare(spot_id: str, request: Request) -> dict[str, Any]:
     """Retire mon spot du public / de la file de modération → redevient perso privé. Propriétaire requis."""
     user = await _account_current_user(request)
@@ -5452,7 +5499,7 @@ async def api_spots_unshare(spot_id: str, request: Request) -> dict[str, Any]:
     return {"ok": True, "spot": res}
 
 
-@app.post("/api/spots/{spot_id}/owner-update")
+@app.post("/api/spots/{spot_id}/owner-update", dependencies=[Depends(_paywall_dep("spots"))])
 async def api_spots_owner_update(spot_id: str, payload: SpotOwnerUpdateRequest,
                                  background_tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
     """Le propriétaire modifie son spot (nom, notes, position, donut). Le statut est conservé ;
@@ -5472,7 +5519,7 @@ async def api_spots_owner_update(spot_id: str, payload: SpotOwnerUpdateRequest,
     return {"ok": True, "spot": {k: updated[k] for k in ("id", "name", "lon", "lat", "notes", "status", "inner_radius_m")}}
 
 
-@app.delete("/api/spots/{spot_id}/owner")
+@app.delete("/api/spots/{spot_id}/owner", dependencies=[Depends(_paywall_dep("spots"))])
 async def api_spots_owner_delete(spot_id: str, request: Request) -> dict[str, Any]:
     """Le propriétaire supprime définitivement son spot (perso ou partagé). Propriétaire requis."""
     user = await _account_current_user(request)
@@ -15978,7 +16025,8 @@ def _serve_france_day_models_sync(target_date: Date, grid: str | None, detail_le
 
 
 @app.post("/api/meteofrance/grib-france-slot-grid-cache")
-async def meteofrance_grib_france_slot_grid_cache(payload: MeteoFranceGribSlotGridRequest) -> dict[str, Any]:
+async def meteofrance_grib_france_slot_grid_cache(request: Request, payload: MeteoFranceGribSlotGridRequest) -> dict[str, Any]:
+    await _require_access(request, "base_map", horizon=_horizon_days(payload.date))
     requested_render = (payload.detail_level or "").strip().lower() == METEOFRANCE_SLOT_GRID_RENDER_DETAIL
     result = await asyncio.to_thread(
         _serve_france_slot_models_sync,
@@ -16002,9 +16050,10 @@ class MeteoFranceCellDetailsRequest(BaseModel):
 
 
 @app.post("/api/meteofrance/grib-france-cell-details")
-async def meteofrance_grib_france_cell_details(payload: MeteoFranceCellDetailsRequest) -> dict[str, Any]:
+async def meteofrance_grib_france_cell_details(request: Request, payload: MeteoFranceCellDetailsRequest) -> dict[str, Any]:
     """Cellule COMPLÈTE (metric_scores, metrics_used, diagnostics…) pour le modal de
     détails, quand la grille a été chargée en niveau « render » allégé."""
+    await _require_access(request, "cell_detail", horizon=_horizon_days(payload.date))
     result = await asyncio.to_thread(
         _serve_france_slot_models_sync,
         payload.date,
@@ -16059,15 +16108,17 @@ def _wind_profile_sync(target_date: Date, hour: int, lat: float, lon: float) -> 
 
 
 @app.post("/api/meteofrance/grib-france-wind-profile")
-async def meteofrance_grib_france_wind_profile(payload: MeteoFranceWindProfileRequest) -> dict[str, Any]:
+async def meteofrance_grib_france_wind_profile(request: Request, payload: MeteoFranceWindProfileRequest) -> dict[str, Any]:
     """Profil vertical de vent (force + direction) à plusieurs niveaux de pression au point
     de la cellule, pour le modal de détails. À la demande, non-fatal."""
+    await _require_access(request, "cell_detail", horizon=_horizon_days(payload.date))
     profile = await asyncio.to_thread(_wind_profile_sync, payload.date, payload.hour, payload.lat, payload.lon)
     return {"ok": True, "profile": profile}
 
 
 @app.post("/api/meteofrance/grib-france-day-cache")
-async def meteofrance_grib_france_day_cache(payload: MeteoFranceGribCacheStatusRequest) -> dict[str, Any]:
+async def meteofrance_grib_france_day_cache(request: Request, payload: MeteoFranceGribCacheStatusRequest) -> dict[str, Any]:
+    await _require_access(request, "base_map", horizon=_horizon_days(payload.date))
     requested_render = (payload.detail_level or "").strip().lower() == METEOFRANCE_SLOT_GRID_RENDER_DETAIL
     result = await asyncio.to_thread(
         _serve_france_day_models_sync,
@@ -16239,11 +16290,12 @@ def _serve_france_day_compact_sync(target_date: Date, grid: str | None, token: s
 
 
 @app.post("/api/meteofrance/grib-france-day-compact")
-async def meteofrance_grib_france_day_compact(payload: MeteoFranceGribCacheStatusRequest) -> dict[str, Any]:
+async def meteofrance_grib_france_day_compact(request: Request, payload: MeteoFranceGribCacheStatusRequest) -> dict[str, Any]:
     """Lot compact d'un jour France : la géométrie est servie à part (/france-grid-geometry) ;
     ici on ne renvoie QUE les valeurs par cellule (score/confiance/cape/rafale/temp/rosée), en
     tableaux alignés sur l'ordre canonique de la géométrie → ~40× plus léger que le render.
     Lecture pure via le chemin de service (archive Phase 2), aucun recalcul de score."""
+    await _require_access(request, "base_map", horizon=_horizon_days(payload.date))
     return await asyncio.to_thread(_serve_france_day_compact_sync, payload.date, payload.grid, payload.token)
 
 
@@ -16297,7 +16349,7 @@ async def _warm_history_day(date_str: str) -> None:
         pass
 
 
-@app.get("/api/history/dates")
+@app.get("/api/history/dates", dependencies=[Depends(_paywall_dep("history"))])
 async def history_dates() -> dict[str, Any]:
     dates = await asyncio.to_thread(_list_history_dates)
     # Préchauffe en arrière-plan les caches des dates récentes : à l'ouverture de
@@ -16318,7 +16370,7 @@ async def history_dates() -> dict[str, Any]:
     }
 
 
-@app.get("/api/history/day")
+@app.get("/api/history/day", dependencies=[Depends(_paywall_dep("history"))])
 async def history_day(
     date: str = Query(..., min_length=10, max_length=10),
     full: bool = Query(False),
@@ -16334,7 +16386,7 @@ async def history_day(
     return Response(content=cached, media_type="application/json")
 
 
-@app.get("/api/history/verification")
+@app.get("/api/history/verification", dependencies=[Depends(_paywall_dep("history"))])
 async def history_verification(date: str = Query(..., min_length=10, max_length=10)) -> dict[str, Any]:
     if not _is_iso_date(date):
         raise HTTPException(status_code=400, detail="Date attendue au format AAAA-MM-JJ.")
@@ -16360,7 +16412,7 @@ def _run_lightning_collect_job(date_str: str) -> None:
         _li_collect_jobs[date_str] = {**state, "at": time.time()}
 
 
-@app.post("/api/history/collect-lightning")
+@app.post("/api/history/collect-lightning", dependencies=[Depends(_paywall_dep("history"))])
 async def history_collect_lightning(date: str = Query(..., min_length=10, max_length=10)) -> dict[str, Any]:
     if not _is_iso_date(date):
         raise HTTPException(status_code=400, detail="Date attendue au format AAAA-MM-JJ.")
@@ -16385,14 +16437,14 @@ async def history_collect_lightning(date: str = Query(..., min_length=10, max_le
     return {"ok": True, "date": date, "started": True}
 
 
-@app.get("/api/history/collect-status")
+@app.get("/api/history/collect-status", dependencies=[Depends(_paywall_dep("history"))])
 async def history_collect_status(date: str = Query(..., min_length=10, max_length=10)) -> dict[str, Any]:
     with _li_collect_jobs_lock:
         job = _li_collect_jobs.get(date)
     return {"ok": True, "date": date, **(job or {"state": "none"})}
 
 
-@app.get("/api/history/lightning")
+@app.get("/api/history/lightning", dependencies=[Depends(_paywall_dep("history"))])
 async def history_lightning(date: str = Query(..., min_length=10, max_length=10)) -> dict[str, Any]:
     """Points de foudre observés (lat, lon) pour l'overlay sur la carte."""
     if not _is_iso_date(date):
@@ -16713,6 +16765,15 @@ def _server_telemetry_sync() -> dict[str, Any]:
                        "alerts_enabled": OBJECTIFOUDRE_PUSH_ALERTS, "last_scan": dict(_push_alert_stats)}
     except Exception as exc:  # noqa: BLE001
         out["push"] = {"error": str(exc)[:150]}
+
+    # Droits d'accès (cartes « Mode gratuit » / « Mode de paiement »). Le drapeau dit si
+    # le périmètre est RÉELLEMENT appliqué : sans lui, ces compteurs sont dormants.
+    try:
+        out["access"] = {**accounts.entitlement_stats(),
+                         "paywall_enabled": access.paywall_enabled(),
+                         "trial_days": access.TRIAL_DAYS}
+    except Exception as exc:  # noqa: BLE001
+        out["access"] = {"error": str(exc)[:150]}
 
     return out
 
@@ -17150,6 +17211,68 @@ async def _require_admin_account(request: Request) -> dict[str, Any]:
     return user
 
 
+# ── Périmètre gratuit / payant (cartes « Mode gratuit » + « Mode de paiement ») ──────
+# La POLITIQUE est dans access.py, le STOCKAGE dans accounts.py ; ici, uniquement le
+# raccordement HTTP. Tant que OBJECTIFOUDRE_PAYWALL n'est pas posé, _require_access sort
+# à la première ligne : aucune lecture de session, aucune requête SQLite, prod inchangée.
+def _horizon_days(date_value: Any, *, missing: int = 0) -> int:
+    """Jours entre aujourd'hui (Europe/Paris) et la date demandée. `missing` s'applique
+    quand aucune date n'est fournie (la requête porte sur l'instant présent) ; une date
+    ILLISIBLE renvoie un horizon hors de tout périmètre gratuit — on ferme, on n'ouvre pas."""
+    raw = str(date_value or "").strip()
+    if not raw:
+        return missing
+    try:
+        target = Date.fromisoformat(raw[:10])
+    except (ValueError, TypeError):
+        return 10 ** 6
+    today = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    return (target - today).days
+
+
+async def _access_context(request: Request) -> tuple[dict[str, Any] | None, bool]:
+    """(compte connecté, a-t-il un droit actif). Une seule lecture par requête."""
+    user = await _account_current_user(request)
+    if not user:
+        return None, False
+    entitled = await asyncio.to_thread(accounts.is_entitled, user["id"])
+    return user, bool(entitled)
+
+
+async def _trial_available_for(user: dict[str, Any] | None) -> bool:
+    """L'essai est-il encore disponible pour ce compte ? Verrouillé sur l'ADRESSE, pas sur
+    le compte : recréer un compte ne le redonne pas (accounts.trial_claims)."""
+    email = str((user or {}).get("email") or "").strip()
+    if not email or not (user or {}).get("email_verified"):
+        return False
+    return not await asyncio.to_thread(accounts.trial_claimed, email)
+
+
+async def _require_access(request: Request, feature: str, *, horizon: int = 0) -> dict[str, Any] | None:
+    """Exige le droit `feature` à l'horizon demandé, sinon lève un 402 porteur de l'offre."""
+    if not access.paywall_enabled():
+        return None
+    user, entitled = await _access_context(request)
+    if access.is_allowed(feature, horizon=horizon, entitled=entitled):
+        return user
+    raise PaywallError(access.denial(feature, horizon=horizon,
+                                     trial_available=await _trial_available_for(user)))
+
+
+async def _access_view(user: dict[str, Any] | None) -> dict[str, Any]:
+    """État des droits exposé au compte LUI-MÊME (/api/account/me). Lecture seule : le
+    front s'en sert pour l'affichage, jamais pour l'autorisation — elle est côté serveur."""
+    ent = await asyncio.to_thread(accounts.entitlement_for, user["id"]) if user else None
+    return {
+        "paywall": access.paywall_enabled(),
+        "entitled": bool(ent and ent["active"]),
+        "source": (ent or {}).get("source"),
+        "expires_utc": (ent or {}).get("expires_utc"),
+        "trial_available": await _trial_available_for(user),
+        "offer": access.OFFER,
+    }
+
+
 def _oauth_exchange_userinfo(provider: str, code: str, redirect_uri: str) -> dict[str, Any]:
     """Échange le code contre un access_token puis lit le profil OpenID (sub/email/name)."""
     conf = _OAUTH_PROVIDERS[provider]
@@ -17416,7 +17539,30 @@ async def account_me(request: Request) -> dict[str, Any]:
             "google_configured": oauth.get("google", False),   # compat front historique
             "oauth": oauth, "email_enabled": mailer.configured(),
             "is_admin": _is_admin_user(user),
+            "access": await _access_view(user),
             "user": accounts.private_view(user) if user else None}
+
+
+@app.post("/api/account/trial")
+async def account_start_trial(request: Request) -> Response:
+    """Démarre l'essai de 7 jours. Déclenché AU MUR (quand l'utilisateur bute sur une
+    fonction payante), pas à la création du compte : sinon l'essai s'épuise sur sept jours
+    de ciel bleu et ne prouve rien (décision du 2026-09-04).
+    Verrouillé sur l'e-mail VÉRIFIÉ : sans vérification, on pourrait brûler l'essai d'une
+    adresse qui ne nous appartient pas."""
+    user = await _account_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
+    if not user.get("email_verified"):
+        return JSONResponse({"ok": False, "error": "Vérifiez votre adresse e-mail pour démarrer l'essai."},
+                            status_code=400)
+    if await asyncio.to_thread(accounts.is_entitled, user["id"]):
+        return JSONResponse({"ok": False, "error": "Vous avez déjà un accès en cours."}, status_code=400)
+    try:
+        await asyncio.to_thread(accounts.start_trial, user["id"], user.get("email") or "")
+    except accounts.AccountError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, "access": await _access_view(user)})
 
 
 class AccountPseudoRequest(BaseModel):
@@ -17522,13 +17668,13 @@ async def push_vapid_public_key() -> dict[str, Any]:
     return {"ok": True, "key": push.vapid_public_key(), "configured": push.push_configured()}
 
 
-@app.get("/api/push/departments")
+@app.get("/api/push/departments", dependencies=[Depends(_paywall_dep("alerts"))])
 async def push_departments() -> dict[str, Any]:
     """Liste [{code, nom}] des départements sélectionnables (métropole + Corse). Publique."""
     return {"ok": True, "departments": push.list_departments()}
 
 
-@app.get("/api/push/me")
+@app.get("/api/push/me", dependencies=[Depends(_paywall_dep("alerts"))])
 async def push_me(request: Request) -> Response:
     """Abonnements push (appareils) de l'utilisateur connecté + leurs départements."""
     user = await _account_current_user(request)
@@ -17538,7 +17684,7 @@ async def push_me(request: Request) -> Response:
     return JSONResponse({"ok": True, "configured": push.push_configured(), "subscriptions": subs})
 
 
-@app.post("/api/push/subscribe")
+@app.post("/api/push/subscribe", dependencies=[Depends(_paywall_dep("alerts"))])
 async def push_subscribe(request: Request, payload: PushSubscribeRequest) -> Response:
     """Enregistre (ou met à jour) l'abonnement push de cet appareil + les départements suivis."""
     user = await _account_current_user(request)
@@ -17570,7 +17716,7 @@ async def push_unsubscribe(request: Request, payload: PushUnsubscribeRequest) ->
     return JSONResponse({"ok": True, "removed": removed})
 
 
-@app.post("/api/push/test")
+@app.post("/api/push/test", dependencies=[Depends(_paywall_dep("alerts"))])
 async def push_test(request: Request) -> Response:
     """Envoie une notification de test aux appareils de l'utilisateur connecté (validation de bout en bout)."""
     user = await _account_current_user(request)
@@ -18175,7 +18321,7 @@ async def ecmwf_trend_status() -> dict[str, Any]:
     return await asyncio.to_thread(_ecmwf_trend_status_sync)
 
 
-@app.post("/api/ecmwf/trend-day")
+@app.post("/api/ecmwf/trend-day", dependencies=[Depends(_paywall_dep("forecast_long"))])
 async def ecmwf_trend_day(payload: EcmwfTrendDayRequest) -> dict[str, Any]:
     """Grille ECMWF d'un jour. J+2/J+3 : MULTI-CRÉNEAUX 3-horaires (8 slots, remplace ARPEGE).
     J+4 → J+10 : tendance quotidienne (1 pic). Construite à la demande puis mise en cache."""
@@ -21724,7 +21870,7 @@ async def lightning_live() -> dict[str, Any]:
     }
 
 
-@app.get("/api/radar/fr/cells")
+@app.get("/api/radar/fr/cells", dependencies=[Depends(_paywall_dep("chase_cells"))])
 async def fr_radar_cells() -> dict[str, Any]:
     """Cellules convectives suivies (dernière mosaïque) : position, vitesse/direction, tendance
     croissance/décroissance, trajectoire passée + positions extrapolées +10/+20/+30 min.
@@ -21788,7 +21934,7 @@ def _fr_radar_point_sync(lat: float, lon: float) -> dict[str, Any]:
         return {"ok": False, "reason": str(exc)}
 
 
-@app.get("/api/radar/fr/point")
+@app.get("/api/radar/fr/point", dependencies=[Depends(_paywall_dep("chase_cells"))])
 async def fr_radar_point(
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),

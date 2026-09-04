@@ -10,6 +10,12 @@ Phase 3 : identités multiples (plusieurs fournisseurs OAuth + mot de passe) par
   email_tokens(token_hash PK, user_id, kind, email, created_utc, expires_utc)  ← verify/reset
   sessions(token_hash PK, user_id, created_utc, expires_utc, last_seen_utc)
 
+Phase 5 : droits d'accès (abonnement/essai) — la POLITIQUE est dans access.py, ici le stockage.
+  entitlements(user_id PK → users, plan, source, status, started/expires_utc, external_ref)
+  trial_claims(claim_hash PK, claimed_utc, user_id)   ← SANS cascade : survit à la suppression
+                                                        du compte, sinon l'essai se recycle.
+  ⚠️ `push_subscriptions` (plus bas) = alertes orage, AUCUN rapport avec le paiement.
+
 Secrets : le mot de passe est stocké HACHÉ (PBKDF2-HMAC-SHA256, sel par utilisateur,
 stdlib — aucune dépendance) ; les jetons de session et d'e-mail sont stockés HACHÉS
 (sha256) — une fuite de la base n'expose ni mot de passe en clair ni session/lien vif.
@@ -30,6 +36,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+
+import access                      # politique gratuit/payant (module pur, sans état)
 
 HERE = Path(__file__).resolve().parent
 
@@ -142,6 +150,31 @@ def init_db() -> None:
                 PRIMARY KEY (subscription_id, dept)
             );
             CREATE INDEX IF NOT EXISTS idx_push_dept ON push_departments (dept);
+            -- Phase 5 : DROITS D'ACCÈS (abonnement/essai). ⚠️ NE PAS confondre avec
+            -- push_subscriptions ci-dessus, qui sont les alertes orage : le mot
+            -- « subscription » est déjà pris, d'où « entitlements ».
+            -- Le droit ne vit JAMAIS dans users.prefs : /api/account/prefs est patchable
+            -- par l'utilisateur lui-même, ce serait lui offrir l'abonnement.
+            CREATE TABLE IF NOT EXISTS entitlements (
+                user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                plan         TEXT NOT NULL,            -- 'sub' (accès complet)
+                source       TEXT NOT NULL,            -- 'trial' | 'manual' | prestataire (plus tard)
+                status       TEXT NOT NULL,            -- 'active' | 'canceled'
+                started_utc  TEXT NOT NULL,
+                expires_utc  TEXT,                     -- NULL = sans échéance
+                updated_utc  TEXT NOT NULL,
+                external_ref TEXT                      -- id prestataire ; vide à l'étape 1
+            );
+            CREATE INDEX IF NOT EXISTS idx_entitlements_expiry ON entitlements (expires_utc);
+            -- Anti-recyclage de l'essai : cette table SURVIT à la suppression du compte,
+            -- sinon l'essai de 7 jours se renouvelle en recréant un compte. D'où l'absence
+            -- VOLONTAIRE de clé étrangère et de cascade. On n'y stocke pas l'e-mail mais
+            -- son empreinte sha256 : la donnée est minimisée, jamais lisible en clair.
+            CREATE TABLE IF NOT EXISTS trial_claims (
+                claim_hash  TEXT PRIMARY KEY,
+                claimed_utc TEXT NOT NULL,
+                user_id     TEXT                       -- indicatif : le compte peut avoir disparu
+            );
             """
         )
         # Migration douce : colonne password_hash (ajoutée si absente).
@@ -778,6 +811,127 @@ def mark_push_failure(subscription_id: str, gone: bool = False, max_fail: int = 
     return False
 
 
+# ── Droits d'accès : abonnement et essai (Phase 5) ───────────────────────────
+# La POLITIQUE (quelle fonction est gratuite, jusqu'à quel horizon) vit dans access.py ;
+# ici, uniquement le stockage. Un droit n'est JAMAIS écrit dans users.prefs.
+def _claim_hash(email: str) -> str:
+    """Empreinte de l'e-mail normalisé — la seule chose qu'on garde après la suppression
+    d'un compte, pour que l'essai ne se renouvelle pas en recréant un compte."""
+    return hashlib.sha256(f"trial:{email.strip().lower()}".encode("utf-8")).hexdigest()
+
+
+def _entitlement_view(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    exp = row["expires_utc"]
+    active = row["status"] == "active" and (not exp or exp > _now_iso())
+    return {
+        "plan": row["plan"], "source": row["source"], "status": row["status"],
+        "started_utc": row["started_utc"], "expires_utc": exp,
+        "updated_utc": row["updated_utc"], "external_ref": row["external_ref"],
+        "active": active,
+    }
+
+
+def entitlement_for(user_id: str) -> dict[str, Any] | None:
+    """Droit du compte, ou None s'il n'en a jamais eu. `active` dit s'il vaut aujourd'hui."""
+    if not user_id:
+        return None
+    with _db() as c:
+        row = c.execute("SELECT * FROM entitlements WHERE user_id = ?", (user_id,)).fetchone()
+    return _entitlement_view(row)
+
+
+def is_entitled(user_id: str) -> bool:
+    """Le compte a-t-il un droit ACTIF (abonnement en cours ou essai non expiré) ?"""
+    ent = entitlement_for(user_id)
+    return bool(ent and ent["active"])
+
+
+def grant_entitlement(user_id: str, source: str, *, days: float | None = None,
+                      plan: str = "sub", external_ref: str | None = None) -> dict[str, Any]:
+    """Ouvre (ou prolonge) un droit. `days=None` = sans échéance — réservé à un abonnement
+    récurrent vivant, dont c'est le prestataire qui dira l'arrêt via son webhook signé."""
+    if not user_id:
+        raise AccountError("Compte inconnu.")
+    now = _now_iso()
+    expires = None
+    if days is not None:
+        expires = datetime.fromtimestamp(time.time() + float(days) * 86400,
+                                         timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with _lock, _db() as c:
+        if c.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone() is None:
+            raise AccountError("Compte inconnu.")
+        c.execute(
+            "INSERT INTO entitlements (user_id, plan, source, status, started_utc, expires_utc,"
+            " updated_utc, external_ref) VALUES (?,?,?,'active',?,?,?,?)"
+            " ON CONFLICT(user_id) DO UPDATE SET plan=excluded.plan, source=excluded.source,"
+            " status='active', expires_utc=excluded.expires_utc, updated_utc=excluded.updated_utc,"
+            " external_ref=COALESCE(excluded.external_ref, entitlements.external_ref)",
+            (user_id, plan, source, now, expires, now, external_ref),
+        )
+        row = c.execute("SELECT * FROM entitlements WHERE user_id = ?", (user_id,)).fetchone()
+    return _entitlement_view(row)
+
+
+def revoke_entitlement(user_id: str) -> dict[str, Any] | None:
+    """Coupe le droit sans effacer la trace (on garde de quoi comprendre l'historique)."""
+    now = _now_iso()
+    with _lock, _db() as c:
+        c.execute("UPDATE entitlements SET status = 'canceled', updated_utc = ? WHERE user_id = ?",
+                  (now, user_id))
+        row = c.execute("SELECT * FROM entitlements WHERE user_id = ?", (user_id,)).fetchone()
+    return _entitlement_view(row)
+
+
+def trial_claimed(email: str) -> bool:
+    """L'essai a-t-il déjà été pris par cette adresse — même si le compte a été supprimé
+    depuis ? C'est tout l'intérêt de la table."""
+    email = str(email or "").strip()
+    if not email:
+        return False
+    with _db() as c:
+        return c.execute("SELECT 1 FROM trial_claims WHERE claim_hash = ?",
+                         (_claim_hash(email),)).fetchone() is not None
+
+
+def start_trial(user_id: str, email: str, days: float | None = None) -> dict[str, Any]:
+    """Démarre l'essai de 7 jours. Verrouillé sur l'ADRESSE E-MAIL, pas sur le compte :
+    sans ça, il suffit de recréer un compte pour recommencer. Une empreinte est conservée
+    après suppression du compte — à mentionner dans la page confidentialité le jour de
+    l'ouverture. Le passage à une empreinte de moyen de paiement (plus solide encore,
+    mais impossible sans prestataire) sera une colonne de plus, pas une refonte."""
+    email = str(email or "").strip()
+    if not email:
+        raise AccountError("Un e-mail est nécessaire pour démarrer l'essai.")
+    if days is None:
+        days = access.TRIAL_DAYS
+    if trial_claimed(email):
+        raise AccountError("L'essai a déjà été utilisé avec cette adresse e-mail.")
+    ent = grant_entitlement(user_id, "trial", days=days)
+    with _lock, _db() as c:
+        c.execute("INSERT OR IGNORE INTO trial_claims (claim_hash, claimed_utc, user_id) VALUES (?,?,?)",
+                  (_claim_hash(email), _now_iso(), user_id))
+    return ent
+
+
+def entitlement_stats() -> dict[str, Any]:
+    """Compteurs pour la télémétrie admin (droits d'accès)."""
+    now = _now_iso()
+    with _db() as c:
+        rows = c.execute("SELECT source, status, expires_utc FROM entitlements").fetchall()
+        claims = c.execute("SELECT COUNT(*) AS n FROM trial_claims").fetchone()["n"]
+    active = [r for r in rows if r["status"] == "active" and (not r["expires_utc"] or r["expires_utc"] > now)]
+    return {
+        "total": len(rows),
+        "active": len(active),
+        "active_trials": sum(1 for r in active if r["source"] == "trial"),
+        "active_paid": sum(1 for r in active if r["source"] != "trial"),
+        "expired_or_canceled": len(rows) - len(active),
+        "trials_ever_claimed": claims,
+    }
+
+
 def push_stats() -> dict[str, Any]:
     """Compteurs pour la télémétrie admin (abonnements push)."""
     with _db() as c:
@@ -954,6 +1108,62 @@ if __name__ == "__main__":
     save_push_subscription(u2["id"], "https://push.example/ep2", "k", "a", ["75"])
     delete_user(u2["id"])
     check("push : cascade RGPD à la suppression du compte", push_subscribers_for_dept("75") == [])
+
+    # ── Droits d'accès (Phase 5) : abonnement et essai ──
+    print("=== droits d'accès (Phase 5) ===")
+    ue = register_local("essai@example.com", "MotDePasse42")
+    check("compte neuf = aucun droit", entitlement_for(ue["id"]) is None and not is_entitled(ue["id"]))
+    check("droit inexistant sur un id inconnu", entitlement_for("inconnu") is None)
+
+    g = grant_entitlement(ue["id"], "manual")
+    check("droit accordé sans échéance → actif", g["active"] and g["expires_utc"] is None)
+    check("is_entitled suit", is_entitled(ue["id"]) is True)
+    r = revoke_entitlement(ue["id"])
+    check("révocation coupe le droit", r["active"] is False and r["status"] == "canceled")
+    check("révocation garde la trace", entitlement_for(ue["id"]) is not None)
+
+    t = start_trial(ue["id"], "essai@example.com")
+    check("essai démarré → actif", t["active"] and t["source"] == "trial")
+    check("essai daté à 7 jours", t["expires_utc"] is not None and t["expires_utc"] > _now_iso())
+    try:
+        start_trial(ue["id"], "essai@example.com"); check("essai non renouvelable", False)
+    except AccountError:
+        check("essai non renouvelable sur la même adresse", True)
+    check("casse et espaces ignorés dans l'adresse", trial_claimed("  Essai@Example.COM  ") is True)
+    check("adresse jamais vue → essai disponible", trial_claimed("jamais-vu@example.com") is False)
+    try:
+        start_trial(ue["id"], ""); check("essai sans e-mail refusé", False)
+    except AccountError:
+        check("essai sans e-mail refusé", True)
+
+    check("droit expiré = inactif", grant_entitlement(ue["id"], "manual", days=-1)["active"] is False)
+    try:
+        grant_entitlement("compte-fantome", "manual"); check("droit sur compte inexistant refusé", False)
+    except AccountError:
+        check("droit sur compte inexistant refusé", True)
+
+    # Le piège annoncé par l'audit : un droit ne doit JAMAIS être atteignable via prefs,
+    # que l'utilisateur peut patcher lui-même (/api/account/prefs).
+    forge = set_prefs(ue["id"], {"entitled": True, "plan": "sub", "default_map": "chase"})
+    check("prefs ne peut pas forger un droit", "entitled" not in forge["prefs"] and "plan" not in forge["prefs"])
+    check("prefs légitimes toujours acceptées", forge["prefs"].get("default_map") == "chase")
+
+    st_ent = entitlement_stats()
+    check("entitlement_stats compte les essais réclamés", st_ent["trials_ever_claimed"] >= 1)
+    check("entitlement_stats : droit expiré non compté actif", st_ent["active"] == 0 and st_ent["total"] == 1)
+
+    # RGPD : le droit tombe avec le compte, l'empreinte d'essai SURVIT (sinon l'essai se
+    # renouvelle en recréant un compte) — c'est le seul reliquat volontaire.
+    delete_user(ue["id"])
+    check("droits : cascade RGPD à la suppression du compte", entitlement_for(ue["id"]) is None)
+    check("empreinte d'essai conservée après suppression (anti-recyclage)",
+          trial_claimed("essai@example.com") is True)
+    ue2 = register_local("essai@example.com", "MotDePasse42")
+    try:
+        start_trial(ue2["id"], "essai@example.com")
+        check("recréer le compte ne redonne pas l'essai", False)
+    except AccountError:
+        check("recréer le compte ne redonne pas l'essai", True)
 
     print(f"\n{ok['n'] - ok['fail']}/{ok['n']} OK" + ("" if ok["fail"] == 0 else f" — {ok['fail']} ÉCHEC(S)"))
     raise SystemExit(1 if ok["fail"] else 0)
