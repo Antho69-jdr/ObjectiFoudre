@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.256"
+APP_VERSION = "1.3.257"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -2949,6 +2949,230 @@ def _shadow_collection_status(max_days: int = 60) -> dict[str, Any]:
     except Exception:
         logging.getLogger("objectifoudre").warning("état de la collecte d'ombre illisible", exc_info=True)
     return out
+
+
+def _shadow_day_max_scores(date_str: str) -> dict[str, float]:
+    """Score p90 MAXIMAL de la journée par cellule, lu dans `history/shadow/{date}/`.
+
+    Miroir exact de `_forecast_day_cells` côté ombre : même clé (`verification.cell_key`)
+    et même agrégation « max sur les 24 créneaux », sans quoi les deux distributions ne
+    seraient pas comparables. Lecture seule, ne lève jamais."""
+    out: dict[str, float] = {}
+    base = OBJECTIFOUDRE_HISTORY_DIR / "shadow" / date_str
+    if not base.exists():
+        return out
+    for path in sorted(base.glob("h*.json.gz")):
+        try:
+            record = _read_history_gzip(path)
+        except Exception:
+            continue
+        if not isinstance(record, dict):
+            continue
+        for cell in (record.get("cells") or []):
+            lat, lon = cell.get("lat"), cell.get("lon")
+            if lat is None or lon is None:
+                continue
+            try:
+                trig = float(cell.get("trigger") or 0)
+            except (TypeError, ValueError):
+                continue
+            key = verification.cell_key(lat, lon)
+            if trig > out.get(key, -1.0):
+                out[key] = trig
+    return out
+
+
+def _quantile_sorted(values: list[float], q: float) -> float:
+    """Quantile d'une liste DÉJÀ triée, interpolé linéairement."""
+    if not values:
+        return 0.0
+    pos = q * (len(values) - 1)
+    lo, hi = int(math.floor(pos)), int(math.ceil(pos))
+    if lo == hi:
+        return float(values[lo])
+    return float(values[lo]) + (float(values[hi]) - float(values[lo])) * (pos - lo)
+
+
+def _apply_rebase_curve(curve: list[list[float]], score: float) -> float:
+    """Applique la courbe de ré-ancrage (interpolation linéaire par morceaux, extrémités
+    plates). `curve` = [[score_p90, score_nearest], …] croissante en x."""
+    if not curve:
+        return float(score)
+    if score <= curve[0][0]:
+        return float(curve[0][1])
+    if score >= curve[-1][0]:
+        return float(curve[-1][1])
+    for i in range(1, len(curve)):
+        x0, y0 = curve[i - 1]
+        x1, y1 = curve[i]
+        if score <= x1:
+            if x1 == x0:
+                return float(y1)
+            return float(y0) + (float(y1) - float(y0)) * ((score - x0) / (x1 - x0))
+    return float(curve[-1][1])
+
+
+def _rank_auc(scores: list[float], labels: list[int]) -> float | None:
+    """AUC par les RANGS (Mann-Whitney), ex aequo moyennés. None si une classe manque."""
+    n = len(scores)
+    if n == 0 or len(labels) != n:
+        return None
+    pos = sum(1 for l in labels if l)
+    neg = n - pos
+    if pos == 0 or neg == 0:
+        return None
+    order = sorted(range(n), key=lambda i: scores[i])
+    ranks = [0.0] * n
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and scores[order[j + 1]] == scores[order[i]]:
+            j += 1
+        moyenne = (i + j) / 2.0 + 1.0
+        for k in range(i, j + 1):
+            ranks[order[k]] = moyenne
+        i = j + 1
+    somme_pos = sum(r for r, l in zip(ranks, labels) if l)
+    return (somme_pos - pos * (pos + 1) / 2.0) / (pos * neg)
+
+
+def _distribution_stats(values: list[float]) -> dict[str, Any]:
+    if not values:
+        return {"n": 0}
+    triees = sorted(values)
+    return {
+        "n": len(values),
+        "moyenne": round(sum(values) / len(values), 2),
+        "mediane": round(_quantile_sorted(triees, 0.5), 2),
+        "p90": round(_quantile_sorted(triees, 0.9), 2),
+        "pct_sup_60": round(100.0 * sum(1 for v in values if v >= 60) / len(values), 2),
+    }
+
+
+def _shadow_rebase_report(*, with_threshold: bool = True, max_days: int = 60) -> dict[str, Any]:
+    """Dérive la COURBE DE RÉ-ANCRAGE p90 → plus proche voisin, et le SEUIL p90.
+
+    LECTURE SEULE, STRICTEMENT SANS EFFET : ne touche ni à l'agrégateur servi, ni au seuil
+    actif, ni à l'archive, ni au cache. Rend un JSON de quelques kilo-octets, pensé pour être
+    copié-collé — c'est le seul canal disponible, l'admin étant lié à une session de compte.
+
+    Le ré-ancrage : l'AUC est une mesure de RANG, donc invariante par transformation
+    monotone. Reclasser les scores p90 sur la distribution historique du plus proche voisin
+    garde le gain de discrimination ET restitue l'affichage d'avant. La courbe est la table
+    quantile → quantile des deux distributions, sur le MÊME support (cellules-jours présentes
+    des deux côtés)."""
+    rapport: dict[str, Any] = {
+        "collecte": _shadow_collection_status(max_days=max_days),
+        "avertissements": [],
+    }
+    base = OBJECTIFOUDRE_HISTORY_DIR / "shadow"
+    if not base.exists():
+        rapport["avertissements"].append("Aucun dossier history/shadow : la collecte n'a jamais tourné.")
+        return rapport
+    try:
+        dates = sorted([d.name for d in base.iterdir() if d.is_dir()])[-max_days:]
+    except Exception:
+        rapport["avertissements"].append("history/shadow illisible.")
+        return rapport
+
+    paires: list[tuple[str, str, float, float]] = []   # (date, cell_key, p90, nearest)
+    dates_utilisees: list[str] = []
+    for date_str in dates:
+        ombre = _shadow_day_max_scores(date_str)
+        if not ombre:
+            continue
+        servi = {verification.cell_key(c["lat"], c["lon"]): float(c.get("trigger_score") or 0.0)
+                 for c in _forecast_day_cells(date_str) if c.get("lat") is not None}
+        if not servi:
+            rapport["avertissements"].append(
+                f"{date_str} : ombre présente mais archive de service absente — journée ignorée.")
+            continue
+        communes = 0
+        for key, p90 in ombre.items():
+            near = servi.get(key)
+            if near is None:
+                continue
+            paires.append((date_str, key, p90, near))
+            communes += 1
+        if communes:
+            dates_utilisees.append(date_str)
+
+    rapport["dates_utilisees"] = dates_utilisees
+    rapport["paires"] = len(paires)
+    if len(paires) < 500:
+        rapport["avertissements"].append(
+            f"Seulement {len(paires)} cellules-jours appariées : trop peu pour une courbe fiable.")
+        return rapport
+
+    vals_p90 = sorted(p for _d, _k, p, _n in paires)
+    vals_near = sorted(n for _d, _k, _p, n in paires)
+    # ~41 points suffisent (même ordre de grandeur que isotonic_pav), monotone par construction.
+    courbe: list[list[float]] = []
+    for i in range(41):
+        q = i / 40.0
+        courbe.append([round(_quantile_sorted(vals_p90, q), 3),
+                       round(_quantile_sorted(vals_near, q), 3)])
+    rapport["courbe_reancrage"] = courbe
+
+    p90_reancres = [_apply_rebase_curve(courbe, p) for _d, _k, p, _n in paires]
+    rapport["distributions"] = {
+        "servi_nearest": _distribution_stats(vals_near),
+        "p90_brut": _distribution_stats([p for _d, _k, p, _n in paires]),
+        "p90_reancre": _distribution_stats(p90_reancres),
+    }
+
+    if not with_threshold:
+        rapport["avertissements"].append("Seuil non calculé (paramètre threshold=0).")
+        return rapport
+
+    # ── Seuil p90 contre la foudre observée ────────────────────────────────────
+    # On se limite aux journées FIGÉES (prévision stable + foudre finale), exactement le
+    # même filtre que l'auto-calibration : sinon le seuil bougerait d'une exécution à l'autre.
+    figees = [d for d in _learning_finalized_dates() if d in set(dates_utilisees)]
+    rapport["dates_figees_pour_seuil"] = figees
+    if not figees:
+        rapport["avertissements"].append(
+            "Aucune journée à la fois sous ombre ET figée (prévision stable + foudre finale) : "
+            "seuil non calculable pour l'instant.")
+        return rapport
+    try:
+        exemples = learning.build_training_examples(
+            figees, _learning_full_day_loader, _read_lightning_archive)
+    except Exception as exc:  # noqa: BLE001
+        rapport["avertissements"].append(f"Construction des exemples impossible : {str(exc)[:150]}")
+        return rapport
+
+    ombre_par_jour = {d: _shadow_day_max_scores(d) for d in figees}
+    gardes, scores_p90, scores_near, labels = [], [], [], []
+    for ex in exemples:
+        p90 = ombre_par_jour.get(ex["date"], {}).get(ex["cell_key"])
+        if p90 is None:
+            continue
+        gardes.append(ex)
+        scores_p90.append(float(p90))
+        scores_near.append(float(ex["trigger"]))
+        labels.append(int(ex["label"]))
+    rapport["exemples_apparies"] = len(gardes)
+    if len(gardes) < 500:
+        rapport["avertissements"].append(
+            f"Seulement {len(gardes)} exemples étiquetés : seuil non calculé.")
+        return rapport
+
+    rapport["auc"] = {
+        "servi_nearest": (lambda v: round(v, 4) if v is not None else None)(_rank_auc(scores_near, labels)),
+        "p90": (lambda v: round(v, 4) if v is not None else None)(_rank_auc(scores_p90, labels)),
+        "note": "AUC = mesure de rang : le ré-ancrage ne la change pas (transformation monotone).",
+    }
+    thr_p90, csi_p90 = learning.best_threshold_neighborhood(gardes, scores_p90)
+    thr_near, csi_near = learning.best_threshold_neighborhood(gardes, scores_near)
+    rapport["seuil"] = {
+        "p90_brut": {"seuil": thr_p90, "csi": csi_p90},
+        "servi_nearest": {"seuil": thr_near, "csi": csi_near},
+        "p90_reancre": {"seuil": round(_apply_rebase_curve(courbe, thr_p90), 1),
+                        "note": "seuil p90 transposé par la courbe — c'est celui à déployer "
+                                "avec l'agrégateur ré-ancré."},
+    }
+    return rapport
 
 
 def _archive_france_slot_grid(result: dict[str, Any]) -> None:
@@ -16470,6 +16694,18 @@ def _server_telemetry_sync() -> dict[str, Any]:
         out["push"] = {"error": str(exc)[:150]}
 
     return out
+
+
+@app.get("/api/server/shadow-rebase", dependencies=[Depends(_admin_secret_dep)])
+async def server_shadow_rebase(threshold: int = Query(1)) -> dict[str, Any]:
+    """ADMIN, LECTURE SEULE : dérive la courbe de ré-ancrage p90 → plus proche voisin et le
+    seuil p90 depuis `history/shadow/`, et rend un JSON compact (quelques Ko) destiné à être
+    copié-collé — l'admin étant lié à une session de compte, c'est le seul canal disponible.
+
+    Ne modifie RIEN : ni OBJECTIFOUDRE_CELL_AGGREGATOR, ni le seuil actif, ni l'archive.
+    Appelable AVANT que la collecte soit prête : il dit alors où elle en est.
+    `?threshold=0` saute la partie seuil (qui relit les journées complètes, donc lente)."""
+    return await asyncio.to_thread(_shadow_rebase_report, with_threshold=bool(threshold))
 
 
 @app.get("/api/server/telemetry", dependencies=[Depends(_admin_secret_dep)])
