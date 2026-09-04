@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.262"
+APP_VERSION = "1.3.263"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -16530,6 +16530,125 @@ async def server_memory_purge() -> dict[str, Any]:
 _telemetry_preload_cache: dict[str, Any] = {"at": 0.0, "data": None}
 
 
+# ══ INVENTAIRE DES CLÉS ET INTÉGRATIONS (page maintenance, admin) ═══════════════
+# ⚠️ RÈGLE ABSOLUE DE CE BLOC : AUCUNE VALEUR DE SECRET NE SORT D'ICI. Ni entière, ni
+# tronquée, ni « les 4 derniers caractères ». Un secret affiché dans l'app voyagerait
+# jusqu'au navigateur, où il survivrait dans l'onglet Réseau des devtools, dans une capture
+# d'écran, dans un partage d'écran, et où toute extension ayant accès au site pourrait le
+# lire — alors qu'aujourd'hui il ne quitte jamais ni les variables Railway ni les fichiers
+# `Clef API*.txt` (ignorés par git). Une session admin compromise emporterait tout d'un coup.
+#
+# Ce qu'on publie à la place répond à la vraie question — « est-ce en place et est-ce que ça
+# marche ? » : la PRÉSENCE, la PROVENANCE (variable d'environnement ou fichier local, une
+# distinction qui manquait et qui explique les divergences entre local et production), et
+# une EMPREINTE non réversible qui permet de comparer deux environnements sans rien révéler.
+def _secret_fingerprint(value: str | None) -> str | None:
+    """8 premiers caractères du SHA-256 d'un secret. Sert à COMPARER, jamais à lire.
+
+    Tronqué à 32 bits : des milliards de valeurs partagent la même empreinte, la valeur
+    d'origine est donc irrécupérable même en théorie. Réservé aux secrets À HAUTE ENTROPIE
+    (clés d'API, jetons). ⚠️ NE JAMAIS l'appliquer à une donnée devinable — une adresse
+    e-mail, un identifiant — qui serait retrouvable par force brute sur un dictionnaire."""
+    if not value:
+        return None
+    return hashlib.sha256(value.strip().encode("utf-8")).hexdigest()[:8]
+
+
+# Résolution des clés, MIROIR des accesseurs réels (`_aromepi_api_key`, `_fr_radar_api_key`,
+# …). ⚠️ À garder synchronisé avec eux : `tests/test_integrations_panel.py` compare le
+# verdict du panneau à celui de l'accesseur et échoue si les deux divergent.
+_INTEGRATIONS: tuple[dict[str, Any], ...] = (
+    {"cle": "eumetsat", "label": "EUMETSAT (foudre MTG-LI, GII)",
+     "env": ("EUMETSAT_CONSUMER_KEY", "EUMDAC_KEY"), "fichier": None,
+     "compagnon": ("EUMETSAT_CONSUMER_SECRET", "EUMDAC_SECRET")},
+    {"cle": "arome_pi", "label": "Météo-France AROME PI",
+     "env": ("METEOFRANCE_AROME_PI_API_KEY", "METEOFRANCE_AROMEPI_API_KEY"),
+     "fichier": "Clef API AROME PI.txt"},
+    {"cle": "radar", "label": "Météo-France radar",
+     "env": ("METEOFRANCE_RADAR_API_KEY",), "fichier": "Clef API RADAR.txt"},
+    {"cle": "radar_cible", "label": "Météo-France radar ciblé",
+     "env": ("METEOFRANCE_RADAR_CIBLE_API_KEY",), "fichier": "Clef API Radar Utilisé.txt"},
+    {"cle": "arpege", "label": "Météo-France ARPEGE",
+     "env": ("METEOFRANCE_ARPEGE_API_KEY",), "fichier": "Clef API ARPEGE.txt"},
+    {"cle": "meteofrance", "label": "Météo-France (général)",
+     "env": ("METEOFRANCE_API_KEY", "METEOFRANCE_TOKEN"), "fichier": None},
+    {"cle": "oauth_google", "label": "Connexion Google",
+     "env": ("GOOGLE_OAUTH_CLIENT_ID",), "fichier": None,
+     "compagnon": ("GOOGLE_OAUTH_CLIENT_SECRET",)},
+    {"cle": "oauth_microsoft", "label": "Connexion Microsoft",
+     "env": ("MICROSOFT_OAUTH_CLIENT_ID",), "fichier": None,
+     "compagnon": ("MICROSOFT_OAUTH_CLIENT_SECRET",)},
+    {"cle": "push_vapid", "label": "Notifications push (VAPID)",
+     "env": ("OBJECTIFOUDRE_VAPID_PRIVATE_KEY",), "fichier": None,
+     "compagnon": ("OBJECTIFOUDRE_VAPID_PUBLIC_KEY",)},
+    {"cle": "mail_brevo", "label": "E-mails (Brevo)",
+     "env": ("OBJECTIFOUDRE_BREVO_API_KEY",), "fichier": None},
+    {"cle": "mail_smtp", "label": "E-mails (SMTP de repli)",
+     "env": ("OBJECTIFOUDRE_SMTP_PASS",), "fichier": None,
+     "compagnon": ("OBJECTIFOUDRE_SMTP_HOST", "OBJECTIFOUDRE_SMTP_USER")},
+    {"cle": "preload", "label": "Secret de préchargement",
+     "env": ("OBJECTIFOUDRE_PRELOAD_SECRET",), "fichier": None},
+)
+
+
+def _integration_resolve(spec: dict[str, Any]) -> dict[str, Any]:
+    """Présence, provenance et empreinte d'une intégration. AUCUNE VALEUR RENVOYÉE."""
+    for nom in spec.get("env", ()):
+        brut = (os.environ.get(nom) or "").strip()
+        if brut:
+            return {"configured": True, "source": "env:" + nom,
+                    "fingerprint": _secret_fingerprint(brut)}
+    fichier = spec.get("fichier")
+    if fichier:
+        chemin = os.path.join(os.path.dirname(os.path.abspath(__file__)), fichier)
+        try:
+            with open(chemin, encoding="utf-8") as fh:
+                brut = fh.read().strip()
+            if brut:
+                return {"configured": True, "source": "fichier:" + fichier,
+                        "fingerprint": _secret_fingerprint(brut)}
+        except OSError:
+            pass
+    return {"configured": False, "source": None, "fingerprint": None}
+
+
+def _integrations_status() -> dict[str, Any]:
+    """Inventaire pour la page maintenance. Ne renvoie JAMAIS un secret."""
+    items = []
+    for spec in _INTEGRATIONS:
+        etat = _integration_resolve(spec)
+        manquants = [n for n in spec.get("compagnon", ())
+                     if not (os.environ.get(n) or "").strip()]
+        etat.update(key=spec["cle"], label=spec["label"],
+                    env_names=list(spec.get("env", ())),
+                    file_fallback=spec.get("fichier"))
+        if etat["configured"] and manquants:
+            etat["warning"] = "incomplète : " + ", ".join(manquants) + " absente(s)"
+        items.append(etat)
+    # ⚠️ Les adresses admin ne sont PAS empreintées : une adresse e-mail est devinable,
+    # une empreinte serait retrouvable par force brute sur un dictionnaire. On ne publie
+    # que le NOMBRE.
+    admins = [a for a in (os.environ.get("OBJECTIFOUDRE_ADMIN_EMAILS") or "").split(",") if a.strip()]
+    items.append({"key": "admin_emails", "label": "Comptes administrateurs",
+                  "configured": bool(admins), "source": "env:OBJECTIFOUDRE_ADMIN_EMAILS" if admins else None,
+                  "fingerprint": None, "env_names": ["OBJECTIFOUDRE_ADMIN_EMAILS"],
+                  "file_fallback": None,
+                  "detail": ("%d adresse%s" % (len(admins), "s" if len(admins) > 1 else "")) if admins else None})
+    return {
+        "items": items,
+        "configured": sum(1 for i in items if i["configured"]),
+        "total": len(items),
+        "reglages": {   # non secrets : on peut afficher la valeur
+            "OBJECTIFOUDRE_CELL_AGGREGATOR": METEOFRANCE_CELL_AGGREGATOR,
+            "OBJECTIFOUDRE_GII_SHADOW": OBJECTIFOUDRE_GII_SHADOW,
+            "OBJECTIFOUDRE_HISTORY_ENABLED": OBJECTIFOUDRE_HISTORY_ENABLED,
+        },
+        "note": ("Empreinte = SHA-256 tronqué, NON réversible. Elle sert à vérifier que deux "
+                 "environnements portent la même clé, jamais à la lire. Aucune valeur de "
+                 "secret ne transite par cette page."),
+    }
+
+
 def _server_telemetry_sync() -> dict[str, Any]:
     """État consolidé pour la page maintenance : santé des sources temps réel, auto-
     calibration, mémoire, historique, préchargement AROME/ARPEGE par jour. Chaque bloc est
@@ -16673,6 +16792,12 @@ def _server_telemetry_sync() -> dict[str, Any]:
             }
     except Exception as exc:  # noqa: BLE001
         out["reports"] = {"error": str(exc)[:150]}
+
+    # Inventaire des clés (présence/provenance/empreinte — JAMAIS de valeur)
+    try:
+        out["integrations"] = _integrations_status()
+    except Exception as exc:  # noqa: BLE001
+        out["integrations"] = {"error": str(exc)[:150]}
 
     # Journal d'ombre GII (étape 1 de l'audit MTG-LI) : le trou devance-t-il le radar ?
     try:
