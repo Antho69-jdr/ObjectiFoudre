@@ -350,7 +350,9 @@
       // reste lisible sous le point. `id` séquentiel stable = clé du feature-state hover.
       feats.push({ type: 'Feature', id: ci, properties: { kind: 'core', color, cellIdx: ci, est: est ? 1 : 0 }, geometry: { type: 'Point', coordinates: pos } });
       const arrow = c.trend === 'grow' ? ' ▲' : (c.trend === 'decay' ? ' ▼' : '');
-      const zap = (c.flashes_10min > 0) ? '⚡ ' : '';   // électriquement active (foudre live)
+      // ⚡ = électriquement active (foudre live). ⚡⚡ = saut d'activité en cours, précurseur
+      // d'intensification : la cellule mérite d'être regardée AVANT que le radar ne le montre.
+      const zap = c.flash_jump ? '⚡⚡ ' : ((c.flashes_10min > 0) ? '⚡ ' : '');
       const label = zap + (c.speed_kmh > 5 ? `${c.speed_kmh} km/h ${bearingCard(c.bearing)}${arrow}` : `statique${arrow}`) + (est ? ' · estimé' : '');
       // libellé AU-DESSUS du point (offset) pour ne pas recouvrir la couleur du cœur.
       feats.push({ type: 'Feature', properties: { kind: 'lbl', color, label, cellIdx: ci, est: est ? 1 : 0 }, geometry: { type: 'Point', coordinates: pos } });
@@ -1260,6 +1262,15 @@
       ['Évolution', (typeof c.growth_pct_10min === 'number' && c.growth_pct_10min !== 0) ? `${c.growth_pct_10min > 0 ? '+' : ''}${c.growth_pct_10min} %/10 min` : 'stable', ''],
       ['⚡ Foudre', (c.flashes_10min > 0) ? `${c.flashes_10min} écl./10 min${flashTrendTxt}` : 'aucune détectée', ''],
     ];
+    // « Lightning jump » : un bond du taux d'éclairs précède l'intensification (préavis
+    // 15-21 min dans la littérature). On ne l'affiche QUE lorsqu'il est déclaré — une
+    // ligne « pas de saut » à chaque ouverture n'apprendrait rien et alourdirait la fiche.
+    if (c.flash_jump) {
+      const quand = (typeof c.flash_jump_age_min === 'number' && c.flash_jump_age_min > 0)
+        ? `il y a ${c.flash_jump_age_min} min` : 'à l\'instant';
+      const sig = (typeof c.flash_jump_sigma === 'number') ? ` · ${c.flash_jump_sigma.toFixed(1)} σ` : '';
+      rows.push(['⚡ Saut d\'activité', `${quand}${sig}`, '']);
+    }
     if (typeof c.age_min === 'number' && c.age_min > 0) {
       rows.push(['Âge', `${c.age_open ? '> ' : '~'}${c.age_min} min`, '']);
     }

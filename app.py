@@ -87,7 +87,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.257"
+APP_VERSION = "1.3.258"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -20226,6 +20226,30 @@ FR_CELLS_RED_BAND = 6       # « au moins rouge » (~48 dBZ) → cellule sans co
 FR_CELLS_LI_RADIUS_KM = 15.0  # rayon foudre autour du CŒUR pour exposer un cœur orange
 FR_CELLS_SPLIT_KM = 12.0    # cœurs plus proches que ça → fusionnés (même cellule)
 FR_CELLS_MAX_SPEED = 120.0  # km/h : au-delà = appariement douteux (mini-cellules bruitées)
+# ── « Lightning jump » (Schultz et al. 2009, adapté) ─────────────────────────────
+# Un bond brutal du taux d'éclairs précède l'intensification d'un orage (préavis
+# mesuré 15-21 min dans la littérature, POD 73-79 %, FAR 36-49 %). L'algorithme :
+# taux d'éclairs par bin, DÉRIVÉE de ce taux, et saut déclaré quand la dérivée dépasse
+# 2σ des dérivées précédentes — au-dessus d'un taux plancher, sinon on saute sur du bruit.
+# ⚠️ Ces constantes viennent de la LITTÉRATURE (réseaux sol américains), pas de nos
+# données : MTG-LI n'a ni la même efficacité de détection ni la même granularité. Le
+# ratio dérivée/σ est publié dans le payload (`flash_jump_sigma`) EXPRÈS, pour pouvoir
+# les recaler sur un vrai orage au lieu de les deviner.
+FR_CELLS_JUMP_BIN_SECONDS = 120     # bins de 2 min (résolution de l'article ; MTG-LI
+                                    # horodate chaque éclair, la cadence 10 min du produit
+                                    # ne limite donc pas le binning, seulement la fraîcheur)
+FR_CELLS_JUMP_HISTORY = 5           # nb de dérivées précédentes servant à l'écart-type
+FR_CELLS_JUMP_WARMUP = 6            # bins de mise en route (~12 min) avant tout verdict
+FR_CELLS_JUMP_MIN_RATE = 1.0        # éclairs/min plancher sous lequel on ne déclare rien
+FR_CELLS_JUMP_SIGMA = 2.0           # seuil en écarts-types
+FR_CELLS_JUMP_LOOKBACK = 5          # bins : le drapeau reste levé ~10 min après le saut.
+                                    # Sans ça il ne durerait qu'un seul cycle de calcul et
+                                    # clignoterait d'un rafraîchissement à l'autre, alors que
+                                    # tout l'intérêt est justement le préavis (15-21 min).
+FR_CELLS_JUMP_SIGMA_FLOOR = 0.05    # éclairs/min² : plancher de l'écart-type. Diviser par
+                                    # un σ quasi nul fabrique des sauts à partir du bruit de
+                                    # calcul flottant — vérifié : sur une rampe parfaitement
+                                    # régulière, sans ce plancher, 1 cycle sur 8 alertait.
 _fr_cells_lock = threading.Lock()
 _fr_cells_calc_lock = threading.Lock()   # anti-recalcul concurrent (thread radar vs thread foudre)
 _fr_cells: dict[str, Any] = {"time": None, "cells": [], "updated_at": 0.0}
@@ -20429,6 +20453,112 @@ def _fr_cells_compute() -> None:
         _fr_cells_calc_lock.release()
 
 
+def _lightning_jump(rates: list[float], *, bin_minutes: float,
+                    min_rate: float = FR_CELLS_JUMP_MIN_RATE,
+                    history: int = FR_CELLS_JUMP_HISTORY,
+                    warmup: int = FR_CELLS_JUMP_WARMUP,
+                    sigma_mult: float = FR_CELLS_JUMP_SIGMA,
+                    sigma_floor: float = FR_CELLS_JUMP_SIGMA_FLOOR,
+                    lookback: int = FR_CELLS_JUMP_LOOKBACK) -> dict[str, Any]:
+    """« Lightning jump » 2σ (Schultz et al. 2009), sur une série de TAUX d'éclairs.
+
+    `rates` : éclairs par minute, bins RÉGULIERS, du plus ANCIEN au plus RÉCENT.
+    Le principe : ce n'est pas le taux qui annonce l'intensification, c'est sa DÉRIVÉE.
+    On compare la dérivée à l'écart-type des `history` dérivées qui la précèdent ; au-delà
+    de `sigma_mult` écarts-types, et au-dessus d'un taux plancher, c'est un saut.
+
+    Le critère est évalué sur les `lookback` derniers bins, pas seulement le dernier :
+    un saut ne dure qu'un bin, alors que son intérêt — le préavis — dure un quart d'heure.
+    Sans cette rémanence le drapeau clignoterait d'un cycle de calcul à l'autre.
+
+    Fonction PURE (aucune E/S, aucun état) : cf. tests/test_lightning_jump.py. Rend
+    toujours un diagnostic complet — `ratio` sert à recaler les seuils sur de vraies
+    données plutôt qu'à les deviner."""
+    out: dict[str, Any] = {"jump": False, "rate": 0.0, "dfrdt": 0.0, "sigma": 0.0,
+                           "ratio": 0.0, "age_min": None, "reason": "insufficient"}
+    n = len(rates)
+    if n == 0 or bin_minutes <= 0:
+        return out
+    out["rate"] = round(float(rates[-1]), 3)
+    if n < max(warmup, history + 2):
+        return out
+    # d[j] = dérivée ARRIVANT sur rates[j+1], en éclairs/min².
+    d = [(rates[i] - rates[i - 1]) / bin_minutes for i in range(1, n)]
+
+    def evalue(i: int) -> dict[str, Any] | None:
+        """Critère appliqué au bin `i` (index dans `rates`). None si non évaluable."""
+        if i < 1 or i - 1 - history < 0:
+            return None
+        courant = d[i - 1]
+        precedentes = d[i - 1 - history:i - 1]
+        if len(precedentes) < 2:
+            return None
+        moyenne = sum(precedentes) / len(precedentes)
+        variance = sum((x - moyenne) ** 2 for x in precedentes) / (len(precedentes) - 1)
+        sigma = math.sqrt(variance)
+        res = {"dfrdt": round(float(courant), 4), "sigma": round(float(sigma), 4),
+               "ratio": 0.0, "jump": False, "reason": "ok"}
+        if rates[i] < min_rate:
+            res["reason"] = "below_min_rate"
+            return res
+        # Un saut est une ACCÉLÉRATION : sans ce garde-fou, une cellule qui décline un peu
+        # moins vite qu'avant produirait un écart positif à la moyenne et serait signalée
+        # comme s'intensifiant.
+        if courant <= 0:
+            res["reason"] = "not_increasing"
+            return res
+        # ⚠️ ÉCART À L'ARTICLE, ASSUMÉ. Schultz compare la dérivée BRUTE à 2σ. On compare
+        # ici son ÉCART À LA MOYENNE des dérivées précédentes : une cellule en croissance
+        # forte mais RÉGULIÈRE a une dérivée constante et un σ minuscule, et la forme brute
+        # la signalerait à chaque cycle alors qu'il ne s'y passe rien de nouveau.
+        # Le plancher sur σ évite en outre de fabriquer des sauts à partir du bruit de
+        # calcul flottant (mesuré : 1 cycle sur 8 sur une rampe parfaitement régulière).
+        ratio = (courant - moyenne) / max(sigma, sigma_floor)
+        res["ratio"] = round(float(ratio), 3)
+        res["jump"] = ratio >= sigma_mult
+        return res
+
+    dernier = evalue(n - 1)
+    if dernier:
+        out.update({k: dernier[k] for k in ("dfrdt", "sigma", "ratio", "reason")})
+    # Du plus RÉCENT au plus ancien : on garde le premier saut trouvé et son ancienneté.
+    for recul in range(0, max(1, lookback)):
+        i = n - 1 - recul
+        res = evalue(i)
+        if res and res["jump"]:
+            out["jump"] = True
+            out["age_min"] = round(recul * bin_minutes, 1)
+            if recul:   # le diagnostic publié décrit le bin où le saut a eu lieu
+                out.update({k: res[k] for k in ("dfrdt", "sigma", "ratio", "reason")})
+            break
+    return out
+
+
+def _cell_position_at(past: list[list[float]], epoch: float) -> tuple[float, float] | None:
+    """Position (lon, lat) de la cellule à l'instant `epoch`, interpolée sur sa piste.
+
+    Indispensable : un orage parcourt 20 à 30 km en 30 min. Compter les éclairs anciens
+    autour de la position ACTUELLE du cœur attribuerait à la cellule l'activité d'une
+    zone qu'elle a déjà quittée. `past` = [[lon, lat, epoch], …] croissant, produit par
+    le suivi de cellules (_fr_cells_track). Hors piste : on borne aux extrémités plutôt
+    que d'extrapoler — une extrapolation arrière sur une piste courte est peu fiable."""
+    if not past:
+        return None
+    if epoch <= past[0][2]:
+        return float(past[0][0]), float(past[0][1])
+    if epoch >= past[-1][2]:
+        return float(past[-1][0]), float(past[-1][1])
+    for i in range(1, len(past)):
+        t0, t1 = past[i - 1][2], past[i][2]
+        if epoch <= t1:
+            if t1 == t0:
+                return float(past[i][0]), float(past[i][1])
+            k = (epoch - t0) / (t1 - t0)
+            return (float(past[i - 1][0]) + k * (float(past[i][0]) - float(past[i - 1][0])),
+                    float(past[i - 1][1]) + k * (float(past[i][1]) - float(past[i - 1][1])))
+    return float(past[-1][0]), float(past[-1][1])
+
+
 def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: float) -> None:
     import numpy as np
     # purge du cache d'extraction (suit le ring buffer)
@@ -20529,25 +20659,77 @@ def _fr_cells_compute_locked(times: list[str], pngs: dict[str, bytes], li_at: fl
     # visait les enveloppes géantes de MCS.
     with _li_live_lock:
         _fl = list(_li_live.get("flashes") or [])
+        _li_end_iso = _li_live.get("latest_end")
     if _fl and out:
         now_s = time.time()
         fl_lon = np.array([f[0] for f in _fl], np.float32)
         fl_lat = np.array([f[1] for f in _fl], np.float32)
-        fl_age = now_s - np.array([f[2] for f in _fl], np.float64)
+        fl_ep = np.array([f[2] for f in _fl], np.float64)
+        # `events` : étendue électrique de chaque éclair (audit MTG-LI). Repli sur 1 pour
+        # les entrées du buffer antérieures à l'enrichissement — sinon un redémarrage à
+        # chaud ferait disparaître l'activité le temps que le buffer se renouvelle.
+        fl_ev = np.array([(f[3] if len(f) > 3 else 1) for f in _fl], np.float64)
+        fl_age = now_s - fl_ep
         recent = fl_age <= 600
         prev = (fl_age > 600) & (fl_age <= 1200)
+
+        # ── Série temporelle pour le « lightning jump » ────────────────────────
+        # Elle s'arrête à la fin du DERNIER produit LI ingéré, pas à `now` : le produit
+        # est publié ~15 s après la fin de sa fenêtre de 10 min, donc les toutes dernières
+        # minutes sont normalement vides. Les compter ferait voir une chute d'activité à
+        # chaque cycle, et le saut suivant serait noyé.
+        _end_dt = _parse_meteofrance_datetime(str(_li_end_iso).replace(".000Z", "Z")) if _li_end_iso else None
+        t_end = _end_dt.timestamp() if _end_dt else (now_s - 60.0)
+        bin_s = float(FR_CELLS_JUMP_BIN_SECONDS)
+        bin_min = bin_s / 60.0
+        # Assez de bins pour la mise en route ET l'écart-type, plus une marge.
+        n_bins = FR_CELLS_JUMP_WARMUP + FR_CELLS_JUMP_HISTORY + 4
+        # Pré-découpage des éclairs par bin, UNE fois : chaque cellule ne balaie ensuite
+        # que de petits tableaux (sinon on refait n_bins passes sur tout le buffer).
+        idx = np.floor((t_end - fl_ep) / bin_s).astype(np.int64)
+        paquets = []   # du plus ANCIEN au plus RÉCENT
+        for b in range(n_bins - 1, -1, -1):
+            m = idx == b
+            paquets.append((fl_lon[m], fl_lat[m], fl_ev[m], t_end - (b + 0.5) * bin_s))
+
+        r2 = FR_CELLS_LI_RADIUS_KM ** 2
         for c in out:
             dlat_km = (fl_lat - c["lat"]) * 111.0
             dlon_km = (fl_lon - c["lon"]) * 111.0 * math.cos(math.radians(c["lat"]))
-            near = (dlat_km * dlat_km + dlon_km * dlon_km) <= FR_CELLS_LI_RADIUS_KM ** 2
+            near = (dlat_km * dlat_km + dlon_km * dlon_km) <= r2
             n10 = int((near & recent).sum())
             n20 = int((near & prev).sum())
             c["flashes_10min"] = n10
             c["flash_trend"] = "up" if n10 > n20 * 1.3 + 2 else ("down" if n10 * 1.3 + 2 < n20 else "flat")
+            c["flash_events_10min"] = int(fl_ev[near & recent].sum()) if n10 else 0
+            # Taux par bin, chacun compté autour de la position de la cellule À CET
+            # INSTANT-LÀ (cf. _cell_position_at) : c'est ce qui distingue un vrai bond
+            # d'un simple déplacement de l'orage.
+            past = c.get("past") or []
+            taux: list[float] = []
+            for lo_b, la_b, _ev_b, t_mid in paquets:
+                pos = _cell_position_at(past, t_mid)
+                if pos is None or lo_b.size == 0:
+                    taux.append(0.0)
+                    continue
+                plon, plat = pos
+                dy = (la_b - plat) * 111.0
+                dx = (lo_b - plon) * 111.0 * math.cos(math.radians(plat))
+                taux.append(float((dy * dy + dx * dx <= r2).sum()) / bin_min)
+            saut = _lightning_jump(taux, bin_minutes=bin_min)
+            c["flash_rate_min"] = saut["rate"]
+            c["flash_jump"] = bool(saut["jump"])
+            c["flash_jump_sigma"] = saut["ratio"] if math.isfinite(saut["ratio"]) else None
+            c["flash_jump_age_min"] = saut["age_min"]
     else:
         for c in out:
             c["flashes_10min"] = 0
             c["flash_trend"] = "flat"
+            c["flash_events_10min"] = 0
+            c["flash_rate_min"] = 0.0
+            c["flash_jump"] = False
+            c["flash_jump_sigma"] = None
+            c["flash_jump_age_min"] = None
     # EXPOSITION (v1.3.38, règles Anthony) : cœur AU MOINS ROUGE → cellule d'office ;
     # cœur ORANGE → seulement si électriquement actif (foudre ≤ 15 km / 10 min).
     out = [c for c in out if (
@@ -20700,9 +20882,10 @@ _li_live_stop = threading.Event()
 _LI_EPOCH_2000 = 946684800.0          # 2000-01-01T00:00:00Z
 
 
-def _li_live_extract_flashes(zip_bytes: bytes) -> list[tuple[float, float, float]]:
+def _li_live_extract_flashes(zip_bytes: bytes) -> list[tuple[float, float, float, int, int]]:
     """D'un produit LI (zip → .nc CHK-BODY) : flashs dans la bbox France en
-    (lon, lat, epoch_utc_exact). Variante temps réel de _eumdac_extract_france_flashes."""
+    (lon, lat, epoch_utc_exact, number_of_events, number_of_groups).
+    Variante temps réel de _eumdac_extract_france_flashes."""
     import h5py
     import numpy as np
     try:
@@ -20736,6 +20919,21 @@ def _li_live_extract_flashes(zip_bytes: bytes) -> list[tuple[float, float, float
             lat = _dec("latitude")
             lon = _dec("longitude")
             ftime = handle["flash_time"][:].astype("f8") if "flash_time" in handle else None
+            # Variables présentes dans le MÊME fichier et jusqu'ici jetées (audit MTG-LI
+            # du 31/08 : 3 variables lues sur 9). `number_of_events` et `number_of_groups`
+            # mesurent l'ÉTENDUE ÉLECTRIQUE d'un éclair — c'est la « foudre totale » de la
+            # littérature, un bien meilleur indicateur d'intensification qu'un simple
+            # comptage où tous les éclairs pèsent pareil. Coût réseau : ZÉRO octet.
+            # (radiance, flash_duration, flash_footprint et flash_filter_confidence sont
+            # lisibles ici au même prix ; on ne les charge pas en RAM tant qu'aucun calcul
+            # ne s'en sert — le buffer garde 2 h 15 d'éclairs.)
+            def _opt(name):
+                try:
+                    return handle[name][:].astype("f8") if name in handle else None
+                except Exception:
+                    return None
+            nevents = _opt("number_of_events")
+            ngroups = _opt("number_of_groups")
     except Exception:
         return []
     finally:
@@ -20750,8 +20948,19 @@ def _li_live_extract_flashes(zip_bytes: bytes) -> list[tuple[float, float, float
     mask = ((lon >= west) & (lon <= east) & (lat >= south) & (lat <= north)
             & np.isfinite(lat) & np.isfinite(lon) & np.isfinite(ftime))
     epochs = ftime[mask] + _LI_EPOCH_2000
-    return [(round(float(lo), 4), round(float(la), 4), float(e))
-            for lo, la, e in zip(lon[mask].tolist(), lat[mask].tolist(), epochs.tolist())]
+    n = int(mask.sum())
+    # Un éclair sans compte d'événements vaut 1 : on ne veut jamais qu'une variable
+    # absente fasse disparaître de l'activité électrique réelle.
+    ev = (np.nan_to_num(nevents[mask], nan=1.0).astype("i4").tolist()
+          if nevents is not None and nevents.shape == lat.shape else [1] * n)
+    gr = (np.nan_to_num(ngroups[mask], nan=1.0).astype("i4").tolist()
+          if ngroups is not None and ngroups.shape == lat.shape else [1] * n)
+    # Tuple étendu (lon, lat, epoch, events, groups) : tous les consommateurs du buffer
+    # accèdent par index 0-2 et le payload servi est reconstruit explicitement, donc
+    # l'allongement ne casse rien (vérifié sur les 5 points de lecture).
+    return [(round(float(lo), 4), round(float(la), 4), float(e), max(1, int(v)), max(1, int(g)))
+            for lo, la, e, v, g in zip(lon[mask].tolist(), lat[mask].tolist(),
+                                       epochs.tolist(), ev, gr)]
 
 
 def _li_live_poll_once() -> int:
