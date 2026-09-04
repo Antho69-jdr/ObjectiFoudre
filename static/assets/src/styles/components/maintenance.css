@@ -60,28 +60,6 @@
 .mnt-rows li strong.mnt-bad { color: var(--danger); }
 .mnt-rows li strong.mnt-strong { color: var(--accent); font-weight: var(--fw-extrabold); }
 
-/* ── Carte « Clés & intégrations » ────────────────────────────────────────────
-   Le serveur n'envoie JAMAIS de valeur de secret : seulement présence, provenance et
-   empreinte. Ces styles ne doivent donc rien prévoir pour masquer/révéler quoi que ce
-   soit — il n'y a rien à masquer. */
-/* Les cartes de la mosaïque font ~367 px : un nom de variable comme
-   METEOFRANCE_RADAR_CIBLE_API_KEY y remplit toute la ligne et repousse l'empreinte
-   dessous. On empile donc explicitement — libellé, puis provenance et empreinte — au
-   lieu de laisser un retour à la ligne fortuit décider de la mise en page. */
-.mnt-integ li { flex-direction: column; align-items: stretch; gap: 2px; }
-.mnt-integ li > span { display: flex; align-items: baseline; gap: 6px; }
-.mnt-integ li strong { display: flex; flex-wrap: wrap; justify-content: flex-start;
-  align-items: baseline; gap: 8px; font-weight: 600; text-align: left;
-  padding-left: 14px; }
-.mnt-src { color: var(--text-muted); font-weight: 500; font-size: var(--fs-11);
-  font-variant-numeric: tabular-nums; }
-.mnt-src-file { color: var(--warning, #fbbf24); }
-.mnt-src-off { color: var(--text-dim); font-style: italic; }
-/* L'empreinte est un identifiant à COMPARER, pas à lire : rendu monospace, discret. */
-.mnt-fp { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
-  font-size: var(--fs-11); letter-spacing: 0.04em; color: var(--text-muted);
-  background: var(--fill-soft); border: 1px solid var(--divider);
-  border-radius: 6px; padding: 1px 6px; }
 /* ── Carte « Outils & diagnostics » ───────────────────────────────────────────
    Un bouton par endpoint admin, le résultat affiché sur place et copiable. La carte
    occupe toute la largeur (mnt-actions-card) : les sorties JSON sont larges. */
@@ -117,12 +95,6 @@
   font-size: var(--fs-11); line-height: 1.5; color: var(--text-muted);
   white-space: pre; tab-size: 2; }
 
-.mnt-subhead { margin: 12px 0 6px; font-size: var(--fs-11); font-weight: 700;
-  letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
-.mnt-note { margin: 10px 0 0; font-size: var(--fs-11); line-height: 1.5;
-  color: var(--text-dim); }
-.mnt-note code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
-  font-size: var(--fs-11); color: var(--text-muted); word-break: break-all; }
 
 .mnt-bar { margin-top: 10px; height: 5px; border-radius: var(--r-pill); background: var(--divider); overflow: hidden; }
 .mnt-bar i { display: block; height: 100%; border-radius: var(--r-pill); transition: width 0.4s ease; }

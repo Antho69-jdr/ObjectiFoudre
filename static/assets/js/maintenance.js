@@ -280,43 +280,6 @@
       rep.error ? ['Erreur', rep.error, 'mnt-bad'] : null,
     ]) + `<div class="mnt-actions"><button type="button" class="mnt-action" id="maintenanceReportsOpen">Voir les rapports</button></div>`, repLvl));
 
-    // ── Clés & intégrations ──────────────────────────────────────────────────
-    // ⚠️ Aucune VALEUR de secret n'arrive ici et il ne faut jamais en faire arriver :
-    // le serveur ne publie que présence, provenance et empreinte (SHA-256 tronqué). Un
-    // secret affiché survivrait dans l'onglet Réseau des devtools, dans une capture
-    // d'écran et dans toute extension ayant accès au site.
-    const integ = d.integrations || {};
-    if (integ.error) {
-      cards.push(card('Clés & intégrations', `<div class="mnt-err">${esc(integ.error)}</div>`, 'bad'));
-    } else if (Array.isArray(integ.items)) {
-      const manquantes = integ.items.filter(i => !i.configured).length;
-      const incompletes = integ.items.filter(i => i.warning).length;
-      const lvl = incompletes ? 'bad' : (manquantes ? 'warn' : 'ok');
-      const lignes = integ.items.map(i => {
-        const src = i.source
-          ? (i.source.startsWith('env:')
-              ? `<span class="mnt-src">${esc(i.source.slice(4))}</span>`
-              : `<span class="mnt-src mnt-src-file">fichier local</span>`)
-          : '<span class="mnt-src mnt-src-off">absente</span>';
-        const emp = i.fingerprint ? `<code class="mnt-fp">${esc(i.fingerprint)}</code>` : '';
-        const det = i.detail ? `<span class="mnt-src">${esc(i.detail)}</span>` : '';
-        const warn = i.warning ? `<span class="mnt-bad"> · ${esc(i.warning)}</span>` : '';
-        return `<li><span>${dot(i.configured ? (i.warning ? 'warn' : 'ok') : 'idle')}${esc(i.label)}${warn}</span>`
-             + `<strong>${src}${det}${emp}</strong></li>`;
-      }).join('');
-      const reg = integ.reglages || {};
-      const regLignes = Object.keys(reg).map(k =>
-        `<li><span>${esc(k)}</span><strong>${esc(String(reg[k]))}</strong></li>`).join('');
-      cards.push(card('Clés & intégrations',
-        `<ul class="mnt-rows mnt-integ">${lignes}</ul>`
-        + bar(integ.configured || 0, integ.total || 0)
-        + (regLignes ? `<div class="mnt-subhead">Réglages</div><ul class="mnt-rows">${regLignes}</ul>` : '')
-        + `<p class="mnt-note">${esc(integ.note || '')}</p>`
-        + `<p class="mnt-note">Comparer une clé locale à celle de Railway, sans la révéler :<br>`
-        + `<code>printf %s "$(cat 'Clef API RADAR.txt')" | sha256sum | cut -c1-8</code></p>`,
-        lvl));
-    }
-
     // ── Outils & diagnostics ─────────────────────────────────────────────────
     // Les endpoints admin que je demande d'ouvrir à la main au fil des sessions
     // (ré-ancrage p90, ombre GII, inventaire…). Un bouton par outil, le résultat
@@ -333,9 +296,13 @@
       + '<div class="mnt-tool-out" id="mntOutilOut" hidden></div>', null, 'mnt-actions-card'));
 
     // Pied : version + horodatage serveur
+    // Réglages NON SECRETS : ils répondent à « ma variable est-elle bien posée sur
+    // Railway ? », la question qui revient à chaque bascule (agrégateur, ombre GII).
+    const rg = d.settings || {};
     cards.push(card('Serveur', rows([
       ['Version', d.version],
       ['Horodatage', d.at ? new Date(d.at * 1000).toLocaleString('fr-FR') : '—'],
+      ...Object.keys(rg).map(k => [k, String(rg[k])]),
     ])));
 
     grid.innerHTML = cards.join('');
