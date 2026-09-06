@@ -111,8 +111,23 @@
     modal.setAttribute('aria-hidden', 'true');
   }
 
+  /** Referme la feuille « Plus » de la barre du bas. Elle vit dans la bande z de la barre
+      (89+), donc AU-DESSUS du mur (87, comme la modale Compte) : laissée ouverte, elle le
+      recouvre et le coupe en deux — vu à l'écran. Choisir une ligne la referme normalement ;
+      notre interception court-circuite ce chemin, on refait donc le geste ici. */
+  function fermerFeuillePlus() {
+    var sheet = D.getElementById('bnavSheet');
+    if (!sheet || !sheet.classList.contains('is-open')) return;
+    sheet.classList.remove('is-open');
+    var scrim = D.getElementById('bnavScrim');
+    if (scrim) scrim.classList.remove('is-open');
+    var onglet = D.querySelector('.bnav-tab[data-nav="plus"]');
+    if (onglet) onglet.classList.remove('is-active');
+  }
+
   /** Ouvre le mur. `info` = l'objet `paywall` du 402, ou {feature, label}. */
   function open(info) {
+    fermerFeuillePlus();
     ensureModal();
     if (info && info.offer) state.offer = info.offer;
     render(info || {});
@@ -209,6 +224,56 @@
       });
   }
 
+  // ── Ce qui est verrouillé, et par quoi ────────────────────────────────────
+  // Liste UNIQUE des commandes entièrement payantes. Elle sert à DEUX choses :
+  // intercepter le clic (ici) et poser le cadenas (paywall.css, qui répète les mêmes
+  // sélecteurs — un test vérifie que les deux listes ne divergent pas).
+  //
+  // N'y figurent QUE les commandes payantes de bout en bout. « Risque orageux », le
+  // radar et la carte des étoiles gardent une part gratuite : les verrouiller serait
+  // mentir, leur refus se joue à l'horizon demandé, côté serveur.
+  //
+  // Les libellés reprennent mot pour mot ceux d'access.py (testé) : le mur dit la même
+  // chose qu'on l'ouvre par un clic intercepté ou par un 402 du serveur.
+  var VERROUS = [
+    { sel: '#historyPageBtn', feature: 'history', label: 'Historique et vérification' },
+    { sel: '.bnav-tab[data-nav="histo"]', feature: 'history', label: 'Historique et vérification' },
+    { sel: '.bnav-row[data-plus="histo"]', feature: 'history', label: 'Historique et vérification' },
+    { sel: '#spotsPageBtn', feature: 'spots', label: 'Mes spots et découverte automatique' },
+    { sel: '.bnav-tab[data-nav="spots"]', feature: 'spots', label: 'Mes spots et découverte automatique' },
+    { sel: '.bnav-row[data-plus="spots"]', feature: 'spots', label: 'Mes spots et découverte automatique' },
+    // Créés dynamiquement par spots.js dans chaque rail → ciblés par CLASSE, pas par id.
+    { sel: '.spots-toggle-btn', feature: 'spots', label: 'Mes spots et découverte automatique' },
+    { sel: '.spots-add-btn', feature: 'spots', label: 'Mes spots et découverte automatique' },
+    { sel: '#sgGeoBtn', feature: 'spots', label: 'Mes spots et découverte automatique' },
+    { sel: '#chaseCellsBtn', feature: 'chase_cells', label: 'Mode chasse — suivi de cellules' },
+    { sel: '#sgAgendaBtn', feature: 'stargaze_deep', label: 'Étoiles en profondeur' },
+    { sel: '#sgNightPrev', feature: 'stargaze_deep', label: 'Étoiles en profondeur' },
+    { sel: '#sgNightNext', feature: 'stargaze_deep', label: 'Étoiles en profondeur' },
+  ];
+
+  /** La commande cliquée est-elle verrouillée pour ce visiteur ? */
+  function verrouDe(cible) {
+    if (!state.paywall || state.entitled || !cible || !cible.closest) return null;
+    for (var i = 0; i < VERROUS.length; i++) {
+      if (cible.closest(VERROUS[i].sel)) return VERROUS[i];
+    }
+    return null;
+  }
+
+  // Le clic sur une commande verrouillée n'ouvre RIEN : il ouvre le mur, et rien d'autre.
+  // En CAPTURE au niveau du document : on passe avant les écouteurs posés sur les boutons
+  // eux-mêmes (barre du bas, rails, feuille « Plus »), donc la navigation n'a pas lieu.
+  // Sans ça, la page s'ouvrait quand même et se remplissait d'erreurs derrière le mur.
+  D.addEventListener('click', function (e) {
+    var v = verrouDe(e.target);
+    if (!v) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    open({ feature: v.feature, label: v.label });
+  }, true);
+
   // ── Intercepteur central des 402 ──────────────────────────────────────────
   // Un seul point d'accroche pour 25 routes verrouillées et 5 verrous d'horizon.
   // La réponse est rendue INTACTE à l'appelant : aucun module existant ne change.
@@ -219,6 +284,18 @@
   // ouvrait un mur intitulé « Mes spots » alors qu'on venait de cliquer sur Historique.
   // Un refus hors geste reste donc silencieux : la couche est simplement absente, et le
   // cadenas de la barre dit pourquoi.
+  // Fonctions dont un refus SERVEUR a le droit d'ouvrir le mur tout seul. La liste est
+  // volontairement courte : n'y figure que ce qui n'a PAS de bouton verrouillé (donc pas
+  // d'interception possible) et qui n'est PAS interrogé en tâche de fond.
+  //
+  // MESURÉ, pas supposé : entrer en mode chasse — une action GRATUITE — déclenche aussitôt
+  // le sondage de /api/radar/fr/cells (payant). Le refus tombait dans la fenêtre du geste
+  // et faisait surgir un mur « suivi de cellules » alors que l'utilisateur venait
+  // simplement d'ouvrir le radar. Même piège avec /api/stargaze/outlook en mode étoiles et
+  // avec /api/push/me à l'ouverture de la modale Compte.
+  // Ces fonctions-là se signalent par leur CADENAS, pas par un mur surgissant.
+  var AUTO_MUR = { forecast_long: 1, cell_detail: 1 };
+
   var lastGestureAt = 0;
   var GESTURE_WINDOW_MS = 2500;
   ['pointerdown', 'keydown'].forEach(function (evt) {
@@ -233,7 +310,7 @@
         if (res && res.status === 402 && suitUnGeste() && !isOpen()) {
           try {
             res.clone().json().then(function (d) {
-              if (d && d.paywall && !isOpen()) open(d.paywall);
+              if (d && d.paywall && AUTO_MUR[d.paywall.feature] && !isOpen()) open(d.paywall);
             }).catch(function () {});   // corps illisible : on n'ouvre pas, on ne casse rien
           } catch (e) { /* clone indisponible : idem */ }
         }

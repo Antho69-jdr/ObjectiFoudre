@@ -416,6 +416,111 @@ class BasculesTests(unittest.TestCase):
         self.assertIn("suitLeDroit", js, "les bascules doivent rafraîchir l'état après clic")
 
 
+class VerrousDInterfaceTests(unittest.TestCase):
+    """Une commande entièrement payante doit être cadenassée ET inerte.
+
+    Deux listes décrivent le même ensemble — `VERROUS` dans paywall.js (qui intercepte le
+    clic) et les sélecteurs de paywall.css (qui pose le cadenas). Elles doivent rester
+    identiques : un cadenas sans interception laisserait passer, une interception sans
+    cadenas serait incompréhensible.
+    """
+
+    STATIC = __import__("pathlib").Path(api_app.STATIC_DIR)
+
+    @property
+    def js(self):
+        return (self.STATIC / "assets/js/paywall.js").read_text(encoding="utf-8")
+
+    @property
+    def css(self):
+        return (self.STATIC / "assets/src/styles/components/paywall.css").read_text(encoding="utf-8")
+
+    def _selecteurs_js(self):
+        import re
+        bloc = self.js[self.js.index("var VERROUS = ["):]
+        bloc = bloc[:bloc.index("];")]
+        return {m.group(1) for m in re.finditer(r"sel:\s*'([^']+)'", bloc)}
+
+    def _selecteurs_css(self):
+        import re
+        return {m.group(1).strip() for m in re.finditer(
+            r"html\.objf-locked\s+([^,{]+?)(?:\s*>\s*(?:svg|span))?(?:::after)?\s*[,{]", self.css)}
+
+    def test_les_deux_listes_decrivent_le_meme_ensemble(self):
+        js, css = self._selecteurs_js(), self._selecteurs_css()
+        self.assertEqual(js - css, set(), "intercepté sans cadenas : %s" % (js - css))
+        self.assertEqual(css - js, set(), "cadenassé sans interception : %s" % (css - js))
+
+    def test_les_commandes_a_part_gratuite_ne_sont_PAS_verrouillees(self):
+        """Un cadenas sur une commande qui marche quand même serait un mensonge."""
+        js, css = self._selecteurs_js(), self._selecteurs_css()
+        for libre in ("#predictionPageBtn", "#chasePageBtn", "#stargazePageBtn",
+                      "#forecastPageBtn", "#forumPageBtn", "#chaseLightningBtn",
+                      "#sgBestBtn", "#bestCellsBtn", "#sgSatBtn"):
+            self.assertNotIn(libre, js, f"{libre} garde une part gratuite : pas d'interception")
+            self.assertNotIn(libre, css, f"{libre} garde une part gratuite : pas de cadenas")
+
+    def test_les_libelles_du_mur_sont_ceux_du_serveur(self):
+        """Le mur doit dire la même chose qu'il vienne d'un clic intercepté ou d'un 402."""
+        import re
+        bloc = self.js[self.js.index("var VERROUS = ["):]
+        bloc = bloc[:bloc.index("];")]
+        for m in re.finditer(r"feature:\s*'([^']+)',\s*label:\s*'([^']+)'", bloc):
+            cle, libelle = m.group(1), m.group(2)
+            f = access.FEATURES.get(cle)
+            self.assertIsNotNone(f, f"fonction inconnue côté serveur : {cle}")
+            self.assertEqual(libelle, f.label,
+                             f"libellé désaccordé pour {cle} : « {libelle} » côté front, "
+                             f"« {f.label} » côté serveur")
+
+    def test_seules_des_fonctions_entierement_payantes_sont_verrouillees(self):
+        import re
+        bloc = self.js[self.js.index("var VERROUS = ["):]
+        bloc = bloc[:bloc.index("];")]
+        for cle in {m.group(1) for m in re.finditer(r"feature:\s*'([^']+)'", bloc)}:
+            self.assertTrue(access.FEATURES[cle].is_paid,
+                            f"{cle} a une part gratuite : la commande ne doit pas être verrouillée")
+
+    def test_l_interception_a_lieu_en_capture(self):
+        """En phase de capture au niveau du document, sinon les écouteurs posés sur les
+        boutons eux-mêmes s'exécutent d'abord et la page s'ouvre quand même."""
+        self.assertRegex(self.js, r"addEventListener\('click',[\s\S]{0,900}?\}, true\)")
+        for arret in ("preventDefault", "stopPropagation", "stopImmediatePropagation"):
+            self.assertIn(arret, self.js, f"{arret} manquant : le clic ne serait pas neutralisé")
+
+    def test_le_curseur_dit_que_c_est_verrouille(self):
+        self.assertIn("cursor: not-allowed", self.css)
+
+    def test_un_refus_de_fond_n_ouvre_pas_le_mur(self):
+        """Mesuré au navigateur : entrer en mode chasse — action GRATUITE — déclenche le
+        sondage de /api/radar/fr/cells (payant). Le refus faisait surgir un mur « suivi de
+        cellules » alors que l'utilisateur venait d'ouvrir le radar. Seules les fonctions
+        SANS bouton verrouillé et SANS sondage de fond peuvent ouvrir le mur d'elles-mêmes.
+        """
+        import re
+        bloc = re.search(r"var AUTO_MUR = \{([^}]*)\}", self.js)
+        self.assertIsNotNone(bloc, "AUTO_MUR a disparu : tout refus rouvrirait le mur")
+        cles = set(re.findall(r"(\w+):", bloc.group(1)))
+        self.assertEqual(cles, {"forecast_long", "cell_detail"})
+        # Ces deux-là n'ont volontairement PAS de bouton verrouillé : le ruban de la page
+        # Risque et le clic sur une cellule de demain n'en sont pas.
+        for cle in cles:
+            self.assertNotIn(cle, {v for v in re.findall(r"feature:\s*'([^']+)'", self.js)},
+                             f"{cle} a un bouton verrouillé : il n'a plus à ouvrir le mur seul")
+        # …et les fonctions sondées en fond ne doivent PAS y figurer.
+        for sondee in ("chase_cells", "stargaze_deep", "spots", "alerts"):
+            self.assertNotIn(sondee, cles, f"{sondee} est interrogée en tâche de fond")
+
+    def test_le_mur_referme_la_feuille_plus(self):
+        """La feuille « Plus » vit dans la bande z de la barre du bas (89+), donc AU-DESSUS
+        du mur (87) : laissée ouverte, elle le recouvre — vu à l'écran en 390 px."""
+        self.assertIn("fermerFeuillePlus", self.js)
+        self.assertIn("bnavSheet", self.js)
+        i_def = self.js.index("function fermerFeuillePlus")
+        i_open = self.js.index("function open(info)")
+        self.assertLess(i_def, i_open, "définie avant open(), qui l'appelle")
+
+
 class CablageDuFrontTests(unittest.TestCase):
     """Le mur ne sert à rien s'il n'est pas RÉELLEMENT chargé par la page.
 
