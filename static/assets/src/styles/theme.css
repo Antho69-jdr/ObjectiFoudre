@@ -231,7 +231,10 @@
 .search-dock.show-search #toggleSearchBtn,
 [aria-pressed="true"].grid-focus-btn,
 [aria-pressed="true"].fab {
-  background: rgba(56, 189, 248, 0.14);
+  /* Fond OPAQUE : ces boutons sont posés sur la carte. Même teinte qu'avant (cyan à
+     14 %), mais composité sur les terres — au-dessus d'une cellule vive, un fond
+     translucide laissait passer la grille et l'icône tombait à 1,4:1. */
+  background: var(--map-ground-on, #0f283b);
   border-color: rgba(125, 211, 252, 0.45);
   color: #e2eefc;
 }

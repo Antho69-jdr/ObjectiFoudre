@@ -275,7 +275,7 @@
   }
   /* état actif (recherche ouverte) = cyan, comme les autres boutons de rail. */
   #rightRailScroll .search-dock.show-search #toggleSearchBtn {
-    background: rgba(56, 189, 248, 0.14) !important;
+    background: #0f283b   /* cyan composité sur les terres : opaque au-dessus de la grille */ !important;
     border-color: rgba(125, 211, 252, 0.45) !important;
     color: #e2eefc !important;
   }

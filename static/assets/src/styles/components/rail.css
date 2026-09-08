@@ -93,6 +93,37 @@ body.mobile-ui #infoDrawerBtn {
 .grid-focus-btn:disabled,
 .fab:disabled { cursor: not-allowed; opacity: 0.45; }
 
+/* ── LISIBILITÉ SUR LA CARTE (rails gauches + recherche) ──────────────────────
+   Au repos, ces boutons étaient quasi transparents (--fill-ghost, 3 % de blanc) : le
+   `backdrop-filter` ne rattrape pas une cellule de grille vive derrière, et l'icône
+   passait à 1,01:1 sur une cellule jaune. On leur donne le fond OPAQUE des terres du
+   mode courant et l'accent du mode pour l'icône → 7 à 11,9:1 selon la carte.
+   L'état ACTIF n'est pas touché (il gagne par la passe tardive de theme.css et par les
+   règles de mode) : il était déjà bon.
+   `#toggleSearchBtn` et `#cityInput` sont visés par leur ID (1,0,0) : ils battent leurs
+   propres règles de classe sans un seul !important. */
+.spots-rail .grid-focus-btn,
+.chase-layer-rail .grid-focus-btn,
+.stargaze-layer-rail .grid-focus-btn,
+#toggleSearchBtn,
+#cityInput {
+  background: var(--map-ground);
+  border-color: var(--map-accent-weak);
+  color: var(--map-accent);
+}
+.spots-rail .grid-focus-btn:hover,
+.chase-layer-rail .grid-focus-btn:hover,
+.stargaze-layer-rail .grid-focus-btn:hover,
+#toggleSearchBtn:hover,
+#cityInput:hover {
+  background: var(--map-ground-hover);   /* opaque lui aussi : un survol translucide rouvrirait la fenêtre sur la grille */
+  border-color: var(--map-accent);
+  color: var(--map-accent);
+}
+/* Le champ de recherche garde un texte lisible : c'est du CONTENU, pas une icône. */
+#cityInput { color: var(--text); }
+#cityInput::placeholder { color: var(--text-dim); }
+
 /* État actif/enclenché → cyan dégradé (accent). NB : la teinte FINALE de l'état actif
    est imposée par la passe recolor de theme.css (chargée APRÈS ce component → gagne) ;
    ces valeurs servent de repli cohérent. Cf. theme.css « États actifs des boutons du rail ». */

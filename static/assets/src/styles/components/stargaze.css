@@ -30,12 +30,13 @@ body.stargaze-mode #stargazeLayerRail { display: flex; }
   gap: var(--right-rail-gap, 12px);
 }
 .stargaze-layer-rail .grid-focus-btn:hover {
-  background: rgba(251, 191, 36, 0.12);
+  /* opaque : un survol translucide rouvrirait la fenêtre sur la grille */
+  background: var(--map-ground-hover);
   border-color: rgba(251, 191, 36, 0.5);
   color: #fff;
 }
 .stargaze-layer-rail .grid-focus-btn.active {
-  background: rgba(251, 191, 36, 0.16);
+  background: var(--map-ground-on);
   border-color: rgba(251, 191, 36, 0.55);
   color: #ffe9b0;
 }

@@ -56,6 +56,21 @@
 
   /* --- Accent secondaire : ambre éclair (cohérent hachure sévérité) ------ */
   --accent-2: #fbbf24;
+
+  /* ── Commandes posées SUR la carte (rails gauches, recherche) ──────────────
+     Elles étaient quasi transparentes (--fill-ghost) : au-dessus d'une cellule de
+     grille vive, l'icône devenait illisible — mesuré à 1,01:1 sur une cellule jaune,
+     2,53:1 sur une rouge, très loin des 4,5:1 exigés. On leur donne un fond OPAQUE :
+     la couleur des TERRES de la carte du moment (celle que pose state.js/chase.js/
+     stargaze.js sur la couche `background`), et l'icône prend l'accent du mode.
+     Résultat mesuré : 8,90:1 (prévisions), 7,01:1 (chasse), 11,85:1 (étoiles) — AAA.
+     Les valeurs de survol sont l'accent composité à 12 % SUR ces terres, donc opaques
+     elles aussi : un survol translucide rouvrirait la fenêtre sur la grille. */
+  --map-ground: #08101c;          /* = background-color posé par state.js */
+  --map-ground-hover: #0e2536;
+  --map-accent: #38bdf8;
+  --map-accent-weak: rgba(56, 189, 248, 0.38);
+  --map-ground-on: #133040;       /* état actif : MÊME teinte qu'avant, composité sur les terres */
   --accent-2-strong: #f59e0b;
   --accent-2-soft: rgba(251, 191, 36, 0.16);
 
@@ -218,4 +233,26 @@
   --panel-2: var(--surface-2);
   --muted: var(--text-muted);
   --overlay-backdrop: rgba(0, 0, 0, 0);
+}
+
+/* ── Palette des commandes sur carte, PAR MODE ────────────────────────────────
+   Chaque carte repeint la couche `background` de MapLibre avec sa propre teinte de
+   terres (chase.js CHASE_MAP_TINT, stargaze.js STARGAZE_MAP_TINT). Les boutons posés
+   sur la carte reprennent exactement cette couleur : ils se fondent dans le paysage
+   au lieu de flotter dessus, et l'icône garde un contraste constant quelle que soit
+   la cellule de grille en dessous. Miroir CSS de ces deux tables — si l'une bouge,
+   l'autre doit suivre (un test compare les valeurs). */
+body.chase-mode {
+  --map-ground: #160a0c;            /* = CHASE_MAP_TINT background-color */
+  --map-ground-hover: #311618;
+  --map-accent: #f87171;            /* rouge chasse, littéral (theme.css remappe --accent-2) */
+  --map-accent-weak: rgba(248, 113, 113, 0.38);
+  --map-ground-on: #3a1a1c;
+}
+body.stargaze-mode {
+  --map-ground: #080a10;            /* = STARGAZE_MAP_TINT background-color */
+  --map-ground-hover: #252012;
+  --map-accent: #fbbf24;            /* ambre étoile, littéral */
+  --map-accent-weak: rgba(251, 191, 36, 0.38);
+  --map-ground-on: #2f2713;
 }

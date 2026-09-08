@@ -135,12 +135,13 @@ body.chase-mode .meta-stack .meta-version {
    au rail droit (hérité de .grid-focus-btn, aucune surcharge). Rouge seulement au
    survol et à l'état actif (identité chasse à l'interaction/sélection). */
 .chase-layer-rail .grid-focus-btn:hover {
-  background: rgba(248, 113, 113, 0.10);
+  /* opaque : un survol translucide rouvrirait la fenêtre sur la grille */
+  background: var(--map-ground-hover);
   border-color: rgba(248, 113, 113, 0.5);
   color: #fff;
 }
 .chase-layer-rail .grid-focus-btn.active {
-  background: rgba(248, 113, 113, 0.16);
+  background: var(--map-ground-on);
   border-color: rgba(248, 113, 113, 0.55);
   color: #fff;
 }
