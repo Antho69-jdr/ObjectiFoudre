@@ -89,7 +89,7 @@
   let layersReady = false, loadToken = 0, clickBound = false;
   let popup = null, userMarker = null;
   // « Autour de moi » : position géolocalisée + rayon (persisté) + refs DOM de la feuille.
-  let geoPos = null, geoRadius = 50, geoSheetEls = null;
+  let geoPos = null, geoRadius = 50, geoSheetEls = null, geoBubble = null;
   try { const _gr = parseInt(localStorage.getItem('sg_geo_radius'), 10); if (_gr >= 20 && _gr <= 150) geoRadius = _gr; } catch (_) {}
   let degraded = false, retryTimer = null;     // repli « obscurité seule » quand la météo AROME manque
   let qualityFC = null;                        // géométrie des cellules construite UNE fois (scores q0..qN en props)
@@ -1038,11 +1038,23 @@
     q('sgGeoClose').addEventListener('click', closeGeoSheet);
     q('sgGeoLocate').addEventListener('click', geoLocate);
     q('sgGeoRelocate').addEventListener('click', geoLocate);
-    // Tap EN DEHORS de la feuille « Autour de moi » → fermeture (avant : bouton ✕ seul).
+    // La feuille se REPLIE en bulle flottante déplaçable. En portrait elle mangeait
+    // l'écran, alors que le résultat (anneau du rayon, cellules et spots surlignés) se
+    // lit SUR la carte. Repliée, rien n'est perdu : un appui sur la bulle la ramène.
+    if (window.OFBubble) {
+      geoBubble = window.OFBubble.attach({
+        el: sheet, key: 'sgGeo', label: 'Autour de moi', icon: '📍',
+        isOpen: () => !sheet.hidden,
+      });
+      q('sgGeoMin').addEventListener('click', () => geoBubble && geoBubble.minimize());
+    }
+    // Geste EN DEHORS de la feuille → on la REPLIE, on ne la ferme plus. Avant, déplacer
+    // la carte — le geste le plus naturel une fois localisé — fermait la feuille ET
+    // effaçait l'anneau (closeGeoSheet appelle geoClearMap). La croix ferme toujours.
     if (window.OFDismiss) window.OFDismiss.register({
       el: sheet,
-      isOpen: () => !sheet.hidden,
-      close: closeGeoSheet,
+      isOpen: () => !sheet.hidden && !(geoBubble && geoBubble.isMinimized()),
+      close: () => { if (geoBubble) geoBubble.minimize(); else closeGeoSheet(); },
       ignore: [geoBtn],
     });
     geoSheetEls.rad.value = String(geoRadius);
@@ -1058,11 +1070,17 @@
   // Le bouton géoloc ouvre D'ABORD la feuille (choix Anthony : layout « feuille en bas »).
   function autourDeMoi() {
     const e = ensureGeoSheet(); if (!e) return;
+    // Repliée en bulle : le bouton du rail la ramène au lieu de rouvrir par-dessous.
+    if (geoBubble && geoBubble.isMinimized()) { geoBubble.restore(); return; }
     e.sheet.hidden = false;
     e.step1.hidden = !!geoPos; e.step2.hidden = !geoPos;   // rouvre sur les résultats si déjà localisé
     if (geoPos) geoApply();
   }
-  function closeGeoSheet() { if (geoSheetEls) geoSheetEls.sheet.hidden = true; geoClearMap(); }
+  function closeGeoSheet() {
+    if (geoBubble) geoBubble.hide();          // la bulle disparaît avec la feuille
+    if (geoSheetEls) geoSheetEls.sheet.hidden = true;
+    geoClearMap();
+  }
   function geoClearMap() {
     try { map.getSource(GEO_RING_SRC) && map.getSource(GEO_RING_SRC).setData(EMPTY_FC); } catch (_) {}
     try { map.getSource(GEO_HI_SRC) && map.getSource(GEO_HI_SRC).setData(EMPTY_FC); } catch (_) {}
@@ -2410,7 +2428,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !active) return;
     if (sgDomeIsOpen()) { closeDome(); return; }
-    if (geoSheetEls && !geoSheetEls.sheet.hidden) { closeGeoSheet(); return; }
+    if (geoSheetEls && !geoSheetEls.sheet.hidden) { closeGeoSheet(); return; }   // vaut aussi repliée : la bulle tombe avec
     if (agendaOpenState()) { hideAgenda(); return; }
     deactivate();
   });

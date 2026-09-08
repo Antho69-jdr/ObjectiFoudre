@@ -1,0 +1,50 @@
+/* ==========================================================================
+   BULLE DE RÉDUCTION (minimize-bubble.js) — une surface repliée en pastille
+   flottante et déplaçable. Un appui la rouvre, un glissé la déplace.
+
+   Sert d'abord à la feuille « Autour de moi » du mode étoiles : en portrait, elle
+   mangeait l'écran alors que le résultat (anneau, cellules, spots) se lit SUR la carte.
+   ========================================================================== */
+.of-bubble {
+  position: fixed;
+  /* z 96 = celui de la feuille qu'elle remplace : au-dessus de la carte et des rails,
+     sous la barre du bas (89 → 92 pour la famille) qui reste navigable, et sous les
+     modales. La bulle occupe la place de la surface, pas davantage. */
+  z-index: 96;
+  display: inline-flex; align-items: center; gap: 8px;
+  /* min-width/min-height : body.mobile-ui button impose 88px et flex:0 0 auto, ce qui
+     étirerait la pastille. */
+  min-width: 0 !important; min-height: 0 !important;
+  padding: 10px 14px 10px 12px;
+  border-radius: var(--r-pill, 999px);
+  background: rgba(16, 12, 6, 0.95);
+  border: 1px solid rgba(251, 191, 36, 0.42);
+  color: #f2e8d0;
+  font-family: inherit; font-size: 13px; font-weight: 700;
+  box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.7);
+  backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  cursor: grab;
+  /* Sans ça, le doigt fait défiler la page au lieu de déplacer la bulle (même règle
+     que les frises). */
+  touch-action: none;
+  user-select: none; -webkit-user-select: none;
+}
+.of-bubble[hidden] { display: none; }
+.of-bubble:hover { border-color: rgba(251, 191, 36, 0.7); }
+.of-bubble:focus-visible { outline: 2px solid #fbbf24; outline-offset: 2px; }
+.of-bubble.is-dragging { cursor: grabbing; box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.8); }
+
+.of-bubble-ic { font-size: 16px; line-height: 1; }
+.of-bubble-lb { line-height: 1; white-space: nowrap; }
+
+/* Le libellé RESTE sur un téléphone courant : réduite à sa seule icône, la pastille se
+   confondait avec les boutons du rail gauche — vu à l'écran en 390 px. Il ne tombe que
+   sur les écrans vraiment étroits, où la place manque pour de bon. */
+@media (max-width: 330px) {
+  .of-bubble { padding: 11px 12px; }
+  .of-bubble-lb { display: none; }
+}
+
+/* La surface réduite disparaît sans être fermée : son état interne reste intact,
+   la bulle la ramène exactement comme elle était. */
+.of-minimized { display: none !important; }

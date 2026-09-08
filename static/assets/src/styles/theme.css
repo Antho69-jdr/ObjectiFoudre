@@ -186,6 +186,9 @@
 /* Périmètre gratuit/payant : mur, cadenas, bloc « Abonnement » de la modale Compte. */
 @import "./components/paywall.css";
 
+/* Réduction d'une surface en bulle flottante déplaçable. */
+@import "./components/bubble.css";
+
 :root {
   /* Fond & surfaces */
   --bg: #070d18;
