@@ -132,7 +132,36 @@
       desc: 'Rend l\'essai de 7 jours à nouveau disponible pour ton adresse et coupe celui en cours. Sans ça, le parcours ne se joue qu\'une fois.' },
     { id: 'paywall-etat', label: 'Périmètre payant · état détaillé', url: '/api/server/paywall',
       desc: 'Le mode du serveur, l\'aperçu de cette session, les droits de ton compte et les compteurs.' },
+    // ── Page de vérification publique ───────────────────────────────────────
+    // Libellé VIVANT : il dit où en est la construction, qui s'étale sur plusieurs passes
+    // (une journée coûte ~3 s). L'état vient de la télémétrie, relue toutes les 15 s.
+    { id: 'verif-publique',
+      label: (d) => 'Page publique « prévu contre observé » : ' + etatVerif(d).resume,
+      url: '/api/server/verification-publique', methode: 'POST', lent: true,
+      desc: (d) => etatVerif(d).detail },
   ];
+
+  // État de la page de vérification publique, tel que la dernière télémétrie l'a rapporté.
+  function etatVerif(d) {
+    const v = (d && d.verification_publique) || {};
+    if (v.error) return { resume: 'état illisible', detail: 'La télémétrie n\'a pas pu lire le rapport : ' + v.error };
+    if (v.enabled === false) return { resume: 'désactivée', detail: 'OBJECTIFOUDRE_VERIF_PUBLIC est à 0 sur ce serveur.' };
+    if ((v.rebuild || {}).state === 'running') {
+      return { resume: 'reconstruction en cours', detail: 'Une reconstruction complète tourne en tâche de fond. Reclique pour voir où elle en est ; la page se met à jour toute seule à la fin.' };
+    }
+    if (!v.generated_at) {
+      return { resume: 'jamais construite', detail: 'Le clic lance la première construction en tâche de fond (~3 s par journée archivée). La page répond déjà, en disant qu\'elle n\'a pas encore de chiffres.' };
+    }
+    const pret = v.days_ready == null ? '?' : v.days_ready;
+    const total = v.days_total == null ? '?' : v.days_total;
+    const resume = v.complete ? (pret + ' journées, à jour') : (pret + '/' + total + ' journées');
+    return {
+      resume: resume,
+      detail: 'Dernière régénération : ' + String(v.generated_at).replace('T', ' ').slice(0, 16)
+        + (v.complete ? '. Tout l\'historique est couvert.' : '. La construction s\'étale sur plusieurs passes.')
+        + ' Le clic reconstruit tout, sans budget, en tâche de fond — puis relis /verification.'
+    };
+  }
 
   // L'état de périmètre tel que la dernière télémétrie l'a rapporté. Repli neutre : un
   // libellé faux vaut mieux qu'une page cassée.

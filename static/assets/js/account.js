@@ -328,6 +328,12 @@
   }
 
   function appendPrivacy() {
+    // Page PUBLIQUE de vérification : pas de modale in-app, contrairement à la
+    // confidentialité — c'est une page autonome faite pour être ouverte et partagée telle
+    // quelle (chasseurs d'orages, forums météo), d'où l'ouverture en nouvel onglet.
+    var v = el('a', 'account-privacy', 'Qualité des prévisions (page publique)');
+    v.href = '/verification'; v.rel = 'noopener'; v.target = '_blank';
+    body.appendChild(v);
     // Lien conservé (href = page autonome, repli si JS échoue / clic « nouvel onglet »)
     // mais ouvert IN-APP par défaut : ferme la modale Compte puis affiche #privacyPage
     // (coquille .prediction-page) → la barre du bas reste visible par-dessus (Anthony).

@@ -214,6 +214,9 @@ class CablageDesRoutesTests(unittest.TestCase):
             "/api/meteofrance/france-grid-geometry", "/api/stargaze/tonight",
             "/api/forum/categories", "/api/forum/recent", "/api/account/me",
             "/api/push/unsubscribe", "/api/health",
+            # Page de vérification publique : son argument EST d'être publique. Un verrou
+            # ici la tuerait le jour où le périmètre s'allume. Cf. tests/test_verification_publique.py.
+            "/api/verification/publique", "/verification",
         }
         fautives = [r.path for r in self._routes() if r.path in libres and self._a_verrou(r)]
         self.assertEqual(fautives, [], "routes gratuites verrouillées par erreur : %s" % fautives)

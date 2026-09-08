@@ -66,6 +66,8 @@ import mailer  # « Système de compte » : envoi d'e-mails transactionnels (vé
 import push  # « Alertes orage » (Phase 4) : Web Push (VAPID) + géométrie des départements
 import verification
 import learning
+import public_verification  # page publique « prévu contre observé » : agrégation, régions, cas
+import public_verification_page  # rendu HTML/SVG de cette page (statique, sans JavaScript)
 try:
     import wcs_client  # client WCS GetCoverage (CIN/MLCAPE/cisaillement) — enrichissement non-fatal
 except Exception:  # pragma: no cover - eccodes/deps absents -> enrichissement simplement désactivé
@@ -88,7 +90,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.273"
+APP_VERSION = "1.3.274"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -4010,6 +4012,18 @@ def _lightning_automation_loop() -> None:
                 _build_lightning_archive_for_date(today_iso)
         except Exception:
             pass
+        # ÉCHÉANCE J+1 : instantané de la grille de demain, pris tant qu'elle est encore
+        # une PRÉVISION. Après, l'archive n'aura gardé que le dernier run du jour même et
+        # la mesure sera perdue pour toujours — d'où sa place ici, avant toute attente.
+        try:
+            _capture_lead_snapshots()
+        except Exception:
+            pass
+        # PAGE PUBLIQUE : régénérée en fin de cycle, avec un budget de journées par passe.
+        try:
+            _regenerate_public_verification()
+        except Exception:
+            pass
         _lightning_automation_stop.wait(OBJECTIFOUDRE_LIGHTNING_TODAY_INTERVAL_SECONDS)
 
 
@@ -4027,6 +4041,518 @@ def _start_lightning_automation_thread() -> None:
             name="objectifoudre-lightning-automation",
         )
         _lightning_automation_thread.start()
+
+
+# ── Page de vérification publique (« prévu contre observé ») ──────────────────
+# Trois responsabilités, et rien d'autre : la COLLECTE de ce qui serait perdu sinon,
+# la CONSTRUCTION du rapport durable, et sa RÉGÉNÉRATION accrochée au cycle de vérification
+# qui tourne déjà. Les maths vivent dans public_verification.py, le HTML dans
+# public_verification_page.py ; ici, que de la plomberie et des caches.
+#
+# LECTURE SEULE vis-à-vis du moteur : aucun score n'est recalculé, aucun seuil n'est appris.
+OBJECTIFOUDRE_VERIF_PUBLIC = _env_flag("OBJECTIFOUDRE_VERIF_PUBLIC", True)
+# Échéances dont on archive un instantané. J+1 SEULEMENT : c'est la seule échéance dont la
+# grille France soit réellement calculée d'avance (OBJECTIFOUDRE_AUTO_PRELOAD_DAYS vaut
+# « today,tomorrow »). J+2 et au-delà viennent d'ECMWF ~28 km — autre produit, autre mesure.
+OBJECTIFOUDRE_VERIF_LEAD_DAYS: tuple[int, ...] = (1,)
+# Budget par passe : la première construction touche ~100 journées à ~3 s pièce. On la étale
+# plutôt que de monopoliser le CPU d'un petit conteneur ; la page publie ce qui est prêt et
+# dit ce qui manque. Le bouton d'administration, lui, reconstruit sans budget.
+OBJECTIFOUDRE_VERIF_PUBLIC_DAYS_PER_PASS = _env_int("OBJECTIFOUDRE_VERIF_PUBLIC_DAYS_PER_PASS", 15, min_value=1)
+_VERIF_PUBLIC_NS = "verification-publique"
+_VERIF_PUBLIC_DAY_NS = "verification-publique-jour"
+_VERIF_PUBLIC_TTL_SECONDS = max(86400, OBJECTIFOUDRE_HISTORY_RETENTION_DAYS * 86400)
+_verif_public_lock = threading.Lock()
+_verif_public_rebuild_state: dict[str, Any] = {"state": "idle"}
+
+
+# --- Collecte 1 : instantané de la prévision J+1 ------------------------------
+# Irrécupérable autrement : _archive_history_slot refuse tout run plus ancien que l'archivé,
+# donc la grille conservée pour une date est TOUJOURS le dernier run AROME du jour même. On
+# recopie donc la grille de demain tant qu'elle est encore dans le futur ; le jour où la date
+# devient « aujourd'hui », plus aucune passe ne la vise et le fichier reste figé sur la
+# DERNIÈRE prévision faite avant que la journée commence. Coût mesuré : 11 ko par journée,
+# zéro octet réseau (la grille est déjà calculée et archivée).
+def _verif_lead_path(date_str: str, lead: int) -> Path:
+    return OBJECTIFOUDRE_HISTORY_DIR / "verif-lead" / date_str / f"lead{int(lead)}.json.gz"
+
+
+def _verif_slot_provenance(date_str: str) -> dict[str, Any]:
+    """Run AROME et agrégateur du créneau de milieu de journée — une seule lecture ciblée,
+    pour tracer d'où vient l'instantané sans réassembler les 24 créneaux."""
+    for hour in (12, 15, 9, 18, 6, 0):
+        path = _history_slot_path(date_str, hour)
+        if not path.exists():
+            continue
+        try:
+            record = _read_history_gzip(path) or {}
+        except Exception:
+            continue
+        return {
+            "run_reference_time": record.get("run_reference_time"),
+            "cell_aggregator": record.get("cell_aggregator"),
+            "algorithm_version": record.get("algorithm_version"),
+            "sampled_hour": hour,
+        }
+    return {}
+
+
+def _capture_lead_snapshot(target_date: Date, lead: int) -> dict[str, Any]:
+    """Écrit {cellule → score max de la journée} pour une date FUTURE. Idempotent :
+    ré-écrit tant que la date n'est pas arrivée, jamais après."""
+    today = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    if target_date <= today:
+        return {"ok": False, "reason": "date_non_future"}
+    date_str = target_date.isoformat()
+    cells = _forecast_day_cells(date_str)
+    if not cells:
+        return {"ok": False, "date": date_str, "lead": lead, "reason": "no_forecast_archived"}
+    scores = {
+        verification.cell_key(c["lat"], c["lon"]): int(round(float(c.get("trigger_score") or 0)))
+        for c in cells if c.get("lat") is not None and c.get("lon") is not None
+    }
+    record = {
+        "schema": 1,
+        "date": date_str,
+        "lead": int(lead),
+        "captured_at": _history_now_iso(),
+        "captured_on": today.isoformat(),
+        "cell_count": len(scores),
+        **_verif_slot_provenance(date_str),
+        "scores": scores,
+    }
+    try:
+        _write_history_gzip(_verif_lead_path(date_str, lead), record)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "date": date_str, "lead": lead, "reason": type(exc).__name__}
+    return {"ok": True, "date": date_str, "lead": lead, "cells": len(scores)}
+
+
+def _read_lead_snapshot(date_str: str, lead: int) -> dict[str, Any] | None:
+    path = _verif_lead_path(date_str, lead)
+    if not path.exists():
+        return None
+    try:
+        return _read_history_gzip(path)
+    except Exception:
+        return None
+
+
+def _capture_lead_snapshots() -> dict[str, Any]:
+    out: list[dict[str, Any]] = []
+    today = datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    for lead in OBJECTIFOUDRE_VERIF_LEAD_DAYS:
+        try:
+            out.append(_capture_lead_snapshot(today + timedelta(days=int(lead)), int(lead)))
+        except Exception as exc:  # noqa: BLE001
+            out.append({"ok": False, "lead": lead, "reason": type(exc).__name__})
+    return {"ok": True, "captured": out}
+
+
+def _prune_verif_lead_snapshots() -> None:
+    """Même fenêtre de rétention que l'archive : un instantané dont la journée est sortie de
+    l'historique ne sert plus à rien."""
+    base = OBJECTIFOUDRE_HISTORY_DIR / "verif-lead"
+    if not base.is_dir():
+        return
+    cutoff = (datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+              - timedelta(days=OBJECTIFOUDRE_HISTORY_RETENTION_DAYS)).isoformat()
+    try:
+        for child in base.iterdir():
+            if child.is_dir() and _is_iso_date(child.name) and child.name < cutoff:
+                shutil.rmtree(child, ignore_errors=True)
+    except Exception:
+        pass
+
+
+# --- Collecte 2 : journal des ruptures de méthode -----------------------------
+# Le seuil de décision, les poids de mélange et l'agrégateur de cellule CHANGENT (le seuil
+# actif vaut 52 contre 60 en référence ; les poids ont été réappris ; p90 arrive). Un score
+# publié sans dire sous quelle méthode il a été calculé n'est pas comparable dans le temps.
+# history/learning/log.jsonl NE PORTE NI LE SEUIL NI LES POIDS (clés : at/source/decision/
+# reason/data/applied/skill) → l'historique d'AVANT est irrécupérable, on ouvre le suivi ici
+# et la page le dit au lieu d'inventer un passé.
+def _verif_stamps_path() -> Path:
+    return OBJECTIFOUDRE_HISTORY_DIR / "verif-public" / "stamps.jsonl"
+
+
+def _verif_current_stamp() -> dict[str, Any]:
+    active = learning.load_active(OBJECTIFOUDRE_HISTORY_DIR) or {}
+    weights = active.get("weights") or {}
+    return {
+        "threshold": int(_active_score_threshold),
+        "baseline_threshold": int(verification.DEFAULT_SCORE_THRESHOLD),
+        "neighborhood_km": float(verification.DEFAULT_NEIGHBORHOOD_KM),
+        "flash_threshold": float(verification.DEFAULT_FLASH_THRESHOLD),
+        "cell_aggregator": METEOFRANCE_CELL_AGGREGATOR,
+        "weights": ({k: weights.get(k) for k in ("cape", "humid", "heat", "conv")}
+                    if weights.get("enabled") else None),
+        "li_boost_gain": active.get("li_boost_gain"),
+        "app_version": APP_VERSION,
+    }
+
+
+def _verif_read_stamps() -> list[dict[str, Any]]:
+    path = _verif_stamps_path()
+    if not path.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except Exception:
+                continue
+    except Exception:
+        return []
+    return out
+
+
+def _verif_record_stamp() -> list[dict[str, Any]]:
+    """Ajoute une ligne SEULEMENT si la méthode a changé depuis la dernière. Le journal est
+    donc la liste des ruptures, pas un log de régénérations."""
+    stamp = _verif_current_stamp()
+    stamps = _verif_read_stamps()
+    # `at` et `app_version` sont de la TRAÇABILITÉ, pas de la méthode : un simple
+    # déploiement ne doit pas apparaître comme une rupture, sinon la liste devient un
+    # journal de mises en production et le lecteur n'y voit plus ce qui compte vraiment.
+    ignore = {"at", "app_version"}
+    if stamps:
+        last = {k: v for k, v in stamps[-1].items() if k not in ignore}
+        if last == {k: v for k, v in stamp.items() if k not in ignore}:
+            return stamps
+    entry = {"at": _history_now_iso(), **stamp}
+    path = _verif_stamps_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        return stamps
+    return stamps + [entry]
+
+
+# --- Construction du rapport --------------------------------------------------
+# Une journée coûte ~3 s (décompression des 24 créneaux) : on la calcule UNE fois et on la
+# garde sur le volume, clé = date + seuil + voisinage + observation. Un réentraînement change
+# la clé, donc rien de périmé n'est jamais servi ; en régime établi, une régénération ne
+# recalcule que la journée nouvellement finalisée.
+_verif_region_cache: dict[str, str | None] = {}
+
+
+def _verif_region_of(entry: dict[str, Any]) -> str | None:
+    """Région métropolitaine d'une cellule. Mémoïsé : la grille France est statique, le
+    point-dans-polygone ne se paie donc qu'une fois par cellule et par démarrage."""
+    key = entry["key"]
+    if key in _verif_region_cache:
+        return _verif_region_cache[key]
+    try:
+        code = push.department_at(float(entry["lon"]), float(entry["lat"]))
+    except Exception:
+        code = None
+    region = public_verification.region_of_department(code)
+    _verif_region_cache[key] = region
+    return region
+
+
+def _verif_public_day_key(date_str: str, lightning: dict[str, Any]) -> str:
+    return (f"{date_str}|thr={int(_active_score_threshold)}"
+            f"|nb={verification.DEFAULT_NEIGHBORHOOD_KM}"
+            f"|leads={','.join(str(x) for x in OBJECTIFOUDRE_VERIF_LEAD_DAYS)}"
+            f"|obs={lightning.get('generated_at') or ''}")
+
+
+def _cells_from_lead_snapshot(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """Reconstruit des cellules depuis {clé → score}. La clé EST « lat|lon » à 3 décimales
+    (verification.cell_key), donc la position est exacte, pas approchée."""
+    cells: list[dict[str, Any]] = []
+    for key, score in (snapshot.get("scores") or {}).items():
+        try:
+            lat_s, lon_s = str(key).split("|")
+            cells.append({"lat": float(lat_s), "lon": float(lon_s), "trigger_score": float(score)})
+        except (ValueError, TypeError):
+            continue
+    return cells
+
+
+def _compute_public_day(date_str: str) -> dict[str, Any] | None:
+    """Tout ce que la page a besoin de savoir d'UNE journée : table de contingence, ventilation
+    régionale, tranches de fiabilité, table à l'échéance J+1 si l'instantané existe, et les
+    positions à cartographier. Une seule classification des cellules pour tout ça."""
+    lightning = _read_lightning_archive(date_str)
+    if not lightning or not lightning.get("final"):
+        return None
+    cache_key = _verif_public_day_key(date_str, lightning)
+    cached = _read_meteofrance_local_persistent_cache(_VERIF_PUBLIC_DAY_NS, cache_key, _VERIF_PUBLIC_TTL_SECONDS)
+    if cached is not None and isinstance(cached.get("payload"), dict):
+        return cached["payload"]
+    cells = _forecast_day_cells(date_str)
+    if not cells:
+        return None
+    fpc = lightning.get("flashes_per_cell") or {}
+    labelled = public_verification.classify_cells(
+        cells, fpc,
+        score_threshold=_active_score_threshold,
+        neighborhood_km=verification.DEFAULT_NEIGHBORHOOD_KM,
+    )
+    table = public_verification.table_from_classified(labelled)
+    zones = public_verification.aggregate_by_zone(labelled, _verif_region_of)
+    bins = public_verification.add_day_to_bins(public_verification.empty_bins(), labelled)
+
+    leads: dict[str, Any] = {}
+    for lead in OBJECTIFOUDRE_VERIF_LEAD_DAYS:
+        snapshot = _read_lead_snapshot(date_str, int(lead))
+        if not snapshot:
+            continue
+        lead_cells = _cells_from_lead_snapshot(snapshot)
+        if not lead_cells:
+            continue
+        lead_labelled = public_verification.classify_cells(
+            lead_cells, fpc,
+            score_threshold=_active_score_threshold,
+            neighborhood_km=verification.DEFAULT_NEIGHBORHOOD_KM,
+        )
+        leads[str(int(lead))] = {
+            "contingency": public_verification.table_from_classified(lead_labelled),
+            "captured_at": snapshot.get("captured_at"),
+            "captured_on": snapshot.get("captured_on"),
+            "run_reference_time": snapshot.get("run_reference_time"),
+            "cell_count": len(lead_cells),
+        }
+
+    record = {
+        "date": date_str,
+        "contingency": table,
+        "cell_count": len(labelled),
+        "forecast_cells": sum(1 for e in labelled if e["forecast"]),
+        "observed_cells": sum(1 for e in labelled if e["observed"]),
+        "flash_total": lightning.get("flash_total"),
+        "observation_source": lightning.get("source"),
+        "observation_generated_at": lightning.get("generated_at"),
+        "zones": zones,
+        "bins": bins,
+        "leads": leads,
+        # Positions à cartographier pour les cas retenus. Gardées pour TOUTES les journées :
+        # la sélection des cas peut changer sans qu'on ait à tout recalculer.
+        "points": {
+            "forecast": [[round(e["lat"], 3), round(e["lon"], 3)] for e in labelled if e["forecast"]],
+            "observed": [[round(e["lat"], 3), round(e["lon"], 3)] for e in labelled if e["observed"]],
+        },
+        "threshold": int(_active_score_threshold),
+        "computed_at": _history_now_iso(),
+    }
+    _write_meteofrance_local_persistent_cache(_VERIF_PUBLIC_DAY_NS, cache_key, record)
+    return record
+
+
+def _verif_public_candidate_dates() -> list[str]:
+    """Journées éligibles : une grille archivée ET une observation foudre FINALE. On exclut
+    le jour courant (archive partielle) — sinon la fenêtre 7 jours serait tirée vers le bas
+    par une journée dont on n'a encore vu que la moitié des éclairs."""
+    out: list[str] = []
+    for item in _list_history_dates():
+        date_str = item.get("date")
+        if not date_str:
+            continue
+        record = _read_lightning_archive(date_str)
+        if record and record.get("final"):
+            out.append(date_str)
+    return sorted(out)
+
+
+def _merge_bins(into: list[dict[str, int]], src: list[dict[str, int]]) -> list[dict[str, int]]:
+    for i, b in enumerate(src or []):
+        if i >= len(into):
+            break
+        for k in ("n", "cell", "near"):
+            into[i][k] = into[i].get(k, 0) + int(b.get(k) or 0)
+    return into
+
+
+def _build_public_verification_report(*, budget: int | None = None) -> dict[str, Any]:
+    """Assemble le rapport publiable. `budget` borne le nombre de journées CALCULÉES dans
+    cette passe (None = sans limite, pour la reconstruction déclenchée à la main) ; les
+    journées déjà en cache ne coûtent rien et entrent toutes."""
+    dates = _verif_public_candidate_dates()
+    remaining = None if budget is None else max(0, int(budget))
+    days: list[dict[str, Any]] = []
+    pending: list[str] = []
+    zones: dict[str, dict[str, int]] = {}
+    bins = public_verification.empty_bins()
+    lead_tables: dict[str, dict[str, int]] = {}
+    lead_days: dict[str, int] = {}
+
+    # Ordre DÉCROISSANT : quand le budget limite la passe, ce sont les journées RÉCENTES
+    # qui entrent d'abord. Sinon la fenêtre « 7 derniers jours » resterait des semaines à
+    # décrire un mois de juin, ce qui serait pire que de ne rien afficher.
+    for date_str in reversed(dates):
+        lightning = _read_lightning_archive(date_str)
+        if not lightning or not lightning.get("final"):
+            continue
+        cached = _read_meteofrance_local_persistent_cache(
+            _VERIF_PUBLIC_DAY_NS, _verif_public_day_key(date_str, lightning), _VERIF_PUBLIC_TTL_SECONDS)
+        record = cached.get("payload") if (cached and isinstance(cached.get("payload"), dict)) else None
+        if record is None:
+            if remaining is not None and remaining <= 0:
+                pending.append(date_str)
+                continue
+            record = _compute_public_day(date_str)
+            if remaining is not None:
+                remaining -= 1
+            if record is None:
+                continue
+        days.append(record)
+        zones = public_verification.merge_zone_tables(zones, record.get("zones") or {})
+        _merge_bins(bins, record.get("bins") or [])
+        for lead, info in (record.get("leads") or {}).items():
+            acc = lead_tables.setdefault(lead, {"hits": 0, "misses": 0, "false_alarms": 0, "correct_negatives": 0})
+            for k in acc:
+                acc[k] += int((info.get("contingency") or {}).get(k) or 0)
+            lead_days[lead] = lead_days.get(lead, 0) + 1
+
+    days.sort(key=lambda d: d["date"])          # collectées à l'envers, servies dans l'ordre
+    pending.sort()
+    reference = Date.fromisoformat(days[-1]["date"]) if days else datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+    cases = public_verification.pick_cases(days)
+    by_date = {d["date"]: d for d in days}
+    case_details: list[dict[str, Any]] = []
+    for case in cases:
+        record = by_date.get(case["date"])
+        if not record:
+            continue
+        case_details.append({
+            **case,
+            "contingency": record["contingency"],
+            "scores": public_verification.scores_from_table(**record["contingency"]),
+            "flash_total": record.get("flash_total"),
+            "forecast_cells": record.get("forecast_cells"),
+            "observed_cells": record.get("observed_cells"),
+            "points": record.get("points") or {"forecast": [], "observed": []},
+        })
+
+    # Échéance J+1 : mesurée seulement sur les journées qui ont un instantané, donc comparée
+    # au J+0 DES MÊMES JOURNÉES — sinon on comparerait deux échantillons différents.
+    lead_rows: list[dict[str, Any]] = []
+    for lead in sorted(lead_tables, key=lambda x: int(x)):
+        same_days = [d for d in days if str(lead) in (d.get("leads") or {})]
+        lead_rows.append({
+            "lead": int(lead),
+            "days": lead_days.get(lead, 0),
+            "contingency": lead_tables[lead],
+            "positives": lead_tables[lead]["hits"] + lead_tables[lead]["misses"],
+            "scores": public_verification.scores_from_table(**lead_tables[lead]),
+            "same_days_j0": public_verification.pool_days(same_days, min_positives=1),
+        })
+
+    return {
+        "ok": True,
+        "generated_at": _history_now_iso(),
+        "app_version": APP_VERSION,
+        "reference_date": reference.isoformat(),
+        "coverage": {
+            "days_ready": len(days),
+            "days_total": len(dates),
+            "days_pending": len(pending),
+            "pending_dates": pending[:20],
+            "complete": not pending,
+            "first_date": days[0]["date"] if days else None,
+            "last_date": days[-1]["date"] if days else None,
+            "retention_days": OBJECTIFOUDRE_HISTORY_RETENTION_DAYS,
+            "grid_cells": days[-1].get("cell_count") if days else None,
+        },
+        "method": {
+            **_verif_current_stamp(),
+            "lead_days": list(OBJECTIFOUDRE_VERIF_LEAD_DAYS),
+            "min_positives_window": public_verification.MIN_POSITIVES_WINDOW,
+            "min_positives_region": public_verification.MIN_POSITIVES_REGION,
+            "min_positives_case": public_verification.MIN_POSITIVES_CASE,
+            "min_n_reliability_bin": public_verification.MIN_N_RELIABILITY_BIN,
+        },
+        "windows": public_verification.windows(days, reference),
+        "regions": public_verification.zone_rows(zones),
+        "reliability": public_verification.reliability_rows(bins),
+        "cases": case_details,
+        "lead_time": lead_rows,
+        "changes": _verif_read_stamps(),
+        "daily": [{"date": d["date"], "contingency": d["contingency"],
+                   "observed_cells": d.get("observed_cells"), "flash_total": d.get("flash_total")}
+                  for d in days],
+    }
+
+
+def _read_public_verification_report() -> dict[str, Any] | None:
+    entry = _read_meteofrance_local_persistent_cache(_VERIF_PUBLIC_NS, "report", _VERIF_PUBLIC_TTL_SECONDS)
+    if entry and isinstance(entry.get("payload"), dict):
+        return entry["payload"]
+    return None
+
+
+def _read_public_verification_summary() -> dict[str, Any] | None:
+    entry = _read_meteofrance_local_persistent_cache(_VERIF_PUBLIC_NS, "resume", _VERIF_PUBLIC_TTL_SECONDS)
+    if entry and isinstance(entry.get("payload"), dict):
+        return entry["payload"]
+    return None
+
+
+def _verif_public_html_path() -> Path:
+    return OBJECTIFOUDRE_HISTORY_DIR / "verif-public" / "verification.html"
+
+
+def _regenerate_public_verification(*, budget: int | None = OBJECTIFOUDRE_VERIF_PUBLIC_DAYS_PER_PASS,
+                                    source: str = "automation") -> dict[str, Any]:
+    """Recalcule le rapport, l'écrit sur le volume, et régénère le HTML servi. Un seul
+    producteur à la fois : un clic d'administration pendant une passe automatique attend."""
+    if not OBJECTIFOUDRE_VERIF_PUBLIC:
+        return {"ok": False, "reason": "disabled"}
+    with _verif_public_lock:
+        _verif_record_stamp()
+        report = _build_public_verification_report(budget=budget)
+        report["source"] = source
+        _write_meteofrance_local_persistent_cache(_VERIF_PUBLIC_NS, "report", report)
+        # Résumé léger : la mosaïque de maintenance se relit toutes les 15 s et n'a que
+        # faire des ~110 ko de géométrie des cas.
+        _write_meteofrance_local_persistent_cache(_VERIF_PUBLIC_NS, "resume", {
+            "generated_at": report["generated_at"], "coverage": report["coverage"],
+            "source": source, "app_version": APP_VERSION})
+        try:
+            html = public_verification_page.render(report)
+            path = _verif_public_html_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".html.tmp")
+            tmp.write_text(html, encoding="utf-8")
+            tmp.replace(path)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "reason": f"render:{type(exc).__name__}", "detail": str(exc)[:200],
+                    "coverage": report.get("coverage")}
+        _prune_verif_lead_snapshots()
+        return {"ok": True, "coverage": report["coverage"], "generated_at": report["generated_at"],
+                "source": source}
+
+
+def _verif_public_rebuild_job() -> None:
+    try:
+        result = _regenerate_public_verification(budget=None, source="manuel")
+        state = {"state": "done" if result.get("ok") else "failed", **result}
+    except Exception as exc:  # noqa: BLE001
+        state = {"state": "failed", "reason": type(exc).__name__}
+    state["at"] = _history_now_iso()
+    _verif_public_rebuild_state.clear()
+    _verif_public_rebuild_state.update(state)
+
+
+def _start_verif_public_rebuild() -> dict[str, Any]:
+    """Reconstruction COMPLÈTE en tâche de fond : la première passe touche ~100 journées et
+    mourrait en timeout derrière le proxy si on la faisait dans la requête (vécu sur la
+    collecte MTG-LI). Le bouton répond tout de suite, l'état se lit au clic suivant."""
+    if _verif_public_rebuild_state.get("state") == "running":
+        return {"ok": True, "started": False, "already_running": True, **_verif_public_rebuild_state}
+    _verif_public_rebuild_state.clear()
+    _verif_public_rebuild_state.update({"state": "running", "at": _history_now_iso()})
+    threading.Thread(target=_verif_public_rebuild_job, daemon=True, name="verif-public-rebuild").start()
+    return {"ok": True, "started": True}
 
 
 def _meteofrance_grib_full_package_cache_key(product_href: str) -> str:
@@ -16775,6 +17301,25 @@ def _server_telemetry_sync() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         out["access"] = {"error": str(exc)[:150]}
 
+    # PAGE DE VÉRIFICATION PUBLIQUE — lu par le bouton d'Outils & diagnostics, dont le
+    # libellé dit l'état courant (la mosaïque se repeint toutes les 15 s, l'état doit donc
+    # venir d'ici et non du DOM).
+    try:
+        report = _read_public_verification_summary() or {}
+        coverage = report.get("coverage") or {}
+        out["verification_publique"] = {
+            "enabled": OBJECTIFOUDRE_VERIF_PUBLIC,
+            "generated_at": report.get("generated_at"),
+            "source": report.get("source"),
+            "days_ready": coverage.get("days_ready"),
+            "days_total": coverage.get("days_total"),
+            "complete": coverage.get("complete"),
+            "rebuild": dict(_verif_public_rebuild_state),
+            "html": _verif_public_html_path().exists(),
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["verification_publique"] = {"error": str(exc)[:150]}
+
     return out
 
 
@@ -18197,6 +18742,76 @@ async def history_import(request: Request, path: str = Query(..., min_length=1, 
 async def learning_status() -> dict[str, Any]:
     """État de l'auto-calibration : volumes, garde-fous, seuil/poids actifs, skill, journal."""
     return await asyncio.to_thread(_learning_status)
+
+
+# ── Page de vérification publique : routes ────────────────────────────────────
+# ⚠️ VOLONTAIREMENT HORS de /api/history/ : ce préfixe est celui de la fonction PAYANTE
+# `history` (access.py) et tests/test_paywall.py exige un verrou sur chacune de ses routes.
+# Une page dont l'argument est la transparence ne peut pas mourir le jour où le périmètre
+# payant s'allume — un test dédié interdit d'y poser un verrou.
+@app.get("/api/verification/publique")
+async def verification_publique_json(response: Response) -> dict[str, Any]:
+    """Les chiffres de la page publique, tels quels. Lecture du cache durable uniquement :
+    aucun calcul déclenché par une visite."""
+    if not OBJECTIFOUDRE_VERIF_PUBLIC:
+        return {"ok": False, "reason": "disabled"}
+    report = await asyncio.to_thread(_read_public_verification_report)
+    if not report:
+        response.headers["Cache-Control"] = "public, max-age=60"
+        return {"ok": False, "reason": "not_generated_yet",
+                "message": "Le rapport n'a pas encore été construit ; il l'est à la fin du prochain cycle de vérification."}
+    response.headers["Cache-Control"] = "public, max-age=600"
+    return report
+
+
+@app.get("/verification")
+async def page_verification_publique() -> Response:
+    """Page publique en HTML statique, écrite à la régénération. Pas de compte, pas de
+    bundle, pas de traceur — même motif que /confidentialite."""
+    path = _verif_public_html_path()
+    try:
+        html_text = await asyncio.to_thread(path.read_text, "utf-8")
+    except OSError:
+        html_text = None
+    if not html_text:
+        html_text = (
+            "<!doctype html><html lang=fr><head><meta charset=utf-8>"
+            "<meta name=viewport content='width=device-width, initial-scale=1'>"
+            "<title>Prévu contre observé — ObjectiFoudre</title>"
+            "<style>body{background:#0b131c;color:#e5edf5;font-family:system-ui,sans-serif;"
+            "margin:0;padding:48px 22px;line-height:1.6}main{max-width:60ch;margin:0 auto}"
+            "a{color:#5cc2e8}</style></head><body><main>"
+            "<h1>Prévu contre observé</h1><p>Les scores de vérification n'ont pas encore été "
+            "calculés sur ce serveur. Ils le sont à la fin du prochain cycle de vérification "
+            "de la foudre observée.</p><p><a href='/'>Retour à l'application</a></p>"
+            "</main></body></html>")
+        return Response(content=html_text, media_type="text/html; charset=utf-8",
+                        headers={"Cache-Control": "no-store, max-age=0"})
+    return Response(content=html_text, media_type="text/html; charset=utf-8",
+                    headers={"Cache-Control": "public, max-age=900"})
+
+
+@app.post("/api/server/verification-publique", dependencies=[Depends(_admin_secret_dep)])
+async def server_verification_publique_regenerate() -> dict[str, Any]:
+    """ADMIN : régénère la page publique MAINTENANT, sans attendre le cycle automatique.
+
+    La première construction touche ~100 journées à ~3 s pièce : elle part en tâche de fond
+    et la réponse est immédiate (un POST synchrone mourrait en timeout derrière le proxy,
+    comme la collecte MTG-LI). Recliquer affiche l'avancement."""
+    state = dict(_verif_public_rebuild_state)
+    started = await asyncio.to_thread(_start_verif_public_rebuild)
+    report = await asyncio.to_thread(_read_public_verification_report)
+    return {
+        "ok": True,
+        "reconstruction": {**state, **started},
+        "page": "/verification",
+        "rapport_actuel": {
+            "generated_at": (report or {}).get("generated_at"),
+            "coverage": (report or {}).get("coverage"),
+            "source": (report or {}).get("source"),
+        } if report else None,
+    }
+
 
 
 @app.post("/api/learning/retrain", dependencies=[Depends(_admin_secret_dep)])
