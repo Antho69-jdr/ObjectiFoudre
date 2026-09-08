@@ -68,7 +68,8 @@
      elles aussi : un survol translucide rouvrirait la fenêtre sur la grille. */
   --map-ground: #08101c;          /* = background-color posé par state.js */
   --map-ground-hover: #0e2536;
-  --map-accent: #38bdf8;
+  --map-accent: #38bdf8;          /* accent du mode : BORDURE (l'icône, elle, reste blanche) */
+  --map-icon: #ffffff;            /* icône TOUJOURS blanche — demande d'Anthony, comme avant */
   --map-accent-weak: rgba(56, 189, 248, 0.38);
   --map-ground-on: #133040;       /* état actif : MÊME teinte qu'avant, composité sur les terres */
   --accent-2-strong: #f59e0b;

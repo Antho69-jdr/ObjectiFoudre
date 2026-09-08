@@ -97,7 +97,9 @@ body.mobile-ui #infoDrawerBtn {
    Au repos, ces boutons étaient quasi transparents (--fill-ghost, 3 % de blanc) : le
    `backdrop-filter` ne rattrape pas une cellule de grille vive derrière, et l'icône
    passait à 1,01:1 sur une cellule jaune. On leur donne le fond OPAQUE des terres du
-   mode courant et l'accent du mode pour l'icône → 7 à 11,9:1 selon la carte.
+   mode courant ; l'icône reste BLANCHE et l'accent du mode passe sur la BORDURE.
+   Mesuré : 19,07:1 (prévisions), 19,39 (chasse), 19,79 (étoiles) au repos ; 13,8 à 16,7
+   sur les fonds de survol et d'état actif.
    L'état ACTIF n'est pas touché (il gagne par la passe tardive de theme.css et par les
    règles de mode) : il était déjà bon.
    `#toggleSearchBtn` et `#cityInput` sont visés par leur ID (1,0,0) : ils battent leurs
@@ -108,8 +110,8 @@ body.mobile-ui #infoDrawerBtn {
 #toggleSearchBtn,
 #cityInput {
   background: var(--map-ground);
-  border-color: var(--map-accent-weak);
-  color: var(--map-accent);
+  border-color: var(--map-accent-weak);   /* l'accent du mode reste sur la BORDURE */
+  color: var(--map-icon);                 /* l'icône, elle, est toujours blanche */
 }
 .spots-rail .grid-focus-btn:hover,
 .chase-layer-rail .grid-focus-btn:hover,
@@ -118,7 +120,7 @@ body.mobile-ui #infoDrawerBtn {
 #cityInput:hover {
   background: var(--map-ground-hover);   /* opaque lui aussi : un survol translucide rouvrirait la fenêtre sur la grille */
   border-color: var(--map-accent);
-  color: var(--map-accent);
+  color: var(--map-icon);
 }
 /* Le champ de recherche garde un texte lisible : c'est du CONTENU, pas une icône. */
 #cityInput { color: var(--text); }

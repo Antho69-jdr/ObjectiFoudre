@@ -87,15 +87,20 @@ class PaletteSuitLaCarteTests(unittest.TestCase):
 
 class ContrasteTests(unittest.TestCase):
     def test_icone_sur_fond_bien_au_dela_du_minimum(self):
-        """4,5:1 est le minimum AA ; on est à 7+ partout, autant le garder."""
+        """L'icône est BLANCHE dans tous les modes (choix d'Anthony) ; l'accent du mode
+        ne sert plus qu'à la bordure. 4,5:1 est le minimum AA — on est à 19."""
+        icone = token("map-icon")
+        self.assertEqual(icone.lower(), "#ffffff", "l'icône des boutons doit rester blanche")
         for portee, nom in ((None, "prévisions"), ("chase-mode", "chasse"), ("stargaze-mode", "étoiles")):
-            fond, accent = token("map-ground", portee), token("map-accent", portee)
-            r = contraste(fond, accent)
-            self.assertGreaterEqual(round(r, 2), 7.0,
-                                    "%s : icône %s sur %s → %.2f:1" % (nom, accent, fond, r))
+            for etat in ("map-ground", "map-ground-hover", "map-ground-on"):
+                fond = token(etat, portee)
+                r = contraste(fond, icone)
+                self.assertGreaterEqual(round(r, 2), 7.0,
+                                        "%s/%s : blanc sur %s → %.2f:1" % (nom, etat, fond, r))
 
     def test_etat_actif_aussi(self):
-        """C'était le plus mauvais des trois états avant correction."""
+        """C'était le plus mauvais des trois états avant correction (1,39:1 en étoiles).
+        L'ambre crème de l'état actif du mode étoiles est conservé — il existait avant."""
         for portee, icone in ((None, "#ffffff"), ("chase-mode", "#ffffff"), ("stargaze-mode", "#ffe9b0")):
             fond = token("map-ground-on", portee)
             self.assertIsNotNone(fond, "le fond de l'état actif a disparu")
