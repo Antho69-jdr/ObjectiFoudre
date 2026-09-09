@@ -39,6 +39,56 @@ def _dist_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 111.0 * math.hypot(dlat, dlon)
 
 
+class NeighborIndex:
+    """« Existe-t-il un point à ≤ rayon ? » en quelques comparaisons au lieu de toutes.
+
+    Les points sont rangés dans des seaux de 0,5°. Une recherche ne visite que les seaux
+    qui PEUVENT contenir un voisin — bornes en latitude par rayon/111, en longitude par le
+    cosinus de la latitude la plus défavorable de la fenêtre. C'est un SUR-ENSEMBLE
+    conservateur : le prédicat de distance appliqué ensuite est `_dist_km`, à l'identique.
+    Le résultat est donc exactement celui de la boucle naïve, mesuré à 0 écart sur des
+    journées réelles — mais la boucle naïve est en O(n·m).
+
+    `charge` est une valeur libre attachée au point (un score, un marqueur…) que
+    `values_within` restitue : c'est ce qui permet de demander « le score maximal du
+    voisinage » sans repasser sur tous les points.
+    """
+
+    BUCKET = 0.5
+
+    def __init__(self, points: Iterable[tuple[float, float, Any]]) -> None:
+        self.buckets: dict[tuple[int, int], list[tuple[float, float, Any]]] = {}
+        for lat, lon, charge in points:
+            key = (int(math.floor(lat / self.BUCKET)), int(math.floor(lon / self.BUCKET)))
+            self.buckets.setdefault(key, []).append((float(lat), float(lon), charge))
+
+    def _candidate_buckets(self, lat: float, lon: float, radius: float):
+        dlat = radius / 111.0
+        worst_lat = max(abs(lat - dlat), abs(lat + dlat))
+        cos_worst = math.cos(math.radians(min(worst_lat, 89.9)))
+        dlon = radius / (111.0 * cos_worst) if cos_worst > 1e-9 else 180.0
+        for blat in range(int(math.floor((lat - dlat) / self.BUCKET)),
+                          int(math.floor((lat + dlat) / self.BUCKET)) + 1):
+            for blon in range(int(math.floor((lon - dlon) / self.BUCKET)),
+                              int(math.floor((lon + dlon) / self.BUCKET)) + 1):
+                bucket = self.buckets.get((blat, blon))
+                if bucket:
+                    yield bucket
+
+    def values_within(self, lat: float, lon: float, radius: float):
+        """Charges de tous les points à ≤ rayon. Paresseux : `next(...)` suffit à répondre
+        « y en a-t-il au moins un ? » sans parcourir le reste."""
+        if not self.buckets or radius < 0:
+            return
+        for bucket in self._candidate_buckets(lat, lon, radius):
+            for plat, plon, charge in bucket:
+                if _dist_km((lat, lon), (plat, plon)) <= radius:
+                    yield charge
+
+    def any_within(self, lat: float, lon: float, radius: float) -> bool:
+        return next(self.values_within(lat, lon, radius), None) is not None
+
+
 def _cell_bounds(cell: dict[str, Any]) -> tuple[float, float, float, float] | None:
     try:
         lat = float(cell["lat"])
@@ -281,4 +331,25 @@ if __name__ == "__main__":
     assert c["correct_negatives"] == 5, c
     assert res["scores"]["pod"] == round(10 / 15, 3)
     assert res["scores"]["csi"] == round(10 / 20, 3)
+
+    # --- NeighborIndex : identique à la boucle naïve, sinon il ne sert à rien ---
+    import random
+    rng = random.Random(20260909)
+    pts = [(41.5 + rng.random() * 9.5, -5.0 + rng.random() * 14.0, i) for i in range(600)]
+    idx = NeighborIndex(pts)
+    ecarts = 0
+    for _ in range(300):
+        qlat = 41.0 + rng.random() * 10.5
+        qlon = -5.5 + rng.random() * 15.0
+        for radius in (0.0, 5.0, 30.0, 120.0):
+            attendu = {c for la, lo, c in pts if _dist_km((qlat, qlon), (la, lo)) <= radius}
+            obtenu = set(idx.values_within(qlat, qlon, radius))
+            if attendu != obtenu:
+                ecarts += 1
+            if (len(attendu) > 0) != idx.any_within(qlat, qlon, radius):
+                ecarts += 1
+    assert ecarts == 0, f"NeighborIndex diverge de la boucle naïve ({ecarts} écarts)"
+    assert set(NeighborIndex([]).values_within(45.0, 2.0, 30.0)) == set()
+    assert NeighborIndex([]).any_within(45.0, 2.0, 30.0) is False
+    print("index de voisinage: 1200 requêtes × 4 rayons, 0 écart avec la boucle naïve")
     print("OK ✅ auto-test vérification")
