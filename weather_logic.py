@@ -108,6 +108,96 @@ def get_active_li_boost_gain() -> float | None:
     return _active_li_boost_gain
 
 
+# ── Ré-ancrage de l'agrégateur de cellule ─────────────────────────────────────
+# Agréger une cellule par son p90 au lieu du plus proche voisin DÉCALE toute la
+# distribution des scores vers le haut (mesuré en production sur 28 996 cellules-jours :
+# 7,31 % → 11,54 % de cellules ≥ 60, soit +58 % de rouge sur la carte) sans qu'aucune
+# prévision ne se soit améliorée à l'écran. Le ré-ancrage par quantiles reclasse les scores
+# p90 sur la distribution historique du plus proche voisin : l'AUC étant une mesure de RANG,
+# elle est invariante par transformation monotone — on garde le gain de discrimination ET on
+# restitue l'affichage d'avant.
+#
+# La courbe s'applique au score FINAL (après boosts activité et indice de soulèvement) :
+# c'est sur ce score-là que la collecte d'ombre l'a dérivée, les deux côtés doivent parler
+# de la même grandeur.
+#
+# None = aucun ré-ancrage, le score sort inchangé (comportement par défaut, non-régression).
+_active_cell_rebase_curve: list[tuple[float, float]] | None = None
+
+
+def normalize_rebase_curve(curve: Any) -> list[tuple[float, float]] | None:
+    """Nettoie une courbe [[x, y], …] en table de correspondance exploitable, ou None.
+
+    Deux corrections indispensables, l'une et l'autre mesurées sur la courbe réelle :
+
+    1. **Ex æquo.** Une courbe quantile→quantile sur des scores ENTIERS répète beaucoup
+       d'abscisses (41 points pour 29 abscisses distinctes sur la courbe de production).
+       Une interpolation naïve retient le premier segment, donc le y le PLUS BAS : mesuré,
+       `30 → 23` alors que le plateau va de 23 à 30. Biais systématique vers le bas, juste
+       autour de la médiane. On effondre donc chaque abscisse en un point unique portant la
+       MOYENNE de ses y.
+    2. **Monotonie.** Une correspondance de quantiles est croissante par construction ;
+       on l'impose (maximum courant) pour qu'un bruit d'échantillonnage ne puisse jamais
+       faire rendre à un score plus élevé une valeur plus basse.
+    """
+    if not curve:
+        return None
+    par_x: dict[float, list[float]] = {}
+    for point in curve:
+        try:
+            x, y = float(point[0]), float(point[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if not (math.isfinite(x) and math.isfinite(y)):
+            continue
+        par_x.setdefault(x, []).append(y)
+    if len(par_x) < 2:
+        return None
+    out: list[tuple[float, float]] = []
+    plafond = float("-inf")
+    for x in sorted(par_x):
+        y = sum(par_x[x]) / len(par_x[x])
+        plafond = y = max(y, plafond)
+        out.append((x, y))
+    return out
+
+
+def rebase_score(curve: list[tuple[float, float]] | None, score: float) -> float:
+    """Applique une courbe NORMALISÉE : interpolation linéaire par morceaux, extrémités
+    plates. Sans courbe, le score ressort tel quel."""
+    if not curve:
+        return float(score)
+    if score <= curve[0][0]:
+        return float(curve[0][1])
+    if score >= curve[-1][0]:
+        return float(curve[-1][1])
+    for i in range(1, len(curve)):
+        x0, y0 = curve[i - 1]
+        x1, y1 = curve[i]
+        if score <= x1:
+            if x1 == x0:
+                return float(y1)
+            return float(y0) + (float(y1) - float(y0)) * ((float(score) - x0) / (x1 - x0))
+    return float(curve[-1][1])
+
+
+def set_active_cell_rebase_curve(curve: Any) -> None:
+    """Active (ou retire avec None) la courbe de ré-ancrage. Injectée par app.py."""
+    global _active_cell_rebase_curve
+    _active_cell_rebase_curve = normalize_rebase_curve(curve)
+
+
+def get_active_cell_rebase_curve() -> list[tuple[float, float]] | None:
+    return _active_cell_rebase_curve
+
+
+def apply_cell_rebase(score: int) -> int:
+    """Score final ré-ancré, borné 0-100. Identité tant qu'aucune courbe n'est active."""
+    if _active_cell_rebase_curve is None:
+        return int(score)
+    return clamp(rebase_score(_active_cell_rebase_curve, float(score)))
+
+
 def km_to_deg_lat(km: float) -> float:
     return km / 111.0
 
@@ -1905,6 +1995,10 @@ def rows_for_location(point: Point, loc: dict, convergence_by_zone_time: dict[tu
                 # Modificateur LI : rehausse quand l'instabilité d'ALTITUDE (indice de soulèvement)
                 # dépasse ce que la CAPE de surface capte — jamais en dessous ; inactif si LI absent.
                 storm_probability = apply_lifted_index_boost(storm_probability, metric.get("lifted_index"))
+                # Ré-ancrage de l'agrégateur de cellule : DERNIER geste sur le score, pour que
+                # potentiel, résumé, metric_scores, trigger_score et score_global parlent tous
+                # de la même valeur. Identité tant qu'aucune courbe n'est active.
+                storm_probability = apply_cell_rebase(storm_probability)
                 pot = potentiel(storm_probability)
                 conf = confiance_label(confidence_score)
                 selected_hour = metric["dt"].strftime("%Hh")

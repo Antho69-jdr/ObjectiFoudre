@@ -96,7 +96,9 @@
   // Uniquement des LECTURES (GET) : rien ici ne modifie l'état du serveur. Les actions
   // (purge mémoire, réentraînement, préchargement) restent où elles sont.
   const OUTILS = [
-    { id: 'shadow-rebase', label: 'Ré-ancrage p90', url: '/api/server/shadow-rebase', lent: true,
+    { id: 'shadow-rebase',
+      label: (d) => 'Ré-ancrage p90 · agrégateur ' + etatAgregateur(d),
+      url: '/api/server/shadow-rebase', lent: true,
       desc: 'Courbe quantile→quantile + seuil, depuis le mode ombre. C\'est ce JSON qu\'il faut me coller le jour de la bascule.' },
     { id: 'shadow-rebase-rapide', label: 'Ré-ancrage p90 (sans le seuil)', url: '/api/server/shadow-rebase?threshold=0',
       desc: 'Même chose en sautant la partie lente : utile pour vérifier où en est la collecte.' },
@@ -140,6 +142,19 @@
       url: '/api/server/verification-publique', methode: 'POST', lent: true,
       desc: (d) => etatVerif(d).detail },
   ];
+
+  // Agrégateur de cellule RÉELLEMENT servi. Le garde-fou peut avoir replié « p90 » sur
+  // « nearest » au démarrage faute de courbe de ré-ancrage : un repli silencieux
+  // ressemblerait sinon à une bascule réussie.
+  function etatAgregateur(d) {
+    const a = (d && d.agregateur_cellule) || {};
+    if (a.error) return 'illisible';
+    if (!a.effectif) return '?';
+    if (a.repli) return a.demande + ' REPLIÉ sur ' + a.effectif + ' (courbe manquante)';
+    const r = a.reancrage;
+    if (r && r.actif) return a.effectif + ' ré-ancré (' + r.points + ' points)';
+    return a.effectif;
+  }
 
   // État de la page de vérification publique, tel que la dernière télémétrie l'a rapporté.
   function etatVerif(d) {

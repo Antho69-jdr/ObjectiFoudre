@@ -90,7 +90,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.274"
+APP_VERSION = "1.3.275"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -828,6 +828,43 @@ METEOFRANCE_CELL_AGGREGATOR = (
 )
 if METEOFRANCE_CELL_AGGREGATOR not in METEOFRANCE_CELL_AGGREGATORS:
     METEOFRANCE_CELL_AGGREGATOR = "nearest"
+
+
+def _load_cell_rebase_curve(aggregator: str) -> dict[str, Any] | None:
+    """Courbe de ré-ancrage livrée avec le code, pour l'agrégateur demandé.
+
+    Fichier versionné (`data/cell_rebase_<agrégateur>.json`) plutôt qu'entrée dans
+    `active.json` : `learning.save_active` réécrit ce fichier EN ENTIER à chaque
+    réentraînement et emporterait la courbe avec lui.
+    """
+    if aggregator in ("nearest", "shadow"):
+        return None
+    path = BASE_DIR / "data" / f"cell_rebase_{aggregator}.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) and data.get("curve") else None
+
+
+# ── GARDE-FOU : l'agrégateur et sa courbe, jamais l'un sans l'autre ───────────
+# Servir le p90 SANS ré-ancrage décale toute la carte vers le rouge (mesuré en production :
+# 7,31 % → 11,54 % de cellules ≥ 60) sans qu'aucune prévision ne se soit améliorée. Plutôt
+# que d'en faire une consigne qu'on oublie un jour, on en fait une invariante : si la courbe
+# manque, l'agrégateur RETOMBE sur `nearest` et le dit dans la télémétrie.
+_CELL_REBASE_PAYLOAD = _load_cell_rebase_curve(METEOFRANCE_CELL_AGGREGATOR)
+CELL_REBASE_FALLBACK_REASON: str | None = None
+if METEOFRANCE_CELL_AGGREGATOR not in ("nearest", "shadow") and _CELL_REBASE_PAYLOAD is None:
+    CELL_REBASE_FALLBACK_REASON = (
+        f"agrégateur « {METEOFRANCE_CELL_AGGREGATOR} » demandé mais "
+        f"data/cell_rebase_{METEOFRANCE_CELL_AGGREGATOR}.json absent ou illisible "
+        f"→ repli sur « nearest » (servir du non ré-ancré fausserait la carte)."
+    )
+    logging.getLogger("objectifoudre").error(CELL_REBASE_FALLBACK_REASON)
+    METEOFRANCE_CELL_AGGREGATOR = "nearest"
+weather_logic.set_active_cell_rebase_curve(
+    (_CELL_REBASE_PAYLOAD or {}).get("curve") if METEOFRANCE_CELL_AGGREGATOR not in ("nearest", "shadow") else None
+)
 METEOFRANCE_CELL_AGGREGATOR_PERCENTILE = 90.0
 # Grandeurs CIRCULAIRES : un percentile sur des azimuts n'a aucun sens (350° et 10° sont
 # voisins). Elles restent au plus proche voisin quel que soit le réglage.
@@ -3013,6 +3050,9 @@ def _shadow_day_max_scores(date_str: str) -> dict[str, float]:
     return out
 
 
+REBASE_CURVE_POINTS = 201
+
+
 def _quantile_sorted(values: list[float], q: float) -> float:
     """Quantile d'une liste DÉJÀ triée, interpolé linéairement."""
     if not values:
@@ -3025,22 +3065,11 @@ def _quantile_sorted(values: list[float], q: float) -> float:
 
 
 def _apply_rebase_curve(curve: list[list[float]], score: float) -> float:
-    """Applique la courbe de ré-ancrage (interpolation linéaire par morceaux, extrémités
-    plates). `curve` = [[score_p90, score_nearest], …] croissante en x."""
-    if not curve:
-        return float(score)
-    if score <= curve[0][0]:
-        return float(curve[0][1])
-    if score >= curve[-1][0]:
-        return float(curve[-1][1])
-    for i in range(1, len(curve)):
-        x0, y0 = curve[i - 1]
-        x1, y1 = curve[i]
-        if score <= x1:
-            if x1 == x0:
-                return float(y1)
-            return float(y0) + (float(y1) - float(y0)) * ((score - x0) / (x1 - x0))
-    return float(curve[-1][1])
+    """Applique la courbe de ré-ancrage. Délègue à weather_logic pour qu'il n'existe QU'UNE
+    implémentation : ce que le rapport de diagnostic annonce doit être, au chiffre près, ce
+    que la production servira. (L'ancienne version locale retenait le premier segment sur une
+    abscisse répétée, donc le y le plus bas — biais mesuré de 4,6 points autour de la médiane.)"""
+    return weather_logic.rebase_score(weather_logic.normalize_rebase_curve(curve), score)
 
 
 def _rank_auc(scores: list[float], labels: list[int]) -> float | None:
@@ -3138,9 +3167,12 @@ def _shadow_rebase_report(*, with_threshold: bool = True, max_days: int = 60) ->
     vals_p90 = sorted(p for _d, _k, p, _n in paires)
     vals_near = sorted(n for _d, _k, _p, n in paires)
     # ~41 points suffisent (même ordre de grandeur que isotonic_pav), monotone par construction.
+    # 201 points (pas de 0,5 %) et non 41 (pas de 2,5 %) : la valeur qui décide du « ≥ 60 »
+    # tombait dans un intervalle contenant 2,5 % de la masse, interpolé linéairement — d'où
+    # 6,77 % de cellules ≥ 60 restituées au lieu de 7,31 %. Quelques kilo-octets de plus.
     courbe: list[list[float]] = []
-    for i in range(41):
-        q = i / 40.0
+    for i in range(REBASE_CURVE_POINTS):
+        q = i / float(REBASE_CURVE_POINTS - 1)
         courbe.append([round(_quantile_sorted(vals_p90, q), 3),
                        round(_quantile_sorted(vals_near, q), 3)])
     rapport["courbe_reancrage"] = courbe
@@ -17300,6 +17332,27 @@ def _server_telemetry_sync() -> dict[str, Any]:
                          "trial_days": access.TRIAL_DAYS}
     except Exception as exc:  # noqa: BLE001
         out["access"] = {"error": str(exc)[:150]}
+
+    # AGRÉGATEUR DE CELLULE + RÉ-ANCRAGE — l'état que le garde-fou peut avoir corrigé au
+    # démarrage. Sans ça, un repli silencieux ressemblerait à une bascule réussie.
+    try:
+        payload = _CELL_REBASE_PAYLOAD or {}
+        courbe = weather_logic.get_active_cell_rebase_curve()
+        out["agregateur_cellule"] = {
+            "demande": (os.environ.get("OBJECTIFOUDRE_CELL_AGGREGATOR") or "nearest").strip().lower(),
+            "effectif": METEOFRANCE_CELL_AGGREGATOR,
+            "repli": CELL_REBASE_FALLBACK_REASON,
+            "jeton_cache": _cell_aggregator_cache_token(),
+            "reancrage": {
+                "actif": courbe is not None,
+                "points": len(courbe) if courbe else 0,
+                "derive_le": payload.get("derived_at"),
+                "journees_ombre": payload.get("shadow_days_count"),
+                "paires": payload.get("pairs"),
+            } if (payload or courbe) else None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["agregateur_cellule"] = {"error": str(exc)[:150]}
 
     # PAGE DE VÉRIFICATION PUBLIQUE — lu par le bouton d'Outils & diagnostics, dont le
     # libellé dit l'état courant (la mosaïque se repeint toutes les 15 s, l'état doit donc
