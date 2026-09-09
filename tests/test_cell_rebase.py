@@ -53,13 +53,21 @@ COURBE_REELLE = [
 class LeGardeFou(unittest.TestCase):
     """Un p90 non ré-ancré ne doit JAMAIS être servi."""
 
-    def test_sans_courbe_l_agregateur_retombe_sur_nearest(self):
-        charge = api_app._load_cell_rebase_curve("p90")
-        if charge is None:
-            # Cas de ce dépôt tant que la courbe n'est pas livrée : le repli DOIT avoir joué.
-            self.assertEqual(api_app.METEOFRANCE_CELL_AGGREGATOR, "nearest")
+    def test_l_agregateur_effectif_et_la_courbe_vont_toujours_ensemble(self):
+        """L'invariante, dans les deux sens. Attention : la PRÉSENCE du fichier de courbe ne
+        dit rien — c'est l'agrégateur EFFECTIF qui décide. En `nearest` ou en `shadow`, la
+        courbe existe peut-être sur le disque mais ne doit surtout pas être active, sinon le
+        mode ombre changerait la production alors que tout son intérêt est de ne rien changer."""
+        effectif = api_app.METEOFRANCE_CELL_AGGREGATOR
+        active = wl.get_active_cell_rebase_curve()
+        if effectif in ("nearest", "shadow"):
+            self.assertIsNone(active, f"courbe active alors que l'agrégateur est {effectif}")
         else:
-            self.assertIsNotNone(wl.get_active_cell_rebase_curve())
+            self.assertIsNotNone(active, f"agrégateur {effectif} servi SANS courbe de ré-ancrage")
+
+    def test_sans_fichier_de_courbe_le_p90_est_refuse(self):
+        """Le cœur du garde-fou : si le fichier disparaissait, p90 ne doit pas être servi."""
+        self.assertIsNone(api_app._load_cell_rebase_curve("agregateur_inexistant"))
 
     def test_un_repli_ne_reste_jamais_silencieux(self):
         """Sinon un repli ressemblerait à une bascule réussie."""
