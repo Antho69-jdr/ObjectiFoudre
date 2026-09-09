@@ -28,6 +28,10 @@ os.environ["OBJECTIFOUDRE_HISTORY_DIR"] = _TMP
 os.environ["OBJECTIFOUDRE_ACCOUNTS_FILE"] = os.path.join(_TMP, "accounts-test.db")
 os.environ["OBJECTIFOUDRE_LIGHTNING_AUTOMATION"] = "0"
 os.environ["OBJECTIFOUDRE_PREWARM"] = "0"
+# Cache DANS le dossier temporaire : sans ça les tests écriraient dans le .cache du dépôt.
+os.environ["OBJECTIFOUDRE_CACHE_DIR"] = os.path.join(_TMP, "cache")
+
+import asyncio
 
 import weather_logic as wl
 import app as api_app
@@ -215,6 +219,112 @@ class LeRapportEtLaProductionDisentLaMemeChose(unittest.TestCase):
         """41 points = pas de 2,5 % : la valeur qui décide du « ≥ 60 » tombait dans un
         intervalle contenant 2,5 % de la masse."""
         self.assertGreaterEqual(api_app.REBASE_CURVE_POINTS, 201)
+
+
+class LeCalculEnTacheDeFond(unittest.TestCase):
+    """Cloudflare coupe une requête à ~100 s. Le rapport de ré-ancrage dépasse ce délai dès
+    que la collecte s'allonge : un 524 l'a prouvé en prod le 09/09/2026, exactement comme la
+    collecte MTG-LI synchrone avant lui. Premier clic = lancement, second clic = rapport."""
+
+    def setUp(self):
+        with api_app._shadow_rebase_lock:
+            api_app._shadow_rebase_state.clear()
+            api_app._shadow_rebase_state.update({"etat": "jamais_lance"})
+        chemin = api_app._meteofrance_persistent_cache_path(
+            api_app._SHADOW_REBASE_NS, "rapport|seuil=1")
+        if chemin.exists():
+            chemin.unlink()
+
+    @staticmethod
+    def _appel(**kwargs):
+        """⚠️ PIÈGE : appelée en direct, la coroutine reçoit les objets `Query(...)` comme
+        valeurs par défaut — et un `Query(0)` est TRUTHY. Un test qui omet `refaire=0`
+        emprunte donc la branche « recalcul » et croit à tort à un bug. On passe toujours
+        TOUS les paramètres explicitement."""
+        params = {"threshold": 1, "refaire": 0}
+        params.update(kwargs)
+        return asyncio.run(api_app.server_shadow_rebase(**params))
+
+    def _attendre_fin(self, secondes: float = 5.0) -> None:
+        import time
+        limite = time.time() + secondes
+        while time.time() < limite:
+            with api_app._shadow_rebase_lock:
+                if api_app._shadow_rebase_state.get("etat") in ("termine", "echec"):
+                    return
+            time.sleep(0.05)
+        self.fail("le calcul de fond ne s'est jamais terminé")
+
+    def test_l_endpoint_reste_reserve_a_l_administrateur(self):
+        routes = [r for r in api_app.app.routes
+                  if getattr(r, "path", None) == "/api/server/shadow-rebase"]
+        self.assertTrue(routes)
+        noms = {getattr(d.dependency, "__name__", "") for d in routes[0].dependencies}
+        self.assertIn("_admin_secret_dep", noms)
+
+    def test_le_premier_clic_lance_et_ne_bloque_pas(self):
+        reponse = self._appel()
+        self.assertTrue(reponse["etat_calcul"].get("lance"))
+        self.assertIsNone(reponse["rapport"])
+        self.assertIn("tâche de fond", reponse["message"])
+
+    def test_le_second_clic_rend_le_rapport_sans_relancer(self):
+        self._appel()
+        self._attendre_fin()
+        reponse = self._appel()
+        self.assertIsNotNone(reponse["rapport"], "le rapport n'a pas été gardé")
+        self.assertNotIn("lance", reponse["etat_calcul"],
+                         "un second clic ne doit PAS relancer le calcul")
+        self.assertIsNone(reponse.get("message"))
+
+    def test_refaire_force_un_nouveau_calcul(self):
+        self._appel()
+        self._attendre_fin()
+        reponse = self._appel(refaire=1)
+        self.assertTrue(reponse["etat_calcul"].get("lance"))
+        self._attendre_fin()
+
+    def test_deux_clics_rapproches_ne_lancent_qu_un_calcul(self):
+        """En local le rapport se calcule en 0 s : sans un calcul VOLONTAIREMENT lent, le
+        second clic trouverait déjà le résultat et ne testerait pas la concurrence."""
+        import time as _t
+        vrai = api_app._shadow_rebase_report
+        try:
+            def _lent(**_kwargs):
+                _t.sleep(0.6)
+                return {"avertissements": [], "duree_s": 0.6}
+            api_app._shadow_rebase_report = _lent
+            premier = self._appel()
+            second = self._appel()
+            self.assertTrue(premier["etat_calcul"].get("lance"))
+            self.assertFalse(second["etat_calcul"].get("lance"))
+            self.assertIn("déjà en cours", second["message"])
+            self._attendre_fin()
+        finally:
+            api_app._shadow_rebase_report = vrai
+
+    def test_la_duree_est_toujours_rapportee(self):
+        """Le rapport a dix sorties anticipées ; sans la durée sur chacune, on ne saurait pas
+        laquelle a coûté un dépassement de délai."""
+        rapport = api_app._shadow_rebase_report(with_threshold=False)
+        self.assertIn("duree_s", rapport)
+        self.assertIsInstance(rapport["duree_s"], float)
+
+    def test_un_echec_de_calcul_ne_laisse_pas_l_etat_bloque_en_cours(self):
+        """Sinon le bouton dirait « en cours » pour toujours et personne ne saurait pourquoi."""
+        vrai = api_app._shadow_rebase_report
+        try:
+            def _casse(**_kwargs):
+                raise RuntimeError("panne simulée")
+            api_app._shadow_rebase_report = _casse
+            self._appel()
+            self._attendre_fin()
+        finally:
+            api_app._shadow_rebase_report = vrai
+        with api_app._shadow_rebase_lock:
+            etat = dict(api_app._shadow_rebase_state)
+        self.assertEqual(etat["etat"], "echec")
+        self.assertEqual(etat["raison"], "RuntimeError")
 
 
 if __name__ == "__main__":

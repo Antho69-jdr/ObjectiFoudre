@@ -90,7 +90,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.275"
+APP_VERSION = "1.3.276"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -3110,6 +3110,15 @@ def _distribution_stats(values: list[float]) -> dict[str, Any]:
 
 
 def _shadow_rebase_report(*, with_threshold: bool = True, max_days: int = 60) -> dict[str, Any]:
+    """Enveloppe chronométrée : `_shadow_rebase_compute` a dix sorties anticipées, et sans la
+    durée on ne sait pas laquelle a coûté un dépassement de délai."""
+    depart = time.time()
+    rapport = _shadow_rebase_compute(with_threshold=with_threshold, max_days=max_days)
+    rapport["duree_s"] = round(time.time() - depart, 1)
+    return rapport
+
+
+def _shadow_rebase_compute(*, with_threshold: bool = True, max_days: int = 60) -> dict[str, Any]:
     """Dérive la COURBE DE RÉ-ANCRAGE p90 → plus proche voisin, et le SEUIL p90.
 
     LECTURE SEULE, STRICTEMENT SANS EFFET : ne touche ni à l'agrégateur servi, ni au seuil
@@ -3122,6 +3131,7 @@ def _shadow_rebase_report(*, with_threshold: bool = True, max_days: int = 60) ->
     quantile → quantile des deux distributions, sur le MÊME support (cellules-jours présentes
     des deux côtés)."""
     rapport: dict[str, Any] = {
+        "calcule_le": _history_now_iso(),
         "collecte": _shadow_collection_status(max_days=max_days),
         "avertissements": [],
     }
@@ -3236,6 +3246,59 @@ def _shadow_rebase_report(*, with_threshold: bool = True, max_days: int = 60) ->
                                 "avec l'agrégateur ré-ancré."},
     }
     return rapport
+
+
+# ── Ré-ancrage p90 : calcul en TÂCHE DE FOND ─────────────────────────────────
+# Le rapport relit les journées d'ombre ET les journées d'archive COMPLÈTES (metric_scores),
+# puis cherche le seuil optimal sur 99 valeurs — plusieurs minutes quand la collecte
+# s'allonge. Derrière Cloudflare, une requête qui dépasse ~100 s meurt en 524 (vécu le
+# 09/09/2026, exactement comme la collecte MTG-LI synchrone avant elle). Donc : le premier
+# clic LANCE, le second RÉCUPÈRE. Le dernier rapport est gardé sur le volume, pour survivre
+# à un redéploiement — c'est un JSON de quelques dizaines de kilo-octets.
+_SHADOW_REBASE_NS = "shadow-rebase"
+# Le rapport reste valable tant que la collecte d'ombre ne s'est pas allongée ; on le garde
+# une semaine, largement de quoi couvrir une bascule. `?refaire=1` force un recalcul.
+_SHADOW_REBASE_TTL_SECONDS = 7 * 86400
+_shadow_rebase_state: dict[str, Any] = {"etat": "jamais_lance"}
+_shadow_rebase_lock = threading.Lock()
+
+
+def _shadow_rebase_job(with_threshold: bool, max_days: int) -> None:
+    try:
+        rapport = _shadow_rebase_report(with_threshold=with_threshold, max_days=max_days)
+        _write_meteofrance_local_persistent_cache(
+            _SHADOW_REBASE_NS, f"rapport|seuil={int(with_threshold)}", rapport)
+        etat = {"etat": "termine", "duree_s": rapport.get("duree_s"),
+                "avec_seuil": bool(with_threshold)}
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("objectifoudre").warning("ré-ancrage p90 : calcul échoué", exc_info=True)
+        etat = {"etat": "echec", "raison": type(exc).__name__, "detail": str(exc)[:200]}
+    etat["fini_le"] = _history_now_iso()
+    with _shadow_rebase_lock:
+        _shadow_rebase_state.clear()
+        _shadow_rebase_state.update(etat)
+
+
+def _read_shadow_rebase_report(with_threshold: bool) -> dict[str, Any] | None:
+    entry = _read_meteofrance_local_persistent_cache(
+        _SHADOW_REBASE_NS, f"rapport|seuil={int(with_threshold)}", _SHADOW_REBASE_TTL_SECONDS)
+    if entry and isinstance(entry.get("payload"), dict):
+        return entry["payload"]
+    return None
+
+
+def _start_shadow_rebase(with_threshold: bool, max_days: int = 60) -> dict[str, Any]:
+    """Lance le calcul s'il n'y en a pas déjà un. Rend l'état, jamais le rapport."""
+    with _shadow_rebase_lock:
+        if _shadow_rebase_state.get("etat") == "en_cours":
+            return {"lance": False, **_shadow_rebase_state}
+        _shadow_rebase_state.clear()
+        _shadow_rebase_state.update({"etat": "en_cours", "depuis": _history_now_iso(),
+                                     "avec_seuil": bool(with_threshold)})
+        etat = dict(_shadow_rebase_state)
+    threading.Thread(target=_shadow_rebase_job, args=(with_threshold, max_days),
+                     daemon=True, name="shadow-rebase").start()
+    return {"lance": True, **etat}
 
 
 def _archive_france_slot_grid(result: dict[str, Any]) -> None:
@@ -17388,15 +17451,31 @@ async def server_gii_shadow() -> dict[str, Any]:
 
 
 @app.get("/api/server/shadow-rebase", dependencies=[Depends(_admin_secret_dep)])
-async def server_shadow_rebase(threshold: int = Query(1)) -> dict[str, Any]:
-    """ADMIN, LECTURE SEULE : dérive la courbe de ré-ancrage p90 → plus proche voisin et le
-    seuil p90 depuis `history/shadow/`, et rend un JSON compact (quelques Ko) destiné à être
-    copié-collé — l'admin étant lié à une session de compte, c'est le seul canal disponible.
+async def server_shadow_rebase(threshold: int = Query(1), refaire: int = Query(0)) -> dict[str, Any]:
+    """ADMIN, LECTURE SEULE : courbe de ré-ancrage p90 → plus proche voisin, et seuil p90.
 
     Ne modifie RIEN : ni OBJECTIFOUDRE_CELL_AGGREGATOR, ni le seuil actif, ni l'archive.
-    Appelable AVANT que la collecte soit prête : il dit alors où elle en est.
-    `?threshold=0` saute la partie seuil (qui relit les journées complètes, donc lente)."""
-    return await asyncio.to_thread(_shadow_rebase_report, with_threshold=bool(threshold))
+
+    ⏱️ **Le premier clic LANCE le calcul, le second REND le rapport.** Il relit les journées
+    d'ombre et les journées d'archive complètes puis balaie 99 seuils : plusieurs minutes,
+    là où Cloudflare coupe à ~100 s (524 vécu le 09/09/2026). Le résultat est gardé sur le
+    volume ; `?refaire=1` force un nouveau calcul, `?threshold=0` saute la partie lente."""
+    avec_seuil = bool(threshold)
+    rapport = await asyncio.to_thread(_read_shadow_rebase_report, avec_seuil)
+    with _shadow_rebase_lock:
+        etat = dict(_shadow_rebase_state)
+    if rapport is not None and not refaire:
+        return {"ok": True, "etat_calcul": etat, "rapport": rapport}
+    demarrage = await asyncio.to_thread(_start_shadow_rebase, avec_seuil)
+    return {
+        "ok": True,
+        "etat_calcul": demarrage,
+        "rapport": rapport,
+        "message": ("Calcul lancé en tâche de fond — recharge cette page dans une minute ou "
+                    "deux pour récupérer le rapport."
+                    if demarrage.get("lance")
+                    else "Un calcul est déjà en cours — recharge cette page dans un moment."),
+    }
 
 
 @app.get("/api/server/telemetry", dependencies=[Depends(_admin_secret_dep)])
