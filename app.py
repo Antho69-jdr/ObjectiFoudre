@@ -90,7 +90,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.278"
+APP_VERSION = "1.3.279"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -3546,9 +3546,6 @@ def _read_lightning_archive(date_str: str) -> dict[str, Any] | None:
 # Caches (invalidés quand un créneau prévu est archivé, ou la foudre re-collectée).
 _forecast_cells_cache: dict[str, list[dict[str, Any]]] = {}
 _verification_cache: dict[str, dict[str, Any]] = {}
-# P2b : TTL du cache DURABLE de vérification (volume). La clé encode date+seuil+observation
-# → la staleness est bornée par ceux-ci, pas par le temps ; TTL = fenêtre de rétention.
-_HISTORY_VERIFICATION_DISK_TTL_SECONDS = max(86400, OBJECTIFOUDRE_HISTORY_RETENTION_DAYS * 86400)
 
 
 def _forecast_day_cells(date_str: str) -> list[dict[str, Any]]:
@@ -3853,9 +3850,9 @@ def _compute_day_verification(date_str: str) -> dict[str, Any]:
     # déjà calculée pour ce (date, seuil, observation) au lieu de refaire ~21 s d'assemblage
     # archive + appariement de voisinage.
     disk_key = _verification_disk_key(date_str, lightning)
-    disk = _read_meteofrance_local_persistent_cache("history-verification", disk_key, _HISTORY_VERIFICATION_DISK_TTL_SECONDS)
-    if disk is not None and isinstance(disk.get("payload"), dict) and disk["payload"].get("ok"):
-        return _verification_remember(date_str, disk["payload"])
+    disk = _durable_store_read(_durable_store_path("verification", f"{date_str}.json.gz"), disk_key)
+    if disk is not None and disk.get("ok"):
+        return _verification_remember(date_str, disk)
     cells = _forecast_day_cells(date_str)
     if not cells:
         return {
@@ -3874,7 +3871,8 @@ def _compute_day_verification(date_str: str) -> dict[str, Any]:
     result["observation_source"] = lightning.get("source")
     result["observation_generated_at"] = lightning.get("generated_at")
     if result.get("ok"):
-        _write_meteofrance_local_persistent_cache("history-verification", disk_key, result)
+        _durable_store_write(_durable_store_path("verification", f"{date_str}.json.gz"),
+                             result, disk_key)
     return _verification_remember(date_str, result)
 
 
@@ -4154,9 +4152,6 @@ OBJECTIFOUDRE_VERIF_LEAD_DAYS: tuple[int, ...] = (1,)
 # plutôt que de monopoliser le CPU d'un petit conteneur ; la page publie ce qui est prêt et
 # dit ce qui manque. Le bouton d'administration, lui, reconstruit sans budget.
 OBJECTIFOUDRE_VERIF_PUBLIC_DAYS_PER_PASS = _env_int("OBJECTIFOUDRE_VERIF_PUBLIC_DAYS_PER_PASS", 15, min_value=1)
-_VERIF_PUBLIC_NS = "verification-publique"
-_VERIF_PUBLIC_DAY_NS = "verification-publique-jour"
-_VERIF_PUBLIC_TTL_SECONDS = max(86400, OBJECTIFOUDRE_HISTORY_RETENTION_DAYS * 86400)
 _verif_public_lock = threading.Lock()
 _verif_public_rebuild_state: dict[str, Any] = {"state": "idle"}
 
@@ -4168,6 +4163,51 @@ _verif_public_rebuild_state: dict[str, Any] = {"state": "idle"}
 # devient « aujourd'hui », plus aucune passe ne la vise et le fichier reste figé sur la
 # DERNIÈRE prévision faite avant que la journée commence. Coût mesuré : 11 ko par journée,
 # zéro octet réseau (la grille est déjà calculée et archivée).
+# ── Stockage durable de ce qui se RECALCULE (et ne se re-télécharge pas) ─────
+# ⚠️ NE PAS remettre ça dans METEOFRANCE_PERSISTENT_CACHE_DIR. Ce dossier est un cache de
+# TÉLÉCHARGEMENTS, avec un pruner qui évince en LRU dès le plafond atteint — et il y est en
+# permanence (mesuré le 10/09 : 1 503,7 Mo pour un plafond à 1 500, ~11,5 Go/jour d'écritures,
+# soit un renouvellement complet en ~3 h). Son commentaire l'assume : « en manger une partie
+# ne casse rien, ça re-télécharge au pire ». C'est vrai d'un GRIB. C'est FAUX d'un rapport de
+# vérification, qui coûte ~3,4 s de recalcul par journée et dont l'absence est lue comme
+# « pas encore générée ».
+#
+# Symptôme mesuré avant correctif : la couverture de la page publique restait bloquée à
+# 15/97 journées, deux passes de suite — chaque passe en recalculait 15, évincées avant la
+# suivante. Elle n'aurait jamais atteint 97.
+#
+# On suit donc la convention déjà en place dans ce fichier : ce qui doit survivre vit sous
+# OBJECTIFOUDRE_HISTORY_DIR (le volume), comme `history/day_cache`.
+def _durable_store_path(*parts: str) -> Path:
+    return OBJECTIFOUDRE_HISTORY_DIR.joinpath(*parts)
+
+
+def _durable_store_read(path: Path, expected_key: str | None = None) -> dict[str, Any] | None:
+    """Lit un enregistrement durable. `expected_key` remplace le TTL : si la clé stockée ne
+    correspond plus (seuil réappris, observation re-collectée…), l'entrée est traitée comme
+    absente — jamais servie périmée."""
+    if not path.exists():
+        return None
+    try:
+        record = _read_history_gzip(path)
+    except Exception:
+        return None
+    if not isinstance(record, dict):
+        return None
+    if expected_key is not None and record.get("key") != expected_key:
+        return None
+    payload = record.get("payload")
+    return payload if isinstance(payload, dict) else None
+
+
+def _durable_store_write(path: Path, payload: Any, key: str | None = None) -> None:
+    try:
+        _write_history_gzip(path, {"key": key, "at": _history_now_iso(), "payload": payload})
+    except Exception:
+        logging.getLogger("objectifoudre").warning(
+            "écriture durable impossible : %s", path, exc_info=True)
+
+
 def _verif_lead_path(date_str: str, lead: int) -> Path:
     return OBJECTIFOUDRE_HISTORY_DIR / "verif-lead" / date_str / f"lead{int(lead)}.json.gz"
 
@@ -4242,6 +4282,23 @@ def _capture_lead_snapshots() -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             out.append({"ok": False, "lead": lead, "reason": type(exc).__name__})
     return {"ok": True, "captured": out}
+
+
+def _prune_durable_by_date(base: Path) -> None:
+    """Supprime les enregistrements datés sortis de la fenêtre de rétention. Ces dossiers
+    vivent sur le VOLUME, hors du pruner du cache de téléchargements : sans ça, rien ne les
+    nettoierait."""
+    if not base.is_dir():
+        return
+    cutoff = (datetime.now(OBJECTIFOUDRE_SERVER_TIMEZONE).date()
+              - timedelta(days=OBJECTIFOUDRE_HISTORY_RETENTION_DAYS)).isoformat()
+    try:
+        for child in base.iterdir():
+            nom = child.name.split(".")[0]
+            if child.is_file() and _is_iso_date(nom) and nom < cutoff:
+                child.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 def _prune_verif_lead_snapshots() -> None:
@@ -4381,9 +4438,9 @@ def _compute_public_day(date_str: str) -> dict[str, Any] | None:
     if not lightning or not lightning.get("final"):
         return None
     cache_key = _verif_public_day_key(date_str, lightning)
-    cached = _read_meteofrance_local_persistent_cache(_VERIF_PUBLIC_DAY_NS, cache_key, _VERIF_PUBLIC_TTL_SECONDS)
-    if cached is not None and isinstance(cached.get("payload"), dict):
-        return cached["payload"]
+    cached = _durable_store_read(_verif_public_day_path(date_str), cache_key)
+    if cached is not None:
+        return cached
     cells = _forecast_day_cells(date_str)
     if not cells:
         return None
@@ -4439,7 +4496,7 @@ def _compute_public_day(date_str: str) -> dict[str, Any] | None:
         "threshold": int(_active_score_threshold),
         "computed_at": _history_now_iso(),
     }
-    _write_meteofrance_local_persistent_cache(_VERIF_PUBLIC_DAY_NS, cache_key, record)
+    _durable_store_write(_verif_public_day_path(date_str), record, cache_key)
     return record
 
 
@@ -4487,9 +4544,8 @@ def _build_public_verification_report(*, budget: int | None = None) -> dict[str,
         lightning = _read_lightning_archive(date_str)
         if not lightning or not lightning.get("final"):
             continue
-        cached = _read_meteofrance_local_persistent_cache(
-            _VERIF_PUBLIC_DAY_NS, _verif_public_day_key(date_str, lightning), _VERIF_PUBLIC_TTL_SECONDS)
-        record = cached.get("payload") if (cached and isinstance(cached.get("payload"), dict)) else None
+        record = _durable_store_read(_verif_public_day_path(date_str),
+                                     _verif_public_day_key(date_str, lightning))
         if record is None:
             if remaining is not None and remaining <= 0:
                 pending.append(date_str)
@@ -4578,18 +4634,16 @@ def _build_public_verification_report(*, budget: int | None = None) -> dict[str,
     }
 
 
+def _verif_public_day_path(date_str: str) -> Path:
+    return _durable_store_path("verif-public", "jours", f"{date_str}.json.gz")
+
+
 def _read_public_verification_report() -> dict[str, Any] | None:
-    entry = _read_meteofrance_local_persistent_cache(_VERIF_PUBLIC_NS, "report", _VERIF_PUBLIC_TTL_SECONDS)
-    if entry and isinstance(entry.get("payload"), dict):
-        return entry["payload"]
-    return None
+    return _durable_store_read(_durable_store_path("verif-public", "rapport.json.gz"))
 
 
 def _read_public_verification_summary() -> dict[str, Any] | None:
-    entry = _read_meteofrance_local_persistent_cache(_VERIF_PUBLIC_NS, "resume", _VERIF_PUBLIC_TTL_SECONDS)
-    if entry and isinstance(entry.get("payload"), dict):
-        return entry["payload"]
-    return None
+    return _durable_store_read(_durable_store_path("verif-public", "resume.json.gz"))
 
 
 def _verif_public_html_path() -> Path:
@@ -4606,10 +4660,10 @@ def _regenerate_public_verification(*, budget: int | None = OBJECTIFOUDRE_VERIF_
         _verif_record_stamp()
         report = _build_public_verification_report(budget=budget)
         report["source"] = source
-        _write_meteofrance_local_persistent_cache(_VERIF_PUBLIC_NS, "report", report)
+        _durable_store_write(_durable_store_path("verif-public", "rapport.json.gz"), report)
         # Résumé léger : la mosaïque de maintenance se relit toutes les 15 s et n'a que
         # faire des ~110 ko de géométrie des cas.
-        _write_meteofrance_local_persistent_cache(_VERIF_PUBLIC_NS, "resume", {
+        _durable_store_write(_durable_store_path("verif-public", "resume.json.gz"), {
             "generated_at": report["generated_at"], "coverage": report["coverage"],
             "source": source, "app_version": APP_VERSION})
         try:
@@ -4623,6 +4677,8 @@ def _regenerate_public_verification(*, budget: int | None = OBJECTIFOUDRE_VERIF_
             return {"ok": False, "reason": f"render:{type(exc).__name__}", "detail": str(exc)[:200],
                     "coverage": report.get("coverage")}
         _prune_verif_lead_snapshots()
+        _prune_durable_by_date(_durable_store_path("verif-public", "jours"))
+        _prune_durable_by_date(_durable_store_path("verification"))
         return {"ok": True, "coverage": report["coverage"], "generated_at": report["generated_at"],
                 "source": source}
 

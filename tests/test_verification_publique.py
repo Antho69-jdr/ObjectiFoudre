@@ -259,6 +259,74 @@ class JournalDesRuptures(unittest.TestCase):
             self.assertIn(key, stamp)
 
 
+class LeStockageSurviteAuPrunerDuCache(unittest.TestCase):
+    """Le bug du 10/09/2026 : rapport et journées vivaient dans le cache de TÉLÉCHARGEMENTS.
+
+    Ce dossier a un pruner qui évince en LRU dès son plafond atteint — et il y est en
+    permanence (mesuré en prod : 1 503,7 Mo pour un plafond à 1 500, ~11,5 Go/jour d'écritures
+    → renouvellement complet en ~3 h). Son commentaire l'assume : « ça re-télécharge au pire ».
+    Vrai d'un GRIB, FAUX d'un rapport qui coûte ~3,4 s de recalcul par journée.
+
+    Résultat observé : la couverture restait bloquée à 15/97, deux passes de suite. Chaque
+    passe recalculait 15 journées, évincées avant la suivante. Elle n'aurait jamais fini.
+    """
+
+    def test_le_stockage_est_sur_le_volume_pas_dans_le_cache(self):
+        for chemin in (api_app._durable_store_path("verif-public", "rapport.json.gz"),
+                       api_app._verif_public_day_path("2026-09-09"),
+                       api_app._durable_store_path("verification", "2026-09-09.json.gz")):
+            self.assertTrue(
+                str(chemin).startswith(str(api_app.OBJECTIFOUDRE_HISTORY_DIR)),
+                f"{chemin} n'est pas sur le volume d'historique")
+            self.assertFalse(
+                str(chemin).startswith(str(api_app.METEOFRANCE_PERSISTENT_CACHE_DIR)),
+                f"{chemin} est dans le cache de téléchargements, il sera évincé")
+
+    def test_un_aller_retour_conserve_la_charge(self):
+        chemin = api_app._durable_store_path("verif-public", "essai.json.gz")
+        try:
+            api_app._durable_store_write(chemin, {"a": 1, "b": [2, 3]}, key="k1")
+            self.assertEqual(api_app._durable_store_read(chemin, "k1"), {"a": 1, "b": [2, 3]})
+        finally:
+            chemin.unlink(missing_ok=True)
+
+    def test_une_cle_qui_ne_correspond_plus_vaut_absence(self):
+        """La clé remplace le TTL : un seuil réappris ou une observation re-collectée doit
+        invalider l'entrée, jamais servir un chiffre calculé sous une autre méthode."""
+        chemin = api_app._durable_store_path("verif-public", "essai.json.gz")
+        try:
+            api_app._durable_store_write(chemin, {"a": 1}, key="ancienne")
+            self.assertIsNone(api_app._durable_store_read(chemin, "nouvelle"))
+            self.assertEqual(api_app._durable_store_read(chemin, "ancienne"), {"a": 1})
+        finally:
+            chemin.unlink(missing_ok=True)
+
+    def test_un_fichier_absent_ou_illisible_vaut_absence_pas_plantage(self):
+        chemin = api_app._durable_store_path("verif-public", "jamais-ecrit.json.gz")
+        self.assertIsNone(api_app._durable_store_read(chemin))
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            chemin.write_bytes(b"pas du gzip")
+            self.assertIsNone(api_app._durable_store_read(chemin))
+        finally:
+            chemin.unlink(missing_ok=True)
+
+    def test_la_purge_respecte_la_fenetre_de_retention(self):
+        from datetime import date as _D, timedelta as _T
+        base = api_app._durable_store_path("verif-public", "jours")
+        base.mkdir(parents=True, exist_ok=True)
+        vieux = (_D.today() - _T(days=api_app.OBJECTIFOUDRE_HISTORY_RETENTION_DAYS + 5)).isoformat()
+        recent = _D.today().isoformat()
+        for d in (vieux, recent):
+            api_app._durable_store_write(base / f"{d}.json.gz", {"d": d})
+        try:
+            api_app._prune_durable_by_date(base)
+            self.assertFalse((base / f"{vieux}.json.gz").exists(), "journée hors rétention gardée")
+            self.assertTrue((base / f"{recent}.json.gz").exists(), "journée récente supprimée")
+        finally:
+            (base / f"{recent}.json.gz").unlink(missing_ok=True)
+
+
 class LeRapport(unittest.TestCase):
 
     def test_sans_archive_le_rapport_est_vide_mais_honnete(self):
