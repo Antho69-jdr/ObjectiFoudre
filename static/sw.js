@@ -1,4 +1,4 @@
-const CACHE_NAME = 'objectifoudre-v1.3.280';
+const CACHE_NAME = 'objectifoudre-v1.3.281';
 // Préchargement volontairement limité aux URLs SANS numéro de version. Les entrées
 // versionnées ont été RETIRÉES (v1.3.280) : elles étaient figées à `?v=1.3.205`, 74
 // versions en retard, et `cache.match(..., { ignoreSearch: false })` ne les aurait
