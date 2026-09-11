@@ -6,7 +6,7 @@
 // AROME-PI SUPPRIMÉ (décision Anthony 2026-07-19, « pas efficace ») : plus de nowcast
 // modèle, plus de pont, plus de couches grêle/graupel/rafales/CAPE/MOCON.
 (function () {
-  if (typeof maplibregl === 'undefined' || typeof map === 'undefined' || !map) return;
+  if (typeof maplibregl === 'undefined' || !map) return;
   const controls = document.getElementById('chaseControls');
   const toggleBtn = document.getElementById('chasePageBtn');
   if (!controls || !toggleBtn) return;

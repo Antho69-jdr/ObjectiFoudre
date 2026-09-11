@@ -58,18 +58,32 @@ const TIMELINE_PLAYBACK_STEP_MS = 450;
 
 syncDateControls();
 
-if (typeof maplibregl === 'undefined') {
-  throw new Error('MapLibre GL JS local introuvable.');
+// La carte peut ne PAS démarrer : WebGL refusé (pilote, politique d'entreprise, GPU
+// bloqué) ou maplibre-gl.js qui n'arrive pas. Jusqu'en v1.3.279 `map` était un `const`
+// et le constructeur n'était pas gardé : quand il jetait, la liaison restait à jamais
+// en ZONE MORTE TEMPORELLE. Les 16 gardes `typeof map === 'undefined'` semées dans
+// chase.js/spots.js/tour.js pour être défensives JETAIENT alors au lieu de protéger —
+// `typeof` n'est sûr que pour un identifiant NON DÉCLARÉ, pas pour un `const` non
+// initialisé. Résultat mesuré : une pile de ReferenceError et le splash figé pour
+// toujours. `let map = null` rend ces gardes vraies (et `!map` les arrête toutes).
+let map = null;
+try {
+  if (typeof maplibregl === 'undefined') {
+    throw new Error('MapLibre GL JS local introuvable.');
+  }
+  map = new maplibregl.Map({
+    container: 'map',
+    style: STYLE,
+    center: [currentCenter.lon, currentCenter.lat],
+    zoom: 5.55,
+    maxZoom: 18,
+    preserveDrawingBuffer: true,
+  });
+} catch (err) {
+  map = null;
+  debugLog('state:map-failed', { message: String((err && err.message) || err) });
+  if (typeof showMapFailure === 'function') showMapFailure(err);
 }
-
-const map = new maplibregl.Map({
-  container: 'map',
-  style: STYLE,
-  center: [currentCenter.lon, currentCenter.lat],
-  zoom: 5.55,
-  maxZoom: 18,
-  preserveDrawingBuffer: true,
-});
 if (typeof applyResponsiveMode === 'function') applyResponsiveMode();
 window.addEventListener('resize', () => { if (typeof applyResponsiveMode === 'function') applyResponsiveMode(); });
 window.addEventListener('orientationchange', () => { if (typeof applyResponsiveMode === 'function') applyResponsiveMode(); });

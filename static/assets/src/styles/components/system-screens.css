@@ -78,6 +78,38 @@
   0%, 100% { filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.28)); }
   50%      { filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.28)) drop-shadow(0 0 15px rgba(56, 189, 248, 0.38)); }
 }
+/* ------------------------------------------- Carte impossible à démarrer --- */
+/* WebGL indisponible, ou maplibre-gl.js qui n'arrive pas. Le splash CHANGE D'ÉTAT
+   au lieu de tourner dans le vide : on coupe la barre de progression et la lueur,
+   et on révèle le message. Rien de neuf n'est créé — on réutilise .app-loader-card.
+   Le bloc est masqué par défaut : aucun affichage tant que .is-failed n'est pas posée. */
+.app-loader-fail { display: none; }
+.app-loader.is-failed .app-loader-fail {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  max-width: min(420px, 78vw);
+  text-align: center;
+}
+/* La barre indéterminée et la lueur mentiraient : plus rien n'est en cours. */
+.app-loader.is-failed .app-loader-card::after { content: none; }
+.app-loader.is-failed .app-loader-logo { animation: none; opacity: 0.72; }
+.app-loader.is-failed .app-loader-subtitle { display: none; }
+.app-loader-fail-title {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-extrabold);
+  letter-spacing: 0.03em;
+  color: #eaf2ff;
+}
+.app-loader-fail-why,
+.app-loader-fail-hint {
+  margin: 0;
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.app-loader-fail-hint { color: var(--text-dim); }
+
 /* Une fois masqué (app chargée), on coupe les animations (pas de CPU inutile). */
 .app-loader.hidden .app-loader-logo,
 .app-loader.hidden .app-loader-card::after { animation: none; }

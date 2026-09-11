@@ -96,6 +96,34 @@
   // Uniquement des LECTURES (GET) : rien ici ne modifie l'état du serveur. Les actions
   // (purge mémoire, réentraînement, préchargement) restent où elles sont.
   const OUTILS = [
+    // ── Les deux JSON bruts à me coller quand je traque des erreurs ──────────
+    // Les panneaux « Logs » et « Rapports » plus bas AFFICHENT ces données, mais
+    // formatées en HTML et plafonnées à 200 entrées, sans bouton Copier. Ces deux
+    // outils-ci rendent le JSON complet et copiable en un clic — c'est ce qui se
+    // colle dans la conversation. Ajoutés v1.3.280 ; avant, il fallait ouvrir les
+    // URLs à la main.
+    { id: 'logs-json', label: 'Logs serveur — JSON brut (erreurs, 800 lignes)',
+      url: '/api/server/logs?limit=800&level=errors',
+      desc: '⚠️ L\'anneau de logs vit en RAM (800 lignes) et repart de ZÉRO à chaque '
+        + 'redémarrage du conteneur : un résultat vide ne veut PAS dire « aucune erreur », '
+        + 'seulement « rien depuis le dernier démarrage ». Pour l\'historique long, c\'est '
+        + 'le visualiseur de Railway qu\'il faut.' },
+    { id: 'logs-json-tout', label: 'Logs serveur — JSON brut (TOUT, 800 lignes)',
+      url: '/api/server/logs?limit=800&level=all',
+      desc: 'Le même anneau sans le filtre WARNING+ : utile pour lire le contexte autour '
+        + 'd\'une erreur précise, pas pour balayer.' },
+    { id: 'reports-json',
+      label: (d) => {
+        const r = (d && d.reports) || {};
+        const t = r.total == null ? '?' : r.total;
+        const j = r.last_24h == null ? '?' : r.last_24h;
+        return `Rapports de plantage — JSON brut (${t} au total, ${j} sur 24 h)`;
+      },
+      url: '/api/server/reports?limit=400',
+      desc: 'Durables (volume), ils survivent aux redéploiements. ⚠️ `count` n\'est PAS une '
+        + 'fréquence : le capteur du navigateur se limite à 5 rapports par session et '
+        + 'déduplique sur les 120 premiers caractères — une erreur qui frappe tout le monde '
+        + 'peut donc afficher un compteur ridicule. Les comptes sont un plancher.' },
     { id: 'shadow-rebase',
       label: (d) => 'Ré-ancrage p90 · agrégateur ' + etatAgregateur(d),
       url: '/api/server/shadow-rebase', lent: true,

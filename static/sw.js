@@ -1,16 +1,16 @@
-const CACHE_NAME = 'objectifoudre-v1.3.279';
+const CACHE_NAME = 'objectifoudre-v1.3.280';
+// Préchargement volontairement limité aux URLs SANS numéro de version. Les entrées
+// versionnées ont été RETIRÉES (v1.3.280) : elles étaient figées à `?v=1.3.205`, 74
+// versions en retard, et `cache.match(..., { ignoreSearch: false })` ne les aurait
+// JAMAIS fait correspondre aux requêtes réelles (`?v=<version courante>`). Elles
+// coûtaient un téléchargement complet de MapLibre (800 Ko) à chaque installation
+// pour un cache que personne ne pouvait lire. Le reste se met en cache tout seul au
+// fil des requêtes réussies (`cache.put` plus bas), avec la bonne clé.
 const ASSETS = [
   '/',
   '/manifest.webmanifest',
   '/static/icons/icon-192.png',
-  '/static/icons/icon-512.png',
-  '/static/logo-splash.png?v=1.3.205',
-  '/assets/vendor/maplibre/maplibre-gl.js?v=1.3.205',
-  '/assets/vendor/maplibre/maplibre-gl.css?v=1.3.205',
-  '/assets/vendor/carto/dark-matter-style.json?v=1.3.205',
-  '/manifest.webmanifest?v=1.3.205',
-  '/assets/dist/theme.css?v=1.3.205',
-  '/assets/dist/app.js?v=1.3.205'
+  '/static/icons/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -42,6 +42,18 @@ self.addEventListener('fetch', (event) => {
       const response = await fetch(event.request, { cache: 'no-store' });
       if (response && response.ok) {
         cache.put(event.request, response.clone());
+        return response;
+      }
+      // Réponse d'ERREUR (404, 5xx). Avant v1.3.280 on la rendait telle quelle : un
+      // hoquet d'une seconde pendant un déploiement suffisait à faire échouer un
+      // <script>, et l'app mourait. On sert la copie déjà connue quand on en a une.
+      // AUCUNE nouvelle tentative réseau ici : un repli, pas une reprise — rien qui
+      // puisse marteler le serveur au moment précis où il tousse.
+      // Réservé aux ressources statiques : resservir une réponse d'API périmée
+      // ferait mentir l'app sur des données météo.
+      if (!url.pathname.startsWith('/api/')) {
+        const secours = await cache.match(event.request, { ignoreSearch: false });
+        if (secours) return secours;
       }
       return response;
     } catch (_) {

@@ -12,12 +12,47 @@
 
     function hideAppLoader(force = false) {
       if (!appLoader || appLoader.classList.contains('hidden')) return;
+      // L'écran d'erreur a pris la place du splash : le masquer laisserait une app
+      // vide et muette, exactement ce qu'on vient de corriger.
+      if (appLoader.classList.contains('is-failed')) return;
       if (appLoaderFailsafe) { clearTimeout(appLoaderFailsafe); appLoaderFailsafe = null; }
       const remaining = force ? 0 : Math.max(0, APP_LOADER_MIN_MS - (performance.now() - appLoaderStartedAt));
       window.setTimeout(() => {
         appLoader.classList.add('hidden');
         appLoader.setAttribute('aria-hidden', 'true');
       }, remaining);
+    }
+
+    // La carte n'a PAS pu démarrer (WebGL indisponible, ou maplibre-gl.js absent).
+    // Le splash devient un écran d'erreur au lieu de tourner indéfiniment sur
+    // « Chargement de la situation convective… » : mesuré avant correction, il restait
+    // affiché pour toujours, sans le moindre message. On ne le masque donc PAS — on
+    // change son état, c'est la seule surface déjà visible à ce moment-là.
+    function showMapFailure(err) {
+      if (!appLoader) return;
+      if (appLoaderFailsafe) { clearTimeout(appLoaderFailsafe); appLoaderFailsafe = null; }
+      const brut = String((err && err.message) || err || '');
+      const estWebgl = /webgl/i.test(brut);
+      const why = document.getElementById('appLoaderFailWhy');
+      if (why) {
+        why.textContent = estWebgl
+          ? "Ton navigateur n'a pas pu ouvrir de contexte WebGL, la technologie qui dessine la carte."
+          : "Le moteur de carte n'a pas pu être chargé.";
+      }
+      // Le conseil suit la CAUSE : parler d'accélération matérielle sur un fichier
+      // manquant enverrait l'utilisateur chercher au mauvais endroit.
+      const hint = document.getElementById('appLoaderFailHint');
+      if (hint) {
+        hint.textContent = estWebgl
+          ? "Vérifie que l'accélération matérielle est activée dans les réglages de ton navigateur, ou essaie un autre navigateur."
+          : "C'est le plus souvent passager. Recharge la page ; si ça persiste, vérifie ta connexion.";
+      }
+      const retry = document.getElementById('appLoaderRetry');
+      if (retry) retry.addEventListener('click', () => { window.location.reload(); });
+      appLoader.classList.remove('hidden');
+      appLoader.classList.add('is-failed');
+      appLoader.setAttribute('aria-hidden', 'false');
+      appLoader.setAttribute('role', 'alert');
     }
 
     // Arme le repli : le loader d'ouverture reste affiché tant que la grille de la

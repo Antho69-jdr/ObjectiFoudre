@@ -326,7 +326,7 @@
   // JUSTE À CÔTÉ du cercle (sans le recouvrir).
   function visionRadiusPx(spot) {
     try {
-      if (typeof map === 'undefined' || !map.project) return 0;
+      if (!map || !map.project) return 0;
       var c = map.project([spot.lon, spot.lat]);
       var e = map.project(destPoint(spot.lon, spot.lat, 90, 30000));
       return Math.hypot(e.x - c.x, e.y - c.y);
@@ -347,7 +347,7 @@
     }
     // suivi
     s.bottom = ''; s.maxHeight = (friseTop - 24) + 'px';
-    if (typeof map === 'undefined' || !map.project || typeof panelSpot.lon !== 'number') return;
+    if (!map || !map.project || typeof panelSpot.lon !== 'number') return;
     var pt = map.project([panelSpot.lon, panelSpot.lat]);
     var cont = map.getContainer().getBoundingClientRect();
     var sx = cont.left + pt.x, sy = cont.top + pt.y;
@@ -393,7 +393,7 @@
   }
 
   function ensureVisionLayers() {
-    if (typeof map === 'undefined' || typeof map.getSource !== 'function' || map.getSource(VIS_SRC)) return;
+    if (!map || typeof map.getSource !== 'function' || map.getSource(VIS_SRC)) return;
     map.addSource(VIS_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: VIS_SRC + '-basin', type: 'fill', source: VIS_SRC, filter: ['==', ['get', 'kind'], 'basin'],
       paint: { 'fill-color': '#46c0e6', 'fill-opacity': 0.16 } });
@@ -455,7 +455,7 @@
   }
 
   function showVision(spot) {
-    if (typeof map === 'undefined') return;
+    if (!map) return;
     clearStormHighlight();   // une seule fiche à la fois (spot vs orage)
     ensureVisionLayers();
     var src = map.getSource(VIS_SRC);
@@ -477,7 +477,7 @@
   }
 
   function clearVision() {
-    if (typeof map !== 'undefined' && map.getSource && map.getSource(VIS_SRC)) {
+    if (map && map.getSource && map.getSource(VIS_SRC)) {
       map.getSource(VIS_SRC).setData({ type: 'FeatureCollection', features: [] });
     }
     selectedSpotId = null;
@@ -553,7 +553,7 @@
   }
 
   function ensureStormLayers() {
-    if (typeof map === 'undefined' || typeof map.getSource !== 'function' || map.getSource(STORM_SRC)) return;
+    if (!map || typeof map.getSource !== 'function' || map.getSource(STORM_SRC)) return;
     map.addSource(STORM_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: STORM_SRC + '-link', type: 'line', source: STORM_SRC, filter: ['==', ['get', 'kind'], 'link'],
       layout: { 'line-cap': 'round' },
@@ -626,7 +626,7 @@
 
   // API publique appelée par chase.js au clic d'une cellule.
   function highlightStorm(cell) {
-    if (!cell || typeof map === 'undefined' || typeof map.getSource !== 'function') return;
+    if (!cell || !map || typeof map.getSource !== 'function') return;
     clearVision();   // une seule fiche à la fois (spot vs orage)
     ensureStormLayers();
     var scored = [], pool = renderList();   // publics + mes spots (mes perso comptent aussi)
@@ -653,7 +653,7 @@
   function clearStormHighlight() {
     stormActive = false;
     stopStormPulse();
-    if (typeof map !== 'undefined' && map.getSource && map.getSource(STORM_SRC)) {
+    if (map && map.getSource && map.getSource(STORM_SRC)) {
       try { map.getSource(STORM_SRC).setData({ type: 'FeatureCollection', features: [] }); } catch (e) {}
     }
     if (stormPanelEl) stormPanelEl.classList.remove('show');
@@ -893,7 +893,7 @@
 
   function render(spots) {
     clearMarkers();
-    if (typeof maplibregl === 'undefined' || typeof map === 'undefined') return;
+    if (typeof maplibregl === 'undefined' || !map) return;
     spots.forEach(function (spot) {
       if (typeof spot.lon !== 'number' || typeof spot.lat !== 'number') return;
       var e = pinEl(spot), lngLat = [spot.lon, spot.lat];
@@ -1622,7 +1622,7 @@
   // ── prévisualisation live du centre + trou pendant le geste (source dédiée) ──
   var PRE_SRC = 'ofspot-preview';
   function ensurePreviewLayers() {
-    if (typeof map === 'undefined' || typeof map.getSource !== 'function' || map.getSource(PRE_SRC)) return;
+    if (!map || typeof map.getSource !== 'function' || map.getSource(PRE_SRC)) return;
     map.addSource(PRE_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: PRE_SRC + '-fill', type: 'fill', source: PRE_SRC, filter: ['==', ['get', 'kind'], 'hole'],
       paint: { 'fill-color': '#f0a54a', 'fill-opacity': 0.22 } });
@@ -1639,7 +1639,7 @@
     s.setData({ type: 'FeatureCollection', features: feats });
   }
   function clearPreview() {
-    if (typeof map !== 'undefined' && map.getSource && map.getSource(PRE_SRC)) {
+    if (map && map.getSource && map.getSource(PRE_SRC)) {
       map.getSource(PRE_SRC).setData({ type: 'FeatureCollection', features: [] });
     }
   }
@@ -1742,7 +1742,7 @@
   }
 
   function enterAddMode() {
-    if (typeof map === 'undefined') return;
+    if (!map) return;
     addMode = true;
     document.querySelectorAll('.spots-add-btn').forEach(function (b) { b.classList.add('active'); b.setAttribute('title', 'Presse la carte pour poser le spot'); });
     map.getCanvas().style.cursor = 'crosshair';
@@ -1756,7 +1756,7 @@
     addMode = false;
     hideGeolocChip();
     document.querySelectorAll('.spots-add-btn').forEach(function (b) { b.classList.remove('active'); b.setAttribute('title', 'Ajouter un spot'); });
-    if (typeof map === 'undefined') return;
+    if (!map) return;
     map.getCanvas().style.cursor = '';
     map.off('mousedown', addPressStart); map.off('touchstart', addPressStart);
     map.off('mousemove', addPressMove); map.off('touchmove', addPressMove);
@@ -1872,7 +1872,7 @@
   function init() {
     wireRail();
     wireLeftRail();
-    if (typeof map === 'undefined') return;
+    if (!map) return;
     if (map.loaded()) { loadSpots(); ensureVisionLayers(); }
     else map.on('load', function () { loadSpots(); ensureVisionLayers(); });
   }

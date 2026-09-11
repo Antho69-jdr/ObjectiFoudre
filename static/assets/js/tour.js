@@ -114,7 +114,7 @@
   // scripts classiques chargés ensuite — mais PAS sur window (piège connu du projet).
   function laCarte() {
     try {
-      return (typeof map !== 'undefined' && map && map.getCanvas && map.project) ? map : null;
+      return (map && map.getCanvas && map.project) ? map : null;
     } catch (e) { return null; }
   }
 

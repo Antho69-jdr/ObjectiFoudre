@@ -21,3 +21,19 @@
   backdrop-filter: blur(12px);
 }
 .floating-chip.visible { display: inline-flex; }
+
+/* ------------------------------------------------- Paysage téléphone --- */
+/* Le `top: 478px` en dur ci-dessus sort la pastille de l'écran dès que la fenêtre est
+   basse : mesuré à y=478 pour 390 px de hauteur (844×390) et 360 px (740×360), soit
+   INVISIBLE en paysage depuis la création du composant. Bug préexistant, pas une
+   régression. On la remonte au-dessus du mobilier bas avec la formule déjà employée
+   par `--sg-geo-lift` (stargaze.css), et on la décale à gauche du rail droit — à cette
+   hauteur-là le rail occupe encore la colonne, elle passerait dessous. */
+@media (max-height: 560px) {
+  .floating-chip {
+    top: auto;
+    bottom: calc(var(--bottom-nav-h, 0px) + var(--timeline-height-px, 64px)
+                 + max(var(--sp-3), env(safe-area-inset-bottom)) + 10px);
+    right: calc(var(--rail-right) + var(--right-rail-width, 42px) + var(--sp-2));
+  }
+}

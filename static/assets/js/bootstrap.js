@@ -28,6 +28,16 @@
       updateBestCellsButton();
       if (typeof startCurrentTimeBadge === 'function') startCurrentTimeBadge();
 
+      // Remontés AVANT la garde `map` : ni l'un ni l'autre ne dépend de la carte, et
+      // ils doivent continuer à s'exécuter quand elle n'a pas pu démarrer.
+      registerPWA();
+      setupRightRailTouchShield();
+
+      // La carte n'a pas démarré (WebGL refusé, MapLibre absent) : showMapFailure()
+      // affiche déjà l'écran d'erreur. Tout ce qui suit s'accroche à `map` — on s'arrête
+      // ici plutôt que de jeter et d'emporter le reste de l'amorçage avec soi.
+      if (!map) return;
+
       map.on('click', (e) => {
         const features = map.getLayer('grid-fill') ? map.queryRenderedFeatures(e.point, { layers: ['grid-fill'] }) : [];
         if (!features.length && !detailsModal.classList.contains('visible')) closeSelection();
@@ -36,9 +46,6 @@
           closeInfoDrawer();
         }
       });
-
-      registerPWA();
-      setupRightRailTouchShield();
 
       map.on('move', () => {
         if (selectionCard.classList.contains('visible')) requestAnimationFrame(positionSelectionCard);
