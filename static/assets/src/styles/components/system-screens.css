@@ -68,11 +68,23 @@
   background:
     linear-gradient(90deg, transparent, var(--accent), transparent) -40% 0 / 45% 100% no-repeat,
     rgba(125, 211, 252, 0.14);
-  animation: of-loader-bar 1.3s ease-in-out infinite;
+  /* `linear` est IMPÉRATIF sur une boucle de translation : toute autre courbe ralentit
+     jusqu'à l'ARRÊT en fin de cycle puis redémarre d'un coup. Mesuré avec `ease-in-out` :
+     la position ne bougeait que de 0,92 % sur les 5 premiers (et derniers) pourcents du
+     cycle, contre 70 % au milieu — le segment stagnait ~65 ms à chaque bout avant de
+     sauter. */
+  animation: of-loader-bar 1.6s linear infinite;
 }
 @keyframes of-loader-bar {
-  0%   { background-position: -45% 0, 0 0; }
-  100% { background-position: 145% 0, 0 0; }
+  /* Le segment fait 45 % de la piste. En pourcentage, `background-position` décale de
+     (piste − segment) × valeur, soit 0,55 × largeur — le ratio ne dépend donc PAS de la
+     largeur de la piste. −81,82 % place le segment ENTIÈREMENT à gauche de la piste et
+     181,82 % entièrement à droite : la boucle se referme sur deux états où il n'y a rien
+     à voir, donc sans saut visible.
+     Avant : −45 % / 145 % laissaient ~30 px ALLUMÉS aux deux bouts (mesuré au pixel), et
+     le raccord se lisait comme une téléportation d'un bord à l'autre. */
+  from { background-position: -82% 0, 0 0; }
+  to   { background-position: 182% 0, 0 0; }
 }
 @keyframes of-loader-glow {
   0%, 100% { filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.28)); }
