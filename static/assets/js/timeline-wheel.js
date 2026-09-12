@@ -24,11 +24,17 @@
       const cached = typeof meteoFranceGribCachedSlotKeys !== 'undefined' && meteoFranceGribCachedSlotKeys.has(slot.slot_key);
       const loaded = Array.isArray(slot.cells) && slot.cells.some((cell) => cell?.source_provider === 'meteofrance_arome_grib');
       const unavailable = timelineSlotIsUnavailable(slot, day);
+      // L'heure se DÉRIVE du créneau : `slot_label` n'est PAS garanti. Le payload
+      // compact du serveur n'émet que `slot_key` (il n'y a pas de raison d'envoyer
+      // deux fois la même information), si bien que les 48 infobulles de la frise
+      // annonçaient « undefined · AROME GRIB chargé » dès qu'on changeait de jour.
+      // `timelineSlotHourLabel` replie sur `slot_key` — c'est le seul point de vérité.
+      const heure = `${timelineSlotHourLabel(slot)}h`;
       const title = unavailable
-        ? `${slot.slot_label} · échéance non publiée par le run AROME`
+        ? `${heure} · échéance non publiée par le run AROME`
         : (loaded
-          ? `${slot.slot_label} · AROME GRIB chargé`
-          : (cached ? `${slot.slot_label} · AROME GRIB en cache serveur` : slot.slot_label));
+          ? `${heure} · AROME GRIB chargé`
+          : (cached ? `${heure} · AROME GRIB en cache serveur` : heure));
       return { cached, loaded, unavailable, title };
     }
 
@@ -282,7 +288,10 @@
         line.className = 'timeline-hour-line';
         const label = document.createElement('span');
         label.className = 'timeline-hour-label';
-        label.textContent = String(slot.slot_label || '').replace('h', '');
+        // MÊME dérivation que la molette (`timelineSlotHourLabel`) : lire `slot_label`
+        // sans repli laissait les 24 libellés VIDES — donc de hauteur nulle, donc
+        // invisibles — sur tout jour servi par le payload compact (J+1 et suivants).
+        label.textContent = timelineSlotHourLabel(slot);
         mark.appendChild(line);
         mark.appendChild(label);
         track.appendChild(mark);
