@@ -1465,6 +1465,7 @@
   }
 
   let sgDomeEls = null, sgDomeCurrent = null, domeFrac = 0, domeTab = 'cond';
+  let domeBubble = null;
   function ensureDomeModal() {
     if (sgDomeEls) return sgDomeEls;
     const ov = document.createElement('div');
@@ -1473,7 +1474,10 @@
       '<div class="sg-dome" role="dialog" aria-label="Conditions d\'observation" aria-modal="true">'
       + '<div class="sg-dome-head"><div><p class="sg-dome-eyebrow">Chasse d\'étoiles · cette nuit</p>'
       + '<h2 class="sg-dome-title" id="sgDomeTitle">—</h2><p class="sg-dome-sub" id="sgDomeSub"></p></div>'
-      + '<button class="sg-dome-close" type="button" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button></div>'
+      + '<div class="sg-dome-actions">'
+      + '<button class="sg-dome-min" type="button" aria-label="Réduire en bulle" title="Réduire en bulle — la carte redevient entière"><svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 15h12"/></svg></button>'
+      + '<button class="sg-dome-close" type="button" aria-label="Fermer"><svg class="icon-svg icon-close" viewBox="0 0 40 40" aria-hidden="true" fill="none"><path d="M9 9L31 31M9 31L31 9" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></button>'
+      + '</div></div>'
       + '<div class="sg-dome-tabs" id="sgDomeTabs" role="tablist" hidden>'
       + '<button class="sg-dome-tab is-on" id="sgTabCond" type="button" role="tab" aria-selected="true">Conditions</button>'
       + '<button class="sg-dome-tab" id="sgTabSky" type="button" role="tab" aria-selected="false">Ciel</button>'
@@ -1506,6 +1510,17 @@
     const close = () => closeDome();
     ov.querySelector('.sg-dome-close').addEventListener('click', close);
     ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+    // Repli en pastille — MÊME motif que la feuille « Autour de moi » (sgGeoMin).
+    // On attache la SURCOUCHE et non le dôme : replier le seul dôme laisserait le fond
+    // assombri en place, qui masque la carte tout autant. Mesuré en portrait : le dôme
+    // occupe 60,6 % de l'écran, et la carte EST le résultat qu'on vient consulter.
+    if (window.OFBubble) {
+      domeBubble = window.OFBubble.attach({
+        el: ov, key: 'sgDome', label: 'Dôme céleste', icon: '🌙',
+        isOpen: () => sgDomeIsOpen(),
+      });
+      ov.querySelector('.sg-dome-min').addEventListener('click', () => domeBubble && domeBubble.minimize());
+    }
     sgDomeEls = {
       ov, svg: ov.querySelector('#sgDomeSvg'), title: ov.querySelector('#sgDomeTitle'), sub: ov.querySelector('#sgDomeSub'),
       score: ov.querySelector('#sgDomeScore'), scoreLbl: ov.querySelector('#sgDomeScoreLbl'),
@@ -1841,7 +1856,7 @@
   }
 
   function sgDomeIsOpen() { return !!(sgDomeEls && sgDomeEls.ov.classList.contains('open')); }
-  function closeDome() { if (compassOn) stopCompass(); if (sgDomeEls) { sgDomeEls.ov.classList.remove('open'); sgDomeEls.ov.setAttribute('aria-hidden', 'true'); } sgDomeCurrent = null; }
+  function closeDome() { if (compassOn) stopCompass(); if (domeBubble) domeBubble.hide(); if (sgDomeEls) { sgDomeEls.ov.classList.remove('open'); sgDomeEls.ov.setAttribute('aria-hidden', 'true'); } sgDomeCurrent = null; }
   // ── Onglet « Photo » du dôme : assistant réglages appareil selon les conditions ──
   // Croise les données de l'heure courante (Bortle, Lune horaire, nébulosité — déjà dans
   // sgDomeData) avec le matériel de l'utilisateur (boîtier/objectif mémorisés) → suggère
@@ -2147,6 +2162,10 @@
     domeFrac = cursor;                 // démarre à l'heure affichée sur la carte, puis INDÉPENDANT
     if (sgDomeTweenRaf) { cancelAnimationFrame(sgDomeTweenRaf); sgDomeTweenRaf = null; }
     const e = ensureDomeModal();
+    // Si le dôme était REPLIÉ en bulle, un clic sur une AUTRE cellule doit le rouvrir :
+    // sans ça `.of-minimized` (display:none !important) l'emporterait sur la classe
+    // `open` et le clic paraîtrait sans effet.
+    if (domeBubble) domeBubble.restore();
     // Onglet « Ciel » réservé aux SPOTS (seuls porteurs d'un champ de vision LiDAR) ; les onglets
     // Conditions + Photo existent pour toute cellule → la barre d'onglets est toujours visible.
     const hasSky = !!(spot && spot.horizon && spot.horizon.azimuths && spot.horizon.azimuths.length);

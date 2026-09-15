@@ -619,9 +619,17 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 .sg-dome-eyebrow { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #7d8ea8; font-weight: 600; margin: 0 0 3px; }
 .sg-dome-title { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
 .sg-dome-sub { font-size: 12px; color: #9fb0c8; margin: 3px 0 0; }
-/* Bouton fermer HOMOGÈNE (mêmes 36px rond verre + croix SVG que close-buttons.css). */
+/* Les deux actions d'en-tête (réduire, fermer) tiennent ensemble à droite du titre :
+   `.sg-dome-head` est en `space-between`, trois enfants directs les auraient dispersés. */
+.sg-dome-actions { flex: none; display: flex; align-items: center; gap: 8px; }
+/* Bouton fermer HOMOGÈNE (mêmes 36px rond verre + croix SVG que close-buttons.css).
+   ⚠️ `min-width/min-height !important` : sans eux `body.mobile-ui button{min-width:88px;
+   min-height:46px}` dilaterait les deux boutons. */
+.sg-dome-min,
 .sg-dome-close { flex: none; width: 36px; height: 36px; min-width: 36px !important; min-height: 36px !important; max-width: 36px; max-height: 36px; border-radius: 50%; border: 1px solid var(--border); background: var(--fill-soft); color: var(--text); cursor: pointer; line-height: 1; display: grid; place-items: center; padding: 0; transition: 0.15s; }
+.sg-dome-min:hover,
 .sg-dome-close:hover { background: var(--divider); border-color: var(--border-strong); color: #fff; }
+.sg-dome-min .icon-svg { width: 18px; height: 18px; }
 .sg-dome-close:focus-visible { outline: 2px solid #f4b942; outline-offset: 2px; }
 /* Onglets Conditions/Ciel (item 4 — la vue « Ciel » n'existe que pour les spots). */
 .sg-dome-tabs { display: flex; gap: 6px; padding: 2px 16px 10px; }
