@@ -437,9 +437,12 @@
   background: color-mix(in srgb, var(--risk-color) 18%, rgba(15, 23, 42, 0.86));
   border: 1px solid color-mix(in srgb, var(--risk-stroke) 46%, var(--border-strong));
 }
+/* ENCRE, pas remplissage : `--risk-color` sert de teinte de fond (18 %) juste
+   au-dessus, mais c'est une couleur de carte. Le niveau « Sous seuil » la définit
+   à #091321 — quasi noir — et ce texte devenait illisible (1,03:1). */
 .prediction-summary-hero strong,
 .prediction-summary-hero b {
-  color: var(--risk-color);
+  color: var(--risk-ink, var(--risk-color));
 }
 .prediction-summary-hero strong {
   display: block;
@@ -536,7 +539,7 @@
   line-height: 1.25;
 }
 .prediction-sector-chip b {
-  color: var(--risk-color);
+  color: var(--risk-ink, var(--risk-color));   /* même raison que le héros */
   font-size: var(--fs-16);
   font-variant-numeric: tabular-nums;
 }

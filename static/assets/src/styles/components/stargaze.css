@@ -591,14 +591,25 @@ body.mobile-ui .stargaze-popup .maplibregl-popup-close-button {
 }
 
 /* ── Modale « dôme céleste » (clic cellule / spot) ─────────────────────────── */
+/* ⚠️ `align-items: center` sur une surcouche qui ne défile PAS rend le débordement
+   du HAUT inatteignable : le contenu est centré, il sort donc des deux côtés, et
+   aucun défilement ne permet d'y revenir. Mesuré en paysage téléphone (844x390) :
+   le dôme fait 797 px pour 390 de fenêtre, son en-tête tombait à y=-203 et le
+   bouton Fermer à y=-188 — hors écran, avec pour seule sortie un clic sur les deux
+   bandes de fond de 14 px restées visibles sur les côtés.
+   Le motif correct est `align-items: flex-start` + `margin: auto` sur l'enfant :
+   l'enfant reste CENTRÉ tant qu'il y a la place, et dès qu'il déborde il s'accroche
+   en haut et le défilement le parcourt en entier. */
 .sg-dome-ov {
   position: fixed; inset: 0; z-index: 60; display: none;
-  align-items: center; justify-content: center; padding: 20px 14px;
+  align-items: flex-start; justify-content: center; padding: 20px 14px;
+  overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
   background: rgba(4, 7, 14, 0.62); backdrop-filter: blur(3px);
 }
 .sg-dome-ov.open { display: flex; }
 .sg-dome {
   width: 100%; max-width: 470px;
+  margin: auto;                  /* centre tant qu'il y a la place, s'accroche en haut sinon */
   background: rgba(14, 21, 36, 0.94); border: 1px solid #22304a; border-radius: 20px;
   box-shadow: 0 30px 80px -30px #000c, 0 2px 0 0 rgba(255, 255, 255, 0.03) inset;
   overflow: hidden; color: #eaf0fb;

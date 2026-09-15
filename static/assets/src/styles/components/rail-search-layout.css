@@ -386,6 +386,13 @@ body.mobile-ui .right-rail-stack {
   .spots-rail > *,
   .chase-layer-rail > *,
   .stargaze-layer-rail > * { pointer-events: auto; }
+  /* La légende est le SEUL enfant du rail sans largeur propre : `align-items:
+     flex-start` (imposé ci-dessus par la boîte élargie à 242 px) la réduit à son
+     ruban de couleurs, soit 9 px de large — mesuré — quand TOUS ses voisins de la
+     colonne en font 42. Or elle est cliquable : c'est elle qui déplie le panneau.
+     On l'aligne sur la colonne des boutons ; la zone sensible reste exactement celle
+     qu'ils occupent déjà, donc rien de plus n'est pris à la carte. */
+  .stargaze-layer-rail .stargaze-legend { width: 42px; }
   .spots-rail::-webkit-scrollbar,
   .chase-layer-rail::-webkit-scrollbar,
   .stargaze-layer-rail::-webkit-scrollbar { display: none; }

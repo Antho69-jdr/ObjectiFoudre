@@ -341,7 +341,14 @@ async function predictionRefetchDay(dateIso) {
 // toucher le niveau 0 de la rampe partagée (légende/macarons/tiroir).
 const PREDICTION_LAND_FILL = '#14243a';
 const PREDICTION_RISK_LEVELS = Object.freeze([
-  { key: 'below-threshold', label: 'Sous seuil', range: '0-59', min: 0, color: '#091321', stroke: '#16283c', text: 'signal inférieur au seuil cartographié' },
+  // `color` est une couleur de REMPLISSAGE CARTE (cf. commentaire ci-dessus : le
+  // niveau 0 « ne servait QUE de fond »). Elle est aussi reprise en couleur de TEXTE
+  // par le héros et les pastilles de secteur — et là, #091321 sur un fond #0d1627
+  // donne 1,03:1 : le verdict principal de la page était INVISIBLE, ce qui est l'état
+  // le plus fréquent hors épisode orageux. `ink` sépare l'encre du remplissage ;
+  // les 5 autres niveaux n'en ont pas besoin, leur couleur vive passe (4,1 à 7,4:1
+  // sur du texte large, dont le seuil AA est 3:1).
+  { key: 'below-threshold', label: 'Sous seuil', range: '0-59', min: 0, color: '#091321', ink: '#94a3b8', stroke: '#16283c', text: 'signal inférieur au seuil cartographié' },
   { key: 'low', label: 'Faible', range: '60-70', min: 60, color: '#3597be', stroke: '#0b485c', text: 'signal faible, à surveiller localement' },
   { key: 'medium', label: 'Moyen', range: '71-80', min: 71, color: '#34d399', stroke: '#0f766e', text: 'signal moyen, environnement à suivre' },
   { key: 'elevated', label: 'Élevé', range: '81-89', min: 81, color: '#fbbf24', stroke: '#92580e', text: 'signal élevé à surveiller sérieusement' },

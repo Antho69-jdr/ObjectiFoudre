@@ -1063,7 +1063,7 @@ function predictionBuildAnalysisHtml(day, cells, periodKey = selectedPredictionP
     : activeSectors.map((area) => {
         const level = predictionRiskLevel(area.score);
         const ingredients = predictionAreaIngredientText(area);
-        return `<div class="prediction-sector-chip" style="--risk-color:${level.color};--risk-stroke:${level.stroke}">
+        return `<div class="prediction-sector-chip" style="--risk-color:${level.color};--risk-ink:${level.ink || level.color};--risk-stroke:${level.stroke}">
           <div>
             <strong>${predictionEscapeXml(area.name)}</strong>
             <span>${predictionEscapeXml(predictionHoursText(area.hours))}</span>
@@ -1072,7 +1072,7 @@ function predictionBuildAnalysisHtml(day, cells, periodKey = selectedPredictionP
         </div>`;
       }).join('');
   return `<div class="prediction-summary-date">${predictionEscapeXml(longDate)}</div>
-  <div class="prediction-summary-hero" style="--risk-color:${activeLevel.color};--risk-stroke:${activeLevel.stroke}">
+  <div class="prediction-summary-hero" style="--risk-color:${activeLevel.color};--risk-ink:${activeLevel.ink || activeLevel.color};--risk-stroke:${activeLevel.stroke}">
     <div>
       <span class="prediction-summary-kicker">${predictionEscapeXml(kickerText)}</span>
       <strong>${predictionEscapeXml(activeLevel.label)}</strong>
