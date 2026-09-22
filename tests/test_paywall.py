@@ -15,6 +15,7 @@ Pas de httpx dans l'environnement → pas de TestClient : on teste aux coutures 
 pure, helpers, table de routage réelle de FastAPI) plutôt que par des requêtes HTTP.
 """
 import asyncio
+import json
 import os
 import tempfile
 import types
@@ -293,6 +294,47 @@ class EssaiTests(unittest.TestCase):
         with self.assertRaises(api_app.PaywallError) as ctx2:
             _run(api_app._require_access(_req(jeton), "history"))
         self.assertEqual(ctx2.exception.payload["paywall"]["reason"], "subscription_required")
+        accounts.delete_user(u["id"])
+
+    def _corps(self, reponse):
+        """Le JSON d'une JSONResponse, sans client HTTP (httpx absent de l'environnement)."""
+        return json.loads(bytes(reponse.body).decode("utf-8"))
+
+    def test_la_route_d_essai_est_FERMEE_quand_le_perimetre_ne_s_applique_pas(self):
+        """L'essai ne se prend qu'une fois par adresse et son empreinte survit au compte.
+        L'accorder pendant que tout est gratuit le brûlerait pour rien."""
+        u = accounts.register_local("ferme@example.com", "MotDePasse42")
+        accounts.verify_email_token(accounts.issue_email_token(u["id"], "verify", "ferme@example.com"))
+        jeton = accounts.create_session(u["id"])
+
+        os.environ.pop("OBJECTIFOUDRE_PAYWALL", None)          # drapeau éteint = la production
+        r = _run(api_app.account_start_trial(_req(jeton)))
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(self._corps(r)["ok"])
+        self.assertFalse(accounts.trial_claimed("ferme@example.com"),
+                         "aucune empreinte ne doit être posée par un refus")
+
+        os.environ["OBJECTIFOUDRE_PAYWALL"] = "preview"        # aperçu SANS la session
+        r2 = _run(api_app.account_start_trial(_req(jeton)))
+        self.assertEqual(r2.status_code, 400)
+        self.assertFalse(accounts.trial_claimed("ferme@example.com"))
+
+        # …et elle s'ouvre dès que le périmètre s'applique VRAIMENT à la requête.
+        r3 = _run(api_app.account_start_trial(_req(jeton, apercu=True)))
+        self.assertEqual(r3.status_code, 200)
+        self.assertTrue(self._corps(r3)["ok"])
+        self.assertTrue(accounts.trial_claimed("ferme@example.com"))
+        accounts.delete_user(u["id"])
+
+    def test_l_etat_du_compte_n_annonce_pas_un_essai_que_la_route_refuse(self):
+        u = accounts.register_local("annonce@example.com", "MotDePasse42")
+        accounts.verify_email_token(accounts.issue_email_token(u["id"], "verify", "annonce@example.com"))
+        compte = accounts.get_user(u["id"])
+
+        os.environ.pop("OBJECTIFOUDRE_PAYWALL", None)
+        self.assertFalse(_run(api_app._access_view(_req(), compte))["trial_available"])
+        os.environ["OBJECTIFOUDRE_PAYWALL"] = "1"
+        self.assertTrue(_run(api_app._access_view(_req(), compte))["trial_available"])
         accounts.delete_user(u["id"])
 
     def test_essai_refuse_a_un_e_mail_non_verifie(self):

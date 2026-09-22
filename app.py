@@ -90,7 +90,7 @@ CSS_DIR = ASSETS_DIR / "css"
 VENDOR_DIR = ASSETS_DIR / "vendor"
 DIST_DIR = ASSETS_DIR / "dist"
 LOCAL_ECCODES_DEFINITION_PATH = BASE_DIR / ".cache" / "eccodes-definition-path" / "ECCODES_DEFINITION_PATH"
-APP_VERSION = "1.3.286"
+APP_VERSION = "1.3.287"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -18119,7 +18119,9 @@ async def _access_view(request: Request, user: dict[str, Any] | None) -> dict[st
         "entitled": bool(ent and ent["active"]),
         "source": (ent or {}).get("source"),
         "expires_utc": (ent or {}).get("expires_utc"),
-        "trial_available": await _trial_available_for(user),
+        # ET le périmètre doit s'appliquer à cette requête : sinon le champ annoncerait un
+        # essai que /api/account/trial refuse désormais.
+        "trial_available": _paywall_active(request) and await _trial_available_for(user),
         "offer": access.OFFER,
     }
 
@@ -18400,10 +18402,22 @@ async def account_start_trial(request: Request) -> Response:
     fonction payante), pas à la création du compte : sinon l'essai s'épuise sur sept jours
     de ciel bleu et ne prouve rien (décision du 2026-09-04).
     Verrouillé sur l'e-mail VÉRIFIÉ : sans vérification, on pourrait brûler l'essai d'une
-    adresse qui ne nous appartient pas."""
+    adresse qui ne nous appartient pas.
+
+    FERMÉE tant que le périmètre ne s'applique pas à cette requête (drapeau `off`, ou mode
+    `preview` sans la session d'aperçu). Ce n'est pas une précaution de façade : l'essai ne
+    se prend qu'UNE FOIS par adresse et son empreinte survit à la suppression du compte.
+    L'accorder pendant que tout est déjà gratuit le brûlerait pour rien — l'utilisateur
+    perdrait ses 7 jours sans avoir rien obtenu, et ne pourrait plus les réclamer le jour
+    où l'abonnement ouvre. L'interface ne l'offre pas (`renderSection` sort tôt sans le
+    drapeau) ; la route, elle, répondait."""
     user = await _account_current_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "Non connecté."}, status_code=401)
+    if not _paywall_active(request):
+        return JSONResponse({"ok": False, "error": "Tout est gratuit en ce moment : "
+                                                   "l'essai vous attendra le jour où l'abonnement ouvrira."},
+                            status_code=400)
     if not user.get("email_verified"):
         return JSONResponse({"ok": False, "error": "Vérifiez votre adresse e-mail pour démarrer l'essai."},
                             status_code=400)
