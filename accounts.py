@@ -14,6 +14,8 @@ Phase 5 : droits d'accès (abonnement/essai) — la POLITIQUE est dans access.py
   entitlements(user_id PK → users, plan, source, status, started/expires_utc, external_ref)
   trial_claims(claim_hash PK, claimed_utc, user_id)   ← SANS cascade : survit à la suppression
                                                         du compte, sinon l'essai se recycle.
+                                                        `user_id` y est DÉLIÉ (NULL) au passage :
+                                                        l'empreinte suffit, le lien ne doit pas rester.
   ⚠️ `push_subscriptions` (plus bas) = alertes orage, AUCUN rapport avec le paiement.
 
 Secrets : le mot de passe est stocké HACHÉ (PBKDF2-HMAC-SHA256, sel par utilisateur,
@@ -173,7 +175,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS trial_claims (
                 claim_hash  TEXT PRIMARY KEY,
                 claimed_utc TEXT NOT NULL,
-                user_id     TEXT                       -- indicatif : le compte peut avoir disparu
+                user_id     TEXT                       -- indicatif, DÉLIÉ (NULL) à la suppression
             );
             """
         )
@@ -637,8 +639,20 @@ def set_prefs(user_id: str, patch: dict[str, Any]) -> dict[str, Any]:
 
 
 def delete_user(user_id: str) -> bool:
-    """Suppression du compte (droit RGPD à l'effacement) — les sessions tombent en cascade."""
+    """Suppression du compte (droit RGPD à l'effacement) — les sessions tombent en cascade.
+
+    `trial_claims` ne tombe PAS : son empreinte d'adresse est ce qui empêche l'essai de se
+    renouveler en recréant un compte. Mais son `user_id`, lui, est délié ici — il n'était
+    qu'indicatif, aucun code ne le lit, et le laisser en place ferait le PONT entre une
+    empreinte d'adresse et tout ce qui référence encore cet identifiant ailleurs (les
+    messages du forum, base séparée, gardent leur `author_id`). L'effacement serait alors
+    moins complet que ce que la page de confidentialité annonce.
+
+    `NULL` y dit « le compte a été supprimé » sans ambiguïté : `start_trial` écrit toujours
+    un identifiant réel, la colonne ne peut devenir vide d'aucune autre façon.
+    """
     with _lock, _db() as c:
+        c.execute("UPDATE trial_claims SET user_id = NULL WHERE user_id = ?", (user_id,))
         cur = c.execute("DELETE FROM users WHERE id = ?", (user_id,))
     return cur.rowcount > 0
 
@@ -1170,6 +1184,11 @@ if __name__ == "__main__":
     check("droits : cascade RGPD à la suppression du compte", entitlement_for(ue["id"]) is None)
     check("empreinte d'essai conservée après suppression (anti-recyclage)",
           trial_claimed("essai@example.com") is True)
+    with _db() as _c:
+        _lien = _c.execute("SELECT user_id FROM trial_claims WHERE claim_hash = ?",
+                           (_claim_hash("essai@example.com"),)).fetchone()
+    check("empreinte DÉLIÉE du compte supprimé (user_id à NULL)",
+          _lien is not None and _lien["user_id"] is None)
     ue2 = register_local("essai@example.com", "MotDePasse42")
     try:
         start_trial(ue2["id"], "essai@example.com")
